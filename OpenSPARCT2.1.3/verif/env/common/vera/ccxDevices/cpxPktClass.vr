@@ -1,0 +1,411 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: cpxPktClass.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <std_display_defines.vri>
+#include <ccxDevicesDefines.vri>
+#include <cmp.vri>
+// #include <defines.vri>
+  
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// To use this class, you must have in your bench a files called globals.vri
+// that has all global extern declerations in it.
+#include <globals.vri>
+
+#include <std_display_class.vrh>
+#include <basePktClass.vrh>
+#include <pcxPktClass.vrh>
+#include <ccxDevBaseBFM.vrh>
+#include <ccxDevMemBFM.vrh>
+#include <ccxDevSpcBFM.vrh>
+#include <baseParamsClass.vrh>
+#include <sparcParams.vrh>
+
+#define  MON_CCXPKT   24
+
+
+//----------------------------------------------------------
+// CPX Packet
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// CpxPacket Format
+// 145   | 144:141 | 140    | 139:138 | 137 | 136:134 | 133 | 132:131  | 130    | 129    | 127:0
+// ---------------------------------------------------------------------------------------------
+// valid | rtntyp  | l2miss | err     | nc  | tid     | wv  | wayMMUid | wayf4b | atmIf2 | data
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+class CpxPkt extends BasePkt{
+  
+  // cpx vector
+  public reg         valid = 1;
+  // in base public reg [3:0]   rtntyp = 0;
+  public reg         l2miss = 0; // will be randomized by code
+  public reg [1:0]   err = 0;
+  public reg         nc = 0;
+  // in base public reg [2:0]   tid = 0;
+  public reg         wv = 0;
+  public reg [1:0]   wayMMUid = 0;
+  public reg         wayf4b = 0;
+  public reg         atmIf2 = 0;
+  public reg         pf = 0;
+  public reg [127:0] data = 0;
+  // end cpx vector
+
+  public reg io = 0;
+
+  local reg [145:0] pktVec = 0;
+  local integer printCount = 0;
+  local CpxPkt receivedPkt = null;
+
+  // for multicast checking (one pkt becomes many). create first destination pkt.
+  // in it, store all handles to twin destination packets. On checking, if
+  // twin list not null, make sure all twins are identical.
+  public CpxPkt twinList [8];
+  
+  // bench knobs
+  // hitRateParm;
+  // hitDelayMinParm;
+  // hitDelayMaxParm;
+  // missDelayMinParm;
+  // missDelayMaxParm;
+  // pkt2DelayMinParm;
+  // pkt2DelayMaxParm;
+  
+  // randoms for L2 BFM use
+  public rand bit hit; // "hit" latencies are used  
+  public rand integer responseDelay; // value of latency for response to this pkt
+  public rand integer pkt2Delay;  // value of latency for second pkt of pair
+    
+  constraint hit_c
+  {
+    hit dist {0 := 100 - gParam.hitRate, 1 := gParam.hitRate};
+  }
+
+  constraint responseDelay_c
+  {
+    if (hit == 1)
+      { responseDelay >= gParam.hitDelayMin;
+        responseDelay <= gParam.hitDelayMax; }
+    else
+      { responseDelay >= gParam.missDelayMin;
+        responseDelay <= gParam.missDelayMax; }
+  }
+
+  constraint pkt2Delay_c
+  {
+    pkt2Delay >= gParam.pkt2DelayMin;
+    pkt2Delay <= gParam.pkt2DelayMax;
+  }
+
+  
+  task new(PcxPkt reqPkt = null);
+  task loadPkt(reg [145:0] data, integer atPort=99);
+  function reg [145:0] getVector();
+  task print(integer atPort);
+  task send(integer fastResp=0);
+  function reg [145:0] makeSignature();
+  task recv();
+  task createIntr (reg [5:0] thread, // 64 virtual cores
+                   reg [1:0] type,
+                   reg [5:0] vect);
+
+  local task printHeader();
+  task post_randomize();
+}
+
+
+  task CpxPkt::new (PcxPkt reqPkt = null) {
+
+    // in base
+    name      = "CpxPkt";
+    super.reqId = 0;
+    super.reqTime = 0;
+    super.pktArrived = 0;
+
+    if (reqPkt !== null) {
+      // Default init Values for responding to request
+      targetPorts  = 1 << reqPkt.cpuId;
+      valid      = reqPkt.valid;
+      nc         = reqPkt.nc;
+      tid        = reqPkt.tid;
+      ccxSourced = reqPkt.ccxSourced;
+      ccxSourced2 = reqPkt.ccxSourced2;
+      addr       = reqPkt.addr; //for ldst sync
+      
+// #ifdef PKT_DEBUG
+//       reqTime         = reqPkt.reqTime; // time of request
+// #endif
+// #ifdef CCXDEVMEMBFM_DEBUG
+//       reqTime         = reqPkt.reqTime; // time of request
+// #endif   
+    }
+  }
+
+  
+  // load this pkt from a vector
+  task CpxPkt::loadPkt (reg [145:0] dataIn, integer atPort=99) { 
+    pktVec = dataIn;
+    '{valid,rtntyp,l2miss,err,nc,tid,wv,wayMMUid,wayf4b,atmIf2,pf,data} = pktVec;
+    arrivalPort = atPort;
+    if (atPort == DEV_NCU) io = 1;
+  }
+
+  function reg [145:0] CpxPkt::getVector() {
+    getVector = {valid,rtntyp,l2miss,err,nc,tid,wv,wayMMUid,wayf4b,atmIf2,pf,data};
+  }
+  
+
+  task CpxPkt::print(integer atPort)
+  {
+    reg vack = 0;
+    reg [8:0] req;
+    integer vcore = 0;
+    integer line = 999;
+
+    if (atPort < 8) vcore = tid + (8*atPort);
+    else
+    {
+      // will not work well for multicast pkts, look at req
+      if (this.req_wire === 9'bxxxxxxxxx) vcore = 99;
+      else {
+        req  = this.req_wire;
+        while (req[0] !== 1 && req !== 0) {
+          vcore++;
+          req = req >> 1;
+        }
+        vcore = tid + (8*vcore);
+      }
+    }
+
+    
+    printHeader () ;
+    
+    printf ("%9d:", get_time(LO)) ;
+    printf ("|%2d", vcore) ;
+    printf ("|CPX") ;
+    printf ("|%2d", atPort) ;
+    if (req_wire === 9'bxxxxxxxxx) printf ("|---");
+    else printf ("|%3h", req_wire) ;
+//    printf ("|%3h", req_wire) ;
+//     printf ("|%3h", atm_wire) ;
+    printf ("|%1b", valid) ;
+
+    case (rtntyp)
+    {
+      CPX_LD,CPX_PREF,CPX_DIAG_LD,CPX_CAS_RTN,CPX_SWAP_RTN: { // 0000
+                     if (pf)               printf ("|PREFETCH RTN");
+                     else if (nc & atmIf2) printf ("|SWAP/CAS RTN");
+                     else                  printf ("|LOAD/DIA RTN");
+                     line = addr[10:4]; tag = addr[39:11];
+      }
+      CPX_NCU_LD:    printf ("|LOAD RTN NCU") ; // 1000
+      CPX_NCU_IFILL: printf ("|IFILL RTN NC"); // 1001
+      CPX_IFILL:
+                     if (atmIf2) printf ("|IFILL RTN 2 ");
+                     else        printf ("|IFILL RTN 1 ");
+      CPX_STR_LD: // 0010
+      {
+        printf ("|STRM LD RTN ") ;
+        vack = 1;
+      }
+      CPX_EVICT    : { // 0011
+        printf ("|EVICT INVAL ") ;
+        line = addr[10:4]; tag = addr[39:11];
+      }
+      CPX_ST,CPX_DIAG_ST,CPX_CAS_ACK,CPX_SWAP_ACK,CPX_D_INVAL,CPX_I_INVAL: // 0100
+      {
+        if (atmIf2)  printf ("|SWAP/CAS ACK");
+        else if (data[124:123] == 2'b11) printf ("|ERROR IVAK!!");
+        else if (data[124] == 1) printf ("|I$ INV ACK  ");
+        else if (data[123] == 1) printf ("|D$ INV ACK  ");
+        else         printf ("|STORE/DI ACK");
+        vack = 1;
+        line = addr[10:4]; tag = addr[39:11];
+      }
+      CPX_MMU_RTN  : printf ("|MMU LD RTN  "); // 0101
+      CPX_STR_ST   : {
+                     printf ("|STRM ST ACK "); // 0110
+        vack = 1;
+      }
+      CPX_INTR      : printf ("|INTERRUPT   "); // 0111
+      CPX_ERROR_L2  : printf ("|ERR L2      "); // 1100
+      CPX_ERROR_SOC : printf ("|ERR SOC     "); // 1101
+      default       : printf ("|????????????") ;
+    }
+
+    printf ("|%3b", l2miss) ;
+    printf ("|%2b", err);
+    printf ("|%2b", nc);
+    printf ("|%1d", tid);
+    printf ("|%2b", wv) ;
+    printf ("|%5b", wayMMUid) ;
+    printf ("|%5b", wayf4b) ;
+    printf ("|%5b", atmIf2) ;
+    printf ("|%2b", pf) ;
+    printf ("|%h_%h", data[127:64],data[63:0]) ;
+#ifdef CCXDEVMEMBFM_DEBUG
+    printf ("|%3d", reqId);
+    printf ("|%10h", addr);
+    printf ("|%2h/%8h/%1h", line,tag,lineWay);
+//    printf ("|%8d", reqTime);
+#endif   
+    printf ("\n") ;
+
+    if (vack) printf ("%9d:|--|CPX|Vack -> CPU=%0d, addr[11:0]=%h, invVec=%h, mask=%h, invI/D=%h, BIS/MAid=%0b\n",
+              get_time(LO),data[120:118],{data[117:112],data[122:121],data[104],3'b000},
+              data[95:64],data[103:96],data[124:123],data[125]);
+    else printf("\n");
+
+    printCount++ ;
+  }
+
+  task CpxPkt::printHeader()
+  {
+    printf ("\n%9d:", get_time(LO)) ;
+    printf ("|VC") ;    
+    printf ("|CPX");
+    printf ("|At") ;    
+    printf ("|Req");
+//     printf ("|Atm");
+    printf ("|V") ;
+    printf ("|Type        ") ;
+    printf ("|Mis");
+    printf ("|Er");
+    printf ("|NC") ;
+    printf ("|T") ;
+    printf ("|WV") ;
+    printf ("|WayMM") ;
+    printf ("|Way4b") ;
+    printf ("|AtmI2") ;
+    printf ("|Pf") ;
+    printf ("|Data                             ") ;
+#ifdef CCXDEVMEMBFM_DEBUG
+    printf ("|RID");    
+    printf ("|Req Addr  ");
+    printf ("|DL/Tag/Way");
+//    printf ("|Req Time");
+#endif   
+    printf ("\n") ;
+  }
+  
+    
+  task CpxPkt::send(integer fastResp=0) {
+    integer i;
+    pktVec = {valid,rtntyp,l2miss,err,nc,tid,wv,wayMMUid,wayf4b,atmIf2,pf,data};
+    if (rtntyp == CPX_IFILL) {
+      if (atmIf2 == 0) atomic = 1;
+      else atomic = 2;
+    }
+
+    for (i=8;i<=16;i++) {
+      if (sendPorts[i]) {
+        if (gCcxDevice[i] == null)
+          error("Can't send packet from a nonExistant BFM! \n");
+        gCcxDevice[i].send(this,fastResp);
+      }
+    }
+  }
+
+
+  // makeSignature returns certain concatinated fields of the packet.
+  // called by BFM that needs it.
+  function reg [145:0] CpxPkt::makeSignature() {
+    makeSignature = {10'b0,valid,rtntyp,tid,data[127:0]};
+  }
+
+  
+  // BFM knows everything that it needs from this packet,
+  // especially the signature for packet matching.
+  // This packet has the signature and recvPorts.
+  // Note that recvPkt call inside the receiving BFM may be blocking review
+  task CpxPkt::recv() {
+
+    if (manyHot(this.targetPorts) !== 1)
+      error("Need to set a single target port in targetPorts var! \n");
+
+    // hand off    
+    gCcxDevice[whichHot(this.targetPorts)].recv(this);
+  }
+
+
+
+  //This task will call the cancelRecv in the BFMS
+//   task cancelRecv(integer revcPortIn)
+//   {
+//     gCcxDevice[recvPortIn].cancelRecv(this);
+//   }
+
+
+  
+  // Create Interrupt Pkt
+  task CpxPkt::createIntr (reg [5:0] thread, // 64 virtual cores
+                           reg [1:0] type,
+                           reg [5:0] vect) {
+
+    targetPorts = 1 << thread[5:3];
+    valid = 1'b1;
+    rtntyp = CPX_INTR;
+    l2miss = 0;
+    err = 0;
+    nc = 0;
+    tid = thread[2:0];
+    wv = 0;
+    wayMMUid = 0;
+    wayf4b = 0;
+    atmIf2 = 0;
+    pf = 0;
+    data[63:0] = {48'b0,type,thread[5:0],2'b0,vect};
+    //printf("%0d CpxPkt createIntr done, data = %0h\n", get_cycle(), data);
+    
+  }
+
+//   // can't refer to array indexes when weighting constraints
+//   // so have to play this game first. lame!
+//   task CpxPkt::pre_randomize() {
+//     this.hitRateParm = gParam.hitRate[sendPort-8];
+//     this.hitDelayMinParm = gParam.hitDelayMin[sendPort-8];
+//     this.hitDelayMaxParm = gParam.hitDelayMax[sendPort-8];
+//     this.missDelayMinParm = gParam.missDelayMin[sendPort-8];
+//     this.missDelayMaxParm = gParam.missDelayMax[sendPort-8];
+//     this.pkt2DelayMinParm = gParam.pkt2DelayMin[sendPort-8];
+//     this.pkt2DelayMaxParm = gParam.pkt2DelayMax[sendPort-8];
+//   }
+
+  task CpxPkt::post_randomize() {
+    // always set this if we "miss"
+    // May clear it later for certain return types
+    l2miss = ~hit;
+  }
+
+  

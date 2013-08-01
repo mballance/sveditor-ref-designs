@@ -1,0 +1,98 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: sys_mem.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "std_display_defines.vri"
+
+#include "std_display_class.vrh"
+
+extern hdl_task write_sys_mem (
+                                bit [63:0] addr,
+                                bit [63:0] data,
+                                bit [7:0] be
+                        );
+
+extern hdl_task read_sys_mem (
+                                bit [63:0] addr,
+                                var bit [63:0] rd_data
+                        );
+
+class CSparseMem {
+        local event write_sync;
+        local event read_sync;
+
+        task new() {
+           trigger(ON,write_sync);
+           trigger(ON,read_sync);
+        }
+
+        task WriteMem(  bit [63:0] address, bit [63:0] data, bit [7:0] be, (integer enable_tracking  = 0 ));
+        task ReadMem( bit[63:0] address, var bit [63:0] data, bit[7:0] be);
+	function bit [39:0] get_address(integer no_of_blocks, (integer page_id = 0), (integer alignment = 1));
+
+}
+
+
+task CSparseMem::WriteMem(  bit [63:0] address, bit [63:0] data, bit [7:0] be, (integer enable_tracking  = 0 ) ) {
+
+
+  sync(ALL,write_sync);
+  trigger(OFF,write_sync);
+
+  write_sys_mem(address[63:0], data[63:0], 8'h0); // write DoubleWord
+  trigger(ON,write_sync);
+
+}
+
+task CSparseMem::ReadMem(  bit [63:0] address, var bit [63:0] data, bit [7:0] be ) {
+
+  bit [63:0] rdata;
+
+  sync(ALL,read_sync);
+  trigger(OFF,read_sync);
+
+  read_sys_mem(address[63:0], rdata); // read DoubleWord
+  data = rdata;
+  trigger(ON,read_sync);
+
+}
+function bit [39:0] CSparseMem::get_address(integer no_of_blocks, (integer page_id =  0) , (integer alignment = 1) ) {
+   bit [39:0] address;
+//  printf(" Page id - %d \n",page_id);
+// MAQ :   address = MallocBlock(no_of_blocks,page_id,alignment);
+   address = 40'h200000000;
+//   printf(" Address Allocated - %x \n",address);
+   get_address = address;
+}
+

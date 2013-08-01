@@ -1,0 +1,86 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: XactorListWildCard.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "XactorList.vrh"
+  
+class XactorListWildCard extends XactorList {
+
+  // Inserts a new element with the specified values at the end of the list
+  virtual task InsertNode(XactorBasePacket i,
+			  var ListNode NodePtr,
+			  var event e[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]
+			  );
+  
+  // Inserts a new node with the specified values at the end of the list
+  virtual task Insert (XactorBasePacket i,
+		       var event e[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]
+		       );
+
+}
+
+  ////////////////
+ // Definitions
+////////////////
+
+// Inserts a new element with the specified values at the end of the list
+task XactorListWildCard::InsertNode(XactorBasePacket i,
+				    var ListNode NodePtr,
+				    var event e[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]
+				    ) {   
+  
+  if(i.PktCompare("=?=", NodePtr.Item)) {
+    NodePtr.Item.PktDisplay(RTYP_XACTOR_FMWORK_DUP_WILDCARD_EXPECT_WARN, "Posting a duplicated Expect");
+  }
+  
+  if (NodePtr.Next == null)
+    NodePtr.Next = new(i, e);
+  else
+    InsertNode (i,
+		NodePtr.Next,
+		e
+		);
+}
+
+// Inserts a new node with the specified values at the end of the list
+task XactorListWildCard::Insert (XactorBasePacket i,
+				 var event e[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]
+				 ) {
+  
+  if (Head == null) 
+    Head = new(i, e);
+  else
+    InsertNode(i, Head, e);
+}  
+
+

@@ -1,0 +1,334 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ucb_monitor.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>         // Vera's linked list
+#include "std_display_class.vrh"
+#include "ucb_defines.vri"
+#include "ucb___packet.vrh"
+#include "ucb_top.vri"
+
+// creating a list. NOTE: it's a macro, so no ';'
+MakeVeraList(UCB___packet)
+
+class UCB_monitor {
+  //---public vars---
+  event req_begin;     // triggered when NCU starts a new request
+  event rsp_begin;     // triggered when target blk starts a response to NCU
+  event req_end;       // triggered when NCU completes a request. Also, req_pkt is updated
+  event rsp_end;       // triggered when target blk completes a response. Also, rsp_pkt is updated.
+  integer ignore_err = 0;  // ignore all errors
+  //---ports and classes---
+  local UCB_port ucb_port;   // UCB port
+  local StandardDisplay dbg; // Standard display for printing
+  //---local vars---
+  local string  dispScope;   // for standard display
+  local integer bus_width;   // width of data bus. Valid values: 4 or 8 bits    
+  local bit [127:0] req_pkt; // the latest request pkt which is updated when a new req is completed
+  local bit [127:0] rsp_pkt; // the latest response pkt which is updated when a new rsp is completed
+  VeraList_UCB___packet pend_rd_reqs;  // list of pending read requests
+  local bit [7:0] g_asi;     // global addr identifier (ie. [39:32] of PA or UCB pkt bits [54:47])
+  local integer ntransfer;   // number of data transfers for one req/rsp (ie. 128/bus_width)
+  local integer num_req;     // number of requests
+  local integer num_rsp;     // number of responses
+  local integer running;     // init to 0. Set to 1 when this monitor starts
+  local integer error_cnt;         // Error count. Init to 0. WARN: become negative if exeed max integer
+  local integer max_error_printed; // stop print out error message when (error_cnt > max_error_printed)
+  local integer semaphore_id;      // semaphore for accessing Vera list pend_rd_reqs
+
+  //---public subroutines---
+  task new(string dispScope="UCB_monitor", StandardDisplay dbg, UCB_port ucb_port, integer bus_width, bit [7:0] g_asi, integer start_it=0);
+  task start();  // start the monitor. Do nothing if the monitor is already running
+  function UCB___packet get_req_pkt();
+  function UCB___packet get_rsp_pkt();
+  function integer get_error_cnt()   { get_error_cnt = this.error_cnt; }
+  task ignore_errors() { this.ignore_err = 1; }
+
+  //--- local subroutines ---
+  local task monitor_req();   // monitor the request bus
+  local task monitor_rsp();   // monitor the response bus
+  local function bit [127:0] get_request_pkt();   // return this.req_pkt
+  local function bit [127:0] get_response_pkt();  // return this.rsp_pkt
+  task print_error_msg(integer err_cnt, string error_msg);
+}
+
+//################################################################
+//######### implementation of subroutines              ###########
+//################################################################
+
+task UCB_monitor::new(string dispScope="UCB_monitor", StandardDisplay dbg, UCB_port ucb_port, integer bus_width, bit [7:0] g_asi, integer start_it=0) {
+  //---from arg list---
+  this.dispScope = dispScope;
+  this.dbg = dbg;
+  this.ucb_port = ucb_port;
+  this.bus_width = bus_width;
+  this.g_asi = g_asi;
+  //---the rest---
+  this.req_pkt = 128'h0;     // init to bad value
+  this.rsp_pkt = 128'h0;     // init to bad value
+  this.pend_rd_reqs = new(); // empty list
+  this.ntransfer = 128 / bus_width;
+  this.num_req = 0;
+  this.num_rsp = 0;
+  this.running = 0;  // monitor is not running yet
+  this.error_cnt = 0;
+  this.max_error_printed = 10;
+  semaphore_id = alloc(SEMAPHORE, 0, 1, 1); // 0: semaphore ID, 1: semaphore count, 1: one key initially
+  if (semaphore_id == 0)
+    dbg.dispmon(this.dispScope, MON_ERR, "alloc(SEMAPHORE, 0, 1, 1) : failed");
+
+  //---sanity check---
+  if ((bus_width != 4) && (bus_width != 8)) {
+    dbg.dispmon(this.dispScope, MON_ERR, psprintf("ucb bus width %0d <= monitor only supports 4/8-bit bus", this.bus_width));
+    this.error_cnt++;
+  }
+  //---start back ground threads---
+  if (start_it)
+    this.start();  // start the monitor
+}
+
+//==========================================================
+// WHAT: start the monitor
+//==========================================================
+task UCB_monitor::start() {
+  if (running) {
+    return;      // monitor is already running
+  }
+  dbg.dispmon(this.dispScope, MON_INFO, "UCB monitor starts");
+  fork { monitor_req(); } join none
+  fork { monitor_rsp(); } join none
+  running = 1; // monitor is now running
+}
+
+//==========================================================
+// WHAT: monitor the requests from NCU to target unit.
+// WARNING: per NCU and UCB specs, NCU must deassert ncu_xxx_vld
+//    for at least one cycle before sending the next request.
+//==========================================================
+task UCB_monitor::monitor_req() {
+  while (1) {
+    @(posedge ucb_port.$req_vld);      // wait for new request
+    this.num_req++;
+    trigger(this.req_begin);           // inform the caller
+    this.req_pkt = get_request_pkt();  // get the pkt
+    trigger(this.req_end);             // inform the caller
+  }
+}
+
+//==========================================================
+// WHAT: monitor the response from target unit to NCU.
+// WARNING: per NCU and UCB specs, target unit must deassert
+//    xxx_ncu_vld for at least one cycle before sending the next response.
+//==========================================================
+task UCB_monitor::monitor_rsp() {
+  while (1) {
+    @(posedge ucb_port.$rsp_vld);       // wait for new response
+    this.num_rsp++;
+    trigger(this.rsp_begin);            // inform the caller
+    this.rsp_pkt = get_response_pkt();  // get the pkt
+    trigger(this.rsp_end);              // inform the caller
+  }
+}
+
+//==========================================================
+// WHAT: get the request packet (ie. 128-bit pkt NCU sends to target block
+// WARNING: per NCU and UCB specs, NCU must deassert ncu_xxx_vld
+//    for at least one cycle before sending the next request.
+//==========================================================
+function bit [127:0] UCB_monitor::get_request_pkt() {
+  integer i, lsb=0, req_err_cnt = 0;
+  bit [127:0] data;
+  string pkt_type_str;
+  UCB___packet pkt;
+
+  //---get req pkt from the bus---
+  fork {
+    @(negedge ucb_port.$req_vld);
+    dbg.dispmon(this.dispScope, MON_ERR, "NCU deasserts ncu_xxx_vld before ucb req pkt completed");
+  }
+  {
+    for (i = 0; i < this.ntransfer; i++) {
+      if (ucb_port.$req_stall == 1'b1)
+        @(negedge ucb_port.$req_stall);
+      data[lsb + bus_width - 1 : lsb] = ucb_port.$req_data;
+      if (i != (this.ntransfer - 1))  // not the last data transfer
+        @(posedge ucb_port.$clk);
+      lsb = lsb + bus_width;          // for next data transfer
+    }
+  } join any
+  terminate;
+  //--- NCU must deassert ncu_xxx_vld for at least one cycle----
+  fork {
+    @(posedge ucb_port.$clk);
+    if (ucb_port.$req_vld != 1'b0)
+      dbg.dispmon(this.dispScope, MON_ERR, "NCU does not deassert ncu_xxx_vld after request completed");
+  } join none
+  //---print out req for info---
+  pkt = new(*, data);
+  case (pkt.pkt_type) {
+    UCB_PKT_READ_REQ:  pkt_type_str = "rd req";
+    UCB_PKT_WRITE_REQ: pkt_type_str = "wr req";
+    default: pkt_type_str = "unkown req";
+  }
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("%s : addr=0x%h, payload=0x%h, threadID=0x%h, cpuID=0x%h, bufferID=0x%h",
+    pkt_type_str, pkt.addr, pkt.payload, pkt.thread_id, pkt.cpu_id, pkt.buffer_id));
+  //---check for protocol/restriction violations---
+  if (pkt.req_size !== UCB_PKT_REQSIZE__8B)
+    print_error_msg(req_err_cnt++,  psprintf("ucb req pkt=0x%h <= not 8B req", data));
+  if ((pkt.pkt_type != UCB_PKT_READ_REQ) && (pkt.pkt_type != UCB_PKT_WRITE_REQ))
+    print_error_msg(req_err_cnt++,  psprintf("ucb req pkt=0x%h <= not rd/wr req", data));
+  if (pkt.addr[39:32] != this.g_asi)
+    print_error_msg(req_err_cnt++, psprintf("ucb req pkt=0x%h <= global asi or [54:47] is not 0x%h ", data, this.g_asi));
+  if ((pkt.buffer_id != 2'b00) && (pkt.buffer_id != 2'b01))
+    print_error_msg(req_err_cnt++, psprintf("ucb req pkt=0x%h <= buffer ID or [11:10] is bad", data));
+  //---for read request---
+  if (pkt.pkt_type == UCB_PKT_READ_REQ) {
+    void = semaphore_get(WAIT, semaphore_id, 1);  // only one thread can access pending rd list.
+    this.pend_rd_reqs.push_back(pkt);             // add new rd req to the end of the list
+    semaphore_put(semaphore_id, 1);
+  }
+  //---return value---
+  get_request_pkt = data;
+}
+
+//==========================================================
+// WHAT: get the response packet (ie. 128-bit pkt target block sent to NCU)
+// WARNING: per NCU and UCB specs, target unit must deassert
+//    xxx_ncu_vld for at least one cycle before sending the next response.
+//==========================================================
+function bit [127:0] UCB_monitor::get_response_pkt() {
+  integer i, lsb=0, rsp_err_cnt=0;
+  bit [127:0] data;
+  bit [3:0] pkt_type;
+  string pkt_type_str;
+  UCB___packet pkt, oldest_rd_pkt;
+  integer is_rd_nack=0;  // 1: read_nack rsp, 0: not a read_nack rsp
+  integer nbits=0;       // number of bits transferred
+
+  //--- sanity check ---
+  if (pend_rd_reqs.size() < 1)
+    print_error_msg(0, "got rd rsp, but there is no pending rd req");
+  //---get response pkt---
+  fork {
+    @(negedge ucb_port.$rsp_vld);
+    dbg.dispmon(this.dispScope, MON_ERR, "target unit deasserts *_ncu_vld before completing rd response pkt");
+  }
+  {
+    for (i = 0; i < this.ntransfer; i++) {
+      if (ucb_port.$rsp_stall == 1'b1)
+        @(negedge ucb_port.$rsp_stall);
+      data[lsb + bus_width - 1 : lsb] = ucb_port.$rsp_data;
+      nbits += this.bus_width;
+      //---check for READ_NACK---
+      if (i == 0) {
+        pkt_type = data[UCB_PKT_PKTTYPE__MSB:UCB_PKT_PKTTYPE__LSB];
+        case (pkt_type) {
+          UCB_PKT_READ_ACK  : is_rd_nack = 0;
+          UCB_PKT_READ_NACK : is_rd_nack = 1;
+          default :
+            print_error_msg(rsp_err_cnt++, psprintf("ucb rsp pkt type=0x%h <= not READ_ACK nor READ_NACK rsp", pkt_type));
+        }
+      }
+      //---for next data transfer---
+      if ((is_rd_nack) && (nbits >= 64))
+        break; // in read_nack, client sends UCB pkt without payload (ie. 64-bit pkt only)
+      if (i != (this.ntransfer - 1))  // not the last response
+        @(posedge ucb_port.$clk);
+      lsb = lsb + bus_width;
+    }
+  } join any
+  terminate;
+  //---- target unit must deassert xxx_ncu_vld for at least one cycle---
+  fork {
+    @(negedge ucb_port.$clk);
+    if (ucb_port.$rsp_vld != 1'b0)
+      dbg.dispmon(this.dispScope, MON_ERR, "target unit does not deassert *_ncu_vld after rd response completed");
+  } join none
+  //----print out rsp pkt for info----
+  pkt = new(*, data);
+  case (pkt.pkt_type) {
+    UCB_PKT_READ_ACK  : pkt_type_str = "rd rsp";
+    UCB_PKT_READ_NACK : pkt_type_str = "rd nack";
+    default:            pkt_type_str = "unkown rsp";
+  }
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("%s : payload=0x%h, threadID=0x%h, cpuID=0x%h, bufferID=0x%h",
+    pkt_type_str, pkt.payload, pkt.thread_id, pkt.cpu_id, pkt.buffer_id));
+  //---check rsp pkt header matches rd req pkt---
+  if (pend_rd_reqs.size() > 0) {  // check only when there is a pending rd req
+    void = semaphore_get(WAIT, semaphore_id, 1);  // only one thread can access pending rd list.
+    oldest_rd_pkt = pend_rd_reqs.front();
+    if (pkt.buffer_id != oldest_rd_pkt.buffer_id)
+      print_error_msg(0, psprintf("ucb rsp pkt=0x%h, req pkt=0x%h <= buffer ID or [11:10] not matched", data, oldest_rd_pkt.pkt));
+    if (pkt.cpu_id != oldest_rd_pkt.cpu_id)
+      print_error_msg(0, psprintf("ucb rsp pkt=0x%h, req pkt=0x%h <= CPU ID or [9:7] not matched", data, oldest_rd_pkt.pkt));
+    if (pkt.thread_id != oldest_rd_pkt.thread_id)
+      print_error_msg(0, psprintf("ucb rsp pkt=0x%h, req pkt=0x%h <= thread ID or [6:4] not matched", data, oldest_rd_pkt.pkt));
+    pend_rd_reqs.pop_front();  // remove oldest pending read req from list, no matter rsp matches or not
+    semaphore_put(semaphore_id, 1);
+  }
+  //---rd req is now completed---
+  get_response_pkt = data;
+}
+
+//=============================================================
+// WHAT: print error message
+// NOTE:
+//   err_cnt is local error count of a particular error type.
+//   this.error_cnt is global error count of this vera class.
+//=============================================================
+task UCB_monitor::print_error_msg(integer err_cnt, string error_msg) {
+  this.error_cnt++; // increment global error count
+  if (this.ignore_err)
+    return;
+  if (err_cnt <= max_error_printed)
+    dbg.dispmon(this.dispScope, MON_ERR, error_msg);
+}
+
+//=============================================================
+// Return the req pkt to the caller
+//=============================================================
+function UCB___packet UCB_monitor::get_req_pkt() {
+  UCB___packet ucb_pkt = new(*, this.req_pkt); // create a separate copy
+  get_req_pkt = ucb_pkt;
+}
+
+//=============================================================
+// Return rsp pkt to the caller
+//=============================================================
+function UCB___packet UCB_monitor::get_rsp_pkt() {
+  UCB___packet ucb_pkt = new(*, this.rsp_pkt); // create a separate copy
+  get_rsp_pkt = ucb_pkt;
+}
+
+

@@ -1,0 +1,947 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: N2fcCtx.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "ccx_ncu.port_bind.vri"
+#include "plusArgMacros.vri"
+
+extern class PEUTestBase { }
+extern class N2fcPEUparams { }
+extern event e_StartPEUTest;
+
+extern integer non_posted_read_cmpl_outstanding;
+extern integer non_posted_write_cmpl_outstanding;
+
+extern  reg asmDiagDone;
+
+class N2fcCtx extends PEUTestBase {
+
+  N2fcPEUparams params;
+
+  N2fcXactionProbe n2fcXactionProbe;
+
+  integer pio_mbox;
+  integer dma_mbox;
+
+  bit     DtmMode;
+
+  bit     env_setup;
+  integer pio_error; // 0 = no error, 1 = timeout, 2 = uc, 3 = noexp, 4 = nullify
+
+  integer dma_tc; // -1 = random, otherwise set TC to dma_tc
+
+  task new ();
+  task Wait4Asm ();
+  task Wait4Pio ();
+  virtual public task execute();        // extend N2PEUTestBase class
+
+  task Wait4Dma ();
+
+  task CfgIOAccess    (string       cmd,
+                       bit [63:0]   addr,
+                       bit [31:0]   length,
+                       bit [63:0]   data);
+
+  task MemAccess      (string       cmd,
+                       bit [63:0]   addr,
+                       bit [31:0]   length,
+                       bit [63:0]   data,
+                       bit [63:0]   baseaddr,
+                       bit [63:0]   offset);
+
+  task dmawr          (string       cmd,
+                       bit [63:0]   StartAddr,
+                       bit [63:0]   EndAddr,
+                       string       TxLen,
+                       bit [31:0]   NumCmds);
+
+  task dmard          (string       cmd,
+                       bit [63:0]   StartAddr,
+                       bit [63:0]   EndAddr,
+                       string       TxLen,
+                       bit [31:0]   NumCmds,
+                       string       err);
+
+  task dmacfgio       (string       cmd,
+                       bit [63:0]   StartAddr,
+                       bit [63:0]   EndAddr,
+                       string       TxLen,
+                       bit [31:0]   NumCmds);
+
+  task intx           (string       cmd,
+                       bit [63:0]   StartAddr,
+                       bit [63:0]   EndAddr,
+                       string       TxLen,
+                       bit [31:0]   NumCmds);
+
+  function bit AddrAlignmentOK (string     cmd,
+                                bit [63:0] addr,
+                                bit [31:0] length);
+
+  function bit [3:0] getFirstDWBE (bit [63:0] addr,
+                                   bit [31:0] length);
+
+  function bit [3:0] getLastDWBE  (bit [63:0] addr,
+                                   bit [31:0] length);
+
+  task unsupp_cmd (string cmd);
+
+  task CheckIfDone ();
+  function integer get_timeout ();
+}
+
+
+//------------------------------------------------------------------------------
+// "new" task. Just call the parent class' new here.
+//------------------------------------------------------------------------------
+task N2fcCtx::new () {
+  reg [31:0] seedingtmpseed = 1;
+
+  super.new ();
+
+  // seed the RNG for this object to tg_seed, so that it is the same
+  // for rtl and gatesim.
+  mGetPlusargDec(tg_seed=, seedingtmpseed);
+  srandom( seedingtmpseed );
+  
+  n2fcXactionProbe = new (super.Scenario);
+
+  env_setup = 0;
+  pio_error = 0;
+  pio_mbox  = alloc(MAILBOX, 0, 1);
+  dma_mbox  = alloc(MAILBOX, 0, 1);
+  
+  non_posted_read_cmpl_outstanding = 0;
+  non_posted_write_cmpl_outstanding = 0;
+  DtmMode = 0;
+  dma_tc = random();  // pick a random Traffic Class, to be the same for all DMAs
+  
+  repeat (1) @ (posedge pcx_ncu_bind.$clk);
+
+  fork
+    Wait4Asm ();
+    Wait4Pio ();
+    Wait4Dma ();
+  join none
+}
+
+
+//------------------------------------------------------------------------------
+// "execute" task. Just call the parent class' new here.
+//------------------------------------------------------------------------------
+task N2fcCtx::execute () {
+  if (!DtmMode) {
+    super.execute ();
+  }
+
+  // env is not valid until super.execute has finished.
+  n2fcXactionProbe.setenv(env);
+  env.expectCompleteTO = get_timeout(); // scale timeout by linkwidth
+  env.setIngressGap(0,0);
+  env_setup = 1;
+  trigger( ON, env.ev_linkUp );
+}
+
+
+
+//------------------------------------------------------------------------------
+// wait4Asm method. Get parameters of the command.
+// the transaction parameters are passed from the assembly user event.
+// Decode the command and forward to the pio or dma mailboxes.
+//------------------------------------------------------------------------------
+
+task N2fcCtx::Wait4Asm () {
+  ilupeuPodClass Pod;
+  PEUTestEnv     Env;
+
+  while (1) {
+    if (mailbox_get(NO_WAIT, asm2peu_mbox, params)) {
+
+      //printf ("-%0d-DEBUG N2fcCtx::Wait4Asm got a %s cmd from mbox \n", get_time(LO),params.cmdType);
+      
+      case (params.cmdType) {
+        "CFGRD0", "CFGRD1", "IORD", "IOWR", "CFGWR0", "CFGWR1",
+        "MRD", "MWR", "MEM64RD", "MEM64WR",
+        "PIO_TIMEOUT", "PIO_UC", "PIO_NOEXP", "PIO_NULLIFY" :
+          mailbox_put(pio_mbox, params);
+
+        "DMAWR", "DMAWR_DWBE", "DMARD", "DMARDLK", "DMARD_UE", "DMARD_DROP",
+        "DMARD_INTA", "DMARD_INTB", "DMARD_INTC", "DMARD_INTD",
+        "INTA", "INTB", "INTC", "INTD", "MSI64", "MSI32",
+        "PM_PME", "PM_TO_ACK", "ERR_COR", "ERR_NONFATAL", "ERR_FATAL",
+        "ATTN", "VENDOR_TYPE_0", "VENDOR_TYPE_1",
+        "DMA_CFG0", "DMA_CFG1", "DMA_IO"  :
+          mailbox_put(dma_mbox, params);
+
+        "LINKDOWN" : {
+          fork {
+            env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_PL_NONFATAL_SYM_8B10B );
+
+            //void  = DenaliDDVTclEval("mmsomaset tb_top.pcieA  ttoCfgLkStartUp 2 us");
+            env.Change_soma_parameters_ac("mmsomaset tb_top.pcieA  ttoCfgLkStartUp 2 us");
+          
+            // force the lanes to 0, which is detected as the electical idle state
+            env.linkDown();
+            // some PIOs make come out of PEU before it recognizes the link is down
+            repeat (150*4) @(posedge pcx_ncu_bind.$clk);
+            // this will remove any pending Expects
+            env.softReset();
+          } join none
+        }
+        "SOFTRESET" : {
+          fork
+            env.softReset();
+          join none
+        }
+        "LINKUP" : {
+          // release the forces on the lanes. the link should retrain itself.
+          env.Pod.FNXPCIEEnableTrans.SetElecIdleLanes( 8'h00 );
+          trigger( ON, env.ev_linkUp );
+        }
+        
+        "STARTDTM" : {
+          if (!DtmMode) {
+            // we're not using boot or InitStrategy
+            printf ("-%0d-DEBUG N2fcCtx::Wait4Asm  STARTDTM  (starting) \n", get_time(LO));
+            Pod = new( Report );
+            Env = new( Pod, Scenario, 4096 );
+            env = Env;
+            env.enableEnv( 0 ); // allocate semaphores and mailboxes
+            DtmMode = 1;
+            
+            PiuCsrs.piuMaxPayloadSize = 512; // in DTM, MPS is forced to 512
+            printf ("-%0d-DEBUG N2fcCtx::Wait4Asm  STARTDTM  forced MPS to 512 \n");
+            
+            trigger (ON, e_StartPEUTest); // kick fc_top.vr so it calls execute() instead of hanging
+            printf ("-%0d-DEBUG N2fcCtx::Wait4Asm  STARTDTM  (calling env.start_Denali_DTM) \n", get_time(LO));
+            env.start_Denali_DTM();
+            printf ("-%0d-DEBUG N2fcCtx::Wait4Asm  STARTDTM  (done) \n", get_time(LO));
+          }
+        }
+        
+        "STALL_CPL" : {
+          printf ("\n-%0d-DEBUG N2fcCtx::Wait4Asm  STALL Completions \n\n", get_time(LO));
+          trigger( OFF, env.ev_StallPioCpl);
+          //This disables Denali from returning any credits until we want it to
+          env.Pod.FNXPCIEEnableTrans.EnableFCDiscard();
+          env.expectCompleteTO = 6 * get_timeout(); // about 6x the timeout value
+        }
+        
+        "UNSTALL_CPL" : {
+          printf ("\n-%0d-DEBUG N2fcCtx::Wait4Asm  UNSTALL Completions \n\n", get_time(LO));
+          env.expectCompleteTO = get_timeout(); // restore the original timeout value
+          trigger( ON, env.ev_StallPioCpl);
+          fork {
+            while (non_posted_read_cmpl_outstanding + non_posted_write_cmpl_outstanding) {
+              repeat(10) @(posedge CLOCK);
+            printf ("\n-%0d-DEBUG N2fcCtx::Wait4Asm  UNSTALL - NP Rds %d NP Wrts %d \n\n", get_time(LO), non_posted_read_cmpl_outstanding, non_posted_write_cmpl_outstanding);
+            }
+            
+            //This turns Denali back on to be able to return credits
+            //This should only be done after you drive the completions for the PIO mem reads
+            printf ("\n-%0d-DEBUG N2fcCtx::Wait4Asm  UNSTALL Disabling FC Discard \n\n", get_time(LO));
+            env.Pod.FNXPCIEEnableTrans.DisableFCDiscard();
+
+            //This turns down the Denali timer so credit updates happen quickly and
+            //then I set the timer back to a larger value
+            env.returnAllEgressCredits( 5 );
+            repeat(15) @(posedge CLOCK);
+            env.returnAllEgressCredits( 250 );
+            printf ("\n-%0d-DEBUG N2fcCtx::Wait4Asm  UNSTALL Completions done \n\n", get_time(LO));
+           }
+          join none
+        }
+       
+        "SET_GAP" : {
+          // set the range of cycles to wait between TLPs
+          env.setIngressGap( params.StartAddr, params.EndAddr );
+        }
+        
+        "SET_TC" : {
+          // set the traffic class
+          dma_tc = params.StartAddr;
+        }
+        
+        "IGNORE_PME_TURN_OFF" : {
+          // used in piu_regs_test.s
+          n2fcXactionProbe.IgnorePMETurnOff = 1;
+        }
+        
+        default : unsupp_cmd (params.cmdType);
+      }
+    }
+    else {
+      @(posedge pcx_ncu_bind.$clk);
+    }
+  }
+}
+
+
+
+//------------------------------------------------------------------------------
+// wait4Pio method. Get parameters of the command.
+// the transaction parameters are passed from the assembly user event.
+// Decode the command and set appropriate fields in the Context.
+//------------------------------------------------------------------------------
+
+task N2fcCtx::Wait4Pio () {
+
+  N2fcPEUparams pioParams;
+
+  while (1) {
+    if (mailbox_get(WAIT, pio_mbox, pioParams)) {
+
+      //printf ("-%0d-DEBUG N2fcCtx::Wait4Pio got a %s cmd from mbox \n", get_time(LO),pioParams.cmdType);
+      
+      case (pioParams.cmdType) {
+        "CFGRD0", "CFGRD1", "IORD", "IOWR", "CFGWR0" , "CFGWR1" :
+          CfgIOAccess (pioParams.cmdType,
+                       pioParams.addr,
+                       pioParams.txLen,
+                       pioParams.startData);
+
+        "MRD", "MWR", "MEM64RD", "MEM64WR"     :
+          MemAccess (pioParams.cmdType,
+                     pioParams.addr,
+                     pioParams.txLen,
+                     pioParams.startData,
+                     pioParams.BaseAddr,
+                     pioParams.Pcie64Offset);
+        "PIO_TIMEOUT" : {
+          pio_error = 1;
+          printf ("-%0d-DEBUG N2fcCtx::Wait4Pio set the pio_error flag to 1 \n", get_time(LO));
+        }          
+        "PIO_UC"      : {
+          pio_error = 2;
+          printf ("-%0d-DEBUG N2fcCtx::Wait4Pio set the pio_error flag to 2 \n", get_time(LO));
+        }
+        "PIO_NOEXP"   : {
+          pio_error = 3;
+          printf ("-%0d-DEBUG N2fcCtx::Wait4Pio set the pio_error flag to 3 \n", get_time(LO));
+        }
+        "PIO_NULLIFY"   : {
+          pio_error = 4;
+          printf ("-%0d-DEBUG N2fcCtx::Wait4Pio set the pio_error flag to 4 \n", get_time(LO));
+        }
+        
+        default : {
+          error ("\n N2fcCtx::Wait4Pio : Unknown command = %0s\n", pioParams.cmdType);
+        }
+      }
+    }
+  }
+}
+
+//------------------------------------------------------------------------------
+// Wait4Dma method. Get parameters of the command.
+// the transaction parameters are passed from the assembly user event.
+// Decode the command and set appropriate fields in the Context.
+//------------------------------------------------------------------------------
+
+task N2fcCtx::Wait4Dma () {
+
+  N2fcPEUparams dmaParams;
+
+  while (1) {
+    if (mailbox_get(WAIT, dma_mbox, dmaParams)) {
+
+      if (asmDiagDone) {
+        printf ("-%0d-DEBUG N2fcCtx::Wait4Dma: Ignoring %s cmd because assembly code is done.\n",
+                get_time(LO), dmaParams.cmdType );
+        continue;
+      }
+      
+      case (dmaParams.cmdType) {
+        "DMAWR", "DMAWR_DWBE", "MSI32", "MSI64" :
+          dmawr (dmaParams.cmdType,
+                 dmaParams.StartAddr,
+                 dmaParams.EndAddr,
+                 dmaParams.DMATxLen,
+                 dmaParams.NumCmds);
+
+        "DMARD", "DMARD_UE", "DMARD_DROP", "DMARDLK",
+        "DMARD_INTA", "DMARD_INTB", "DMARD_INTC", "DMARD_INTD" :
+          dmard (dmaParams.cmdType,
+                 dmaParams.StartAddr,
+                 dmaParams.EndAddr,
+                 dmaParams.DMATxLen,
+                 dmaParams.NumCmds,
+                 dmaParams.err);
+
+        "INTA", "INTB", "INTC", "INTD",
+        "PM_PME", "PM_TO_ACK", "ERR_COR", "ERR_NONFATAL", "ERR_FATAL",
+        "ATTN", "VENDOR_TYPE_0", "VENDOR_TYPE_1"  :
+          intx  (dmaParams.cmdType,
+                 dmaParams.StartAddr,
+                 dmaParams.EndAddr,
+                 dmaParams.DMATxLen,
+                 dmaParams.NumCmds);
+
+        "DMA_CFG0", "DMA_CFG1", "DMA_IO"  :
+          dmacfgio(dmaParams.cmdType,
+                   dmaParams.StartAddr,
+                   dmaParams.EndAddr,
+                   dmaParams.DMATxLen,
+                   dmaParams.NumCmds);
+        
+        default : {
+          error ("\n N2fcCtx::Wait4Dma : Unknown command = %0s\n", dmaParams.cmdType);
+        }
+      }
+    }
+  }
+}
+
+
+//------------------------------------------------------------------------------
+// CfgIOAccess method : Initiate a Config read strategy
+//------------------------------------------------------------------------------
+
+task N2fcCtx::CfgIOAccess (string     cmd,
+                           bit [63:0] addr,
+                           bit [31:0] length,
+                           bit [63:0] dat)
+{
+  N2fcPioCfgIOWrStr     PioCfgWrStr;
+  N2fcPioCfgIORdStr     PioCfgRdStr;
+
+  //printf ("-%0d-UDEBUG N2fcCtx::CfgIOAccess: C = %0s, A = %0h, L = %0h, D = %0h \n", get_time(LO), cmd, addr, length, dat);
+
+  void = AddrAlignmentOK (cmd, addr, length);
+
+  case (cmd) {
+    "CFGRD0", "CFGRD1", "IORD" : {
+        integer thr_perr = pio_error;
+        PioCfgRdStr = new (env, cmd, addr, length, dat, thr_perr);
+        pio_error = 0;
+    }
+    
+    "CFGWR0", "CFGWR1", "IOWR": {
+        integer thr_perr = pio_error;
+        PioCfgWrStr = new (env, cmd, addr, length, dat, thr_perr);
+        pio_error = 0;
+    }
+    
+    default : {
+      error ("\n N2fcCtx::CfgIOAccess : Unknown command = %0s\n", cmd);
+    }
+  }
+}
+
+
+//------------------------------------------------------------------------------
+// MemAccess method : Initiate a Memory Read or Write strategy
+//------------------------------------------------------------------------------
+
+task N2fcCtx::MemAccess (string     cmd,
+                         bit [63:0] addr,
+                         bit [31:0] length,
+                         bit [63:0] dat,
+                         bit [63:0] baseaddr,
+                         bit [63:0] offset)
+{
+  N2fcPioMRdStr         MemRdStr;
+  N2fcPioMWrStr         MemWrStr;
+
+  //printf ("-%0d-UDEBUG N2fcCtx::MemAccess: C = %0s, A = %0h, L = %0h, D = %0h O = %h\n", get_time(LO), cmd, addr, length, dat, params.Pcie64Offset);
+
+  void = AddrAlignmentOK (cmd, addr, length);
+
+  case (cmd) {
+    "MRD" : {
+        integer thr_perr = pio_error;
+        MemRdStr = new (env, cmd, addr, length, dat, baseaddr, 0, thr_perr);
+        pio_error = 0;
+    }
+    
+    "MEM64RD" : {
+        integer thr_perr = pio_error;
+        MemRdStr = new (env, cmd, addr, length, dat, baseaddr, offset, thr_perr);
+        pio_error = 0;
+    }
+ 
+    "MWR" : {
+        integer thr_perr = pio_error;
+        MemWrStr = new (env, cmd, addr, length, dat, baseaddr, 0, thr_perr);
+        pio_error = 0;
+    }
+    
+    "MEM64WR" : {
+        integer thr_perr = pio_error;
+        MemWrStr = new (env, cmd, addr, length, dat, baseaddr, offset, thr_perr);
+        pio_error = 0;
+    }
+    
+    default   : error ("\n N2fcCtx::MemAccess : Unknown command = %0s\n", cmd);
+  }
+}
+
+
+//------------------------------------------------------------------------------
+// dmawr method : Initiate a DMA Write
+//------------------------------------------------------------------------------
+
+task N2fcCtx::dmawr (string       cmd,
+                     bit [63:0]   StartAddr,
+                     bit [63:0]   EndAddr,
+                     string       TxLen,
+                     bit [31:0]   NumCmds)
+{
+  bit [31:0]   NumDMACmds;
+  for (NumDMACmds = 0; NumDMACmds < NumCmds; NumDMACmds++)
+  {
+    bit [ 9:0] DWLen;
+    integer    cycles;
+
+    fork {
+      bit [63:0] RandAddr;
+      bit [63:0] data = 0;
+      integer    length;
+      bit [ 1:0] Align;
+      bit [ 3:0] FirstDWBE, LastDWBE;
+      N2fcDmaWrPEUStr  dmaWr = new( env );
+
+      case (cmd){
+        "MSI64" : {
+          data          = StartAddr;
+          TxLen         = "4";
+          dmaWr.msi_dma = 1;
+          StartAddr     = PiuCsrs.piuMsi64Address;
+          EndAddr       = PiuCsrs.piuMsi64Address;
+        }
+        
+        "MSI32" : {
+          data          = StartAddr;
+          dmaWr.msi_dma = 1;
+          TxLen         = "4";
+          StartAddr     = PiuCsrs.piuMsi32Address;
+          EndAddr       = PiuCsrs.piuMsi32Address;
+        }
+      }
+
+      case (TxLen)    {
+        "RANDOM": {
+          error ("\n N2fcCtx::dmawr : TxLen == RANDOM not supported yet\n");
+        }
+        default:  {
+
+          length          = TxLen.atohex();
+          if( length > super.env.getMaxPayloadSize() ) {
+            error ("\n N2fcCtx::dmawr : TxLen 0x%h > MPS\n", length);
+          }
+
+          if(cmd == "DMAWR_DWBE") {
+            if( length == 4 ) {
+              if(StartAddr[1:0]) {
+                error ("\n N2fcCtx::dmawr : Addr must be 4 byte aligned  for %s\n",  cmd);
+              } else {
+                Align = 0;
+                FirstDWBE = EndAddr[3:0];
+                LastDWBE  = 0;
+                dmaWr.N2fcSetAddr (StartAddr, StartAddr);
+              }
+            } else if( length == 8 ) {
+              if(StartAddr[2:0]) {
+                error ("\n N2fcCtx::dmawr : Addr must be 8 byte aligned  for %s\n",  cmd);
+              } else {
+                Align = 0;
+                FirstDWBE = EndAddr[7:4];
+                LastDWBE  = EndAddr[3:0];
+                dmaWr.N2fcSetAddr (StartAddr, StartAddr);
+              }
+            } else {
+              error ("\n N2fcCtx::dmawr : TxLen (0x%h) must be 4 or 8 for %s\n", length, cmd);
+            }
+          }
+          else if(StartAddr == EndAddr) {
+            Align = StartAddr[1:0];
+            FirstDWBE = getFirstDWBE(StartAddr,length);
+            LastDWBE = getLastDWBE(StartAddr,length);
+            dmaWr.N2fcSetAddr (StartAddr, EndAddr);
+          }
+          else {
+            // still set up DWBEs to get the byte count right
+            RandAddr[31: 0]  = urandom_range (EndAddr[31:0], StartAddr[31:0]);
+            RandAddr[63:32]  = urandom_range (EndAddr[63:32], StartAddr[63:32]);
+            if (({20'b0,RandAddr[11:0]} + length) > 4096) {
+              RandAddr[11:0] = 4096 - length;
+              //printf ("UDEBUG N2fcCtx::dmawr: C = %0s Adjusted RandAddr[11:0] %0h for length %h\n", cmd, RandAddr[11:0], length);
+            }
+            else {
+              //printf ("UDEBUG N2fcCtx::dmawr: C = %0s no need to adjust RandAddr[11:0] %0h for length %h\n", cmd, RandAddr[11:0], length);
+            }
+            
+            if( (length+RandAddr[1:0]) > super.env.getMaxPayloadSize() ) {
+              RandAddr[1:0] = 2'b00; // align to DW boundary so MPS is not exceeded
+            }
+            dmaWr.N2fcSetAddr (RandAddr, RandAddr);
+            Align = RandAddr[1:0];
+            
+            FirstDWBE = getFirstDWBE(RandAddr,length);
+            LastDWBE  = getLastDWBE(RandAddr,length);
+          }
+          dmaWr.SetAddrBndy( Align );
+          // NOTE : length is in bytes, and DWLen is in DWords
+          if ((length+Align) < 4) {
+            DWLen     = 1;
+          }
+          else {
+            DWLen     = (length+Align+3)/4;
+          }
+          dmaWr.SetLen(DWLen);
+          dmaWr.SetFirstDWBE( {FirstDWBE[0],FirstDWBE[1],FirstDWBE[2],FirstDWBE[3]} );
+          dmaWr.SetLastDWBE(  {LastDWBE[0],LastDWBE[1],LastDWBE[2],LastDWBE[3]} );
+
+          dmaWr.start_data = data;
+          dmaWr.f_tc = dma_tc;
+
+          printf ("-%0d-UDEBUG N2fcCtx::dmawr: C = %0s, A = %0h %0h, L = 'd%0d DwLen = 'd%0d FDWBE %h LDWBE %h, %d\n",
+                  get_time(LO), cmd, StartAddr, EndAddr, length, DWLen, FirstDWBE, LastDWBE, NumDMACmds );
+
+          dmaWr.Execute();
+        }
+      }
+    } join none
+    repeat (1) @ (posedge if_ILU_PEU_PCIE.refclk);
+  }
+}
+
+//------------------------------------------------------------------------------
+// dmard method : Initiate a DMA Read
+//------------------------------------------------------------------------------
+
+task N2fcCtx::dmard (string       cmd,
+                     bit [63:0]   StartAddr,
+                     bit [63:0]   EndAddr,
+                     string       TxLen,
+                     bit [31:0]   NumCmds,
+                     string       err)
+{
+  bit [31:0]   NumDMACmds;
+
+  for (NumDMACmds = 0; NumDMACmds < NumCmds; NumDMACmds++)
+  {
+    fork {
+      N2fcDmaRdPEUStr  dmaRd;
+
+      integer    length;
+      integer    DWLen;
+      bit [ 1:0] Align;
+      bit [ 3:0] FirstDWBE, LastDWBE;      
+      bit [63:0] RandAddr;
+
+      case (TxLen)    {
+        "RANDOM": {
+          error ("\n N2fcCtx::dmard : TxLen == RANDOM not supported yet\n");
+        }
+        default:  {
+
+          dmaRd = new( env );
+
+          length          = TxLen.atohex();
+          if( length > 4096 ) {
+            error ("\n N2fcCtx::dmard : TxLen 0x%h > 4096\n", length);
+          }
+
+          if(StartAddr == EndAddr) {
+            Align = StartAddr[1:0];
+            FirstDWBE = getFirstDWBE(StartAddr,length);
+            LastDWBE = getLastDWBE(StartAddr,length);
+            dmaRd.N2fcSetAddr (StartAddr, EndAddr);
+            
+            if (({20'b0,StartAddr[11:0]} + length) > 4096) {
+              printf ("WARNING N2fcCtx::dmard:  StartAddr[11:0] %h + length %h > 4096\n", StartAddr[11:0], length);
+            }
+          }
+          else {
+            // still set up DWBEs to get the byte count right
+            RandAddr[31: 0]  = urandom_range (EndAddr[31:0], StartAddr[31:0]);
+            RandAddr[63:32]  = urandom_range (EndAddr[63:32], StartAddr[63:32]);
+            if (({20'b0,RandAddr[11:0]} + length) > 4096) {
+              RandAddr[11:0] = 4096 - length;
+              printf ("UDEBUG N2fcCtx::dmard: C = %0s Adjusted RandAddr[11:0] %0h for length %h\n", cmd, RandAddr[11:0], length);
+            }
+            else {
+              printf ("UDEBUG N2fcCtx::dmard: C = %0s no need to adjust RandAddr[11:0] %0h for length %h\n", cmd, RandAddr[11:0], length);
+            }
+            dmaRd.N2fcSetAddr (RandAddr, RandAddr);
+            Align = RandAddr[1:0];
+            
+            FirstDWBE = getFirstDWBE(RandAddr,length);
+            LastDWBE  = getLastDWBE(RandAddr,length);
+          }
+          dmaRd.SetAddrBndy( Align );
+          // NOTE : length is in bytes, and DWLen is in DWords
+          if ((length+Align) < 4) {
+            DWLen     = 1;
+          }
+          else {
+            DWLen     = (length+Align+3)/4;
+          }
+          dmaRd.SetLen(DWLen);
+          dmaRd.SetFirstDWBE( {FirstDWBE[0],FirstDWBE[1],FirstDWBE[2],FirstDWBE[3]} );
+          dmaRd.SetLastDWBE(  {LastDWBE[0],LastDWBE[1],LastDWBE[2],LastDWBE[3]} );
+
+          printf ("-%0d-UDEBUG N2fcCtx::dmard: C = %0s, A = %0h %0h, L = 'd%0d DwLen = 'd%0d FDWBE %h LDWBE %h err %s\n",
+                  get_time(LO), cmd, StartAddr, EndAddr, length, DWLen, FirstDWBE, LastDWBE, err);
+
+          if(cmd == "DMARD_DROP") 
+            dmaRd.DropCmpl();
+          else if(cmd == "DMARD_UE")
+            dmaRd.SetPoisonedPayload();
+          else if(cmd.substr(0,8) == "DMARD_INT")
+            dmaRd.DoIntxAfterCompletion( cmd.substr(6) );
+          else if(cmd == "DMARDLK")
+            dmaRd.SetRdLk();
+          
+          dmaRd.f_tc = dma_tc;
+          dmaRd.Execute();
+        }
+      }
+    } join none
+    repeat (1) @ (posedge if_ILU_PEU_PCIE.refclk);
+  }
+}
+
+
+
+//------------------------------------------------------------------------------
+// dmacfgio method : Initiate a DMA Cfg/Io Read/Write (unsupported request)
+//------------------------------------------------------------------------------
+
+task N2fcCtx::dmacfgio(string       cmd,
+                       bit [63:0]   StartAddr,
+                       bit [63:0]   EndAddr,
+                       string       TxLen,
+                       bit [31:0]   NumCmds)
+{
+  bit [31:0]   NumDMACmds;
+
+  for (NumDMACmds = 0; NumDMACmds < NumCmds; NumDMACmds++)
+  {
+    N2fcDmaCfgIORwStr  dmaCfgIoRw = new(env, cmd, StartAddr, 0 );
+      
+    repeat (1) @ (posedge pcx_ncu_bind.$clk);
+  }
+}
+
+
+
+//------------------------------------------------------------------------------
+// Make sure that byte alignments are correct.
+// Otherwise drop the transaction
+//------------------------------------------------------------------------------
+
+function bit N2fcCtx::AddrAlignmentOK (string     cmd,
+                                       bit [63:0] addr,
+                                       bit [31:0] length)
+{
+  integer rwLen;
+  bit rdCmd;
+
+  string methodName = "N2fcCtx::AddrAlignmentOK";
+  string errStr     = "Illegal Address length Combination";
+
+
+  AddrAlignmentOK = 1'b1;    // OK = 1'b1 Not OK = 1'b0
+
+  case (cmd) {
+    "CFGWR0", "CFGWR1", "IOWR", "MWR", "MEM64WR" : {
+      rwLen = length[0] + length[1]+ length[2]+ length[3] +
+        length[4]+ length[5] + length[6] + length[7];
+      rdCmd = 1'b0;
+    }
+
+    "CFGRD0", "CFGRD1", "IORD", "MRD", "MEM64RD" : {
+      rwLen = length;
+      rdCmd = 1'b1;
+    }
+
+    default :
+      error ("\n N2fcCtx::AddrAlignmentOK : Unknown command = %0s\n", cmd);
+  }
+
+
+  case (rwLen) {
+    1       : { /* Any address is OK */ }
+
+    2       : /* must be aligned to 2-byte boundary */ {
+      case (addr[0]) {
+        1'b0     : { /* OK */ }
+        default  : {
+          AddrAlignmentOK = 1'b0;
+          //printf ("%0s : %0s Cmd = %0s, %0h, %0d\n", methodName, errStr, rdCmd, addr[3:0], rwLen);
+        }
+      }
+    }
+
+    4       : /* must be aligned to 4-byte boundary */ {
+      case (addr[1:0]) {
+        2'b00    : { /* OK */ }
+        default  : {
+          AddrAlignmentOK = 1'b0;
+          //printf ("%0s : %0s Cmd = %0s, %0h, %0d\n", methodName, errStr, rdCmd, addr[3:0], rwLen);
+        }
+      }
+    }
+
+    8       : /* must be aligned to 8-byte boundary */ {
+      case (addr[2:0]) {
+        3'b000   : { /* OK */ }
+        default  : {
+          AddrAlignmentOK = 1'b0;
+          //printf ("%0s : %0s Cmd = %0s, %0h, %0d\n", methodName, errStr, rdCmd, addr[3:0], rwLen);
+        }
+      }
+    }
+
+    16       : /* must be aligned to 16-byte boundary */ {
+      case (addr[3:0]) {
+        4'b0000  : /* OK for Read command only*/ {
+          if (rdCmd !== 1'b1) {
+            AddrAlignmentOK = 1'b0;
+            //printf ("%0s : %0s Cmd = %0s, %0h, %0d\n", methodName, errStr, rdCmd, addr[3:0], rwLen);
+          }
+        }
+        default  : {
+          AddrAlignmentOK = 1'b0;
+          printf ("%0s : %0s Cmd = %0s, %0h, %0d\n", methodName, errStr, rdCmd, addr[3:0], rwLen);
+        }
+      }
+    }
+  }
+}
+
+
+//------------------------------------------------------------------------------
+// unsupp_cmd method : Unsupported PCIe command type
+//------------------------------------------------------------------------------
+
+task N2fcCtx::unsupp_cmd (string cmd)
+{
+  error ("\n This command is not currently supported : %0s\n\n", cmd);
+}
+
+
+//------------------------------------------------------------------------------
+// intx method : Initiate an INTx command
+//------------------------------------------------------------------------------
+
+task N2fcCtx::intx  (string       cmd,
+                     bit [63:0]   StartAddr, // ignored
+                     bit [63:0]   EndAddr,   // ignored
+                     string       TxLen,
+                     bit [31:0]   NumCmds)
+{
+  integer  NumINTxCmds;
+
+  printf ("\n-%0d-UDEBUG : N2fcCtx::intx %s %s - NumCmds %0d\n\n", get_time(LO), cmd, TxLen, NumCmds);
+
+  for (NumINTxCmds = 0; NumINTxCmds < NumCmds; NumINTxCmds++)
+  {
+    N2fcIntxStr intxStr = new(env, cmd, TxLen);
+    
+    repeat (1) @ (posedge pcx_ncu_bind.$clk);
+  }
+}
+
+
+//------------------------------------------------------------------------------
+// getFirstDWBE function : get first DWBE for DMA
+//------------------------------------------------------------------------------
+
+function bit [3:0] N2fcCtx::getFirstDWBE (bit [63:0] addr,
+                                          bit [31:0] length)
+{
+  getFirstDWBE = 4'b1111;
+  if(length < 4) {
+    getFirstDWBE = (getFirstDWBE << (4-length));
+  }
+    
+  case (addr & 2'h3) {
+    0: getFirstDWBE = getFirstDWBE[3:0]; // no change
+    1: getFirstDWBE = {1'b0, getFirstDWBE[3:1]};
+    2: getFirstDWBE = {2'b00, getFirstDWBE[3:2]};
+    3: getFirstDWBE = {3'b000, getFirstDWBE[3:3]};
+  }
+}
+
+
+//------------------------------------------------------------------------------
+// getLastDWBE function : get last DWBE for DMA
+//------------------------------------------------------------------------------
+
+function bit [3:0] N2fcCtx::getLastDWBE  (bit [63:0] addr,
+                                          bit [31:0] length)
+{
+  if(((addr & 2'h3) + length) <= 4) {
+    getLastDWBE = 4'b0000;
+  }
+  else {
+    length = length - (addr & 2'h3);
+    case (length % 4) {
+      0: getLastDWBE = 4'b1111;
+      1: getLastDWBE = 4'b1110;
+      2: getLastDWBE = 4'b1100;
+      3: getLastDWBE = 4'b1000;
+    }
+  }
+}
+
+
+//------------------------------------------------------------------------------
+// CheckIfDone method : Make sure all transactions are completed.
+//------------------------------------------------------------------------------
+
+task N2fcCtx::CheckIfDone ()
+{
+  if (env_setup) {
+    env.quiesceEgressPipeline();
+  }
+}
+
+//------------------------------------------------------------------------------
+// get_timeout method : scale the timeout by the linkwidth
+//------------------------------------------------------------------------------
+
+function integer N2fcCtx::get_timeout ()
+{
+  case( Scenario.denaliLinkCapMaxLinkWdth ){
+    8:        get_timeout =  8000;
+    4:        get_timeout = 16000;
+    2:        get_timeout = 32000;
+    1:        get_timeout = 64000;
+    default:  get_timeout =  8000;
+  }
+}

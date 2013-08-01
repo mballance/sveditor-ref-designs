@@ -1,0 +1,173 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ccu.port.vri
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#ifndef INC_CCU_PORT_VRI
+#define INC_CCU_PORT_VRI
+
+//---clock port: each signal is a VERA CLOCK---
+//---WARN:: does not contain all CCU ports---
+
+port CCU_clk_port {
+  //---pll ref clk---
+  sys_clk;  // warn: rtl signal is pll_sys_clk_p
+  cmp_pll_clk;
+  ccu_io2x_out;
+  rst_ccu_pll_;
+
+#ifndef GATESIM
+  ccu_rst_sys_clk;
+
+  //---clocks---
+  gclk;
+  dr_pll_clk;
+  ccu_io_out;
+
+  //---sync pulses---
+  ccu_cmp_io_sync_en;
+  ccu_io_cmp_sync_en;
+  ccu_dr_sync_en;
+  ccu_io2x_sync_en;
+  ccu_cmp_sys_sync_en;
+  ccu_sys_cmp_sync_en;
+
+  //---reset/mode signals---
+  rst_ccu_;
+  ccu_rst_sync_stable;
+  ccu_rst_change;
+
+  //---others---
+  ccu_vco_aligned;
+  gclk_aligned;
+  gl_ccu_clk_stop;
+  gl_ccu_io_clk_stop;
+  tcu_atpg_mode;
+
+  //---internal signals---
+  ref_clk; 
+#endif 
+}
+
+//----monitor port: all CCU ports, except UCB signals (ie. ncu_ccu_* and ccu_ncu_*)---
+//----WARN: UCB signals defined in ucb.*.vri---
+#ifndef GATESIM
+port CCU_mon_port {
+  cmp_pll_clk;
+
+  //---the rest: in alphabetical order---
+  ccu_cmp_io_sync_en;
+  ccu_cmp_sys_sync_en;
+  ccu_dbg1_serdes_dtm;
+  ccu_dr_sync_en;
+  ccu_io2x_out;
+  ccu_io2x_sync_en;
+  ccu_io_cmp_sync_en;
+  ccu_io_out;
+  ccu_mio_pll_char_out;
+  ccu_mio_serdes_dtm;
+  ccu_rst_change;
+  ccu_rst_sync_stable;
+  ccu_rst_sys_clk;
+  ccu_serdes_dtm;
+  ccu_sys_cmp_sync_en;
+  ccu_vco_aligned;
+  cluster_arst_l;
+  gclk;
+  dr_pll_clk;
+  gclk_aligned;
+  gl_ccu_clk_stop;
+  gl_ccu_io_clk_stop;
+  gl_ccu_io_out;
+  mio_ccu_pll_char_in;
+  mio_ccu_pll_clamp_fltr;
+  mio_ccu_pll_div2;
+  mio_ccu_pll_div4;
+  mio_ccu_pll_trst_l;
+  mio_ccu_vreg_selbg_l;
+  mio_pll_testmode;
+  pll_sys_clk_n;
+  pll_sys_clk_p;
+  pll_vdd;
+  rng_anlg_sel;
+  rng_arst_l;
+  rng_bypass;
+  rng_ch_sel;
+  rng_data;
+  rng_vcoctrl_sel;
+  rst_ccu_;
+  rst_ccu_pll_;
+  rst_wmr_protect;
+  scan_in;
+  scan_out;
+  tcu_aclk;
+  tcu_atpg_mode;
+  tcu_bclk;
+  tcu_ccu_clk_stretch;
+  tcu_ccu_ext_cmp_clk;
+  tcu_ccu_ext_dr_clk;
+  tcu_ccu_mux_sel;
+  tcu_pce_ov;
+  tcu_scan_en;
+
+  //---ccu internal signals---
+  ref_clk;
+  pll_div1_at_csrblk;
+  pll_div2_at_csrblk;
+  pll_div3_at_csrblk;
+  pll_div4_at_csrblk;
+  serdes_dtm1_at_csrblk;
+  serdes_dtm2_at_csrblk;
+}
+
+//---- Port for sigs that are clocked by IO clock---
+port CCU_mon_ioclk_port {
+ iol2clk;
+ //--- sigs in csr block----
+ csr_rd_req_vld;
+ csr_rd_ack_vld;
+ csr_lfsr_data;
+}
+
+//---- Port for internal signals needed for ccu and clocking verification ----
+//---- WARN: these ports/signals are NOT in ccu block ---
+
+port CCU_clks_internal_port {
+  l2clk;                    // l2clk of RST block. WARN: cannot use 'rst_l2clk' which is vera interface defined in rst.if.vri
+  rst_ccu_cmp_sys_sync_en;  // inside RST block
+  rst_ccu_cmp_sys_sync_en3; // inside RST block
+  rst_ccu_sys_cmp_sync_en;  // inside RST block
+  rst_ccu_sys_cmp_sync_en3; // inside RST block
+}
+#endif
+#endif
+

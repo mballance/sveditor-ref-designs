@@ -1,0 +1,638 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_rxdmc.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "niu_mem.vrh"
+#include "niu_rx_descp.vrh"
+#include "niu_rxtoken.vrh"
+#include "mbox_class.vrh"
+#include "get_mbox_id.vrh"
+extern mbox_class      mbox_id;
+extern niu_gen_pio gen_pio_drv;
+extern CSparseMem SparseMem;
+
+/* These classes/file is to embedd the DMA classes, DRR, and other stuff related to RDMC 
+   the inputs into this class would be the mbox from pktgen and output would be the stream going
+   into the memory checker 
+
+
+*/
+
+
+class CRdmcToken {
+   CRxToken RxToken; // This comes from pktgen
+   
+    // To add more fields
+}
+MakeVeraList(CRdmcToken) // list of descriptors
+
+class CRxPortDRRInterface {
+   bit [3:0] ports_active; // No of active ports
+   integer NoOfPorts; // No of Ports attached
+   integer started ;
+   integer enable_sb =0;
+
+   local integer PortDRRWeight[4];
+   local integer PortDRRDeficit[4];
+
+   VeraList_CRdmcToken DrrTokenList[4];
+   VeraList_CRdmcToken DrrResultList;
+
+   task new( bit [3:0] ports) {
+     integer i;
+     ports_active = ports ;  
+     NoOfPorts = 2;// to be derived at the config time
+     started = 0;
+     for(i=0;i<NoOfPorts; i ++) {
+       DrrTokenList[i] = new();
+       PortDRRWeight[i] = 16'h400*16;	
+     }
+     DrrResultList = new();
+
+     fork {
+	getRxToken();
+	PortDRR();
+     } join none
+     
+    started = 1;
+
+      if (get_plus_arg (CHECK, "RX_DROP_PKT_CHECK"))
+       enable_sb = 1;
+      else
+       enable_sb = 0;
+ 
+   }
+
+   // local function integer getTokenHead( var CRdmcToken RdmcToken, integer id);
+   task  SetPortsActive(integer num);
+   task  ProgramDRRWeight(integer port_num, integer weight);
+   local task getRxToken();
+   local task addToken( CRdmcToken RdmcToken, integer i);
+   local task getToken(integer i);
+   local task PortDRR();
+   local function integer  check_active(integer id,integer port_id); 
+   local function integer update_deficit(integer id, integer length);
+   local function bit[3:0] getActiveList();
+
+   local task add_drr_credits(integer i);
+
+   function integer getDRRResult( var CRdmcToken RdmcToken );
+   task SetPortDrrWeight(integer w, integer id) {
+     PortDRRWeight[id] = w*16;
+   }
+
+}
+
+function integer CRxPortDRRInterface::check_active (  integer j, integer activeList) {
+  // returns 1 if jth bit in the ActiveList is set else returns 0
+  integer tmp;
+  tmp =  1 <<j;
+  if(activeList & tmp) check_active = (1);
+  else  check_active = (0);
+
+}
+function integer CRxPortDRRInterface::update_deficit(integer id, integer length) {
+          PortDRRDeficit[id] = PortDRRDeficit[id] - length;
+          printf(" RxDRR DEBUG Credits Spent for PORT %d New Credits = %d \n",id,PortDRRDeficit[id]);
+          if(PortDRRDeficit[id] <=0) update_deficit =  0;
+          else update_deficit =  1;
+}
+task CRxPortDRRInterface::add_drr_credits(integer i) {
+          if(PortDRRWeight[i] == -1) {
+           printf("ERROR-- DRR Weights Not programmed for PORT %d \n",i);
+          }
+          PortDRRDeficit[i] = PortDRRDeficit[i] + PortDRRWeight[i] ;
+          // printf(" RxDRR DEBUG Added Credits to PORT %d New Credits = %d \n",i,PortDRRDeficit[i]);
+}
+
+function bit[3:0] CRxPortDRRInterface::getActiveList() {
+
+integer i;
+bit[3:0] active_list;
+active_list = 0;
+
+ for(i =0;i<NoOfPorts;i++) {
+    active_list[i] = ( DrrTokenList[i].empty()!=1) ;
+   }
+ getActiveList = active_list;
+ //printf("CRxPortDRRInterface::getActiveList - %x \n",getActiveList);
+
+}
+
+function integer CRxPortDRRInterface::getDRRResult( var CRdmcToken RdmcToken) {
+
+   integer status;
+   if(DrrResultList.empty() ) {
+    status = 0;
+    RdmcToken = null;
+    } else {
+    RdmcToken = DrrResultList.front();
+    DrrResultList.pop_front();
+    printf(" RxDRR POP from port# -Token - id - %d Size - %d  \n",RdmcToken.RxToken.id,DrrResultList.size());
+
+    status = 1;
+   }
+   getDRRResult = status;
+
+// Need to expand this
+
+
+
+}
+
+
+task CRxPortDRRInterface::getRxToken() {
+
+// Read from mbox from pkt gen and add it to DrrTokenList
+
+/*
+
+ while(1) {
+ for(each port_id) {
+  fork {
+    RxToken = mailbox_get();
+    // do any misc checking if needed
+   DrrTokenList[port_id].push_back();
+   } join none
+  }
+ }
+  
+*/
+
+  shadow integer i;
+
+   for(i = 0;i < NoOfPorts; i ++) {
+    if(ports_active[i]) {
+     fork  {
+      getToken(i);
+     } join none
+    }
+   }
+}
+
+task CRxPortDRRInterface::addToken( CRdmcToken RdmcToken, integer i) {
+
+  DrrTokenList[i].push_back(RdmcToken);
+  printf(" Current Size of DrrTokenList - %d for Port %d \n",DrrTokenList[i].size(),i);
+
+}
+
+
+task CRxPortDRRInterface::getToken(integer i) {
+
+ CRxToken RxToken;
+ CRxToken RxToken_sb;
+ CRdmcToken RdmcToken;
+ integer no_of_tkns;
+
+ printf(" Start getToken in RDMC for Port %d \n",i);
+
+  while(1) {
+    no_of_tkns = mailbox_get(WAIT,mbox_id.niu_rxpath_mb[i], RxToken);
+    printf(" No of Tokens left for port %d = %d \n",i, no_of_tkns);
+    
+    if(RxToken == null) {
+      printf("ERROR CRxPortDRRInterface::getToken -Failed for port id %d\n",i);
+      return;
+    }
+
+   if(enable_sb) {
+      RxToken_sb = RxToken.object_copy();
+      mailbox_put(mbox_id.niu_rxpath_sb[i],RxToken_sb);
+
+   } else {
+      RdmcToken = new();
+      RdmcToken.RxToken = new RxToken;
+      addToken(RdmcToken,i);
+   }
+
+ }
+
+
+}
+task CRxPortDRRInterface::PortDRR() {
+
+  /*
+
+   for each port {
+    status = RxDrrIntf.getTokenHead( head, port_id) ;
+    weight associated with the port is in PortDRRWeight[id] 
+    if(status== VALID) {
+     //Arbitrate---- This is implementaion dependent
+
+    }
+    SendOutput to DrrResultList
+  }
+  */
+CRdmcToken RdmcToken ;
+integer port_id;
+bit[3:0] active_list = 0;
+integer arb_id,old_arb_id;
+integer i,match_found;
+integer iter;
+integer status;
+integer maintain_active_state;
+integer length;
+
+
+// In the absence of DRR
+old_arb_id = 0;
+for(i =0;i<NoOfPorts;i++) {
+ PortDRRDeficit[i] = 0;
+}
+
+ while(1) {
+
+   // active_list = wait_for_active();
+   active_list = getActiveList();
+   while(active_list == 4'h0 ) { // Wait here if none of these had any packet
+     @(posedge CLOCK);
+     active_list = getActiveList();
+   }
+
+  ports_active = 0;
+  for(i = 0; i < NoOfPorts; i ++) {
+     if(active_list[i]) {
+       ports_active = ( ports_active | ( 1<< i ));
+        if(PortDRRDeficit[i]<=0) {
+         add_drr_credits(i);
+        }
+       } else {
+         // printf("Rx TokenList Empty\n");
+       }
+  }
+
+   while(ports_active) {
+       arb_id = old_arb_id ;
+       port_id = -1;
+       match_found =0;
+       iter =0;
+
+     printf("RxDRR DEBUG:Before While Arb id - %d iter - %d ports_active - %x \n",arb_id,iter,ports_active);
+      while( (iter <NoOfPorts /*MAX_NO_OF_PORTS*/) & ( !match_found)) {
+        if(check_active(arb_id,ports_active)) {
+          port_id = arb_id;
+          match_found = 1;
+         
+        }
+        arb_id = (arb_id + 1)%NoOfPorts;
+        iter++;
+        //printf("RxDRR DEBUG: Arb id - %d iter - %d ports_active - %x \n",arb_id,iter,ports_active);
+      } // At the end of this there should be at least one port_id selected
+
+      if( (port_id == -1) ) {
+        
+	exit(0);
+        return;
+      }
+
+      if(DrrTokenList[port_id].empty() ) {
+       status = 0;
+       ports_active = 0;
+      }else {
+       RdmcToken = DrrTokenList[port_id].front();
+       status = 1; // Status will be set to -1, if any errors are to be detected
+                 // and the ports is set to inactive
+      }
+
+      maintain_active_state = 1;
+      if(status == -1) {
+        maintain_active_state = 0;
+      } else if(status ==1 ){
+        if(PortDRRDeficit[port_id] > 0) {
+          length = RdmcToken.RxToken.pkt_length;
+          maintain_active_state  = update_deficit(port_id,length); //
+          printf(" RxDRR Received Token - id - %d dma_num - %d  \n",RdmcToken.RxToken.id,RdmcToken.RxToken.dma_num);
+          DrrTokenList[port_id].pop_front();
+          DrrResultList.push_back(RdmcToken);
+          printf(" RxDRR Sent from port# - %d  Token - id - %d Size - %d  \n",port_id,RdmcToken.RxToken.id,DrrResultList.size());
+        } else {
+          maintain_active_state = 0;
+          printf("RxDRR DEBUG PORT# %d In deficit Need more credit  \n",port_id);
+        }
+      }
+
+      if(maintain_active_state==0) {
+        // printf(" RxDRR DEBUG - Before deleting ports_active = %x \n",ports_active);
+        ports_active = ports_active ^  ( 1 << port_id );
+        // printf(" RxDRR DEBUG - After deleting ports_active = %x \n",ports_active);
+        old_arb_id =   (port_id + 1) %NoOfPorts ;
+      }
+    }
+        @(posedge CLOCK);
+        // old_arb_id = 0;
+
+ }
+}
+
+task CRxPortDRRInterface::ProgramDRRWeight(integer port_num, integer weight) {
+
+  case(port_num) {
+	0: { gen_pio_drv.pio_wr(PT_DRR_WT0,weight); 
+	     PortDRRWeight[port_num] = 16*weight;
+           }
+	1: { gen_pio_drv.pio_wr(PT_DRR_WT1,weight); 
+	     PortDRRWeight[port_num] = 16*weight;
+           }
+	2: { gen_pio_drv.pio_wr(PT_DRR_WT2,weight); 
+	     PortDRRWeight[port_num] = 16*weight;
+           }
+	3: { gen_pio_drv.pio_wr(PT_DRR_WT3,weight); 
+	     PortDRRWeight[port_num] = 16*weight;
+           }
+  default: { }
+  }
+}
+
+class CRDMC {
+   bit [3:0] active_ports;
+   bit [3:0] PortDefDma[4]; // 4 Registers present in RDMC
+   bit [3:0] L2DefDma[4];   // 4 Registers present in ZCP
+   RxDMAChannel rx_dma[32];
+   CRxPortDRRInterface RxDrrIntf;
+   local VeraList_CRdmcToken RdmcTokens;
+   local task ProcessDRROutput();
+   local task SendTokenForCheck(CRxToken RxToken);
+   
+   task SetPortsActive(integer num);
+   task new();
+   task start(bit [3:0] port_list);
+   task InitRXDMA(integer dma_ch_num, integer desc_ring_length, integer compl_ring_len, bit [63:0] rbr_config_B_data, bit [15:0] initial_kick, (integer xlation = 1));
+   task SetPage0Registers (integer dma_chnl, bit [31:0] mask,bit [31:0] value, bit [31:0] reloc);
+   task BindDmaIntrDev( RxDMAChannel RxDma, integer i );
+   task  ProgramPortDefDma(bit [1:0] port_id, bit [3:0] dma_num);
+   task  ProgramL2DefDma(bit [1:0] port_id, bit [3:0] dma_num);
+   function bit [3:0] getPortDefDma(bit [1:0] port_id);
+   function bit [3:0] getL2DefDma(bit [1:0] port_id);
+   task resetDMA(integer dma_num);
+}
+
+task CRDMC::new() {
+
+  integer i;
+  string init_mac_ports,temp_port;
+  bit[31:0] get_mac_port;
+  bit [3:0] ports_active;
+
+  for(i = 0 ; i < 32; i ++) {
+    rx_dma[i]=new(i,"Rx"); // power up as inactive
+  }
+
+if (get_plus_arg( CHECK, "CHKR_AUTO_UPDATE_RCR_HEAD")) {
+  for(i = 0 ; i < 32; i ++) {
+    if(mbox_id.niu_rxpath_rcr_update[i] == -1) {
+      mbox_id.niu_rxpath_rcr_update[i] = alloc(MAILBOX,0,1);
+    }
+  }
+}
+
+  RdmcTokens = new();
+  active_ports = 0;
+  if( get_plus_arg( CHECK, "GET_MAC_PORTS="))
+     get_mac_port = get_plus_arg( STR, "GET_MAC_PORTS=");
+     init_mac_ports.bittostr(get_mac_port);
+     for (i=0; i<init_mac_ports.len();i++) {
+         temp_port =init_mac_ports.substr(i,i);
+         ports_active[i]=( temp_port.atoi()== i) ;
+      }
+
+  printf ("niu_rxdmc.vr: From +GET_MAC_PORTS, ports_active = %b\n", ports_active);
+  active_ports = 4'b0011;
+  for(i = 0 ; i < 4; i ++) {
+    PortDefDma[i] = 0;
+    L2DefDma[i] = 0;
+  }
+  printf ("niu_rxdmc.vr: final active_ports = %b\n", active_ports);
+  RxDrrIntf = new(active_ports);
+  fork {
+    ProcessDRROutput ();
+  } join none
+
+}
+
+task CRDMC::resetDMA(integer dma_num) {
+  bit [39:0] address;
+  bit [63:0] rd_data;
+  bit rst_done = 0;
+  integer ret;
+
+        address = RXDMA_CFIG1 + dma_num*40'h200;
+        rd_data = 64'h0;
+        rd_data[30] = 1; // reset bit
+        gen_pio_drv.pio_wr(address,rd_data);
+  printf ("RxDMAChannel::resetRxDma() Time %0d, DMA - %0d was just reset\n", {get_time(HI),get_time(LO)}, dma_num);
+
+  printf ("RxDMAChannel::resetRxDma() Time %0d, Polling on reset_done ... DMA - %0d\n", {get_time(HI),get_time(LO)}, dma_num);
+
+           while(!rst_done) {
+               repeat(100) @(posedge CLOCK);
+               address = RXDMA_CFIG1 + dma_num*40'h200;
+               gen_pio_drv.pio_rd(address,rd_data);
+               rst_done = !rd_data[30];
+           }
+  printf ("RxDMAChannel::resetRxDma() Time %0d, Reset_done! Flushing the Verif State for DMA - %0d\n", 
+	{get_time(HI),get_time(LO)}, dma_num);
+
+  rx_dma[dma_num] = new(dma_num,"Rx");
+  ret = SparseMem.delete_page_contexts(64+(2*dma_num));
+  ret = SparseMem.delete_page_contexts(64+(2*dma_num+1));
+
+}
+
+task CRDMC::ProgramPortDefDma(bit [1:0] port_id, bit [3:0] dma_num){
+  // Initiate the PIO Write to RTL, and update the shadow as well
+  case(port_id){
+  0: gen_pio_drv.pio_wr(DEF_PTO_RDC, {60'h0,dma_num});
+  1: gen_pio_drv.pio_wr(DEF_PT1_RDC, {60'h0,dma_num});
+  default: printf ("WARNING: CRDMC::ProgramPortDefDma() Invalid port_id %0d\n", port_id);
+  }
+  // Update the shadow
+  PortDefDma[port_id] = dma_num;
+}
+
+function bit [3:0] CRDMC::getPortDefDma(bit [1:0] port_id){
+  getPortDefDma = PortDefDma[port_id];
+}
+
+task CRDMC::BindDmaIntrDev( RxDMAChannel RxDma, integer i ){
+  rx_dma[i]= RxDma;
+  printf(" CRDMC::BindDmaIntrDev RxDMA Channel - %d Bound as Logical DeviceId - %d \n",i,rx_dma[i].dev_id);
+}
+task CRDMC::start(bit [3:0] port_list) {
+
+  integer i;
+  active_ports = port_list;
+/* DUMMY DO NOT USE*/
+
+}
+
+
+task CRDMC::SendTokenForCheck(CRxToken RxToken) {
+ mailbox_put(mbox_id.niu_rxpacket_memchk_mb,RxToken);
+}
+
+task CRDMC::ProcessDRROutput () {
+	
+/*
+
+  gets the tokens from DRR , based upon the dma number- checks with the DMA class about the
+  its status 
+  The functions in the DMA class has to return the address and the status associated with this
+  
+
+  while(1) {
+   
+    while(DrrResultList == empty) {
+     wait();
+    }
+
+    DRRstatus = RxDrrIntf.getDRRResult(RxToken);  
+    if(DRRstatus == VALID)  {
+
+       dma_num = RxToken.dma_num;
+    
+       status = RxDma[dma_num].checkStatus(token);
+
+       if(status == DMA_NOT_ENABLED) {
+        //Take appropriate action -- such as choose default dma - ?
+              
+        SetTokenToDropPacket();
+       } else if( status == COMPLETION_FULL) {
+        //Take appropriate action -- such as choose default dma - ?
+              
+        SetTokenToDropPacket();
+   
+       } else if(status == VALID) {
+   
+          AddressStatus = RxDma[dma_num].GetPacketAddress(Token);
+          // CheckStatus for caselike not more descriptor?
+          //  etc etc.
+   
+         SetAddress(Token);
+         ForwardToken(Token);
+       }
+     }
+    }
+
+
+*/
+
+
+CRdmcToken RdmcToken;
+integer DMAState;
+integer dma_num;
+
+integer address_status;
+
+bit [63:0] packet_start_address;
+bit [63:0] packet_end_address;
+integer status;
+
+while(RxDrrIntf.started == 0) {
+// wait
+@(posedge CLOCK);
+}
+
+while(1) {
+
+ 
+   status = 0;
+   while (status ==0) { 
+     status = RxDrrIntf.getDRRResult(RdmcToken);
+      // if(status == 1) {
+	// printf(" Status - 1 Token Received from DRR - id - %d - dma - %d \n",RdmcToken.RxToken.id,RdmcToken.RxToken.dma_num);
+      // }
+     @(posedge CLOCK);
+   }
+   printf(" Token Received from DRR - id - %d - dma - %d \n",RdmcToken.RxToken.id,RdmcToken.RxToken.dma_num);
+
+  dma_num = RdmcToken.RxToken.dma_num;
+  if(RdmcToken.RxToken.pkt_length<=56) {
+     printf("<%0d> CRxPortDRRInterface::getToken: rtl will drop runt pkts len<=56B, pkt ID %0d, pkt length:%0d\n", 
+              get_time(LO),RdmcToken.RxToken.pgToken.gId, RdmcToken.RxToken.pkt_length);
+   RdmcToken.RxToken.pkt_type = RUNT_DROP_RxPKT;
+   DMAState = 0;
+   } else {
+  DMAState = rx_dma[dma_num].CheckDMAStatus(RdmcToken.RxToken);
+  if(DMAState) {
+    printf(" RDMC DEBUG - DMA %d is active - Packets to be forwarded Further - \n",dma_num);
+  } else {
+   printf(" RDMC DEBUG - DMA %d is not active - Packets to be dropped \n",dma_num); 
+   // Need more cases here
+  }
+
+  }
+
+  if(DMAState)
+    address_status = rx_dma[dma_num].getPacketAddress(RdmcToken.RxToken);
+
+// address_status here can be used as a status to indicate if DMC will be writing
+// packets.. ie to filter out any errors -- as a place holder
+
+// If the status is correct and everything is updated - send this token to the other
+// side and let the packet checker check this
+
+// This should be used only when packets are going to be checked without parsing the 
+// completion ring. 
+
+  
+  SendTokenForCheck(RdmcToken.RxToken);
+
+  }
+
+}
+
+task CRDMC::SetPage0Registers(integer dma_chnl, bit [31:0] mask,bit [31:0] value, bit [31:0] reloc) {
+   bit [39:0] address;
+
+   address = RX_LOG_PAGE_MASK1 + dma_chnl*8'h40;
+   gen_pio_drv.pio_wr(address,{32'h0,mask});
+
+   address = RX_LOG_PAGE_VALUE1 + dma_chnl*8'h40;
+   gen_pio_drv.pio_wr(address,{32'h0,value});
+
+   address = RX_LOG_PAGE_RELO1 + dma_chnl*8'h40;
+   gen_pio_drv.pio_wr(address,{32'h0,reloc});
+
+}
+
+task CRDMC::InitRXDMA(integer dma_chnl, integer desc_ring_length, integer compl_ring_len, bit [63:0] rbr_config_B_data, bit [15:0] initial_kick, (integer xlation = 1)) {
+// Activate the Ports 0, 1, 2 and/or 3.
+ // start(3);
+// Call the init function for the particular DMA channel
+ rx_dma[dma_chnl].InitDMAChan(dma_chnl, desc_ring_length, compl_ring_len, rbr_config_B_data, initial_kick, xlation);
+}
+
+

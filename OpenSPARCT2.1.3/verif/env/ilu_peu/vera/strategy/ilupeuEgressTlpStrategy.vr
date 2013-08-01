@@ -1,0 +1,178 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuEgressTlpStrategy.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class ilupeuEgressTlpStrategy extends ilupeuTlpStrategyBase {
+ 
+  //Inherited from ilupeuTlpStrategyBase 
+  // CSRCollection     CSR;
+  // ReportClass       Report;
+  // ilupeuPodClass     Pod;
+  // ilupeuScenario     Scenario;
+  //Random Utilities
+  // FNXRandomUtil RandUtil;
+  //Transaction and Packet Types
+  // FNXPCIEXactorTransaction TlpTrans;
+  // FNXPCIEXactorPacket      TlpPkt;
+  // bit [LX_TLP_HDR_WIDTH-1:0] tlpHdr = {LX_TLP_HDR_WIDTH{1'b0}};
+  // LPUXtrDataTLP            LPUXtrTlpPkt;
+  //Payload arrays
+  // bit [7:0] pyldByteAry[*];
+  // bit [31:0] pyldDWAry[*];
+  // bit [31:0] pyldDW;
+
+//#ifdef  N2_FC
+  //After constructing the class with new set the 
+  // variables below before calling Execute().
+  //
+  //  bit [7:0] pyldFirstByteValue = 0;
+  //  bit [63:0] tlpAddr = 0;
+//#endif
+
+
+  //Constructor
+  task new ( ReportClass      _Report,
+             CSRCollection    _CSR,
+             ilupeuPodClass    _Pod ,	//Xactors
+             ilupeuScenario    _Scenario );   //Test Parameters
+
+  //Public tasks
+  task Execute();
+
+}
+ 
+// class constructor
+task ilupeuEgressTlpStrategy::new ( ReportClass     _Report,
+                                   CSRCollection   _CSR,
+                                   ilupeuPodClass   _Pod,
+                                   ilupeuScenario   _Scenario )
+{
+  super.new( _Report,
+             _CSR,
+             _Pod,
+             _Scenario );
+ 
+
+}
+
+
+
+task ilupeuEgressTlpStrategy::Execute() 
+{
+
+    integer driveCompleteTO = 1000*Scenario.EgrTlpMaxActiveStrats;
+    integer expectCompleteTO;
+    bit driveComplete = 0;
+
+    //Set the value of the 1st byte of payload -
+#ifdef  N2_FC
+    //
+    dataSpec = pyldFirstByteValue;
+#else
+    dataSpec = RandUtil.Rand32( 0, 8'hff );
+#endif
+    //Generate a random Egress FNXPCIEXactorTransaction TLP - TlpTrans
+    GenRandomPCIEXtrTlp( ILUPEU_EGRESS_TRANS,
+                         dataSpec ); 
+    
+    //Convert the FNXPCIEXactorTransaction to Header format
+    // tlpHdr is filled in according to Tlp type generated in GenRandomPCIEXtrTLP
+    ConvertPcieTlp2Hdr();
+
+
+    //Now Convert the Header and Payload to LPUXtr packet
+    // Instantiate a new LPUXtr packet and move data from tlpHdr into LPUXtrTlpPkt
+//    ConvertHdr2LpuXtrTlpPkt();
+    //Set LPUXtrTlpPkt CTTransactionID
+//    LPUXtrTlpPkt.SetID( ID );
+
+    //Set expect to = time to transmit a packet that size + a little overhead depending on the link width
+    //Read the Denali Link Status Register
+    denRegTmpData = regTrans.ReadDenaliReg( PCIE_REG_DEN_LINK_ST );
+    expectCompleteTO = ( ((xtrLen*4)/denRegTmpData[FNX_PCIE_XTR_REG_DEN_LINK_ST_LINK_WIDTH_SLC]) + 50);
+    //x4 and x1 links need extra time 
+    if( denRegTmpData[FNX_PCIE_XTR_REG_DEN_LINK_ST_LINK_WIDTH_SLC] == 4 ){
+       expectCompleteTO = expectCompleteTO + 50;
+    }    
+    else if( denRegTmpData[FNX_PCIE_XTR_REG_DEN_LINK_ST_LINK_WIDTH_SLC] == 1 ){
+       expectCompleteTO = expectCompleteTO + 120;
+    }    
+
+#ifdef	N2_FC
+#else
+    QuickReport( Report,
+                 RTYP_INFO,
+                 "%s ilupeuEgressTlpStrategy:Call DMUXtr.send expectCompleteTO=%0d LinkWidth=%0d ",ID.GetString(),expectCompleteTO,denRegTmpData[FNX_PCIE_XTR_REG_DEN_LINK_ST_LINK_WIDTH_SLC] );
+
+
+    fork
+    {
+       Pod.DMUXtr.send( tlpHdr,dataSpec,{ 4'b1000, TlpPkt.ReqTag[3:0] } );	
+       driveComplete = 1;
+    }
+    {
+        //Timeout if transaction can't be driven to the ilupeu - this means that dack has gone low for
+        // a long time
+        //review - Deal with retraining here
+        while( driveCompleteTO && !driveComplete ){
+            @(posedge CLOCK);
+            driveCompleteTO--;
+        }
+
+    }
+    join any
+#endif
+    if( !driveComplete ){
+       QuickReport( Report,
+                    RTYP_TEST_ERROR,
+                    "%s ilupeuEgressTlpStrategy: Pod.LPUXtr.driveTLP timed out trying to drive TlpPkt \n",ID.GetString() );
+    }
+
+    expectCompleteTO = 300;
+    void = TlpTrans.Expect( expectCompleteTO );
+
+    //Free up the unique tag if one was used
+    if( uniqueTagSet ){
+       FreeUniqueTag( TlpPkt.ReqTag );
+    }
+
+
+    QuickReport( Report,
+                 RTYP_INFO,
+                 "%s ilupeuEgressTlpStrategy:Strategy complete! ",ID.GetString() );
+
+    repeat(10) @(posedge CLOCK);
+
+
+}
+

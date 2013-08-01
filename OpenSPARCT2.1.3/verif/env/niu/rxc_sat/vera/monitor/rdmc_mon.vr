@@ -1,0 +1,812 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: rdmc_mon.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "rdmc_mon_if.vri"
+#include "cMesg.vrh"
+
+// constants that needs to be varied based on observations
+#define RDMC_MON_TIMESCALE_ADJUST 1 // to make it nsec
+
+// getting the following defines from plus args way.
+
+extern bit [3:0] rtl_mac;
+extern bit reset_complete;
+extern event  RX_chk_done;
+extern Mesg be_msg;
+
+class RdmcMonitorStats {
+
+  string name = "RdmcMonStats";
+  integer time_offset = -1;
+
+  integer index=0; 		// also can be used as pkt count
+
+  // counters for each transaction
+  bit [63:0] raw_time_stamp[1024*16];
+  bit [63:0] raw_byte_count[1024*16];
+  bit [63:0] raw_bw[1024*16];
+
+  bit [63:0] time_stamp[];
+  bit [63:0] byte_count[];
+
+  bit [63:0] raw_bandwidth[1024*16];
+  bit [63:0] raw_total_byte_count=0;
+
+  bit [3:0] status[];
+  integer moving_average_bandwidth[];
+  bit skip_flag[];		// used to skip unstable bw at the end
+
+  // over all statistics after skipping start and end unsstable bandwidths
+  bit [63:0] total_time=0;
+  bit [63:0] total_byte_count=0;
+  bit [63:0] total_bandwidth=0;
+
+  integer percent_bw_skip;
+  integer moving_average_window;
+
+  task display_transaction((integer index = -1));
+  task display_transaction_short((integer index = -1));
+  task display_short((integer index = -1));
+  task calculate_moving_average_bandwidth();
+  task update_total_time();
+  task update_total_byte_count();
+  task update_total_bandwidth();
+  task update_raw_bandwidth();
+  function bit [63:0] get_time_in_nsec();
+  function bit [63:0] get_moving_average_time();
+  function bit [63:0] get_moving_average_byte_count();
+  function bit [63:0] get_difference(integer val1, integer val2);
+
+  task new(string name_in, integer percent_bw_skip_in, integer moving_average_window_in) {
+       integer i;
+       name = name_in;
+       percent_bw_skip = percent_bw_skip_in;
+       moving_average_window = moving_average_window_in;
+  }
+
+}  // class RdmcMonitorStats
+
+// skip calculations until bandwidth stabilizes
+// Example : preBw = 20, currBw = 40, skipPercent = 10
+// if (currBw-prevBw)*100/currBw > skipPercent) then skip bw calculations
+task RdmcMonitorStats::calculate_moving_average_bandwidth() {
+
+     integer i;
+
+     if(index<=moving_average_window) { 
+	skip_flag[index] = 1;
+	moving_average_bandwidth[index] = 0;
+	return;
+     } else {
+	skip_flag[index] = 0;
+     }
+
+     // -ve and divide by zero error
+     if(get_moving_average_time()<=0) { 
+	moving_average_bandwidth[index] = moving_average_bandwidth[index-1];
+	skip_flag[index] = skip_flag[index-1];
+	return;
+     }
+
+     moving_average_bandwidth[index] = (get_moving_average_byte_count() * 1000 * 8) / // Mbps
+                                       get_moving_average_time();
+
+
+
+//     if((((get_difference(moving_average_bandwidth[index], 
+
+//         moving_average_bandwidth[index]) > 
+//	percent_bw_skip) {
+//           // skip
+//           skip_flag[index] = 1;
+//
+//     } else {
+//           // don't skip
+//           skip_flag[index] = 0;
+//     }
+}
+
+function bit [63:0] RdmcMonitorStats::get_difference(integer val1, integer val2) {
+         if(val1 < val2) get_difference = val2 - val1;
+	 else            get_difference = val1 - val2;
+}
+
+function bit [63:0] RdmcMonitorStats::get_moving_average_time() {
+     integer i;
+     get_moving_average_time = 0;
+     if(index<=moving_average_window) return;
+     get_moving_average_time = time_stamp[index] - 
+                               time_stamp[index-moving_average_window];
+}
+
+function bit [63:0] RdmcMonitorStats::get_moving_average_byte_count() {
+     integer i;
+     get_moving_average_byte_count = 0;
+     if(index<=moving_average_window) return;
+     for(i=index-moving_average_window+1;i<=index;i++)
+         get_moving_average_byte_count += byte_count[i];
+}
+
+task RdmcMonitorStats::update_total_time() {
+     if(index<=moving_average_window) { total_time = 0; return; }
+     if(skip_flag[index]) return;
+     total_time = time_stamp[index];
+}
+
+task RdmcMonitorStats::update_total_byte_count() {
+     if(index<moving_average_window) { total_byte_count = 0; return; }
+     if(skip_flag[index]) return;
+     total_byte_count += byte_count[index];
+}
+
+task RdmcMonitorStats::update_total_bandwidth() {
+     if(index<=moving_average_window) { total_bandwidth = 0; return; }
+     if(skip_flag[index]) return;
+     // -ve and divide by zero error
+     if(total_time <= 0) { total_bandwidth = 0; return; }
+     total_bandwidth = (total_byte_count * 1000 * 8) / total_time ; // Mbps
+     if(total_bandwidth<0) {
+        printf("<%0d> %s: ERROR: update_total_bandwidth: negative bandwidth detected!\n", 
+	        get_time(LO), name);
+	printf("total_bandwidth:%0d total_byte_count:%0d total_time:%0d\n",
+	        total_bandwidth, total_byte_count, total_time);
+     }
+     //printf("DEBUG: total_byte_count:%0d total_time:%0d total_bandwidth:%0d, index:%0d\n",
+     //	total_byte_count, total_time, total_bandwidth, index);
+}
+
+task RdmcMonitorStats::update_raw_bandwidth() {
+     // -ve and divide by zero error
+     if(get_time_in_nsec() <= 0) { raw_bandwidth[index] = 0; return; }
+     raw_bandwidth[index] = (raw_total_byte_count * 1000*8) / get_time_in_nsec(); // Mbps
+     if(total_bandwidth<0) {
+        printf("<%0d> %s: ERROR: update_raw_bandwidth: negative bandwidth detected!\n", 
+	        get_time(LO), name);
+	printf("raw_bandwidth[%0d]:%0d raw_total_byte_count:%0d total_time:%0d\n",
+	        index, raw_bandwidth[index], raw_total_byte_count, get_time_in_nsec());
+     }
+}
+
+task RdmcMonitorStats::display_transaction((integer index_in = -1)) {
+     integer i;
+     if(index_in == -1) { index_in = index; }
+     printf("===============================================================\n");
+     printf("<%0d> %s: transaction statistics for index:%0d\n", 
+             get_time(LO), name, index_in);
+     printf("time_stamp:%0d usec, length:%0d, status:%0d, skip_flag[%0d]:%b, rawBw:%0d\n",
+             time_stamp[index_in], byte_count[index_in],
+	     status[index_in], index_in, skip_flag[index_in], raw_bandwidth[index_in]);
+     printf("tot_time:%0d usce tot_byte_cnt:%0d, tot_bw:%0d Mbps, MA_bw:%0d Mbps\n",
+             total_time, total_byte_count, total_bandwidth, moving_average_bandwidth[index_in]);
+     printf("===============================================================\n");
+}
+
+task RdmcMonitorStats::display_transaction_short((integer index_in = -1)) {
+     integer i;
+     bit [63:0] bits=0, time_diff;
+     integer moving_average_window_for_display;
+     if(index_in == -1) { index_in = index; }
+
+     if(index_in < (moving_average_window*2))  {
+        raw_bw[index_in] = 0;
+     }
+     else {
+        for(i=moving_average_window;i<=index_in-moving_average_window-1;i++) {
+	    bits += raw_byte_count[i]*8;
+	}
+        // Equation
+        // BW = SumOfLengths(MAW, index-MAW-1) / differenceInTime(index-MAW, MAW)
+        //
+
+	time_diff = raw_time_stamp[index_in-moving_average_window] -
+	            raw_time_stamp[moving_average_window];
+
+	// divide by zero error
+	if(time_diff <= 0) {
+	    raw_bw[index_in] = 0;
+	} else {
+            raw_bw[index_in] = (bits*1000) / time_diff;
+
+	    
+	    // while(raw_bw[index_in] < 0) {
+	    //       bits /= 2;
+	    //       time_diff /= 2;
+	    //       if(time_diff <= 0) {
+            //       	raw_bw[index_in] = 0;
+	    //       } else {
+            //       	raw_bw[index_in] = (bits*1000) / time_diff;
+	    //       }
+	    // }
+        }
+     }
+
+     
+     if(index_in-moving_average_window < 0) {
+        moving_average_window_for_display = index_in;
+     } else {
+        moving_average_window_for_display = moving_average_window;
+     }
+
+     printf("<%0d> %s: RDMC_MON index:%0d, start_time:%0d (ns), end_time:%0d (ns), lenght:%0d (bits), bw:%0d (Mbps)\n", 
+             get_time(LO), name, index_in, raw_time_stamp[moving_average_window_for_display], 
+	     raw_time_stamp[index_in-moving_average_window_for_display], bits, raw_bw[index_in] );
+}
+
+task RdmcMonitorStats::display_short((integer index_in = -1)) {
+     integer i;
+     if(index_in == -1) { index_in = index; }
+     if(index_in == 0) {
+	printf("================= stats for %s ==================\n", name);
+        printf("index\tbyteCnt\ttime-us\tTotBw\tMA_BW\tskpFlg\tRawBw\tname:%0s\n", name);
+     }
+
+     printf("%0d\t%0d\t%0d\t%0d\t%0d\t%b\t%0d\t%s\n",
+             index_in,total_byte_count,total_time,total_bandwidth,
+	     moving_average_bandwidth[index_in],
+	     skip_flag[index_in],raw_bandwidth[index_in],name);
+}
+
+function bit [63:0] RdmcMonitorStats::get_time_in_nsec() {
+	 if(time_offset == -1) { get_time_in_nsec = 0; time_offset = get_time(LO);}
+         else  get_time_in_nsec = (get_time(LO)-time_offset) / RDMC_MON_TIMESCALE_ADJUST;
+}
+
+class RdmcMonitor {
+
+  integer debugLevel;
+  string name = "RDMC_MON";
+  bit [3:0] valid_mac_ports; // from vera_top.vr @ env/vera/top/vera_top.vr
+  integer port_DRR_weights[]; // for each port
+  integer total_port_weights;
+  integer percent_bw_skip;
+  integer moving_average_window;
+  bit     enable_DRR_fairness_monitor;
+  integer index;
+  integer percentBwMarginToIgnore = 20;
+  integer total_num_packets_per_port = 0;
+  integer total_num_valid_mac_ports = 0;
+  integer report_bandwidth_mismatch_error = 0;
+  integer number_of_pkts_sent[4];
+  integer number_of_pkts_rcvd[4];
+  integer prev_length[4];
+
+  //rdmc_mon_port myPort;
+  RdmcMonitorStats rdmcMonStats[]; // index is: 0: port0
+				   //           ........
+                                   //           3: port3
+                                   //           4: dma0
+				   //           ........
+                                   //          19: dma15
+                                   //          20: total
+  
+  task run4everMonitorMetaInterface(rdmc_mon_port myPort);
+  task check_DRR_bandwidth_ratio();
+  function bit [63:0] diff_values(integer val1, integer val2);
+  task display_results();
+  task new ((integer debugLevelIn = 10));
+  task store_transactions(bit [1:0] port_num, 
+                          bit [4:0] dma_num, 
+			  bit [13:0] length, 
+			  bit [3:0] status);
+  task report_bandwidth((bit one_time = 0));
+  task report_bandwidth_periodically((integer period /*in us*/ = 100));
+
+} // class RdmcMonitor
+
+task RdmcMonitor::new ((integer debugLevelIn = 10)) {
+
+     string name_tmp;
+     integer i;
+     debugLevel = debugLevelIn;
+     //myPort = rdmc_mon_port_bind;
+
+     while(reset_complete == 0) { repeat(100) @(posedge CLOCK); }
+
+     if(get_plus_arg(CHECK,"RDMC_MON_PERCENT_BW_SKIP="))
+        percent_bw_skip = get_plus_arg(NUM,"RDMC_MON_PERCENT_BW_SKIP=");
+     else
+        percent_bw_skip = 30; // default
+
+     if(get_plus_arg(CHECK,"RDMC_MON_MV_AVG_WINDOW="))
+        moving_average_window = get_plus_arg(NUM,"RDMC_MON_MV_AVG_WINDOW=");
+     else
+        moving_average_window = 30; // default
+
+     if(get_plus_arg(CHECK,"RDMC_MON_PERCENT_DRR_BW_MARGIN="))
+        percentBwMarginToIgnore = get_plus_arg(NUM,"RDMC_MON_PERCENT_DRR_BW_MARGIN=");
+     else
+        percentBwMarginToIgnore = 20; // default
+
+     if(get_plus_arg(CHECK,"RDMC_MON_ENABLE_DRR_FAIRNESS_MONITOR"))
+        enable_DRR_fairness_monitor = 1;
+     else
+        enable_DRR_fairness_monitor = 0; // default
+
+     if(get_plus_arg(CHECK,"RDMC_MON_ENABLE_BANDWIDTH_MISMATCH_ERROR"))
+        report_bandwidth_mismatch_error = 1;
+     else
+        report_bandwidth_mismatch_error = 0; // default
+
+     for(index=0;index<=20;index++) {
+	 if(index>=0 && index<4)  { sprintf(name_tmp,"rdmcMonPort%0dStats", index);  }
+	 if(index>=4 && index<20) { sprintf(name_tmp,"rdmcMonDmaCh%0dStats",index-4);}
+	 if(index==20)            { name_tmp = "rdmcMonTotalStats"; }
+         rdmcMonStats[index]      = new(name_tmp, percent_bw_skip, moving_average_window);
+     }
+
+     // default values
+     port_DRR_weights[0] = 0;
+     port_DRR_weights[1] = 0;
+     port_DRR_weights[2] = 0;
+     port_DRR_weights[3] = 0;
+
+     number_of_pkts_sent[0] = 0;
+     number_of_pkts_sent[1] = 0;
+     number_of_pkts_sent[2] = 0;
+     number_of_pkts_sent[3] = 0;
+
+     number_of_pkts_rcvd[0] = 0;
+     number_of_pkts_rcvd[1] = 0;
+     number_of_pkts_rcvd[2] = 0;
+     number_of_pkts_rcvd[3] = 0;
+
+     prev_length[0] = 0;
+     prev_length[1] = 0;
+     prev_length[2] = 0;
+     prev_length[3] = 0;
+
+     valid_mac_ports = rtl_mac; // from vera_top.vr @ env/vera/top/vera_top.vr
+
+     for(i=0;i<4;i++) 
+         if(valid_mac_ports[i])
+	    total_num_valid_mac_ports++;
+
+     // divide by zero error check
+     if(total_num_valid_mac_ports <= 0) {
+        printf("<%0d> %s: ERROR : total_num_packets_per_port=%0d, rtl_mac:%b\n",
+	        get_time(LO), name, total_num_packets_per_port, rtl_mac);
+	return;
+     }
+
+     if(get_plus_arg(CHECK,"PORT0_WT="))
+        port_DRR_weights[0] = get_plus_arg(NUM,"PORT0_WT=");
+     if(get_plus_arg(CHECK,"PORT1_WT="))
+        port_DRR_weights[1] = get_plus_arg(NUM,"PORT1_WT=");
+     if(get_plus_arg(CHECK,"PORT2_WT="))
+        port_DRR_weights[2] = get_plus_arg(NUM,"PORT2_WT=");
+     if(get_plus_arg(CHECK,"PORT3_WT="))
+        port_DRR_weights[3] = get_plus_arg(NUM,"PORT3_WT=");
+     if(get_plus_arg(CHECK,"RXMAC_PKTCNT="))
+        total_num_packets_per_port = get_plus_arg(NUM,"RXMAC_PKTCNT=")/total_num_valid_mac_ports;
+
+     number_of_pkts_sent[0] = total_num_packets_per_port;
+     number_of_pkts_sent[1] = total_num_packets_per_port;
+     number_of_pkts_sent[2] = total_num_packets_per_port;
+     number_of_pkts_sent[3] = total_num_packets_per_port;
+
+     if(get_plus_arg(CHECK,"RXMAC_PORT0_PKTCNT="))
+        number_of_pkts_sent[0] = get_plus_arg(NUM,"RXMAC_PORT0_PKTCNT=");
+     if(get_plus_arg(CHECK,"RXMAC_PORT1_PKTCNT="))
+        number_of_pkts_sent[1] = get_plus_arg(NUM,"RXMAC_PORT1_PKTCNT=");
+     if(get_plus_arg(CHECK,"RXMAC_PORT2_PKTCNT="))
+        number_of_pkts_sent[2] = get_plus_arg(NUM,"RXMAC_PORT2_PKTCNT=");
+     if(get_plus_arg(CHECK,"RXMAC_PORT3_PKTCNT="))
+        number_of_pkts_sent[3] = get_plus_arg(NUM,"RXMAC_PORT3_PKTCNT=");
+
+     total_port_weights = port_DRR_weights[0] + 
+                          port_DRR_weights[1] + 
+			  port_DRR_weights[2] + 
+			  port_DRR_weights[3];
+
+     // divide by zero error
+     if(total_port_weights <= 0) { total_port_weights = 1; }
+
+
+     printf("<%0d> %s: RDMC_MON ====================== instantiating ... ====================\n",
+            get_time(LO), name);
+     printf("RDMC_MON moving average window:%0d, skip percentage :%0d, valid_mac_ports:%b\n", 
+            moving_average_window, percent_bw_skip, valid_mac_ports);
+     printf("RDMC_MON port0 weight:%0d, port1 weight:%0d, port2 weight:%0d, port3 weight:%0d\n",
+             port_DRR_weights[0], port_DRR_weights[1], port_DRR_weights[2], port_DRR_weights[3]);
+     printf("<%0d> %s: RDMC_MON  ====================== instantiating done ===================\n",
+            get_time(LO), name);
+
+          fork
+               run4everMonitorMetaInterface(rdmc_mon_port_bind);
+          join none
+
+	  fork
+	       report_bandwidth();
+	  join none
+
+	  fork
+               check_DRR_bandwidth_ratio();
+	  join none
+	  fork
+	       report_bandwidth_periodically();
+	  join none
+
+
+}
+
+task RdmcMonitor::run4everMonitorMetaInterface(rdmc_mon_port myPort) {
+
+     while(1) {
+	@(posedge myPort.$req);
+
+	// we are interested in only posted writes (Data path from rdma->meta)
+	// // bit 5: posted write, bit[2:0]: write memory (3'b001)
+	if((myPort.$req_cmd[5] == 1'b1) && (myPort.$req_cmd[2:0] == 3'b001))
+          store_transactions(myPort.$port_num, 
+	                     myPort.$dma_num, 
+			     myPort.$req_length, 
+			     myPort.$status);
+     }
+}
+
+task RdmcMonitor::store_transactions(bit [1:0] port_num, 
+                                     bit [4:0] dma_num, 
+				     bit [13:0] length, 
+				     bit [3:0] status) {
+     integer index;
+
+     // counters for each transaction
+     printf("RDMC_MON:store_transaction: port_num:%0d dma_num:%0d length:%0d time:%0d\n",
+             port_num, dma_num, length, {get_time(HI), get_time(LO)});
+
+     // update pkt cnt 
+     if(prev_length[port_num] < 4096) { // Needed this since for Jumbo pkts we get 3 transations
+        number_of_pkts_rcvd[port_num]++;
+     }
+
+     prev_length[port_num] = length;
+     
+     // update port stats
+     index = rdmcMonStats[port_num].index;
+     rdmcMonStats[port_num].raw_time_stamp[index] = ({get_time(HI), get_time(LO)})/RDMC_MON_TIMESCALE_ADJUST;
+     rdmcMonStats[port_num].raw_byte_count[index] = length;
+     rdmcMonStats[port_num].time_stamp[index] = rdmcMonStats[port_num].get_time_in_nsec();
+     rdmcMonStats[port_num].byte_count[index] = length;
+     rdmcMonStats[port_num].raw_total_byte_count += length;
+     rdmcMonStats[port_num].status[index] = status;
+
+     rdmcMonStats[port_num].calculate_moving_average_bandwidth();
+
+     rdmcMonStats[port_num].update_total_byte_count();
+     rdmcMonStats[port_num].update_total_time();
+     rdmcMonStats[port_num].update_total_bandwidth();
+     rdmcMonStats[port_num].update_raw_bandwidth();
+
+     //rdmcMonStats[port_num].display_transaction();
+     rdmcMonStats[port_num].display_transaction_short();
+     rdmcMonStats[port_num].display_short();
+
+
+     rdmcMonStats[port_num].index++;
+
+     /*
+     // update dma ch stats
+     index = rdmcMonStats[4+dma_num].index;
+     rdmcMonStats[4+dma_num].raw_time_stamp[index] = get_time(LO);
+     rdmcMonStats[4+dma_num].raw_byte_count[index] = length;
+     rdmcMonStats[4+dma_num].time_stamp[index] = rdmcMonStats[4+dma_num].get_time_in_nsec();
+     rdmcMonStats[4+dma_num].byte_count[index] = length;
+     rdmcMonStats[4+dma_num].raw_total_byte_count += length;
+     rdmcMonStats[4+dma_num].status[index] = status;
+
+     rdmcMonStats[4+dma_num].calculate_moving_average_bandwidth();
+
+     rdmcMonStats[4+dma_num].update_total_byte_count();
+     rdmcMonStats[4+dma_num].update_total_time();
+     rdmcMonStats[4+dma_num].update_total_bandwidth();
+     rdmcMonStats[4+dma_num].update_raw_bandwidth();
+
+     //rdmcMonStats[4+dma_num].display_transaction();
+     rdmcMonStats[4+dma_num].display_transaction_short();
+     rdmcMonStats[4+dma_num].display_short();
+     rdmcMonStats[4+dma_num].index++;
+     */
+
+     /*
+     // update total stats
+     index = rdmcMonStats[20].index;
+     rdmcMonStats[20].raw_time_stamp[index] = get_time(LO);
+     rdmcMonStats[20].raw_byte_count[index] = length;
+     rdmcMonStats[20].time_stamp[index] = rdmcMonStats[20].get_time_in_nsec();
+     rdmcMonStats[20].byte_count[index] = length;
+     rdmcMonStats[20].raw_total_byte_count += length;
+     rdmcMonStats[20].status[index] = status;
+
+     rdmcMonStats[20].calculate_moving_average_bandwidth();
+
+     rdmcMonStats[20].update_total_byte_count();
+     rdmcMonStats[20].update_total_time();
+     rdmcMonStats[20].update_total_bandwidth();
+     rdmcMonStats[20].update_raw_bandwidth();
+
+
+     //rdmcMonStats[20].display_transaction();
+     rdmcMonStats[20].display_transaction_short();
+     //rdmcMonStats[20].display_short();
+     rdmcMonStats[20].index++;
+     */
+
+} // task RdmcMonitor::store_transactions
+
+task RdmcMonitor::check_DRR_bandwidth_ratio() {
+     
+     integer i, j, index_local;
+      bit [63:0] totalBw=0;
+      bit [63:0] portBw=0;
+     integer portWeightRatio=1;
+
+     if(enable_DRR_fairness_monitor == 0) return;      
+
+     // wait for test to end the sim.
+     printf("<%0d> RDMC_MON: check_DRR_bandwidth_ratio : Waiting for RX_chk_done\n", get_time(LO));
+     sync (ALL, RX_chk_done);
+     printf("<%0d> RDMC_MON: check_DRR_bandwidth_ratio : Done. Waiting for RX_chk_done\n", get_time(LO));
+
+     //if(index < moving_average_window*3) { return; }
+
+     for(i=0;i<4;i++) {
+         if(rtl_mac[i]) {
+            totalBw += rdmcMonStats[i].raw_bw[rdmcMonStats[i].index-1];
+         }
+     }
+
+     printf("<%0d> RDMC_MON: check_DRR_bandwidth_ratio : totalBw:%0d\n", get_time(LO), totalBw);
+
+
+     // check for only valid ports
+     for(i=0;i<4;i++) {
+         if(rtl_mac[i]) {
+
+	    //totalBw = rdmcMonStats[20].moving_average_bandwidth[index-moving_average_window];
+	    portBw = rdmcMonStats[i].raw_bw[rdmcMonStats[i].index-1];
+	    portWeightRatio = (port_DRR_weights[i] * 100) / total_port_weights;
+            printf("<%0d> RDMC_MON: check_DRR_bandwidth_ratio : portBw[%0d]:%0d portWeightRatio:%0d total_port_weights:%0d index:%0d\n", 
+	            get_time(LO), i, portBw, portWeightRatio, total_port_weights, rdmcMonStats[i].index);
+
+	    // check if only portBw is valid
+	    if(portBw === 'hx || portBw <= 0) {
+	       printf("<%0d> RDMC_MON: check_DRR_bandwidth_ratio : Skipping port:%0d DRR report portBW=%0d\n",
+	                get_time(LO), i, portBw);
+	       continue;
+	    }
+
+	    // divide by zero error
+	    if(portWeightRatio <= 0 || totalBw <= 0) { 
+	       printf("<%0d> RDMC_MON: check_DRR_bandwidth_ratio : Skipping port:%0d DRR report portWeightRatio=%0d totalBw:%0d \n",
+	                get_time(LO), i, portWeightRatio, totalBw);
+	       continue; 
+	    }
+
+	    if(diff_values(((portBw*100)/totalBw), portWeightRatio) > percentBwMarginToIgnore ) {
+	       printf("<%0d> %s: ERROR : bandwidth ratio mismatch!\n", get_time(LO), name);
+	       printf("port[%0d]_total_Bw:%0d totalBw:%0d portWeightRatio:%0d, percentBwMarginToIgnore:%0d\n",
+	               i, portBw, totalBw, portWeightRatio, percentBwMarginToIgnore);
+	    } else {
+	       printf("<%0d> %s: check_DRR_bandwidth_ratio : port%0dBw:%0d totalBw:%0d portWtRatio:%0d, percentDRRwtIgnore:%0d, actual_percentage:%0d\n",
+	               get_time(LO), name, i, portBw, totalBw, portWeightRatio, 
+		       percentBwMarginToIgnore, diff_values(((portBw*100)/totalBw), portWeightRatio));
+	    }
+	 } // if(valid...)
+     } // for
+}
+
+function  bit [63:0] RdmcMonitor::diff_values(integer val1, integer val2) {
+                 if(val1 > val2) {  diff_values = val1 - val2; }
+                 else            {  diff_values = val2 - val1; }
+}
+
+task RdmcMonitor::report_bandwidth_periodically((integer period /*in us*/ = 100)) {
+     integer iterations = 1;
+     printf("<%0d> RDMC_MON:report_bandwidth_periodically enabled.  with period:%0d us \n", 
+     		get_time(LO), period);
+     while(1) {
+	  while({get_time(HI), get_time(LO)} < 
+	        ((period*1000*RDMC_MON_TIMESCALE_ADJUST) * (iterations))) 
+                repeat(period) @(posedge CLOCK);
+	  report_bandwidth(1);
+          iterations++;
+     	  repeat(100) @(posedge CLOCK); // to avoid infinite loop
+     }
+}
+
+task RdmcMonitor::report_bandwidth ((bit one_time = 0)) {
+     integer port_pkt_length[];
+     integer port_speed[];
+     integer port_ipg[];
+     bit [63:0] port_ideal_bw[4];
+     bit [63:0] port_actual_bw[4];
+     bit [63:0] total_ideal_bw=0;
+     bit [63:0] total_actual_bw=0;
+     integer i;
+     integer percentage_bw_to_ignore = 5;
+     integer percentage_bw_difference = 0;
+
+     // wait for test to end the sim.
+     if(one_time == 0) {
+        printf("<%0d> RDMC_MON: report_bandwidth : Waiting for RX_chk_done\n", get_time(LO));
+        sync (ALL, RX_chk_done);
+        printf("<%0d> RDMC_MON: report_bandwidth : Done. Waiting for RX_chk_done\n", get_time(LO));
+     }
+
+     // reset values
+     for(i=0;i<4;i++) {
+	port_pkt_length[i] = 64;
+	if(i<2) port_speed[i] = 10000;
+	if(i>1) port_speed[i] = 1000;
+	port_ipg[i] = 11;
+        port_ideal_bw[i] = 0;
+        port_actual_bw[i] = 0;
+     }
+
+     // get plus arg parameters
+     if(get_plus_arg(CHECK,"MAC_SPEED0="))
+        port_speed[0] = get_plus_arg(NUM,"MAC_SPEED0=");
+
+     if(get_plus_arg(CHECK,"MAC_SPEED1="))
+        port_speed[1] = get_plus_arg(NUM,"MAC_SPEED1=");
+
+     if(get_plus_arg(CHECK,"MAC_SPEED2="))
+        port_speed[2] = get_plus_arg(NUM,"MAC_SPEED2=");
+
+     if(get_plus_arg(CHECK,"MAC_SPEED3="))
+        port_speed[3] = get_plus_arg(NUM,"MAC_SPEED3=");
+
+     if(get_plus_arg(CHECK,"MAC_PKT_LEN=")) {
+        port_pkt_length[0] = get_plus_arg(NUM,"MAC_PKT_LEN=");
+        port_pkt_length[1] = get_plus_arg(NUM,"MAC_PKT_LEN=");
+        port_pkt_length[2] = get_plus_arg(NUM,"MAC_PKT_LEN=");
+        port_pkt_length[3] = get_plus_arg(NUM,"MAC_PKT_LEN=");
+     }
+
+     // Over write if packets lengths are per port basis.
+     if (get_plus_arg (CHECK, "MAC_PORT0_PKT_LEN"))
+         port_pkt_length[0] = get_plus_arg (NUM, "MAC_PORT0_PKT_LEN");
+     if (get_plus_arg (CHECK, "MAC_PORT1_PKT_LEN"))
+         port_pkt_length[1] = get_plus_arg (NUM, "MAC_PORT1_PKT_LEN");
+     if (get_plus_arg (CHECK, "MAC_PORT2_PKT_LEN"))
+         port_pkt_length[2] = get_plus_arg (NUM, "MAC_PORT2_PKT_LEN");
+     if (get_plus_arg (CHECK, "MAC_PORT3_PKT_LEN"))
+         port_pkt_length[3] = get_plus_arg (NUM, "MAC_PORT3_PKT_LEN");
+
+
+     if(get_plus_arg(CHECK,"PKTGEN_PORT0_10G_IPG="))
+        port_ipg[0] = get_plus_arg(NUM,"PKTGEN_PORT0_10G_IPG=");
+
+     if(get_plus_arg(CHECK,"PKTGEN_PORT1_10G_IPG="))
+        port_ipg[1] = get_plus_arg(NUM,"PKTGEN_PORT1_10G_IPG=");
+
+     if(get_plus_arg(CHECK,"PKTGEN_PORT2_1G_IPG="))
+        port_ipg[2] = get_plus_arg(NUM,"PKTGEN_PORT2_1G_IPG=");
+
+     if(get_plus_arg(CHECK,"PKTGEN_PORT3_1G_IPG="))
+        port_ipg[3] = get_plus_arg(NUM,"PKTGEN_PORT3_1G_IPG=");
+
+     // IPG correction
+     for(i=0;i<4;i++) {
+         port_ipg[i] += 9; // since env adds 8+1 byte ipg into actual passed value
+     }
+     // calculate ideal bw
+     // get ideal bw
+     for(i=0;i<4;i++) {
+	 if(rtl_mac[i]) {
+	    if(port_pkt_length[i]+port_ipg[i] > 0)
+               port_ideal_bw[i] = (port_pkt_length[i] * port_speed[i]) / 
+	                          (port_pkt_length[i]+port_ipg[i]);
+	    else
+               port_ideal_bw[i] = 0;
+            total_ideal_bw += port_ideal_bw[i];
+	 }
+     }
+
+     // get actual bw
+     for(i=0;i<4;i++) {
+	 if(rtl_mac[i]) {
+	    if(rdmcMonStats[i].index > 0) {
+	       port_actual_bw[i] = rdmcMonStats[i].raw_bw[rdmcMonStats[i].index-1];
+	    } else {
+	      port_actual_bw[i] = 0;
+	    }
+            total_actual_bw += port_actual_bw[i];
+	 }
+     }
+
+     
+     // report errors
+     if(total_actual_bw <= 0) total_actual_bw = 1; // dive by zero error
+     if(total_ideal_bw <= 0) total_ideal_bw = 1; // dive by zero error
+
+     if(total_ideal_bw < total_actual_bw)
+        percentage_bw_difference = (total_ideal_bw * 100) / total_actual_bw ;
+     else
+        percentage_bw_difference = (total_actual_bw * 100) / total_ideal_bw ;
+
+     percentage_bw_difference = diff_values(100, percentage_bw_difference);
+
+     if(percentage_bw_difference > percentage_bw_to_ignore) {
+	if(report_bandwidth_mismatch_error && (one_time == 0)) {
+           be_msg.print(e_mesg_error, 
+	             "RDMC_MON", 
+		     "report_bandwidth", 
+		     "bandwidth mismatch expected=%0d Mbps actual=%0d Mbps, difference=%0d percent",
+	             total_ideal_bw, total_actual_bw, percentage_bw_difference);
+	} else {
+          be_msg.print(e_mesg_info, 
+	             "RDMC_MON", 
+		     "report_bandwidth", 
+		     "bandwidth mismatch expected=%0d Mbps actual=%0d Mbps, difference=%0d percent",
+	             total_ideal_bw, total_actual_bw, percentage_bw_difference);
+	}
+     } else {
+        be_msg.print(e_mesg_info, 
+	             "RDMC_MON", 
+		     "report_bandwidth", 
+		     "bandwidth matched expected=%0d Mbps actual=%0d Mbps, difference=%0d percent",
+	             total_ideal_bw, total_actual_bw, percentage_bw_difference);
+     }
+
+     printf("<%0d> =============== RDMC_MON REPORT_BW =======================\n", get_time(LO));
+     printf("RDMC_MON REPORT_BW Port#\t\tPort0\tPort1\tPort2\tPort3\n");
+     printf("RDMC_MON REPORT_BW Speed\t\t%0d\t%0d\t%0d\t%0d\n",
+             port_speed[0], port_speed[1], port_speed[2], port_speed[3]);
+     printf("RDMC_MON REPORT_BW PktLen\t\t%0d\t%0d\t%0d\t%0d\n",
+             port_pkt_length[0], port_pkt_length[1], port_pkt_length[2], port_pkt_length[3]);
+     printf("RDMC_MON REPORT_BW SentPktCnt\t\t%0d\t%0d\t%0d\t%0d\n",
+             number_of_pkts_sent[0], number_of_pkts_sent[1], 
+	     number_of_pkts_sent[2], number_of_pkts_sent[3]);
+     printf("RDMC_MON REPORT_BW RcvdPktCnt\t\t%0d\t%0d\t%0d\t%0d\n",
+             number_of_pkts_rcvd[0], number_of_pkts_rcvd[1], 
+	     number_of_pkts_rcvd[2], number_of_pkts_rcvd[3]);
+     printf("RDMC_MON REPORT_BW IPG\t\t\t%0d\t%0d\t%0d\t%0d\n",
+             port_ipg[0], port_ipg[1], port_ipg[2], port_ipg[3]);
+     printf("RDMC_MON REPORT_BW Weight\t\t%0d\t%0d\t%0d\t%0d\n",
+             port_DRR_weights[0], port_DRR_weights[1], port_DRR_weights[2], port_DRR_weights[3]);
+     printf("RDMC_MON REPORT_BW IdealBw\t\t%0d\t%0d\t%0d\t%0d\n",
+             port_ideal_bw[0], port_ideal_bw[1], port_ideal_bw[2], port_ideal_bw[3]);
+     printf("RDMC_MON REPORT_BW ActualBw\t\t%0d\t%0d\t%0d\t%0d\n",
+             port_actual_bw[0], port_actual_bw[1], port_actual_bw[2], port_actual_bw[3]);
+     printf("RDMC_MON REPORT_BW TotalIdealBw:\t%0d\n", total_ideal_bw);
+     printf("RDMC_MON REPORT_BW TotalActualBw:\t%0d\n", total_actual_bw);
+     printf("<%0d> =============== RDMC_MON REPORT_BW =======================\n", get_time(LO));
+}
+
+task RdmcMonitor::display_results() {
+}
+
+

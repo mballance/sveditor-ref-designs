@@ -1,0 +1,552 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuMalReqPEUStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class MalReqPEUStr extends PEUStrBase 
+  {
+  local bit f_typeSpecified;			// Was a bad-boy type supplied?
+  local bit [1:0] f_fmt;			// The bad format
+  local bit [4:0] f_type;			// The bad type
+  local bit f_lenSpecified;			// Was a TLP length supplied?
+  local integer f_len;				// A requested TLP length
+  local integer f_cross4K;  			// By what amount do we cross 4K
+  local integer f_adjustLen;			// The delta to the true length
+  local integer f_errQueue;			// A mailbox for bad pkt headers
+  local bit f_tdSpecified;                      // Was the TD supplied?
+  local bit f_tdFieldValue;                     // The TD value
+  local bit [7:0] f_msgcode;                    // Msg code (for Msg requests)
+  local bit f_mcSpecified;                      // Was the msg code supplied?
+  local bit [2:0] f_TC;
+  local bit f_TCSpecified;
+  local bit f_dwbeSpecified;
+  local bit [3:0] f_firstDWBE;
+  local bit [3:0] f_lastDWBE;
+  local bit f_QWbndy;
+
+  task new( PEUTestEnv a_env )
+    {
+    super.new( a_env );
+    f_typeSpecified = 0;
+    f_lenSpecified = 0;
+    f_errQueue = 0;
+    f_adjustLen = 0;
+    f_cross4K = 0;
+    f_dwbeSpecified = 0;
+    f_QWbndy = 1'bx;
+
+    f_tdSpecified = 0;
+    } /* end new */
+
+  function bit SetType( bit [1:0] a_fmt, bit [4:0] a_type )
+    {
+    bit isInvalid;
+  
+    case ( a_fmt )
+      {
+      2'b00: isInvalid = !( PEC_PCI__TYPE_VALID_00 & ( 1 << a_type ) );
+      2'b01: isInvalid = !( PEC_PCI__TYPE_VALID_01 & ( 1 << a_type ) );
+      2'b10: isInvalid = !( PEC_PCI__TYPE_VALID_10 & ( 1 << a_type ) );
+      2'b11: isInvalid = !( PEC_PCI__TYPE_VALID_11 & ( 1 << a_type ) );
+      }
+    if ( isInvalid )
+      {
+      f_typeSpecified = 1;
+      f_type = a_type;
+      f_fmt = a_fmt;
+      }
+    SetType = isInvalid;
+    } /* end SetType */
+
+  task SetLength( integer a_length )
+    {
+    f_len= a_length;
+    f_lenSpecified = 1;
+    } /* end SetLength */
+
+  task AdjustLen( integer a_lengthDelta )
+    {
+    f_adjustLen = a_lengthDelta;
+    } /* end AdjustLen */
+
+  task Cross4K( integer a_dwCount )
+    {
+    f_cross4K = a_dwCount;
+    } /* end AdjustLen */
+
+  function bit SetDWBE( bit [3:0] firstDWBE, bit [3:0] lastDWBE, 
+                        (bit QWbndy=1'bx) )
+    {
+    bit  isContiguous;
+    bit  isInvalid;
+
+    // DWBEs are bad if lastDWBE != 0 and len = 1, or either = 0 and len > 1
+    // DWBEs are bad if not contiguous and len > 2 or len = 2 not on QW bndy
+    // We'll force a length to make the DWBE bad if one has not been specified
+    isContiguous = ( firstDWBE == 4'b1000 || firstDWBE == 4'b1100 ||
+                     firstDWBE == 4'b1110 || firstDWBE == 4'b1111 )
+                && ( lastDWBE == 4'b0001 || lastDWBE == 4'b0011 ||
+                     lastDWBE == 4'b0111 || lastDWBE == 4'b1111 );
+    if ( f_lenSpecified )
+      {
+      if ( f_len == 1 )
+        isInvalid = lastDWBE != 0;
+      else if ( f_len == 2 && QWbndy )
+        isInvalid = !firstDWBE || !lastDWBE;
+      else
+        isInvalid = !isContiguous;
+      }
+    else 
+      {
+      f_lenSpecified = 1;
+      f_len = isContiguous ? 1 : 4;
+      isInvalid = 1;
+      }
+
+    if ( isInvalid )
+      {
+      f_dwbeSpecified = 1;
+      f_firstDWBE = firstDWBE;
+      f_lastDWBE = lastDWBE;
+      f_QWbndy = QWbndy;
+      if ( f_len == 2 && QWbndy !== 1'b1 ) f_QWbndy = 1'b0;
+      }
+
+    SetDWBE = isInvalid;
+    } /* end SetDWBE */
+
+  task SetErrQueue( integer a_queue )
+    {
+    f_errQueue = a_queue;
+    } /* end SetErrQueue */
+
+  task SetTD( bit a_TDValue )
+    {
+    f_tdFieldValue = a_TDValue;
+    f_tdSpecified = 1;
+    } /* end SetTD */
+
+  function bit SetField( string FieldName, bit [9:0] FieldValue )
+  {
+    // return value of 1'b1 indicates something went wrong
+    case ( FieldName ) {
+      "FmtType" : {
+	f_type = FieldValue[ 4:0 ];
+	f_fmt = FieldValue[ 6:5 ];
+	f_typeSpecified = 1;
+
+	case ( f_fmt ) {
+	  2'b00: SetField = !( PEC_PCI__TYPE_VALID_00 & ( 1 << f_type ) );
+	  2'b01: SetField = !( PEC_PCI__TYPE_VALID_01 & ( 1 << f_type ) );
+	  2'b10: SetField = !( PEC_PCI__TYPE_VALID_10 & ( 1 << f_type ) );
+	  2'b11: SetField = !( PEC_PCI__TYPE_VALID_11 & ( 1 << f_type ) );
+	}
+      }
+      "MsgCode" : {
+	f_msgcode = FieldValue;
+	f_mcSpecified = 1;
+	SetField = 1'b0;
+      }
+      "TC" : {
+	f_TC = FieldValue[ 2:0 ];
+	f_TCSpecified = 1;
+	SetField = 1'b0;
+      }
+      default :
+	SetField = 1'b1;
+    }
+  } /* end SetField */
+
+  task Execute()
+    {
+    bit genWrReq;				// Is a write request in order?
+    bit[PEC_PCI__HDR] ingressHdr;		// The ingress TLP's header
+    integer ingressData;			// A payload descriptor
+    bit[7:0] ingressTag;			// The tag for the TLP
+    bit[63:0] addr_bits;
+    bit[9:0] length_bits;
+    integer tlpLen;
+    bit [63:0] diagCsr;
+    bit [31:0] tempDenaliData;
+    bit [31:0] tempDenaliData1;
+
+					// First, get in line for a DMA tag...
+    f_env.allocDmaTag( ingressTag );
+    printf( "MalReq: tag=%h", ingressTag );
+    if ( f_lenSpecified ) printf( " len=%0d", f_len );
+    if ( f_cross4K != 0 ) printf( " cross4K=%0d", f_cross4K );
+    if ( f_dwbeSpecified ) printf( " firstDWBE=%b lastDWBE=%b", 
+                                     f_firstDWBE, f_lastDWBE );
+    if( f_typeSpecified ) printf( " f_fmt=%0h ",f_fmt );
+    printf( "\n" );
+
+					// Then build a TLP.
+					// Either a write or a read (with or
+					// without data.
+    if ( f_typeSpecified )
+      {
+      ingressHdr[PEC_PCI__FMT] = f_fmt;
+      genWrReq = ingressHdr[PEC_PCI__FMT_DATA];
+      }
+    else
+      genWrReq = urandom() % 2;
+
+
+    //If this is a cross4K test then set the length so valid DWBE's are generated
+    if ( f_cross4K != 0 ) {
+                                        // f_cross4K specifies the number of DWs
+                                        //   to cross the next 4KB boundary by
+                                        // pkt length greater than or equal to
+                                        //   the amount to cross boundary by
+      length_bits = (urandom() % 15) + 1;
+      f_len = length_bits + f_cross4K;
+      f_lenSpecified = 1;
+    }
+
+
+
+
+    if ( genWrReq )
+      {
+      if ( f_lenSpecified )
+        f_env.genIngressWrReq( ingressTag, ingressHdr, ingressData, f_len );
+      else
+        f_env.genIngressWrReq( ingressTag, ingressHdr, ingressData );
+      }
+    else
+      {
+      if ( f_lenSpecified )
+        f_env.genIngressRdReq( ingressTag, ingressHdr, ingressData, f_len );
+      else
+        f_env.genIngressRdReq( ingressTag, ingressHdr, ingressData );
+      }
+    //Denali can hold a TLP from being transmitted if a previous TLP
+    // with the same tag and Request ID has not completed yet. This only
+    // should happen with error TLPs. To help with this make all bad REQs
+    // PEC_PCI__REQ_ID[0] = 1
+    ingressHdr[80] = 1'b1;
+    
+
+					// ...and then pollute the request as
+                                        // directed by the caller.
+    if ( f_typeSpecified )
+      {
+      ingressHdr[PEC_PCI__FMT] = f_fmt;
+      ingressHdr[PEC_PCI__TYPE] = f_type;
+      }
+    if ( f_dwbeSpecified )
+      {
+      if ( f_QWbndy ) f_env.setAddrBndy( ingressHdr, 0, 8 );
+      if ( !f_QWbndy ) f_env.setAddrBndy( ingressHdr, 4, 8 );
+      ingressHdr[PEC_PCI__FIRST_DWBE] = f_firstDWBE;
+      ingressHdr[PEC_PCI__LAST_DWBE] = f_lastDWBE;
+      }
+    if ( f_cross4K != 0 ) {
+      if ( ingressHdr[PEC_PCI__TYPE] != PEC_PCI__TYPE_MEM )
+        {
+        printf( "Forcing req-type to 'memory' due to 4KB crossing\n" );
+        ingressHdr[PEC_PCI__TYPE] = PEC_PCI__TYPE_MEM;
+        }
+        
+
+	                                // f_cross4K specifies the number of DWs
+	                                //   to cross the next 4KB boundary by
+	                                // pkt length greater than or equal to
+	                                //   the amount to cross boundary by
+/* Do this before calling genIngressXxReq so valid DWBEs get generated
+      length_bits = (urandom() % 15) + 1;
+      ingressHdr[PEC_PCI__LEN] = length_bits + f_cross4K;
+*/
+      ingressHdr[PEC_PCI__LEN] = f_len;
+      if( ingressHdr[PEC_PCI__FMT_4DW] ) {
+	addr_bits = ingressHdr[PEC_PCI__ADDR];
+	addr_bits[11:2] = 1024 - length_bits;
+	ingressHdr[PEC_PCI__ADDR] = addr_bits;
+      }
+      else {
+	addr_bits = {{32'h00000000},ingressHdr[PEC_PCI__ADDR32]};
+	addr_bits[11:2] = 1024 - length_bits;
+	addr_bits[1:0] = 0;	//if f_typeSpecified make sure the lowest 2 addr bits are 0 
+	ingressHdr[PEC_PCI__ADDR32] = addr_bits[31:0];
+      }
+    }
+
+    //If this is a memory request make sure lower 2 address bits are 0 for header capture
+    // since Denali sets them to 0 automatically
+    if( ingressHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_MEM ){
+       if( ingressHdr[PEC_PCI__FMT_4DW] ) {
+          ingressHdr[1:0] = 0;
+       }else{
+          ingressHdr[33:32] = 0;
+       }
+    }
+        
+
+    if ( f_tdSpecified )
+      ingressHdr[PEC_PCI__TD] = f_tdFieldValue;
+
+    if ( f_mcSpecified ){
+      ingressHdr[PEC_PCI__MSG_CODE] = f_msgcode;
+      ingressHdr[PEC_PCI__ATTR] = 0;
+      ingressHdr[PEC_PCI__ADDR] = 0;	//DW3 and DW4 = 0
+
+      if( f_msgcode == PEC_PCI__MSG_CODE_ASSERT_INTA ||
+          f_msgcode == PEC_PCI__MSG_CODE_ASSERT_INTB ||
+          f_msgcode == PEC_PCI__MSG_CODE_ASSERT_INTC ||
+          f_msgcode == PEC_PCI__MSG_CODE_ASSERT_INTD ||
+          f_msgcode == PEC_PCI__MSG_CODE_DEASSERT_INTA ||
+          f_msgcode == PEC_PCI__MSG_CODE_DEASSERT_INTB ||
+          f_msgcode == PEC_PCI__MSG_CODE_DEASSERT_INTC ||
+          f_msgcode == PEC_PCI__MSG_CODE_DEASSERT_INTD ){
+
+         ingressHdr[PEC_PCI__TYPE] = 5'b10100;
+      }
+      else if( f_msgcode == PEC_PCI__MSG_CODE_PM_PME ||
+               f_msgcode == PEC_PCI__MSG_CODE_ERR_COR ||
+               f_msgcode == PEC_PCI__MSG_CODE_ERR_NONFATAL ||
+               f_msgcode == PEC_PCI__MSG_CODE_ERR_FATAL ){
+         ingressHdr[PEC_PCI__TYPE] = 5'b10000;
+      }
+      else if( f_msgcode == PEC_PCI__MSG_CODE_PM_TO_ACK ){
+         ingressHdr[PEC_PCI__TYPE] = 5'b10101;
+      }
+
+      if( !ingressHdr[PEC_PCI__FMT_DATA] ){
+         ingressHdr[PEC_PCI__LEN] = 0;
+      }
+    }
+
+    if ( f_TCSpecified )
+      ingressHdr[PEC_PCI__TC] = f_TC;
+
+					// Don't allow the truncated TLP to be
+					// less than 3DW.
+    if ( f_adjustLen < 0 && !ingressHdr[PEC_PCI__FMT_DATA] )
+      {
+      tlpLen = 3 + ingressHdr[PEC_PCI__FMT_4DW] + ingressHdr[PEC_PCI__TD];
+      if ( tlpLen + f_adjustLen < 3 )
+        printf( "MalReq (cycle %0d) Adding TD/addr to TLP to reach 3DW...\n",
+                get_cycle() );
+      if ( tlpLen + f_adjustLen < 3 &&  !ingressHdr[PEC_PCI__TD] ) 
+        {
+        tlpLen = tlpLen + 1;
+        ingressHdr[PEC_PCI__TD] = 1;
+        }
+      if ( tlpLen + f_adjustLen < 3 ) ingressHdr[PEC_PCI__FMT_4DW] = 1;
+      }			
+
+    //Check to see if any of the optional checks are disabled
+    //  If they are then the transactin has to pass like a good packet
+    diagCsr = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_tlu_diag ) );
+
+    if( f_cross4K && diagCsr[37] == 1 || 
+        f_dwbeSpecified && diagCsr[36] ){
+       f_env.reserveIngressCredits( ingressHdr );
+    }
+
+    if( f_dwbeSpecified ){
+       f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLastBE0 );
+       f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vl1stBE );
+       f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLastBE1 );
+       f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlNC1stBE );
+       f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlNClastBE );
+       f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlNC1stBE2 );
+       f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlNClastBE2 );
+    }
+
+    if( f_mcSpecified && f_TC ){  
+       f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlINTxTC );
+       f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlPMTC );
+       f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlERRTC );
+    }
+
+    if( f_adjustLen ){
+       f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlSizeTotal );
+    }
+    //Denali may have an outstanding packet with the same tag because it was an error packet
+    f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_COR_TLP_USERTAG_2 );
+
+    //Give denali extra credits for Writes with big payloads or adjustments
+    // and remove them after 
+    if( ( ingressHdr[PEC_PCI__LEN] > 512 || ingressHdr[PEC_PCI__LEN] == 0) &&
+        ingressHdr[PEC_PCI__FMT_DATA] && (ingressHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_MEM) ){
+       tempDenaliData[3:0] = PCIE_FCCTRL_get ;
+       tempDenaliData[7:4] = 4'h0 ;
+       tempDenaliData[11:8] = PCIE_VCID_VC0;
+       tempDenaliData[15:12] = PCIE_FCTYPE_PD;
+       tempDenaliData[19:16] = PCIE_FCID_TX_LIMIT;
+       tempDenaliData[31:20] = 12'h0;
+       //Posted Header  - Memory Write
+
+       f_env.Pod.FNXPCIEEnableTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL,tempDenaliData );
+       tempDenaliData = f_env.Pod.FNXPCIEEnableTrans.ReadDenaliReg( PCIE_REG_DEN_FC_CTRL );
+       tempDenaliData[31:20] = tempDenaliData[31:20] + 
+                               (ingressHdr[PEC_PCI__LEN] == 0 ? 12'h400 : ingressHdr[PEC_PCI__LEN] );    //Extra Data credit
+       tempDenaliData[3:0] = PCIE_FCCTRL_set;
+       f_env.Pod.FNXPCIEEnableTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL,tempDenaliData );
+
+   }
+
+					// Just drive the TLP into the TLU.
+					// No need to worry about credits since
+					// the TLU shouldn't eat any unless the
+                                        // optional check is disabled
+    f_env.drivePCIE( ingressHdr, ingressData, f_adjustLen, *, *,
+                    super.f_abortErrTlp );
+
+    f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_COR_TLP_USERTAG_2 );
+    if( f_dwbeSpecified ){
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLastBE0 );
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vl1stBE );
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLastBE1 );
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlNC1stBE );
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlNClastBE );
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlNC1stBE2 );
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlNClastBE2 );
+    }
+
+    if( f_mcSpecified && f_TC ){  
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlINTxTC );
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlPMTC );
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlERRTC );
+    }
+
+    if( f_cross4K && diagCsr[37] == 1 ||
+        f_dwbeSpecified && diagCsr[36] ){
+       f_env.consumeIngressCredits( ingressHdr );
+       f_env.expectILU( ingressHdr, ingressData );
+    }
+    else{ 	//Return the credits that Denali thinks it has consumed 
+          tempDenaliData[3:0] = PCIE_FCCTRL_get ;
+          tempDenaliData[7:4] = 4'h0 ;
+          tempDenaliData[11:8] = PCIE_VCID_VC0;
+          tempDenaliData[15:12] = PCIE_FCTYPE_PH;
+          tempDenaliData[19:16] = PCIE_FCID_TX_CONSUMED;
+          tempDenaliData[31:20] = 12'h0;
+       //Posted Header  - Memory Write or Msg
+       if( (ingressHdr[PEC_PCI__FMT_DATA] && (ingressHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_MEM))
+          || ingressHdr[124]  ){
+
+          f_env.Pod.FNXPCIEEnableTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL,tempDenaliData );
+          tempDenaliData = f_env.Pod.FNXPCIEEnableTrans.ReadDenaliReg( PCIE_REG_DEN_FC_CTRL );
+          tempDenaliData[27:20] = tempDenaliData[27:20] - 1;	//Return Header credit
+          tempDenaliData[3:0] = PCIE_FCCTRL_set;
+          f_env.Pod.FNXPCIEEnableTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL,tempDenaliData );
+
+          //Return Data credit
+          if( ingressHdr[PEC_PCI__FMT_DATA] ){
+
+             tempDenaliData[15:12] = PCIE_FCTYPE_PD;
+             tempDenaliData[3:0] = PCIE_FCCTRL_get ;
+             f_env.Pod.FNXPCIEEnableTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL,tempDenaliData );
+             tempDenaliData = f_env.Pod.FNXPCIEEnableTrans.ReadDenaliReg( PCIE_REG_DEN_FC_CTRL);
+             //review - Need to add adjustlen
+             tempDenaliData[31:20] = tempDenaliData[31:20] - (ingressHdr[PEC_PCI__LEN] + 3 )   / 4;
+             tempDenaliData[3:0] = PCIE_FCCTRL_set;
+             f_env.Pod.FNXPCIEEnableTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL,tempDenaliData );
+          }
+       }
+       else{	//Return NonPosted Header credits
+
+          tempDenaliData[15:12] = PCIE_FCTYPE_NPH;
+          f_env.Pod.FNXPCIEEnableTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL,tempDenaliData );
+          tempDenaliData = f_env.Pod.FNXPCIEEnableTrans.ReadDenaliReg( PCIE_REG_DEN_FC_CTRL );
+          tempDenaliData[27:20] = tempDenaliData[27:20] - 1;	//Return Header credit
+          tempDenaliData[3:0] = PCIE_FCCTRL_set;
+          f_env.Pod.FNXPCIEEnableTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL,tempDenaliData );
+       }
+    }
+
+    //Put back denali extra credits for Writes with big payloads or adjustments
+    if( (ingressHdr[PEC_PCI__LEN] > 512 || ingressHdr[PEC_PCI__LEN] == 0 ) &&
+        ingressHdr[PEC_PCI__FMT_DATA] && (ingressHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_MEM) ){
+       tempDenaliData[3:0] = PCIE_FCCTRL_get ;
+       tempDenaliData[7:4] = 4'h0 ;
+       tempDenaliData[11:8] = PCIE_VCID_VC0;
+       tempDenaliData[15:12] = PCIE_FCTYPE_PD;
+       tempDenaliData[19:16] = PCIE_FCID_TX_LIMIT;
+       tempDenaliData[31:20] = 12'h0;
+       //Posted Header  - Memory Write
+
+       f_env.Pod.FNXPCIEEnableTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL,tempDenaliData );
+       tempDenaliData = f_env.Pod.FNXPCIEEnableTrans.ReadDenaliReg( PCIE_REG_DEN_FC_CTRL );
+       tempDenaliData[31:20] = tempDenaliData[31:20] -
+                               (ingressHdr[PEC_PCI__LEN] == 0 ? 12'h400 : ingressHdr[PEC_PCI__LEN] );
+       tempDenaliData[3:0] = PCIE_FCCTRL_set;
+       f_env.Pod.FNXPCIEEnableTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL,tempDenaliData );
+
+   }
+
+
+
+    f_env.freeDmaTag( ingressTag );
+
+					// Wait for the bad boy(s) to be 
+					// processed by the TLU...
+    printf( "MalReq (cycle %0d) Wait for malformed TLP (tag=%h) to enter TLU\n",
+            get_cycle(), ingressTag );
+    f_env.waitIngressLatency( ingressHdr, (f_adjustLen > 0) ? f_adjustLen : 0 );
+
+					// If the context wants, put the bad-boy
+					// header (and the cause) into a mailbox
+    if ( f_errQueue != 0 && f_adjustLen >= 0 )
+      {
+					// Any malformed request
+					// might generate a receiver overflow.
+      mailbox_put( f_errQueue, e_ERR_none );
+      mailbox_put( f_errQueue, 2 );
+      mailbox_put( f_errQueue, e_ERR_ue_mfp );
+      mailbox_put( f_errQueue, ingressHdr );
+      mailbox_put( f_errQueue, e_ERR_ue_rof );
+      mailbox_put( f_errQueue, 128'bx0 );	
+      }
+
+					// If the length adjustment was negative
+					// then we can't expect a valid header
+					// in the log register, and we might get
+					// a second 'mfp' error from the TLU.
+    else if ( f_errQueue != 0 && f_adjustLen < 0 )
+      {
+      mailbox_put( f_errQueue, e_ERR_none );
+      mailbox_put( f_errQueue, 3 );
+      mailbox_put( f_errQueue, e_ERR_ue_rof );
+      mailbox_put( f_errQueue, 128'bx0 );
+      mailbox_put( f_errQueue, e_ERR_ue_mfp );
+      mailbox_put( f_errQueue, 128'bx );	// Don't check the logged data
+      mailbox_put( f_errQueue, e_ERR_ue_mfp );
+      mailbox_put( f_errQueue, 128'bx0 );	// Clear all logged-error bits
+      }
+
+    printf( "MalReq (cycle %0d) Done (tag=%h)\n", get_cycle(), ingressTag );
+    } /* end Execute */
+  } /* end MalReqPEUStr */
+

@@ -1,0 +1,403 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_txcintr_utils.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+#include "niu_tx_descp.vrh"
+
+#include "niu_int_dev.vrh"
+#include "niu_int_mgr.vrh"
+extern niu_gen_pio  gen_pio_drv;
+#include "txc_memory_map.vri"
+
+#include "cMesg.vrh"
+
+extern Mesg     be_msg;
+#include "tx_test_class_defines.vri"
+
+
+
+
+class CNiuIntrDevTxc extends  CNiuIntrDev  {
+
+   bit [63:0] rd_data;
+   // bit [63:0] wr_data;
+   bit [3:0] ports_active;
+   integer error_injection_type[4];
+   integer clear_pending_flag[4];
+   integer done=0;
+   integer sem_id = -1;
+   integer expect_error_interrupt[4];
+
+   task new(bit[3:0]  p, integer dev_id) {
+	integer i;
+        super.new(dev_id);
+        SetErrId(7);// bit 7 in sys error stat
+        ports_active = p;
+	for(i=0;i<4;i++) clear_pending_flag[i] = 0;
+	for(i=0;i<4;i++) expect_error_interrupt[i] = 0;
+        sem_id = alloc(SEMAPHORE, 0, 1, 1);
+   }
+   function integer isr( ( bit[1:0] ldf_flags = 0) );
+   task unmask_intrs(bit [3:0] p);
+   task setPortIntMask(integer port_id);
+   task ReEnablePortInt(integer port_id);
+   task ClearPortInt(integer port_id);
+   function bit CheckPortIntStat(integer port_id);
+   task InjectTxcFifoError(bit[3:0] p);
+   task decode_txc_err_events(bit[5:0] data ,integer port_id) ;
+   task checkPendingStatus() ;
+   
+
+}
+
+task CNiuIntrDevTxc::InjectTxcFifoError( bit[3:0] p) {
+
+ shadow integer pid;
+ for(pid = 0;pid<2;pid++) {
+ if(p[pid]) {
+   fork {
+    while(!done) {
+	// Inject Error here
+	ReEnablePortInt(pid);
+	clear_pending_flag[pid] = 1;
+	// Wait for clear from interrupt
+	while(clear_pending_flag[pid]) repeat(500)@(posedge CLOCK);
+    } // end while
+   } join none // endfork
+  }// endif 
+ }// endfor
+}
+task CNiuIntrDevTxc::unmask_intrs(bit [3:0] p) {
+  integer i;
+  for(i=0;i<4;i++) {
+   if(p[i]){
+    setPortIntMask(i);
+   }
+  }
+}
+task CNiuIntrDevTxc::setPortIntMask(integer port_id) {
+
+    bit [63:0] address;
+    bit [63:0] data;
+    bit [63:0] wdata;
+    address = TXC_FZC_BASE + TXC_INT_MASK;
+
+    gen_pio_drv.pio_rd(address, data);
+    wdata = (6'h3f) <<(8*port_id);
+    wdata = wdata ^32'hffffffff;
+	/* read Modify bits based upon port id*/
+    data = data & wdata; 
+    gen_pio_drv.pio_wr(address, data);
+}
+
+function bit CNiuIntrDevTxc::CheckPortIntStat(integer port_id) {
+// read status of the port
+// return 1 is any of the bits are set
+   bit [63:0] address;
+   bit [63:0] r_data;
+   integer interrupts_set;
+
+   address = TXC_FZC_BASE + TXC_INT_STAT;
+   gen_pio_drv.pio_rd(address,r_data);
+   if((r_data >> (port_id*8))  & 6'h3f ) {
+    interrupts_set = 1;
+    decode_txc_err_events( ( (r_data >> (port_id*8))  & 6'h3f )  ,port_id);
+   } else interrupts_set = 0;
+   // check for only bits related to  - port_id
+   // check bits against error_interrupt_type;
+   if(interrupts_set) {
+     CheckPortIntStat = 1;
+   } else CheckPortIntStat = 0;
+
+}
+task CNiuIntrDevTxc::ClearPortInt(integer port_id) {
+ // clear interrupts for this port
+    bit [63:0] address;
+    bit [63:0] data;
+    bit [63:0] wdata;
+
+   semaphore_get(WAIT, sem_id, 1);
+
+    address = TXC_FZC_BASE + TXC_INT_STAT;
+    gen_pio_drv.pio_rd(address, data);
+    
+    wdata = (6'h3f) << (8*port_id);
+    wdata = data | wdata;
+    gen_pio_drv.pio_wr(address, wdata);
+
+    clear_pending_flag[port_id] = 0;
+   semaphore_put(sem_id, 1);
+
+
+}
+task CNiuIntrDevTxc::ReEnablePortInt(integer port_id) {
+ // set interrupts for this port
+
+ integer error_type;
+ bit [63:0] address;
+ bit [63:0] data;
+ 
+
+
+ error_type = error_injection_type[port_id];
+
+// get the error code
+ data = error_type & 64'h3ffff; // {dblbit,snglbit,rsvd,all,alt,one,rsvd,last,second,first}
+
+
+// based upon error type set the appropriate bits
+  if(error_type & TxFIFO_SF_ERROR) {
+    address = TXC_FZC_BASE + TXC_SFECC_CTL +256 * port_id;
+    gen_pio_drv.pio_wr(address, data);
+   } 
+
+  if(error_type & TxFIFO_RO_ERROR) {
+    address = TXC_FZC_BASE + TXC_ROECC_CTL+256 * port_id;
+    gen_pio_drv.pio_wr(address, data);
+  }
+  expect_error_interrupt[port_id] = error_type;
+
+
+ 
+	
+}
+function integer CNiuIntrDevTxc::isr( ( bit[1:0] ldf_flags = 0) ) {
+        shadow integer i;
+	printf("Start In ISR id - %d LDF Flags - %x \n",super.dev_id,ldf_flags);
+        if(ldf_flags!==2'h2) {
+	printf("ERROR dev id - %d LDF Flags Incorrect - %x \n",super.dev_id,ldf_flags);
+        }
+    
+       isr_done = 0;
+       SetPendingFlag();
+       for(i=0;i<4;i++) {
+        fork{
+         if(ports_active[i]) {
+	   if(CheckPortIntStat(i)) 
+	    ClearPortInt(i);
+         }
+	 } join none
+        }
+	wait_child();
+        ClrPendingFlag();
+	isr_done = 1;
+	printf("End In ISR id - %d LDF Flags - %x \n",super.dev_id,ldf_flags);
+} 
+
+
+task CNiuIntrDevTxc::decode_txc_err_events(bit[5:0] data ,integer port_id) {
+
+    bit [63:0] rd_data;
+    bit [63:0] wr_data;
+    bit [63:0] addr;
+    bit [11:0] port_offset;
+    integer error_type;
+    bit pktassydead,reordererror,ro_unco,ro_correct,sf_unco,sf_correct;
+    bit [5:0] expected_status;
+ 
+    port_offset = 256*port_id;
+ 
+
+    // This function can now check this integer to see what has been injected 
+    error_type = expect_error_interrupt[port_id] ;
+    if(error_type ==0) {
+     printf("CNiuIntrDevTxC Port %d Not expected to generate interrupts!!ERROR: ErrorType Set to %x \n",port_id,error_type);
+     return;
+    } else {
+	// expected_status = {pktassydead,reordererror,ro_unco,ro_correct,sf_uncorrect,sf_correct};
+	pktassydead = 0; // Not injected in this case
+	reordererror = 0; // Not injected in this case
+	ro_unco = (error_type & TxFIFO_RO_ERROR) && ( error_type & TxFIFO_UnCorrectError) ;
+	sf_unco = (error_type & TxFIFO_SF_ERROR) && ( error_type & TxFIFO_UnCorrectError) ;
+	ro_correct = (error_type & TxFIFO_RO_ERROR) && ( error_type & TxFIFO_CorrectError) ;
+	sf_correct = (error_type & TxFIFO_SF_ERROR) && ( error_type & TxFIFO_CorrectError) ;
+	expected_status = {pktassydead,reordererror,ro_unco,ro_correct,sf_unco,sf_correct};
+        if(expected_status!==data) {
+          printf("CNiuIntrDevTxC Port %d ERROR  Unexpected interrupts status expected %x received - %x\n",port_id,expected_status,data);
+        }
+    }
+
+    printf("CNiuIntrDevTxC Port %d has interrupted\n",port_id);
+      // check for store and forward fifo registers
+      if(data[0]) {
+         printf("CNiuIntrDevTxC Port %d SF_Correct_error status set\n",port_id); 
+         addr = TXC_FZC_BASE + (TXC_SFECC_ST + port_offset);
+         gen_pio_drv.pio_rd(addr,rd_data);
+         if(rd_data[17] != 1'b1)
+           printf("ERROR SF_Correctable error bit not set for Port %d\n",port_id);
+         else 
+           printf("INFO SF_Correctable error bit set for Port %d\n", port_id);
+       }
+
+      if(data[1]) {
+         printf("CNiuIntrDevTxC Port %d SF_UnCorrect_error status set\n",port_id); 
+         addr = TXC_FZC_BASE + (TXC_SFECC_ST + port_offset);
+         gen_pio_drv.pio_rd(addr,rd_data);
+         if(rd_data[16] != 1'b1)
+           printf("ERROR SF_UnCorrectable error bit not set for Port %d\n",port_id);
+         else 
+           printf("INFO SF_UnCorrectable error bit set for Port %d\n", port_id);
+      }
+
+      // check for RO fifo registers and functionality
+      if(data[2]) {
+         printf("CNiuIntrDevTxC Port %d RO_Correct_error status set\n",port_id); 
+         addr = TXC_FZC_BASE + (TXC_ROECC_ST + port_offset);
+         gen_pio_drv.pio_rd(addr,rd_data);
+         if(rd_data[17] != 1'b1)
+           printf("ERROR RO_Correctable error bit not set for Port %d\n",port_id);
+         else 
+           printf("INFO RO_Correctable error bit set for Port %d\n", port_id);
+      }
+
+      if(data[3]) {
+         printf("CNiuIntrDevTxC Port %d RO_UnCorrect_error status set\n",port_id); 
+         addr = TXC_FZC_BASE + (TXC_ROECC_ST + port_offset);
+         gen_pio_drv.pio_rd(addr,rd_data);
+         if(rd_data[16] != 1'b1)
+           printf("ERROR RO_UnCorrectable error bit not set for Port %d\n",port_id);
+         else 
+           printf("INFO RO_UnCorrectable error bit set for Port %d\n", port_id);
+      }
+
+
+      if(data[0] || data[1]) {
+         addr = TXC_FZC_BASE + (TXC_SFECC_ST + port_offset);
+         gen_pio_drv.pio_rd(addr,rd_data);
+         wr_data = 64'h8000_0000 | rd_data;
+         gen_pio_drv.pio_wr(addr,wr_data); 
+
+         // read the sf_data & sf_ecc_st to check
+
+       gen_pio_drv.pio_rd(addr,rd_data);
+         if(rd_data != 64'h0)
+           printf("ERROR TXC_SFECC_ST not clrd for Port %d value %h\n",port_id,rd_data);
+        else
+           printf("INFO TXC_SFECC_ST clrd for Port %d value %h\n",port_id,rd_data); 
+       }
+
+       if(data[2] || data[3]) {
+         addr = TXC_FZC_BASE + (TXC_ROECC_ST + port_offset);
+         gen_pio_drv.pio_rd(addr,rd_data);
+         wr_data = 64'h8000_0000 | rd_data;
+         gen_pio_drv.pio_wr(addr,wr_data); 
+
+         // read the ro_data & ro_ecc_st to check
+
+         gen_pio_drv.pio_rd(addr,rd_data);
+         if(rd_data != 64'h0)
+           printf("ERROR TXC_ROECC_ST not clrd for Port %d value %h\n",port_id,rd_data);
+         else
+           printf("INFO TXC_ROECC_ST clrd for Port %d value %h\n",port_id,rd_data); 
+      }
+
+
+ }
+
+task CNiuIntrDevTxc::checkPendingStatus() {
+	// final exit status check for TXC 
+ 
+    bit [63:0] rd_data;
+    bit [63:0] wr_data;
+    bit [63:0] addr;
+    bit [11:0] port_offset;
+    integer port_id;
+
+
+   printf("CNiuIntrDevTxc::checkPendingStatus!!\n");
+   for(port_id=0;port_id<4;port_id++) {
+   if(ports_active[port_id]) {
+
+    port_offset = 256*port_id;
+   
+
+         // clear sf_data
+
+          addr = TXC_FZC_BASE + (TXC_SF_DATA0 + port_offset);
+         gen_pio_drv.pio_rd(addr,rd_data);
+         if(rd_data != 64'h0)
+           printf("ERROR TXC_SF_ECC_DATA0 not clrd for Port %d value %h\n",port_id,rd_data);
+
+         addr = TXC_FZC_BASE + (TXC_SF_DATA1 + port_offset);
+         gen_pio_drv.pio_rd(addr,rd_data);
+         if(rd_data != 64'h0)
+           printf("ERROR TXC_SF_ECC_DATA1 not clrd for Port %d value %h\n",port_id,rd_data);
+
+         addr = TXC_FZC_BASE + (TXC_SF_DATA2 + port_offset);
+         gen_pio_drv.pio_rd(addr,rd_data);
+         if(rd_data != 64'h0)
+           printf("ERROR TXC_SF_ECC_DATA2 not clrd for Port %d value %h\n",port_id,rd_data);
+
+         addr = TXC_FZC_BASE + (TXC_SF_DATA3 + port_offset);
+         gen_pio_drv.pio_rd(addr,rd_data);
+         if(rd_data != 64'h0)
+           printf("ERROR TXC_SF_ECC_DATA3 not clrd for Port %d value %h\n",port_id,rd_data);
+
+         addr = TXC_FZC_BASE + (TXC_SF_DATA4 + port_offset);
+         gen_pio_drv.pio_rd(addr,rd_data);
+         if(rd_data != 64'h0)
+           printf("ERROR TXC_SF_ECC_DATA4 not clrd for Port %d value %h\n",port_id,rd_data);
+
+
+          // clear RO_data
+
+         addr = TXC_FZC_BASE + (TXC_RO_DATA0 + port_offset);
+         gen_pio_drv.pio_rd(addr,rd_data);
+         if(rd_data != 64'h0)
+           printf("ERROR TXC_RO_ECC_DATA0 not clrd for Port %d value %h\n",port_id,rd_data);
+
+         addr = TXC_FZC_BASE + (TXC_RO_DATA1 + port_offset);
+         gen_pio_drv.pio_rd(addr,rd_data);
+         if(rd_data != 64'h0)
+           printf("ERROR TXC_RO_ECC_DATA1 not clrd for Port %d value %h\n",port_id,rd_data);
+
+         addr = TXC_FZC_BASE + (TXC_RO_DATA2 + port_offset);
+         gen_pio_drv.pio_rd(addr,rd_data);
+         if(rd_data != 64'h0)
+           printf("ERROR TXC_RO_ECC_DATA2 not clrd for Port %d value %h\n",port_id,rd_data);
+
+         addr = TXC_FZC_BASE + (TXC_RO_DATA3 + port_offset);
+         gen_pio_drv.pio_rd(addr,rd_data);
+         if(rd_data != 64'h0)
+           printf("ERROR TXC_RO_ECC_DATA3 not clrd for Port %d value %h\n",port_id,rd_data);
+
+         addr = TXC_FZC_BASE + (TXC_RO_DATA4 + port_offset);
+         gen_pio_drv.pio_rd(addr,rd_data);
+         if(rd_data != 64'h0)
+           printf("ERROR TXC_RO_ECC_DATA4 not clrd for Port %d value %h\n",port_id,rd_data);
+
+       }// else if ports_valid
+     }// end for
+}

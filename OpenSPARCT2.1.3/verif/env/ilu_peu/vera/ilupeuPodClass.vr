@@ -1,0 +1,135 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuPodClass.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "cReport.vrh"
+#include "ilu_peu.if.vri"
+#include "ilu_peu.bind.vri"
+#include "FNXPCIEXactor.vrh"
+#include "DMUXtr.vrh"
+
+#include "denali_root_monitor.vrh"  // denali_root_monitor library
+
+
+class ilupeuPodClass {
+
+  ReportClass Report;
+
+  // All Xactors
+    static DMUXtr           		DMUXtr;
+    // CSR-ring transactor which holds the CSRCollection 
+    static ilupeuCSR                       CSRXtr;
+
+  // Denali Devices For PCIE Xactor
+  static FNXPCIEXactorDenaliDevice 	FNXPCIEDenaliDevice;
+  static FNXPCIEXactorBuilder  		FNXPCIEBldr;
+  static FNXPCIEXactorTransaction       FNXPCIEEnableTrans;
+
+  static denali_root_monitor_PCIEXactorDenaliDevice 	denali_root_monitor_PCIEDenaliDevice;
+  static denali_root_monitor_PCIEXactorBuilder  		denali_root_monitor_PCIEBldr;
+  static denali_root_monitor_PCIEXactorTransaction       denali_root_monitor_PCIEEnableTrans;
+
+  //Managers
+
+  static bit AllocFlag = 1'b0;
+
+  task new ( ReportClass _Report )	//, CSRCollection _CSR )
+  {
+    Report = _Report;
+
+    if (AllocFlag == 1'b0) {
+
+        printf(" inside ilupeuPodClass before calling FNXPCIEDenaliDevice \n"); 
+	// FNX PCIE Transactor Port A
+	FNXPCIEDenaliDevice = new( Report,
+                                      "tb_top.pcieA", // MUST MATCH HIERARCHICAL PATH TO DENALI PCIE DEVICE IN TOP.V
+                                      "FNXPCIEXactorPktCbTask" );
+
+        printf(" inside ilupeuPodClass before calling denali_root_monitor_PCIEDenaliDevice \n"); 
+
+	// denali root monitor 
+	denali_root_monitor_PCIEDenaliDevice = new( Report,
+                                      "tb_top.pcie_root_monitor", // MUST MATCH HIERARCHICAL PATH TO DEVICE IN TOP.V
+                                      "FNXPCIEXactorPktCbTask" );
+//                                      "denali_root_monitor_PCIEXactorPktCbTask" );
+
+        // CSR-ring transactor
+        CSRXtr = new( Report );
+
+	DMUXtr = new( bindDMUingress,
+                      bindDMUegress, 
+                      bindDMUmisc,
+                      Report );
+
+	// FNX PCIE Transactor Port A
+	FNXPCIEBldr = new( Report,
+                           FNXPCIEClkPort,
+                           FNXPCIEDenaliClkPortA,
+                           FNXPCIEDenaliDevice,
+                           FNXPCIEXactorMiscPortA,
+                           1'b0 );		//FNX_TB_PCIEPORTA );
+
+	// MAQ printf ("PEU After FNXPCIEBldr new\n");
+        FNXPCIEEnableTrans = new( FNXPCIEBldr );
+        FNXPCIEEnableTrans.Enable();
+
+        // denali_root_monitor_ PCIE Transactor Port A
+        denali_root_monitor_PCIEBldr = new( Report,
+                           denali_root_monitor_PCIEClkPort,
+                           denali_root_monitor_PCIEDenaliClkPortA,
+                           denali_root_monitor_PCIEDenaliDevice,
+                           denali_root_monitor_PCIEXactorMiscPortA,
+                           1'b0 );              //FNX_TB_PCIEPORTA );
+
+	 denali_root_monitor_PCIEEnableTrans = new( denali_root_monitor_PCIEBldr );
+         // If not enabled then all CallBacks hang
+         denali_root_monitor_PCIEEnableTrans.Enable();
+	
+  
+#ifdef	N2_FC
+        @(posedge if_ILU_PEU.iol2clk);
+#else
+        @(posedge CLOCK);
+#endif
+
+
+    }
+
+    AllocFlag = 1'b1;
+
+  }	//End new
+
+}
+
+
+

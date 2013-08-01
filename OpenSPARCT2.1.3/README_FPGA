@@ -1,0 +1,307 @@
+This is README_FPGA file.
+First read the README file in this dir for general opensparc directions. 
+
+===============================================================================
+ User Instructions for OpenSPARC T2 Synthesizable System Level Models 
+===============================================================================
+The information in this file requires you to be familiar with general info
+on the OpenSPARC T2 found in the README file. 
+
+
+Overview:
+=========
+
+   A fully synthesizable, reduced footprint, System-level model has been 
+   developed, suitable for FPGA and Emulation Platforms. 
+   This model has CORE, CROSSBAR and WISHBONE Memory Controller (OpenCores). 
+   This environment supports RTL Simulation, FPGA Synthesis and Gate-
+   level simulation with a one-to-one correspondence (i.e a given test
+   runs unchanged in the RTL & Gate environments. 
+   This model is platform-independent. 
+
+   This model uses Opencore models, which reside in dir: 
+     $DV_ROOT/OpenSparc_N2/design/fpga/opencores
+   For more info on opencores, visit: 
+     http://www.opencores.org
+
+   Setup environment variables by editing OpenSPARCT2.cshrc file. 
+   
+
+
+Supported Environments: 
+=======================
+
+Simulation: VCS on Solaris Platform.
+Synthesis: Synplicity on Linux Platform.
+
+Setup your OpenSPARC run-time environment by using following command :
+
+   % source OpenSPARCT2.cshrc
+
+
+
+
+
+
+
+RTL SIMULATION:
+===============
+
+A. Simulating the OpenSPARC T2 FPGA System-level environment
+------------------------------------------------------------
+
+   This environment consists of one SPARC CPU core, crossbar, spc-to-
+   Wishbone-memory-controller-bridge. This model does *not* have the Level 2 
+   cache, T2 memory controller unit, and all of the on-chip I/O sub-systems. 
+   Due to synthesizability requirement, we have eliminated the RTL monitors. 
+   This model also does not support co-simulation with Riesling. Simple 
+   PC trace monitor and memory transaction monitors are included to provide
+   basic debug information. This environment comes with a suite of random-
+   generated self-checking tests. 
+
+   Use "sims" to build simulation model and run your tests. 
+   See README file for details on "sims" utility. 
+
+   "sims" system environment type: fpga_1c8t
+       -sys=fpga_1c8t
+
+   "sims" regression group:  -group=<diag_groups>
+        where <diag_group> can be one of the following:
+          fpga_1c8t_short  has 5 short diags
+          fpga_1c8t_mini  has   50 diags
+          fpga_1c8t_long  has  100 diags
+          fpga_1c8t_all = all of the above, a total of 155 diags 
+
+    For example:  
+ 1.  To build a simulation model: 
+       sims -sys=fpga_1c8t -vcs_build 
+
+ 2.  To run short regression:
+       sims -sys=fpga_1c8t -vcs_run -group=fpga_1c8t_short
+ 
+ 3.  To build and run a short regression: 
+       sims -sys=fpga_1c8t -group=fpga_1c8t_short
+
+ 4.  To build and run a a complete regression suite: 
+       sims -sys=fpga_1c8t -group=fpga_1c8t_all
+
+ 5.  To run a single diag:
+       sims -sys=fpga_1c8t -model_rel_name=rel-0.1 mpgen_50l.s -model=fpga_1c8t -vcs_run -nocache -exe_dir=$DV_ROOT/model_dir/fpga_1c8t/rel-0.1 
+
+ 6.  To run a single diag and generate waveform dumps (use -debussy):
+         use   -debussy  for .fsdb waveform file
+         use   -vcd      for .vcd waveform file
+       sims -sys=fpga_1c8t -model_rel_name=rel-0.1 -debussy  mpgen_50l.s -model=fpga_1c8t -vcs_run -nocache -exe_dir=$DV_ROOT/model_dir/fpga_1c8t/rel-0.1 
+
+
+     The testbench module t2_fpga, is the top for this env, can be found here:
+           $DV_ROOT/OpenSparc_N2/design/fpga/rtl/t2_fpga.v
+
+     The simulation file list can be found here:
+           $DV_ROOT/OpenSparc_N2/design/fpga/rtl/fpga_rtl.flist
+
+
+
+B. Simulating the OpenSPARC T2 Core in other environments
+------------------------------------------------------------
+
+   You can also simulate the synthesizable version of the core in other
+   existing system environments supported by "sims" such as cmp1, cmp8, 
+   fc1 or fc8 by using sims option: -vcs_build_args="+define+FPGA"
+
+   For example: 
+  1.   sims -sys=cmp1 -group=cmp1_mini_T2 -vcs_build_args="+define+FPGA" 
+
+  2.   sims -sys=fc1 -group=fc1_mini_T2 -vcs_build_args="+define+FPGA" 
+
+  3.   sims -sys=cmp8 -group=cmp8_mini_T2 -vcs_build_args="+define+FPGA" 
+
+  4.   sims -sys=fc8 -group=fc8_mini_T2 -vcs_build_args="+define+FPGA" 
+
+
+
+
+
+
+
+
+FPGA SYNTHESIS:
+===============
+   The OpenSPARC T2 FPGA System-level environment is fully synthesizable. 
+   Currently following synthesis environment is supported: 
+   
+     1. Synplify_pro  for Xilinx LX330 device on Linux Platform
+        Xilinx device type can be easily changed. 
+
+   Synthesis can be performed for any top-level module, for example, the 
+   top can be the t2 (system-level) or spc (core-level). For highest
+   speedup on platforms such as an emulator, the test-bench t2_fpga
+   can also be synthesized. This requires support for handling few 
+   verilog system calls such as $readmemh, $display, etc. 
+
+
+   The filelist used for synthesis is found here: 
+        $DV_ROOT/design/fpga/rtl/fpga_rtl_synth.flist
+ 
+   The top-level module for synthesis purposes is: t2
+   and the verilog file can be found here: 
+        $DV_ROOT/design/fpga/rtl/t2.v
+
+   Define SYNP_HOME to point to Synplicity tool. 
+
+   FPGA Synthesis is supported by the fpga_synth utility, found here:
+        $DV_ROOT/tools/fpga/fpga_synth
+
+   NOTE: 
+   -----
+   The fpga_synth utility is platform independent and can be run
+   on any machine type. However, the synthesis have to be performed
+   (running run.script) on a platform that supports the synthesis tool. 
+   For example, please use a Linux machine for Synplify_pro. 
+
+ 
+   fpga_synth synopsis: 
+   -------------------
+   $DV_ROOT/tools/fpga/fpga_synth -h
+
+	fpga_synth 
+	----------
+	Utility  to synthesize T2 system level environment for FPGA  
+		-f  <flist>              : optional, file list , default fpga_rtl_synth.flist
+		-user_compile_dir  <dir> : optional, user specified dir , default $MODEL_DIR/fpga_synth 
+		-synplicity              : required, uses synplify pro
+		-top <module>            : required, top module, default t2
+		-device  <keyword>       : optional, FPGA device, default LX330
+		-project_file <file>     : optional, user specified project file
+		-no_run                  : optional, generates script files only
+		-clean                   : optional, removes temp directories/files
+		-h                       : optional, help
+  
+
+
+
+
+A. Synthesizing the T2 FPGA System-level environment
+----------------------------------------------------
+   Run command:
+     $DV_ROOT/tools/fpga/fpga_synth -synplicity -top t2 
+
+   Files of interest: 
+   Check for the synthesis report in: t2.srr 
+
+   Generated gate netlist is in file: t2.vm
+  
+   Generated file list for gate-level model build: fpga_gate.flist
+   
+   A sample gate model and report file can be found in dir: 
+     $DV_ROOT/design/fpga/gate
+
+
+
+B. Synthesizing the CORE only
+-----------------------------
+   Run command:
+     $DV_ROOT/tools/fpga/fpga_synth -synplicity -top spc 
+
+   Files of interest: 
+   Check for the synthesis report in: spc.srr 
+
+   Generated gate netlist is in file: spc.vm
+
+   Generated file list for gate-level model build: fpga_gate.flist
+
+   A sample gate model and rport file can be found in dir: 
+     $DV_ROOT/design/fpga/gate
+
+
+
+
+
+GATE-LEVEL SIMULATION
+=====================
+Gate-level simulation is integrated into the "sims" utility. The
+test-bench module t2_fpga contains the simulation infrastructure
+that facilitates simulation of the gate-level netlist. A simple 
+PC-trace monitor and Good/Bad Trap detection is included. 
+
+
+   A master file-list to support gate-level model build is generated
+   by "fpga_synth" utility and can be found in the fpga_synth dir: 
+                 fpga_gate.flist
+
+   A link to this file-list, for use by "sims" is installed in the dir:
+                 $DV_ROOT/design/fpga/gate/fpga_gate_master.flist
+   NOTE: This link is over-written by successive runs of fpga_synth 
+         utility and corresponds to last run of fpga_synth. 
+
+   Use "sims" to build and run your tests on your gate-model. Use the
+   following parameter to enable gate model build: 
+         -config_cpp_args=-DGATESIM
+
+   You will also need to use the 64-bit VCS executables: 
+         -vcs_build_args="-full64"
+
+   You may want to specify model build dir:
+         -model_rel_name=gate_model
+
+   NOTE:
+   -----
+   By default "sims" will overwrite the RTL model build during a 
+   gate-level model build. 
+   
+   
+
+A. Simulating the OpenSPARC T2 FPGA Synthesis net-list
+------------------------------------------------------
+Here are the different command lines to build and simulate a gate-level
+model. 
+
+ 
+ 1.  To build a simulation model: 
+       sims -sys=fpga_1c8t -vcs_build -config_cpp_args=-DGATESIM -vcs_build_args="-full64"
+
+ 2.  To run short regression:
+       sims -sys=fpga_1c8t -vcs_run -group=fpga_1c8t_short 
+ 
+ 3.  To build and run a short regression: 
+       sims -sys=fpga_1c8t -group=fpga_1c8t_short -config_cpp_args=-DGATESIM -vcs_build_args="-full64"
+
+ 4.  To build and run a a complete regression suite: 
+       sims -sys=fpga_1c8t -group=fpga_1c8t_all -config_cpp_args=-DGATESIM -vcs_build_args="-full64"
+
+ 5.  To run a single diag:
+       sims -sys=fpga_1c8t -model_rel_name=rel-0.1 mpgen_50l.s -model=fpga_1c8t -vcs_run -nocache -exe_dir=$DV_ROOT/model_dir/fpga_1c8t/rel-0.1 
+
+ 6.  To run a single diag and generate waveform dumps (use -debussy):
+         use   -debussy  for .fsdb waveform file
+         use   -vcd      for .vcd waveform file
+       sims -sys=fpga_1c8t -model_rel_name=rel-0.1 -debussy  mpgen_50l.s -model=fpga_1c8t -vcs_run -nocache -exe_dir=$DV_ROOT/model_dir/fpga_1c8t/rel-0.1 
+
+     NOTE:  By default the models are built with dumping PLI linked-in. 
+     To eliminate dumping PLI from the model build use, "sims" option: 
+               -novcs_use_fsdb -novcs_use_vcsd
+    
+
+
+
+B. Simulating the SPC (Core) FPGA Synthesis net-list
+-----------------------------------------------------
+You can also simulate just the SPC gate-level netlist using the same system-
+level test-bench environment. In addition to the SPC gate-model, you will
+require RTL for all other modules instantiated in this environment. When you
+mix RTL and gate netlist, you may run into library naming conflict. To 
+solve this problem, you will need a pre-processing step before running "sims"
+to build the mixed-mode gate-RTL model. 
+
+Here are the commands to build a mixed-mode gate-RTL model: 
+
+ 1. Uniquify the modules in the gate-netlist to prevent name conflicts with RTL.
+    uniquify_module -top spc -netlist 
+
+ 2. Build and simulate your model using the commands listed in Section A. 
+
+
+
+
+
+----------End of README_FPGA file

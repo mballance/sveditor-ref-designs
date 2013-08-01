@@ -1,0 +1,135 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: tcu_ncu_sample.vrhpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+sample tcu_ncu_intf_add (tcu_ncu_add)
+{
+           state NCU_ADD        ( 8'h80 );
+           state NIU_ADD        ( 8'h81 );
+           state CCU_ADD        ( 8'h83 );
+           state MCU_ADD        ( 8'h84 );
+           state DBG1_ADD       ( 8'h86 );
+           state DMU_ADD        ( 8'h88 );
+           state RST_ADD        ( 8'h89 );
+           state ASI_ADD        ( 8'h90 );
+wildcard   state PIO_ADD        ( 8'Hcx );
+           state SSI_ADD        ( 8'hff );
+
+}
+
+
+sample tcu_ncu_intf_type_sample (tcu_ncu_type)
+{
+	   state READ_REQ       ( 4'b0100 );
+           state WRITE_REQ      ( 4'b0101 );
+}
+sample tcu_ncu_intf_type_ack (tcu_ncu_type)
+{
+           state READ_ACK  	( 4'b0001 );
+}
+cross tcu_ncu_intf_add_type_cross (tcu_ncu_intf_add,tcu_ncu_intf_type_sample );
+
+
+sample tcu_ncu_intf_size (tcu_ncu_size)
+{
+                   state SIZE1         (3'b000);
+      wildcard     state SIZE2         (3'b0xx); // When tcu respons bask, size is  ignored, 
+      wildcard     state SIZE4         (3'b0xx); //for avoid change the test plan, just modified to make it be wildcard 
+      wildcard     state SIZE8         (3'b0xx);   
+}
+
+
+sample tcu_ncu_intf_bufid_sample (tcu_ncu_bufid)
+{
+           m_state BUFFID  	(0:1);
+}
+
+sample tcu_ncu_intf_cpuid_sample (tcu_ncu_cpuid)
+{
+           m_state CPU_ID  	( 0:63 );
+}
+
+
+sample tcu_ncu_intf_type_trans (tcu_ncu_type)
+{
+
+	   state READ_REQ       ( 4'b0100 );
+           state WRITE_REQ      ( 4'b0101 );
+           state IFILL_REQ      ( 4'b0110 );
+
+
+           state READ_NACK  	( 4'b0000 );
+           state READ_ACK  	( 4'b0001 );
+
+
+	   trans TYPE_TRAN00 ("READ_REQ" -> "READ_REQ");
+	   trans TYPE_TRAN01 ("READ_REQ" -> "WRITE_REQ");
+	   trans TYPE_TRAN02 ("READ_REQ" -> "IFILL_REQ");
+
+	   trans TYPE_TRAN10 ("WRITE_REQ" -> "READ_REQ");
+	   trans TYPE_TRAN11 ("WRITE_REQ" -> "WRITE_REQ");
+	   trans TYPE_TRAN12 ("WRITE_REQ" -> "IFILL_REQ");
+
+	   trans TYPE_TRAN20 ("IFILL_REQ" -> "READ_REQ");
+	   trans TYPE_TRAN21 ("IFILL_REQ" -> "WRITE_REQ");
+	   trans TYPE_TRAN22 ("IFILL_REQ" -> "IFILL_REQ");
+
+
+	   trans TYPE_TRAN30 ("READ_ACK" -> "READ_ACK");
+	   trans TYPE_TRAN31 ("READ_ACK" -> "READ_NACK");
+
+	   trans TYPE_TRAN40 ("READ_NACK" -> "READ_ACK");
+	   trans TYPE_TRAN41 ("READ_NACK" -> "READ_NACK");
+
+
+
+}
+
+
+
+
+
+sample tcu_ncu_intf_stall_b2b_sample (ncu_tcu_stall_b2b)
+{
+	m_state STALL        ( 1:30 ) ;
+}
+sample tcu_ncu_intf_pkt_gap (tcu_ncu_pkt_gap)
+{
+	m_state PKT_GAP        ( 1:10 ) ;
+}
+
+
+sample tcu_ncu_intf_b2b_sample (tcu_ncu_b2b)
+{
+	m_state B2B          ( 2:5 ) ;
+}

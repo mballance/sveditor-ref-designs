@@ -1,0 +1,308 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ios_err_interrupt.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <VeraListProgram.vrh>
+#include <ListMacros.vrh>
+#include "ios_err_packet.vrh"
+#include "ios_rasmon.if.vrh"
+#include "ios_rasmon_ports_binds.vrh"
+#include "std_display_class.vrh"
+#include "siu_common.vrh"
+
+// added this to exclude code for NIU
+#ifndef FC_NO_NIU_T2
+#include "niu_gen_pio.vrh"
+#endif
+#include "ios_ras_defines.vrh"
+#include "ios_injerr.vrh"
+
+extern  StandardDisplay 	dbg;
+// for interrupt handler, not for FC
+
+#ifndef FC_NO_NIU_T2
+extern niu_gen_pio gen_pio_drv;
+#endif
+
+class ios_err_interrupt_mon {
+  local string 		myname;
+  integer		timeout;
+  integer		wait_for_report;
+  integer		ios_ras_interrupt_mon_on;
+  integer		interrupt_mon_running;
+  ios_ras_inj 		ras_injector;
+
+  task new(integer timeout = 100) {
+  	this.myname = "IOS-RAS INTMON";
+	this.timeout = timeout;
+	this.wait_for_report = 100;
+ 	ios_ras_interrupt_mon_on = 1;
+	interrupt_mon_running = 0;
+  }
+
+  task monitor_err_interrupt(ios_ras_inj ras_injector, integer tout);
+  task handle_err_interrupt(var integer result);
+
+}
+
+task ios_err_interrupt_mon::monitor_err_interrupt(ios_ras_inj ras_injector, integer tout)
+{
+  bit [145:0] data;
+  bit not_match = 1;
+  integer counter = 0;
+  integer wait_time, pass_check;
+
+  this.ras_injector = ras_injector;
+  wait_time = (tout != 0) ? tout : this.timeout;
+
+  if (get_plus_arg(CHECK, "ios_ras_interrupt_chk_off"))
+      ios_ras_interrupt_mon_on = 0;
+  else
+      ios_ras_interrupt_mon_on = 1;
+
+  if (interrupt_mon_running)
+       dbg.dispmon(myname, MON_NORMAL, psprintf("user cannot activate more than one interrupt monitor!"));
+  else
+  fork {
+  dbg.dispmon(myname, MON_NORMAL, psprintf("wait for error interrupt timeout %0d", wait_time));
+  interrupt_mon_running = 1;
+  while (ios_ras_interrupt_mon_on)
+  {
+    if (!ras_injector.injected_err_list.empty())
+    {
+       counter = 0;
+       pass_check = 0;
+       not_match = 1;
+       while (not_match) {
+           @ (posedge ncu_cpx_err_mon.clk);
+   	   counter ++ ;
+           if (ncu_cpx_err_mon.req !== 8'h0) {
+             @ (posedge ncu_cpx_err_mon.clk);
+             data = ncu_cpx_err_mon.data[145:0];
+    	     //dbg.dispmon(myname, MON_NORMAL, psprintf("sample ncu cpx request %0h", data));
+             if (data[144:141] == 4'b1101) {  
+          	dbg.dispmon(myname, MON_NORMAL, psprintf("Got an error interrupt with data %0h", data[127:0]));
+		// call ras interrupt handler FC shall be different
+		this.handle_err_interrupt(pass_check);
+		if (!pass_check)
+          		dbg.dispmon(myname, MON_ERR, psprintf("ras checking failed!"));
+		// end of interrupt checker
+		not_match = 0;
+             }
+           }
+	   if (counter > wait_time && not_match)
+           {
+             dbg.dispmon(myname, MON_ERR, psprintf("interrupt timeout"));
+	     not_match = 0;
+	   }
+       } // search for the 
+     } // injected_err_list not empty
+     else	
+        @ (posedge ncu_cpx_err_mon.clk);
+  } // while(1) 
+  } join none
+} // task
+
+task ios_err_interrupt_mon::handle_err_interrupt(var integer result) {
+    bit [63:0] tdata1 = 64'b0;
+    bit [63:0] syn_data = 64'b0;
+    bit [63:0] per_data = 64'b0;
+    bit [63:0] esr_data = 64'b0;
+    bit [63:0] expect_data = 64'b0;
+    bit [63:0] ncuele_value, ncueie_value;
+    bit [63:0] sii_syndrome = 64'b0;
+    bit [2:0] sii_etag = 3'b011;
+    bit		check_sii_syndrome = 0;
+    bit [63:0] ncu_syndrome = 64'b0;
+    bit [4:0] ncu_etag = 5'b0;
+    bit		check_ncu_syndrome = 0;
+    ios_err_packet ptr_pkt;
+    VeraListIterator_ios_err_packet list_ptr;
+
+    ras_injector.injector_on = 0;
+
+    // read whole injection list
+    list_ptr = ras_injector.injected_err_list.start();
+    ptr_pkt = list_ptr.data();	
+    dbg.dispmon(myname, MON_NORMAL, psprintf("reading injection list size %0d", ras_injector.injected_err_list.size()));
+    while (ptr_pkt != null)
+    {
+    	dbg.dispmon(myname, MON_NORMAL, psprintf("injection pkt tag=%x pa=%x type=%0d", ptr_pkt.ctag, ptr_pkt.pa, ptr_pkt.type));
+    	case (ptr_pkt.type) 
+   	 {
+#ifndef FC_NO_NIU_T2
+		NIUSII_CUE: { expect_data[siiNiuCtagUe] = 1'b1; sii_etag = 0; }
+		NIUSII_CCE: { expect_data[siiNiuCtagCe] = 1'b1; }
+		NIUSII_AP: { expect_data[siiNiuAPe] = 1'b1; sii_etag = 4; }
+		NIUSII_DP: { expect_data[siiNiuDPe] = 1'b1; sii_etag = 6; }
+		SIONIU_DP: { expect_data[niuDPe] = 1'b1; }
+		SIONIU_CUE: { expect_data[niuCtagUe] = 1'b1; }
+		SIONIU_CCE: { expect_data[niuCtagCe] = 1'b1; }
+#endif
+		DMUSII_CUE: { expect_data[siiDmuCtagUe] = 1'b1; sii_etag = 1; }
+		DMUSII_CCE: { expect_data[siiDmuCtagCe] = 1'b1; }
+		DMUSII_AP: { expect_data[siiDmuAPe] = 1'b1; sii_etag = 7; }
+		DMUSII_DP: { expect_data[siiDmuDPe] = 1'b1; sii_etag = 5; }
+		SIODMU_DP: { expect_data[dmuDPe] = 1'b1; }
+		SIODMU_CUE: { expect_data[dmuCtagUe] = 1'b1; }
+		SIODMU_CCE: { expect_data[dmuCtagCe] = 1'b1; }
+		L2SIO_DP: { expect_data[sioDPe] = 1'b1; }
+		L2SIO_EBIT:{} 
+		L2SIO_CUE: { expect_data[sioCtagUe] = 1'b1; }
+		L2SIO_CCE: { expect_data[sioCtagCe] = 1'b1; }
+		SIINCU_DP: { expect_data[ncuDataParity] = 1'b1;}
+		SIINCU_CCE: { expect_data[ncuCtagCe] = 1'b1; }
+		SIINCU_CUE: { expect_data[ncuCtagUe] = 1'b1; }
+#ifndef FC_NO_NIU_T2
+		NIUSII_IOAE: {}
+		NIUSII_IOUE: {}
+		NIUSII_CMDP: {}
+#endif
+		DMUSII_TOUT: {}
+		DMUSII_IOAE: {}
+		DMUSII_IOUE: {}
+		DMUSII_CMDP: {}
+		DMUSII_BEP: {}
+		DMUNCU_WRACK_P: { expect_data[ncuDmuCr] = 1'b1; }
+		NCUDMU_MONDO_IDP: { expect_data[dmuNcuCrPe] = 1'b1; }
+		SIIDMU_WRACK_P: { expect_data[dmuSiiCrPe] = 1'b1; }
+    	 }
+	// only take first one on the list
+	if (!check_sii_syndrome)
+	{
+    		if (sii_etag !== 3'b011)
+    		{
+			check_sii_syndrome = 1;
+			sii_syndrome = {1'b1, 4'b0, sii_etag, ptr_pkt.ctag, ptr_pkt.pa}; 
+		}
+	}
+
+	list_ptr = ras_injector.injected_err_list.erase(list_ptr);
+        ptr_pkt = list_ptr.data();	
+    }
+
+#ifdef N2_FC
+    // direct read from the ncu ras csr
+    per_data = 64'b0;
+    per_data[42:0] = ncu_ras_csr.per;
+    if (expect_data[42:0] !== per_data[42:0])
+    {
+	repeat (wait_for_report) @ (posedge ncu_cpx_err_mon.clk);
+	esr_data[42:0] = ncu_ras_csr.esr[42:0];
+	per_data = esr_data | per_data;
+	result = (expect_data[42:0] === per_data[42:0]) ? 1 : 0;
+    }
+    else
+	result = 1;
+
+    if (result)
+    	dbg.dispmon(myname, MON_NORMAL, psprintf("direct read: error status register match get=%x exp=%x", per_data[42:0], expect_data[42:0]));
+    else
+    	dbg.dispmon(myname, MON_ERR, psprintf("direct read: error status register mismatch get=%x exp=%x", per_data[42:0], expect_data[42:0]));
+
+    if (check_sii_syndrome)
+    {	
+	repeat (30) @ (posedge ncu_cpx_err_mon.clk);
+	syn_data = 64'b0;
+        syn_data[58:0] = ncu_ras_csr.siisyn;
+	if (sii_syndrome[58:56] === 3'b0 || sii_syndrome[58:56] === 3'b001) sii_syndrome[55:40] = syn_data[55:40];
+    	if (sii_syndrome[58:0] === syn_data[58:0])
+    	{
+    		dbg.dispmon(myname, MON_NORMAL, psprintf("direct read: sii error syndrome register match get=%x exp=%x", syn_data[58:0], sii_syndrome[58:0]));
+   	 	result = 1;
+   	 }
+    	else
+    	{
+    		dbg.dispmon(myname, MON_ERR, psprintf("direct read: sii error syndrome register mismatch get=%x exp=%x", syn_data[58:0], sii_syndrome[58:0]));
+    		result = 0;
+    	}
+    }
+    // end of direct read checking
+#else
+
+    // disable interrupt
+    gen_pio_drv.pio_rd(40'h80_0000_3010, ncueie_value);
+    gen_pio_drv.pio_wr(40'h80_0000_3010, 64'h0000_0000_0000_0000); 
+    // read per,
+    gen_pio_drv.pio_rd(40'h80_0000_3028, tdata1);
+    per_data = {tdata1[7:0],tdata1[15:8],tdata1[23:16],tdata1[31:24],tdata1[39:32],tdata1[47:40],tdata1[55:48],tdata1[63:56]};
+    // if not matched, wait 100 cycles
+    if (expect_data[62:0] !== per_data[62:0])
+    {
+	repeat (wait_for_report) @ (posedge ncu_cpx_err_mon.clk);
+    	gen_pio_drv.pio_rd(40'h80_0000_3000, tdata1);
+    	esr_data = {tdata1[7:0],tdata1[15:8],tdata1[23:16],tdata1[31:24],tdata1[39:32],tdata1[47:40],tdata1[55:48],tdata1[63:56]};
+	per_data = esr_data | per_data;
+	result = (expect_data[62:0] === per_data[62:0]) ? 1 : 0;
+    }
+    else
+	result = 1;
+    if (result)
+    	dbg.dispmon(myname, MON_NORMAL, psprintf("error status register match get=%x exp=%x", per_data, expect_data));
+    else
+    	dbg.dispmon(myname, MON_ERR, psprintf("error status register mismatch get=%x exp=%x", per_data, expect_data));
+
+
+    // disable logging
+    gen_pio_drv.pio_rd(40'h80_0000_3008, ncuele_value);
+    gen_pio_drv.pio_wr(40'h80_0000_3008, 64'h0000_0000_0000_0000); 
+
+
+    // check syndrome
+    if (check_sii_syndrome)
+    {	
+        gen_pio_drv.pio_rd(40'h80_0000_3030, tdata1);
+        syn_data = {tdata1[7:0],tdata1[15:8],tdata1[23:16],tdata1[31:24],tdata1[39:32],tdata1[47:40],tdata1[55:48],tdata1[63:56]};
+	if (sii_syndrome[58:56] === 3'b0 || sii_syndrome[58:56] === 3'b001) sii_syndrome[55:40] = syn_data[55:40];
+    	if (sii_syndrome === syn_data)
+    	{
+    		dbg.dispmon(myname, MON_NORMAL, psprintf("sii error syndrome register match get=%x exp=%x", syn_data, sii_syndrome));
+   	 	result = 1;
+   	 }
+    	else
+    	{
+    		dbg.dispmon(myname, MON_ERR, psprintf("sii error syndrome register mismatch get=%x exp=%x", syn_data, sii_syndrome));
+    		result = 0;
+    	}
+    }
+
+    gen_pio_drv.pio_wr(40'h80_0000_3028, 64'h0000_0000_0000_0000);
+    gen_pio_drv.pio_wr(40'h80_0000_3000, 64'h0000_0000_0000_0000);
+    gen_pio_drv.pio_wr(40'h80_0000_3030, 64'h0000_0000_0000_0000);
+    gen_pio_drv.pio_wr(40'h80_0000_3008, ncuele_value);
+    gen_pio_drv.pio_wr(40'h80_0000_3010, ncueie_value);
+#endif
+
+    ras_injector.injector_on = 1;
+}

@@ -1,0 +1,633 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: N2PEUTestBase.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class PEUTestBase {
+
+
+  BootPEUStr boot;			// A strategy for starting things up
+  protected PEUTestEnv env;		// The test environment
+  PIOPEUCtx  pio;                       // The context to perform PIO traffic
+  DMAPEUCtx  dma;                       // The context to perform DMA traffic
+
+  protected integer    txBadInit = 0;   // Tx bad init fc dllps before link up
+  protected bit        slowClock;	// Do we have a slow ILU clock?
+  protected bit        stallNpstWr;     // Do PIO reqs stall after Cfg/IO write?
+
+  protected bit        AHBdone = 0;     // used to start/stop AHB traffic
+  protected bit        PMmsgDone = 0;   // used to start/stop PMmsg traffic
+  protected event      donePMmsgs;      // signals when PMmsgs finishes
+
+  protected integer    numPhyLanes;
+  protected integer    numActiveLanes;
+  protected bit        fastTrain;
+  protected bit        enableL0s;
+  protected bit [63:0] retryBufSize;
+  protected PECBool     txEnableScramble;
+  protected PECBool     rxEnableScramble;
+
+  //N2 - Start 
+
+  // Only need to create 1 Report class to pass around the whole testbench 
+  ReportClass     Report = new;
+
+  // The Scenario classes holds some test parameters
+  ilupeuScenario  Scenario = new( Report );
+
+  // urandom Seed Generation
+  bit [31:0] urand_seed = 32'hdeadbeef;
+  bit seed_with_tod = 1'b0;
+  // bit seed_with_tod = 1'b1;
+
+  public task Seed();
+  //N2 - End
+
+  public task new();
+
+  virtual public task execute();        // Run the whole test
+
+  virtual public task setBoot();        // Set the params in Boot Str
+  virtual public task setEnv();         // Set initial params in env.
+
+  virtual public task setPIO();         // Set params for PIO Noise Context
+  virtual public task setDMA();         // Set params for DMA Noise Context
+
+  virtual public task runPIO();         // Run the PIO Noise Context
+  virtual public task runDMA();         // Run the DMA Noise Context
+
+  virtual public task runTest();        // Test something interesting
+
+  virtual public task startAHB( PEUTestEnv env );
+  virtual public task stopAHB();
+
+  virtual public task startPMmsgs( PEUTestEnv env,
+                                   integer minDelay = 100,
+                                   integer maxDelay = 200 );
+  virtual public task stopPMmsgs();
+
+  virtual public task startLTSSM( PEUTestEnv env,
+                                  integer minDelay, integer maxDelay,
+                                  integer recovery, integer L0s );
+  virtual public task stopLTSSM();
+  virtual public task stopPioDma();
+}
+
+
+task PEUTestBase::new() {
+
+  integer status, unk;
+  integer print_str;
+
+  this.enableL0s = 0;
+  this.retryBufSize = 64'h0;
+  this.slowClock = 0;
+
+  //Set the print threshold at the command line
+  //example: sims ...  -vcs_run_args=+report_global_print_threshold=RPRT_DEBUG_3
+  if( get_plus_arg( CHECK, "+report_global_print_threshold=" ) ){
+     print_str = get_plus_arg( NUM, "+report_global_print_threshold=" );
+     case( print_str ){
+          RPRT_INFO:          Report.set_global_print_threshold( RPRT_INFO );
+          RPRT_DEBUG_3:       Report.set_global_print_threshold( RPRT_DEBUG_3 );
+          default:            Report.set_global_print_threshold( RPRT_INFO );
+    }
+  }else{
+     //If there is no print level passed in then only print the minimum
+     Report.set_global_print_threshold( RPRT_NONMASKABLE );
+  }
+
+  // Seed();
+
+  //Step 0. Initialize Denali Vera Interface
+  status = denaliVeraPcieInit();
+  if (status == -1)
+    QuickReport(Report,RTYP_TEST_ERROR,"denaliVeraPcieInit() failed. \n" );
+
+  status = DenaliDDVinitialize("","",unk,"","API");
+  if (status == -1)
+    QuickReport(Report,RTYP_TEST_ERROR,"DenaliDDVinitialize() failed. \n" );
+
+  // Set Denali Register Callback Task For PCIE Xactors
+  status = DenaliDDVaccessSetCallback("FNXPCIEXactorRegCbTask");
+  if (status == -1)
+    QuickReport(Report,RTYP_TEST_ERROR,"DenaliDDVaccessSetCallback() failed. \n" );
+
+}
+
+
+task PEUTestBase::execute() {
+  bit pioDone;
+  bit dmaDone;
+  PioCfgIOWrPEUStr CfgWr0;
+
+
+  printf("**PEUTestBase Begin Execution**\n");
+
+
+  printf("**PEUTestBase Set Up Boot Strategy**\n");
+  boot = new( Report,
+              Scenario );                         // Let's get ready to rumble ....
+  this.setBoot();
+  printf("**PEUTestBase Boot Strategy Set Up Complete**\n");
+
+
+  printf("**PEUTestBase Execute Boot Strategy**\n");
+  boot.Execute();
+  printf("**PEUTestBase Boot Strategy Complete**\n");
+
+
+  printf("**PEUTestBase Set Up Environment**\n");
+  env = boot.getEnv();
+  this.setEnv();
+  printf("**PEUTestBase Environment Set Up Complete**\n");
+
+#ifndef N2_FC
+
+  //Make the 1st transaction a Cfg Write 0 so that the
+  // Config ID in Denali can be set
+  CfgWr0 = new( env ); 
+  CfgWr0._type_req_prob_cfg1 = 0;
+  CfgWr0._type_req_prob_io = 0;
+  CfgWr0._ep_cpl_prob_true = 0;
+  CfgWr0._td_cpl_prob_true = 0;
+  CfgWr0._bcm_prob_true = 0;
+  CfgWr0.Execute();
+  printf("**PEUTestBase Sent ConfigWrite0 to Denali**\n");
+
+
+  printf("**PEUTestBase Set Up PIO Traffic**\n");
+  pio = new(env);
+  this.setPIO();
+  printf("**PEUTestBase PIO Traffic Set Up Complete**\n");
+
+
+  printf("**PEUTestBase Set Up DMA Traffic**\n");
+  dma = new( "DmaTraffic", env, "random" );
+  this.setDMA();
+  printf("**PEUTestBase DMA Traffic Set Up Complete**\n");
+
+  pioDone = 0;
+  dmaDone = 0;
+  fork
+  {
+    printf("**PEUTestBase Run PIO Traffic**\n");
+    this.runPIO();
+    printf("**PEUTestBase PIO Traffic Complete**\n");
+    pioDone = 1;
+  }
+  {
+    printf("**PEUTestBase Run DMA Traffic**\n");
+    this.runDMA();
+    printf("**PEUTestBase DMA Traffic Complete**\n");
+    dmaDone = 1;
+  }
+  {
+    printf("**PEUTestBase Run Test**\n");
+    this.runTest();
+    printf("**PEUTestBase Test Complete**\n");
+
+    printf("**PEUTestBase Signal PIO & DMA Traffic Stop**\n");
+    pio.StratStop = 1'b1;
+    dma.StratStop = 1'b1;
+    printf("**PEUTestBase PIO & DMA Traffic Stop Signal Complete**\n");
+    while( ( !pioDone && (pio.NumStrat - pio.StratDone) > 100 )
+        || ( !dmaDone && (dma.NumStrat - dma.StratDone) > 100 ) )
+      { 
+      printf( "**PEUTestBase (cyc %0d) PIO/DMA remaining = %0d/%0d\n",
+              get_cycle(),
+              pio.NumStrat - pio.StratDone, dma.NumStrat - dma.StratDone );
+      env.wait(100);
+      }
+    printf( "**PEUTestBase (cyc %0d) PIO/DMA remaining = %0d/%0d\n",
+            get_cycle(),
+            pio.NumStrat - pio.StratDone, dma.NumStrat - dma.StratDone );
+  }
+  join all
+
+  printf("**PEUTestBase Expect Idle State**\n");
+  env.expectIdleState();
+  printf("**PEUTestBase Expect Idle State Complete**\n");
+
+#endif
+
+  printf("**PEUTestBase Execution Complete**\n");
+}
+
+/*
+* Beat up on the AHB interface to the LPU's CSRs.
+* But only if we don't have an LPU hooked up!
+*/
+task PEUTestBase::startAHB( PEUTestEnv env )
+  {
+/* N2 review - Not Needed???
+  bit [63:0] data;
+  bit [31:0] addr;
+
+  if ( get_plus_arg( CHECK, "LPU" ) ) return;
+
+  repeat(10) @(posedge CLOCK);		// Let reset finish...
+
+  this.AHBdone = 0;
+  while( !this.AHBdone )
+    {
+      data = { 32'b0, urandom() };
+      addr = env.getLPUaddr( urandom() % PEC_LPU_CSR_MAX_COUNT );
+      env.writeCSR( addr, data );
+      env.expectCSRdirect( addr, data );
+
+      data = { 32'b0, urandom() };
+      addr = env.getLPUaddr( urandom() % PEC_LPU_CSR_MAX_COUNT );
+      env.writeCSRdirect( addr, data );
+      env.expectCSR( addr, data );
+
+      data = { 32'b0, urandom() };
+      addr = env.getLPUaddr( urandom() % PEC_LPU_CSR_MAX_COUNT );
+      data = env.readCSRdirect( addr );
+      env.expectCSR( addr, data );
+    }
+*/
+  } /* end startAHB */
+
+task PEUTestBase::stopAHB()
+  {
+//N2 review  this.AHBdone = 1;
+  }
+
+
+/*
+* Write CSRs which cause PM messages to be sent by the TLU.
+*/
+task PEUTestBase::startPMmsgs( PEUTestEnv env,
+                               integer minDelay = 100,
+                               integer maxDelay = 200 )
+  {
+  bit [7:0] msgType;
+  bit [63:0] data;
+  bit [63:0] capData;
+  bit [31:0] expData;
+  bit [31:0] addr;
+  integer delay;
+  event csrWritten;
+
+  capData = 64'h00100;
+  trigger( OFF, this.donePMmsgs );
+
+  this.PMmsgDone = 0;
+  while( !this.PMmsgDone )
+    {
+    delay = minDelay + urandom() % (maxDelay-minDelay+1);
+    repeat(delay) @(posedge CLOCK);
+    if ( urandom()%2 )
+      {
+      data = 64'b01;
+      expData = 0;
+      addr = env.getCSRaddr( e_CSR_pme_ctl );
+      msgType = PEC_PCI__MSG_CODE_PM_TURN_OFF;
+      }
+    else
+      {
+      capData = capData + 64'h00100;
+      data = capData;
+      expData = { 22'b0, capData[16:7] };
+      addr = env.getCSRaddr( e_CSR_slot_cap );
+      msgType = PEC_PCI__MSG_CODE_SET_SLOT_POWER_LIMIT;
+      }
+    trigger( OFF, csrWritten );
+    fork
+      env.expectEgressMsg( msgType, expData, csrWritten );
+      {
+        env.writeCSR( addr, data );
+        trigger( ON, csrWritten );
+      }
+    join
+    }
+  trigger( ON, this.donePMmsgs );
+  } /* end exercisePMmsgs */
+
+task PEUTestBase::stopPMmsgs()
+  {
+  this.PMmsgDone = 1;
+  sync( ANY, this.donePMmsgs );
+  }
+
+task PEUTestBase::startLTSSM( PEUTestEnv env,
+                              integer minDelay, integer maxDelay,
+                              integer recovery, integer L0s )
+  {
+  }
+
+task PEUTestBase::stopLTSSM()
+  {
+  }
+
+
+task PEUTestBase::setBoot() {
+
+  boot.getPhyConfig( this.numPhyLanes,
+                     this.numActiveLanes,
+                     this.fastTrain,
+                     txEnableScramble,
+                     rxEnableScramble
+                    );
+
+  //  QuickReport(Report,RTYP_INFO, " PEUTestBase::setBoot() result of get_plus_arg( CHECK, \"vera_random_seed=\" ) is %h\n", get_plus_arg( CHECK, "vera_random_seed=" )  );
+  
+//N2 review    boot.setClkDrift(8);
+//N2 review    boot.setDriftPeriod(19);
+  boot.setPostedCredits( 16, 64 );
+  boot.setNonpostedCredits( 16, 64 );
+  boot.setCompletionCredits( 16, 64 );
+  return;
+   
+#ifndef N2_FC
+
+  randcase
+    {
+//N2 review    1: { boot.slowClock(1); this.slowClock = 1; }
+//N2 review    5: { boot.slowClock(0); }
+    10: {}
+    }
+  randcase
+    {
+//N2 review    1: { boot.setClkDrift(1); boot.setDriftPeriod(2); }
+//N2 review    1: { boot.setClkDrift(10); boot.setDriftPeriod( urandom()%20 + 20 ); }
+    1: {}
+    }
+  randcase
+    {
+    1: boot.setPostedCredits( 0, 0 );
+    1: boot.setPostedCredits( 1, 32 );
+    1: boot.setPostedCredits( 2, 32 );
+    1: boot.setPostedCredits( 4, 32 );
+    1: boot.setPostedCredits( 16, 64 );
+    1: boot.setPostedCredits( 128, 2048 );
+    }
+  randcase
+    {
+    1: boot.setNonpostedCredits( 0, 0 );
+    1: boot.setNonpostedCredits( 1, 32 );
+    1: boot.setNonpostedCredits( 2, 32 );
+    1: boot.setNonpostedCredits( 4, 32 );
+    1: boot.setNonpostedCredits( 16, 64 );
+    1: boot.setNonpostedCredits( 128, 2048 );
+    }
+  randcase
+    {
+    1: boot.setCompletionCredits( 0, 0 );
+    1: boot.setCompletionCredits( 1, 32 );
+    1: boot.setCompletionCredits( 2, 32 );
+    1: boot.setCompletionCredits( 4, 32 );
+    1: boot.setCompletionCredits( 16, 64 );
+    1: boot.setCompletionCredits( 128, 2048 );
+    }
+#endif
+}
+
+
+task PEUTestBase::setEnv() {
+  bit     useLpu;
+  integer seed;
+  integer mps;
+  integer len1;
+  integer len2;
+  integer len16;
+  integer lenBulk;
+  integer egressThrottle;
+  integer ingressThrottle;
+  integer ingressAbortRate;
+  integer minGap;
+  integer maxGap;
+
+//N2  useLpu = get_plus_arg( CHECK, "LPU" );
+  useLpu = 1;	//Always set for N2
+
+#ifndef N2_FC
+
+  // Randomly select environment / device parameters
+  randcase
+    {
+    1: mps = 128;
+    1: mps = 256;
+    1: mps = 512;
+    }
+
+  randcase
+    {
+    1: egressThrottle = 0;
+    1: egressThrottle = 25;
+    1: egressThrottle = 50;
+    }
+
+  randcase
+    {
+    1: ingressThrottle = 0;
+//N2 review    1: ingressThrottle = useLpu ? 0 : 25;
+//N2 review    1: ingressThrottle = useLpu ? 0 : 50;
+    }
+
+  randcase
+    {
+    1: ingressAbortRate = 0;
+//N2 review    1: ingressAbortRate = useLpu ? 0 : 10;
+//N2 review    1: ingressAbortRate = useLpu ? 0 : 25;
+    }
+
+  randcase
+    {
+    1: { minGap = 2; maxGap = 2; }
+    1: { minGap = 2; maxGap = 6; }
+    }
+
+  randcase // Payload sizes...
+    {
+    1: { len1=10; len2=10; len16=10; lenBulk=10; }       // A little of each
+    1: { len1=10; len2=1;  len16=1;  lenBulk=0;  }       // Lots of 1DW payloads
+    1: { len1=10; len2=10; len16=10; lenBulk=0;  }       // No bulk payloads
+    }
+
+  randcase
+    {
+    1: stallNpstWr = 0;
+    1: stallNpstWr = 1;
+    }
+
+  //
+  // If the initial (random) seed is small, then choose environment
+  // parameters based on that seed.  In this way, a couple of random runs
+  // can be used for coverage purposes.
+  //
+  if ( get_plus_arg( CHECK, "vera_random_seed=" ) )
+    {
+    seed = get_plus_arg( NUM, "vera_random_seed=" );
+    case ( seed )
+      {
+      1: { mps = 128; stallNpstWr = 0; }
+      2: { mps = 256; stallNpstWr = 0; }
+      3: { mps = 512; stallNpstWr = 0; }
+      4: { stallNpstWr = 1; }
+      }
+    }
+
+  //
+  // If no "vera random seed" was specified, then we have a directed test.
+  // Use default values for all tests.
+  //
+  else
+    {
+#endif
+    
+    mps = 128;
+    len1 = 10;
+    len2 = 10;
+    len16 = 0;
+    lenBulk = 0;
+    egressThrottle = -1;
+    ingressThrottle = useLpu ? 0 : -1;
+    ingressAbortRate = useLpu ? 0 : 10;
+    stallNpstWr = 0;
+    minGap = 2;
+    maxGap = 2;
+    
+#ifndef N2_FC
+    }
+#endif
+
+
+  //
+  // Set the environment parameters determined above.
+  //
+  env.setLenWeights( len1, len2, len16, lenBulk );
+  env.setIngressAbortRate( ingressAbortRate );
+  env.setIngressThrottle( ingressThrottle );
+  env.setIngressGap( minGap, maxGap );
+  env.setEgressThrottle( egressThrottle );
+  env.setMaxPayloadSize( mps );
+  env.setMaxRequestSize( 4096 );
+//  env.setMaxRequestSize( mps );
+  if ( stallNpstWr && !useLpu )
+    env.stallNonpostedWrite( 1 );
+
+#ifndef N2_FC
+  // If we're using the LPU, initialize the replay and acknak timers
+//N2 review - Disabled in env
+  if ( useLpu )
+    env.initLpuCSRs( this.numActiveLanes, mps, this.fastTrain, this.enableL0s, this.retryBufSize );
+
+  //
+  // Bring up the link and present initial credit advertisements to the TLU
+  //
+  env.linkUp( 20 * (urandom()%5) + 20, this.txBadInit );
+
+  // Wait a bit and make sure the 'link up' event was recorded
+  repeat(20) @(posedge CLOCK);
+  env.expectError( e_ERR_oe_lup, 1, 0 );
+#endif
+}
+
+
+task PEUTestBase::setPIO() {
+
+  pio.StratStop = 1'b0;
+  pio._stratNum = 0;
+  pio.NumStrat = 15000;
+
+  pio._ep_cpl_mode = e_fixed;
+  pio._ep_cpl_fixed  = e_false;
+
+  pio._cpl_status_mode = e_fixed;
+  pio._cpl_status_fixed = PEC_PCI__CPL_STATUS_SC;
+
+}
+
+
+task PEUTestBase::setDMA() {
+
+  dma.StratStop = 1'b0;
+  dma._stratNum = 0;
+  dma.NumStrat = ( this.slowClock || this.stallNpstWr ) ? 25000 : 15000;
+}
+
+
+task PEUTestBase::runPIO() {
+
+  pio.Execute();
+  if (pio.StratStop !== 1'b1)
+    error("PIO Background Traffic Finished Early\n");
+}
+
+
+task PEUTestBase::runDMA() {
+
+  dma.Execute();
+  if (dma.StratStop !== 1'b1)
+    error("DMA Background Traffic Finished Early\n");
+}
+
+
+task PEUTestBase::Seed()
+  {
+    string msg;
+    bit [31:0] time_0;
+
+    // Grab Seed With Time of Day Bit
+    if ( get_plus_arg( CHECK, "seed_with_tod=" ))
+      seed_with_tod = get_plus_arg( NUM, "seed_with_tod=" );
+
+    // Seed With Time of Day if Set
+    if (seed_with_tod) {
+      time_0 = get_systime();
+      urandom(time_0);
+      urand_seed = time_0 + urandom();
+    }
+
+    // Grab Urandom Seed From Command Line If Present
+    if ( get_plus_arg( CHECK, "urand_seed=" ))
+      urand_seed = get_plus_arg( HNUM, "urand_seed=" );
+
+    urandom(urand_seed);
+
+    if (seed_with_tod)
+      QuickReport(Report,RTYP_INFO, "ilupeuTestBase: urandom() seeded with time of day, seed=%h \n",
+urand_seed );
+    else
+      QuickReport(Report,RTYP_INFO,"ilupeuTestBase: urandom() seeded with seed=%h \n", urand_seed );
+
+  }     // End task Seed()
+
+task PEUTestBase::runTest() { }
+
+task PEUTestBase::stopPioDma(){ 
+
+    pio.StratStop = 1'b1;
+    dma.StratStop = 1'b1;
+}

@@ -1,0 +1,335 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: RAMAccessor.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "report_macros.vri"
+
+class RAMAccessor extends AccessorBase {
+
+  local bit [CSRT_ADDR_OFFSET_WIDTH-1:0] base_address;
+
+   //=================================================
+   //	Constructor
+   //=================================================
+   task new ( CSRState                          ShadowState,
+	      bit [CSRT_ADDR_OFFSET_WIDTH-1:0]	input_addr_offset ,
+	      bit [CSRT_DATA_WIDTH-1:0]		input_por_value ,
+	      bit [CSRT_DATA_WIDTH-1:0]		input_rmask ,
+	      bit [CSRT_DATA_WIDTH-1:0]		input_read_only_mask ,
+	      bit [CSRT_DATA_WIDTH-1:0]		input_write_mask ,
+	      bit [CSRT_DATA_WIDTH-1:0]		input_clear_mask ,
+	      bit [CSRT_DATA_WIDTH-1:0]		input_set_mask,
+	      bit [CSRT_DATA_WIDTH-1:0]		input_toggle_mask ,
+	      string				input_name ,
+	      integer				input_num_fields ,
+	      CSRAccessMethod                   input_access_methods[],
+              integer				input_access_level[],
+              string				input_access_name[],
+	      integer                           input_default_access_method
+	    ) {
+
+     integer   ii;
+
+     super.new ( ShadowState,
+		 input_addr_offset,
+		 input_por_value,
+		 input_rmask,
+		 input_read_only_mask,
+		 input_write_mask,
+		 input_clear_mask,
+		 input_set_mask,
+		 input_toggle_mask,
+		 input_name,
+		 input_num_fields);
+
+     base_address = get_addr_offset(); //This is a base address for a RAM accessor
+     csr_check_enabled		= CSRT_CHECK_ENABLED;
+//     csr_write_trans_sem	= alloc(SEMAPHORE,0,1,1);
+
+     set_method_array(input_access_methods, input_access_level, input_access_name);
+
+     DefaultMethod             = input_default_access_method;
+   } // end task new
+
+
+   //=================================================
+   //	Read function
+   //=================================================
+   function bit [CSRT_DATA_WIDTH-1:0] read (bit [CSRT_ADDR_OFFSET_WIDTH-1:0] offset, 
+					    integer                          method = CSRT_USE_DEFAULT_METHOD){
+
+     bit [CSRT_ADDR_OFFSET_WIDTH-1:0] effective_addr;
+
+     if (method == CSRT_USE_DEFAULT_METHOD)
+       method = DefaultMethod;
+
+     check_method(method);
+
+     if (method == CSRT_STUB) {
+       QuickReport(CSRReport, RTYP_CSR_DEBUG_1, "RAMAccessor::read: %s register: is stubbed out",get_name());	
+     } 
+     else {
+       effective_addr = base_address + offset;
+       QuickReport(CSRReport, RTYP_CSR_DEBUG_1,"RAMAccessor: %s read(): %s register: Addr %0h", 
+		   get_method_name(method),
+		   get_name(), 
+		   effective_addr);
+       read = access_methods[method].read(effective_addr);
+     }
+   } // end function read
+
+
+   //=================================================
+   //	Write task
+   //=================================================
+   task write ( bit [CSRT_ADDR_OFFSET_WIDTH-1:0] offset, 
+	        bit [CSRT_DATA_WIDTH-1:0] csr_data, 
+	        integer method = CSRT_USE_DEFAULT_METHOD ){
+
+     bit [CSRT_ADDR_OFFSET_WIDTH-1:0] effective_addr;
+
+     if (method == CSRT_USE_DEFAULT_METHOD)
+       method = DefaultMethod;
+
+
+
+     check_method(method);
+
+     // Perform Hardware Write
+     if (method == CSRT_STUB) {
+       QuickReport(CSRReport, RTYP_CSR_INFO, "RAMAccessor::read: %s register: is stubbed out",get_name());	
+     }
+     else {
+       effective_addr = base_address + offset;
+
+       QuickReport(CSRReport, RTYP_CSR_DEBUG_1,"RAMAccessor: %s write(): %s register: Addr %0h : data %0h",
+		   get_method_name(method),
+		   get_name(),
+		   effective_addr,
+		   csr_data);
+
+       access_methods[method].write(effective_addr, csr_data);
+     }
+   } // end task write
+
+
+   //=================================================
+   //	Check Register Function
+   //=================================================
+  // The following change was made on 9/21/01 -RFT
+  // This function should really be based on a wild card match, allowing
+  // a don't care setting for the shadow data. This is necessary for registers
+  // that don't have a specific POR value because they are not connected to
+  // reset.
+  // 
+  function integer check_register (integer method = CSRT_USE_DEFAULT_METHOD) {
+
+    bit [CSRT_DATA_WIDTH-1:0]        actual_data;
+    bit [CSRT_DATA_WIDTH-1:0]        expected_data;
+    integer                          index = 0;
+    bit                              success = 1;
+
+    QuickReport(CSRReport, RTYP_CSR_ALERT,"%0d:check_register() is not supported for RAMAccessor: %s register.",
+		     get_cycle(),get_name());
+
+    check_register = CSRT_MISMATCH_RETURN_CODE;
+
+  } // end function check_register
+
+
+
+  //=================================================
+   //	Reset Task
+   //=================================================
+
+   task reset () {
+
+     QuickReport(CSRReport, RTYP_CSR_ALERT,"%0d:reset() is not supported for RAMAccessor: %s register.",
+		      get_cycle(),get_name());
+     
+   } // end task reset
+
+
+
+   //=================================================
+   //      Read Field Function
+   //=================================================
+
+   function bit [CSRT_DATA_WIDTH-1:0] read_field (bit [CSRT_ADDR_OFFSET_WIDTH-1:0] offset, 
+						  integer field_id,
+                                                  integer method = CSRT_USE_DEFAULT_METHOD) {
+
+     bit [CSRT_DATA_WIDTH-1:0] temp_data;
+
+      if (method == CSRT_USE_DEFAULT_METHOD)
+	method = DefaultMethod;
+
+      if (field_id < get_max_num_fields()) {
+	QuickReport(CSRReport, RTYP_CSR_DEBUG_3,"%0d:CSR read_field(): %s register %s field:\t%0h\n",
+	       get_cycle(),get_name(),reg_field[field_id].get_field_name(),read_field);
+
+	temp_data  = read(offset,method);
+	temp_data  = temp_data & reg_field[field_id].get_field_mask();
+	temp_data  = temp_data >> reg_field[field_id].get_field_position();
+	read_field = temp_data;
+      }
+      else {
+	QuickReport(CSRReport, RTYP_CSR_ERROR, "RamAccessor::read_field: Invalid field_id %0h",field_id);
+      }
+   } // end function read_field
+
+
+
+   //=================================================
+   //      Write Field Task
+   //=================================================
+
+   task write_field (bit [CSRT_ADDR_OFFSET_WIDTH-1:0] offset,  
+		     integer			field_id,
+		     bit [CSRT_DATA_WIDTH-1:0]	field_data,
+		     integer			method = CSRT_USE_DEFAULT_METHOD )  {
+
+      bit [CSRT_DATA_WIDTH-1:0] curr_data;
+      bit [CSRT_DATA_WIDTH-1:0] revised_data;
+      bit [CSRT_DATA_WIDTH-1:0] field_positioned_data;
+      bit [CSRT_DATA_WIDTH-1:0] zero_field_mask;
+      bit [CSRT_DATA_WIDTH-1:0] refresh_bit_mask;
+
+      if (method == CSRT_USE_DEFAULT_METHOD)
+	method = DefaultMethod;
+
+      if (field_id < get_max_num_fields()) {
+
+	QuickReport(CSRReport, RTYP_CSR_DEBUG_3,"%0d:CSR write_field(): %s register %s field:\t%0h\n",
+	       get_cycle(),get_name(),reg_field[field_id].get_field_name(),field_data);
+	semaphore_get (WAIT, ShadowState.csr_write_trans_sem, 1);
+
+	field_positioned_data	= reg_field[field_id].get_field_mask() & (field_data << reg_field[field_id].get_field_position());
+	curr_data		= read(offset, method);
+	zero_field_mask	= ~(reg_field[field_id].get_field_mask());
+	refresh_bit_mask	= zero_field_mask & get_write_mask ();
+	revised_data		= (curr_data & refresh_bit_mask) | field_positioned_data;
+	access_methods[method].write(offset, revised_data);
+
+	semaphore_put (ShadowState.csr_write_trans_sem, 1);
+      }
+      else {
+	QuickReport(CSRReport, RTYP_CSR_ERROR, "RamAccessor::write_field: Invalid field_id %0h",field_id);
+      }
+
+   } // end task write_field
+
+
+   //=================================================
+   //      Write Fields Task
+   //=================================================
+   task write_fields(bit [CSRT_ADDR_OFFSET_WIDTH-1:0] offset, CSRFieldAggregate field_aggregate, integer method = CSRT_USE_DEFAULT_METHOD) {
+     bit [CSRT_DATA_WIDTH-1:0] curr_data;
+     bit [CSRT_DATA_WIDTH-1:0] revised_data;
+     bit [CSRT_DATA_WIDTH-1:0] field_positioned_data = 0;
+     bit [CSRT_DATA_WIDTH-1:0] zero_field_mask = 0;
+     bit [CSRT_DATA_WIDTH-1:0] refresh_bit_mask = 0;
+
+     CSRAggregateContainer field_container;
+
+     zero_field_mask = ~zero_field_mask;
+
+     if (method == CSRT_USE_DEFAULT_METHOD)
+       method = DefaultMethod;
+
+     semaphore_get(WAIT, ShadowState.csr_write_trans_sem, 1);
+
+     field_container = field_aggregate.pop();
+
+     while (field_container != null) {
+       if (field_container.field_id < get_max_num_fields()) {
+	 
+//	 CSRReport.report(RTYP_INFO,"%0d:CSR write_fields(): %s register %s field:\t%0h\n", get_cycle(), get_name(), 
+//			  reg_field[field_container.field_id].get_field_name(), field_container.field_data);
+
+	 field_positioned_data |= (reg_field[field_container.field_id].get_field_mask() & 
+				   (field_container.field_data << reg_field[field_container.field_id].get_field_position()));
+	 zero_field_mask       &= ~(reg_field[field_container.field_id].get_field_mask());
+	 refresh_bit_mask      |= zero_field_mask & get_write_mask();
+       } else {
+	 QuickReport(CSRReport, RTYP_CSR_ERROR, "RamAccessor::write_fields: Invalid field_id %0h", field_container.field_id);
+       }
+       field_container = field_aggregate.pop();
+     }
+
+     curr_data    = read(offset, method);
+     revised_data = (curr_data & refresh_bit_mask) | field_positioned_data;
+     
+     if (curr_data !== revised_data) {
+       QuickReport(CSRReport, RTYP_CSR_INFO,"RAMAccessor: %s write_fields(): %s register: Addr %0h : data %0h", get_method_name(method), get_name(), 
+		   get_addr_offset(), revised_data);
+       access_methods[method].write(offset, revised_data);
+     } else {
+       QuickReport(CSRReport, RTYP_CSR_DEBUG_1,"RAMAccessor: %s write_fields(): %s register: Addr %0h : data %0h %s", get_method_name(method), 
+		   get_name(), get_addr_offset(), revised_data, " -- Not writing due to current_data == new_data");
+     }
+
+
+     semaphore_put (ShadowState.csr_write_trans_sem, 1);
+   } // end task write_fields
+
+
+   //=================================================
+
+   task set_shadow_csr(bit [CSRT_DATA_WIDTH-1:0] new_data) {
+
+     QuickReport(CSRReport, RTYP_CSR_ALERT,"%0d:set_shadow_csr() is not supported for RAMAccessor: %s register.",
+		      get_cycle(),get_name());
+   } // end task set_shadow_csr()
+
+   //=================================================
+   //		Get Shadow CSR Function
+   //=================================================
+
+   function bit [CSRT_DATA_WIDTH-1:0] get_shadow_csr() {
+
+     QuickReport(CSRReport, RTYP_CSR_DEBUG_3,"%0d:CSR get_shadow_register(): %s register:\t%0h\n",
+	    get_cycle(), get_name(), get_shadow_csr);
+
+     QuickReport(CSRReport, RTYP_CSR_ALERT,"%0d:get_shadow_csr() is not supported for RAMAccessor: %s register.",
+		      get_cycle(),get_name());
+
+     get_shadow_csr = get_shadow_data();
+   } // end function get_shadow_csr()
+
+} // end class CSRAccessor
+
+
+
+
+

@@ -1,0 +1,1042 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuLinkTrainingStrategy.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+class ilupeuLinkTrainingStrategy extends ilupeuStrategyBase {
+  
+   bit[ ILUPEU_CSR_WIDTH-1:0 ]   ilupeuRegTmpData, ilupeuRegTmpData1, ilupeuRegTmpData2;
+   bit[ FNX_PCIE_XTR_REG_DEN_WIDTH-1:0 ]   denRegTmpData;
+   bit[ FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CAP_WIDTH_WIDTH-1:0 ]   calculatedWidth;
+   bit Retrain = 0;
+   bit goto_polling = 0; 
+
+   task new( ReportClass      _Report,
+             CSRCollection    _CSR,
+             ilupeuPodClass   _Pod, 
+             ilupeuScenario   _Scenario );
+
+   task Execute();
+
+   task Check_Flow_Control_Init();
+   task Check_Link_Status();
+   task Check_Denali_Status();
+   task Denali_Flow_Control_Timers();
+/*
+   task Check_LPUSD_Link_Layer_Status();
+   task Check_LPUSD_LTSSM_Status1();
+   task Check_LPUSD_Rx_Phy_Stat2();
+   task Check_LPUSD_Rx_Phy_Stat3();
+//review N2-   task Check_LPUSD_Transmit_Phy_Status();
+*/
+
+   task RetrainLink();
+   task toLtssmState( bit [4:0] ltssmState,
+                      (integer timer=2000),
+                      (integer accessMethod=OMNI) );
+
+   
+
+}
+
+task ilupeuLinkTrainingStrategy::new( ReportClass      _Report,
+                                     CSRCollection    _CSR,
+                                     ilupeuPodClass   _Pod, 
+                                     ilupeuScenario   _Scenario ){
+   super.new( _Report,
+              _CSR,
+              _Pod,
+              _Scenario );
+}
+
+task ilupeuLinkTrainingStrategy::RetrainLink(){
+   //Use this after a warm reset
+   bit Retrain = 1;
+}
+
+
+task ilupeuLinkTrainingStrategy::Execute(){
+
+    integer linkTrainingCycles = 0;
+    integer linkTrainingTimeout;
+    integer rdDelay = 30;
+    bit inProgressSet = 0;
+    bit [2:0] dataLinkState = 0;
+    bit [7:0] lanes = 0;
+    integer timer;
+
+
+    //FNXPCIEXtr Transaction used to access Denali registers
+    regTrans = new( Pod.FNXPCIEBldr );
+
+    if( Scenario.FastLinkTraining ){
+       linkTrainingTimeout = ILUPEU_FAST_LINK_TRAIN_TO;
+    }
+    else{ 
+       linkTrainingTimeout = ILUPEU_DEFAULT_LINK_TRAIN_TO; 
+    }
+
+    //Check if SDS_READY_ serdes are ready
+    ilupeuRegTmpData = Pod.CSRXtr.CSR.fire_plc_tlu_ctb_tlr_csr_a_core_status.read(CSRT_OMNI);
+    if( (ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_CORE_STATUS_SDS_READY_0_SLC ] == 0) ||
+        (ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_CORE_STATUS_SDS_READY_1_SLC ] == 0) ){
+       Report.report(RTYP_TEST_ERROR, "PEU DLPL Core Status register SDS_READY_0=%0h SDS_READY_1=%0h and both should be 1.\n",ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_CORE_STATUS_SDS_READY_0_SLC ],ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_CORE_STATUS_SDS_READY_1_SLC ] );
+    }
+
+
+#ifndef	N2_FC
+    //This moved from InitStrategy to here!
+    repeat( Scenario.ilupeuDetectQuietDelay ) @(posedge CLOCK);
+    //Make sure LTSSM is still in detect.quiet
+    ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_core_status.read(CSRT_OMNI);
+    if( ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_CORE_STATUS_LTSSM_STATE_SLC ] !== 5'h0 ){	//Detect.Quiet
+       Report.report(RTYP_TEST_ERROR, "LinkTrainingStrategy PEU DLPL Core Status register LTSSM_STATE=%0h is not in Detect.Quiet\n",ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_CORE_STATUS_LTSSM_STATE_SLC ] );
+    }
+
+    // turn on RX_HIGH_IMP_DIS bit 3 of PEU DLPL MACL/PCS control register for the link to proceed to train
+    // note:  in simulation, Denali works without having to set this bit to 1. 
+    ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_link_ctl.read();
+    ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_LINK_CTL_RX_HIGH_IMP_DIS_SLC] = 1; //Turn on RX_HIGH_IMP_DIS 
+    CSR.fire_plc_tlu_ctb_tlr_csr_a_link_ctl.write(ilupeuRegTmpData,CSRT_OMNI);
+    ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_link_ctl.read();
+    Report.report(RTYP_INFO,"AC: before training, RX_HIGH_IMP_DIS = %d , term should be = 3'b100 \n", ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_LINK_CTL_RX_HIGH_IMP_DIS_SLC]);
+
+
+    // Turn off remain in detect.quiet
+    ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_ctl.read();
+    ilupeuRegTmpData[8] = 0;      //Turn off remain in detect.quiet
+    ////    CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_ctl.write(ilupeuRegTmpData,CSRT_DAEMON);
+    CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_ctl.write(ilupeuRegTmpData,CSRT_OMNI);
+
+#endif
+
+//Receive Detect Lanes set
+{
+   //Wait until Detect.Active is entered
+   fork
+   {
+   ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_core_status.read(CSRT_OMNI);
+   while( ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_CORE_STATUS_LTSSM_STATE_SLC ] !== ILUPEU_LTSSM_DETECT_ACT ){
+      if( !Scenario.FastLinkTraining ){
+         repeat(100) @(posedge CLOCK);
+      }
+      else{
+         repeat(10) @(posedge CLOCK);
+      }
+
+      ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_core_status.read(CSRT_OMNI);
+   }
+   }
+   {
+     //Timeout for Detect.Quiet 
+     if( !Scenario.FastLinkTraining ){
+        //12ms = ~4512000 375MHz clock cycles
+        timer = 4512000 - Scenario.ilupeuDetectQuietDelay;
+     }
+     else{
+        timer = 4512 - Scenario.ilupeuDetectQuietDelay;
+     }
+     while( timer ){
+        @(posedge CLOCK);
+        timer--;
+        if( !(timer%1000) ){
+           printf("ilupeuLinkTrainingStrategy Detect.Quiet to Detect.Active timer=%0d",timer);
+        }
+     }
+   }
+   join any
+   if( !timer ){
+      Report.report(RTYP_TEST_ERROR, "ilupeuLinkTrainingStrategy timed out waiting to enter Detect.Active");
+   }
+   terminate; //Kill timer if transition happens
+
+
+   //Create the Transaction used for Denali register access
+   regTrans = new( Pod.FNXPCIEBldr ); 
+   //Delay for Fast or Slow Link Training 
+   //Determine that Receive Detect has started and time how much time(cycles) 
+   // is needed before driving lanes for receive detect 
+   //Set which lanes will detect a receiver
+   if( !Scenario.FastLinkTraining ){
+
+      // Turn on remain in detect.quiet
+      ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_ctl.read(CSRT_OMNI);
+      ilupeuRegTmpData[8] = 1;      //Turn off remain in detect.quiet
+      CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_ctl.write(ilupeuRegTmpData,CSRT_OMNI);
+
+      //Delay for correct Receiver Detect Timing
+//12-1-05 New Serdes      //100uS prep - 38270 375MHz Clocks - actually 101.8uS
+      //1mS prep - 382700 375MHz Clocks - actually 1018uS
+      // <1uS - No Receiver - 382 375MHz Clocks
+//12-1-05 New Serdes      // >30uS - Receiver - 11278 375MHz Clocks
+      // >5uS - Receiver - 1880 375MHz Clocks
+      timer = 377300;
+      while( timer ){
+        @(posedge CLOCK);
+        timer--;
+        if( !(timer%1000) ){
+           ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_core_status.read(CSRT_OMNI);
+           if( ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_CORE_STATUS_LTSSM_STATE_SLC ] !== ILUPEU_LTSSM_DETECT_ACT ){
+              Report.report(RTYP_TEST_ERROR, "ilupeuLinkTrainingStrategy NOT in Detect.Active during prep period timer=%0d",timer);
+           }
+           printf("ilupeuLinkTrainingStrategy Detect.Active receiver detect 1mS prep period timer=%0d cycle=%0d \n",timer,get_cycle());
+        }
+      }
+
+      // 1uS delay for lanes NOT detected
+//review      timer = urandom_range(350,300);
+      timer = 200;
+      printf("ilupeuLinkTrainingStrategy 1uS timer=%0d for NO Receiver\n",timer);
+      while( timer ){
+        @(posedge CLOCK);
+        timer--;
+      }
+   }	//end !FastLinkTraining
+
+   if( Scenario.FastLinkTraining ){
+      case( Scenario.denaliLinkCapMaxLinkWdth ){
+         8:        regTrans.SetRcvDetLanes( 8'hff );
+         4:        regTrans.SetRcvDetLanes( 8'h0f );
+         2:        regTrans.SetRcvDetLanes( 8'h03 );
+         1:        regTrans.SetRcvDetLanes( 8'h01 );
+         default:  regTrans.SetRcvDetLanes( 8'hff );
+      }
+   }else{
+      case( Scenario.denaliLinkCapMaxLinkWdth ){
+         8:        regTrans.SetRcvDetLanes( 8'h00 );
+         4:        regTrans.SetRcvDetLanes( 8'hf0 );
+         2:        regTrans.SetRcvDetLanes( 8'hfc );
+         1:        regTrans.SetRcvDetLanes( 8'hfe );
+         default:  regTrans.SetRcvDetLanes( 8'h00 );
+      }
+   }
+
+   //Should stay here for 3uS more
+   if( !Scenario.FastLinkTraining ){
+      // 4uS delay
+      timer = 1100;
+      printf("ilupeuLinkTrainingStrategy 4uS timer=%0d for Receiver\n",timer);
+      while( timer ){
+        @(posedge CLOCK);
+        timer--;
+        if( !(timer%100) ){
+           printf("ilupeuLinkTrainingStrategy 4uS delay timer=%0d cycle=%0d \n",timer,get_cycle());
+           toLtssmState( ILUPEU_LTSSM_DETECT_ACT,1,OMNI );
+
+        }
+      }
+    printf("ilupeuLinkTrainingStrategy 4uS delay timer=%0d cycle=%0d \n",timer,get_cycle());
+    toLtssmState( ILUPEU_LTSSM_DETECT_ACT,1,OMNI );
+   }
+
+
+   fork
+   {
+   //After exiting Detect.Active don't force any more
+   ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_core_status.read(CSRT_OMNI);
+   while( ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_CORE_STATUS_LTSSM_STATE_SLC ] == ILUPEU_LTSSM_DETECT_ACT ){
+      @(posedge CLOCK);
+      ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_core_status.read(CSRT_OMNI);
+   }
+   }
+
+   {  
+      timer=10000;
+      while( timer ){
+        @(posedge CLOCK);
+        timer--;
+        if( !(timer%1000) ){
+           printf("ilupeuLinkTrainingStrategy exiting Detect.Active timer=%0d",timer);
+        }
+     }
+
+   }
+   join any
+   if( !timer ){
+      Report.report(RTYP_TEST_ERROR, "ilupeuLinkTrainingStrategy timed out waiting to exit Detect.Active");
+   }
+   terminate; //Kill timer if transition happens
+
+
+   printf("ilupeuLinkTrainingStrategy finished 1st detect.active STATUS_LTSSM_STATE=%h cycle=%0d \n",ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_CORE_STATUS_LTSSM_STATE_SLC ],get_cycle());
+
+   //Release the Receive Detect forces
+   if( Scenario.FastLinkTraining ){
+      regTrans.SetRcvDetLanes( 8'hff );
+   }else{
+      regTrans.SetRcvDetLanes( 8'h00 );
+   }
+
+   printf("ilupeuLinkTrainingStrategy after Release the Receive Detect forces STATUS_LTSSM_STATE=%h cycle=%0d \n",ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_CORE_STATUS_LTSSM_STATE_SLC ],get_cycle());
+ 
+   //If less then x8 then we need 12ms timeout and then another Receive Detect sequence
+   if( Scenario.denaliLinkCapMaxLinkWdth < 8 ){
+      printf("Trying to train for less lanes then capable so going to Detect.Wait\n");
+      toLtssmState( ILUPEU_LTSSM_DETECT_WAIT,1,OMNI );
+      //This is the 12mS timeout
+      //Timeout for Detect.Active
+      if( !Scenario.FastLinkTraining ){
+         //12ms = ~4592000 375MHz clock cycles
+         timer = 4580000 - Scenario.ilupeuDetectQuietDelay;
+      }
+      else{
+         timer = 4512 - Scenario.ilupeuDetectQuietDelay;
+      }
+      while( timer ){
+         @(posedge CLOCK);
+         timer--;
+         if( !(timer%1000) ){
+            printf("ilupeuLinkTrainingStrategy Detect.Wait 12mS timer=%0d\n cycle=%0d",timer,get_cycle() );
+            toLtssmState( ILUPEU_LTSSM_DETECT_WAIT,1,OMNI );
+         }
+      }
+
+      toLtssmState( ILUPEU_LTSSM_DETECT_ACT,250000,OMNI );
+      printf("Trying to train for less lanes then capable so another receive detect sequence is needed in Detect.Active cycle=%0d\n",get_cycle() );
+
+      if( !Scenario.FastLinkTraining ){
+         //Delay for correct Receiver Detect Timing
+//12-1-05 New Serdes      //100uS prep - 38270 375MHz Clocks - actually 101.8uS
+      //1mS prep - 382700 375MHz Clocks - actually 1018uS
+      // <1uS - No Receiver - 382 375MHz Clocks
+//12-1-05 New Serdes      // >30uS - Receiver - 11278 375MHz Clocks
+      // >5uS - Receiver - 1880 375MHz Clocks
+
+
+
+         timer = 377300;
+         while( timer ){
+           @(posedge CLOCK);
+           timer--;
+           if( !(timer%1000) ){
+              ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_core_status.read(CSRT_OMNI);
+              if( ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_CORE_STATUS_LTSSM_STATE_SLC ] !== ILUPEU_LTSSM_DETECT_ACT ){
+                 Report.report(RTYP_TEST_ERROR, "ilupeuLinkTrainingStrategy NOT in Detect.Active during 2nd prep period timer=%0d",timer);
+              }
+              printf("ilupeuLinkTrainingStrategy Detect.Active receiver detect 2nd prep period timer=%0d cycle=%0d \n",timer,get_cycle());
+           }
+         }
+
+         // 1uS delay for lanes NOT detected
+         timer = urandom_range(300,200);
+         printf("ilupeuLinkTrainingStrategy 1uS timer=%0d for No Receiver\n",timer);
+         while( timer ){
+           @(posedge CLOCK);
+           timer--;
+         }
+      }    //end !FastLinkTraining
+
+      if( Scenario.FastLinkTraining ){
+         case( Scenario.denaliLinkCapMaxLinkWdth ){
+            8:        regTrans.SetRcvDetLanes( 8'hff );
+            4:        regTrans.SetRcvDetLanes( 8'h0f );
+            2:        regTrans.SetRcvDetLanes( 8'h03 );
+            1:        regTrans.SetRcvDetLanes( 8'h01 );
+            default:  regTrans.SetRcvDetLanes( 8'hff );
+         }
+      }else{
+         case( Scenario.denaliLinkCapMaxLinkWdth ){
+            8:        regTrans.SetRcvDetLanes( 8'h00 );
+            4:        regTrans.SetRcvDetLanes( 8'hf0 );
+            2:        regTrans.SetRcvDetLanes( 8'hfc );
+            1:        regTrans.SetRcvDetLanes( 8'hfe );
+            default:  regTrans.SetRcvDetLanes( 8'h00 );
+         }
+      }
+
+
+      //Should stay here for 3uS more
+      if( !Scenario.FastLinkTraining ){
+         // 3uS delay
+         timer = 1100;
+         printf("ilupeuLinkTrainingStrategy 3uS timer=%0d for Receiver\n",timer);
+         while( timer ){
+           @(posedge CLOCK);
+           timer--;
+           if( !(timer%100) ){
+              printf("ilupeuLinkTrainingStrategy 3uS delay timer=%0d cycle=%0d \n",timer,get_cycle());
+              toLtssmState( ILUPEU_LTSSM_DETECT_ACT,1,OMNI );
+   
+           }
+         }
+      }
+
+      //Wait until Polling.Active is entered
+      toLtssmState( ILUPEU_LTSSM_POLL_ACTIVE,*,OMNI );
+
+      //Release the Receive Detect forces
+      if( Scenario.FastLinkTraining ){
+         regTrans.SetRcvDetLanes( 8'hff );
+      }else{
+         regTrans.SetRcvDetLanes( 8'h00 );
+      }
+
+   }	//end less then x8
+}
+
+
+  if (!goto_polling) {
+
+    fork
+    {
+       //Read the TLU Status register to see if the Data Link Active state has been reached
+//review - The lxLinkUp is not available in the PTL so add it when Cascade registers are available
+
+       //Make sure Polling.Active is entered
+       toLtssmState( ILUPEU_LTSSM_POLL_ACTIVE,1000,OMNI );
+
+
+
+
+       //12-2-05 New Serdes toggles the TX lanes causing Denali to Detect Receivers
+       // on lanes that won't be transmitting so force Denali back to Detect
+       if( (Scenario.ilupeuLinkCapMaxLinkWdth < Scenario.denaliLinkCapMaxLinkWdth)
+           && ( Scenario.FastLinkTraining )   ){
+           //Write Denali to force LTSSM to Detect so it doesn't try to enter 
+           // polling.compliance
+          regTrans.WriteDenaliReg( PCIE_REG_DEN_LINK_CTRL, 32'h80 );
+       }
+
+#ifndef N2_FC
+       //If this is for slow link training then PEU must send 1024 TS1s in polling.active
+       // so wait for that to happen
+       if( !Scenario.FastLinkTraining ){
+          toLtssmState( ILUPEU_LTSSM_POLL_CONFIG,25000,OMNI );
+       }
+       //Make sure Configuration is entered
+       toLtssmState( ILUPEU_LTSSM_CFG_LINKWD_START,1000,OMNI );
+       //then Reenable LOS error 
+       ilupeuRegTmpData2 = CSR.fire_plc_tlu_ctb_tlr_csr_a_event_err_log_en.read(CSRT_OMNI);
+       ilupeuRegTmpData2[0] = 1;
+       CSR.fire_plc_tlu_ctb_tlr_csr_a_event_err_log_en.write(ilupeuRegTmpData2,CSRT_OMNI);
+#endif
+
+       ilupeuRegTmpData2 = CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_sts.read(CSRT_OMNI);
+       while( !( ilupeuRegTmpData2[ FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_STS_STATUS_SLC ] === {5'h0,ILUPEU_DL_ACTIVE} ) ){
+ 
+          repeat(rdDelay) @(posedge CLOCK);
+
+          //Increment the cycle count and see if a timeout has occured
+          linkTrainingCycles = linkTrainingCycles+rdDelay;
+
+          if( linkTrainingCycles > linkTrainingTimeout ){
+             Report.report(RTYP_TEST_ERROR, "LinkTrainingStrategy timed out waiting for link to train linkState=%0h.\n",ilupeuRegTmpData2[2:0] );
+          }
+
+          if( ilupeuRegTmpData2[ FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_STS_STATUS_SLC ] === {5'h0,ILUPEU_DL_INIT} ){
+             rdDelay=5;
+          }
+
+          ilupeuRegTmpData2 = CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_sts.read(CSRT_OMNI);
+
+       } 
+       Report.report(RTYP_INFO, "LINK TRAINED linkState=%0h.\n", ilupeuRegTmpData2[2:0] );
+ 
+    }
+
+    { //Check that the link training in progress bit is 1 during link training
+    
+        ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_lnk_sts.read(CSRT_OMNI);
+        while( !ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_STS_TRAIN_SLC ] ){ 
+           repeat(15) @(posedge CLOCK);
+           ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_lnk_sts.read(CSRT_OMNI);
+        }
+        inProgressSet = 1;
+
+        //Make sure PCS bit/byte alignment is set
+        case( Scenario.denaliLinkCapMaxLinkWdth ){
+          8:        lanes = 8'hff;
+          4:        lanes = 8'h0f;
+          2:        lanes = 8'h03;
+          1:        lanes = 8'h01;
+          default:  lanes = 8'hff;
+        }
+        ilupeuRegTmpData = Pod.CSRXtr.CSR.fire_plc_tlu_ctb_tlr_csr_a_core_status.read(CSRT_OMNI);
+        if( (ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_CORE_STATUS_PCS_LOCK_STS_SLC ] !== lanes) ){
+//N2 review THIS USED TO WORK
+           Report.report(RTYP_INFO, "\n\n PEU DLPL Core Status register PCS_LOCK_STS= %0h and should be %0h.\n\n",ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_CORE_STATUS_PCS_LOCK_STS_SLC ], lanes );
+//           Report.report(RTYP_TEST_ERROR, "PEU DLPL Core Status register PCS_LOCK_STS= %0h and should be %0h.\n",ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_CORE_STATUS_PCS_LOCK_STS_SLC ], lanes );
+        }
+
+
+        ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_lnk_sts.read(CSRT_OMNI);
+        while( ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_STS_TRAIN_SLC ] ){ //Only care about Train bit 11
+
+           //RFE P2157 - Speed and Link width should be 0 until link is up
+           if( (ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_STS_SPEED_INT_SLC ] !== 0) &&
+               (ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_STS_WIDTH_SLC ] !== 0) ){
+              Report.report(RTYP_TEST_ERROR, "LinkTrainingStrategy PEU Link Status register SPEED=%0h WIDTH=%0h.\n",ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_STS_SPEED_INT_SLC ],ilupeuRegTmpData2[ FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_STS_WIDTH_SLC ] );
+           }
+
+           repeat(25) @(posedge CLOCK);
+           ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_lnk_sts.read(CSRT_OMNI);
+        }
+    }
+
+     //Verify that LPUSD_Link_Layer_Status transitions through Flow control states 
+     
+
+    join any 
+
+    //If the inProgress bit was never set before link training completes then its an error
+    if( !inProgressSet ){
+       Report.report(RTYP_TEST_ERROR, "LinkTrainingStrategy never detected link training in progress bit set in the PTL(TLU) Link Status register Train bit=%0h linkState=%0h.\n",ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_STS_TRAIN_SLC ],ilupeuRegTmpData2[ FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_STS_STATUS_SLC ] );
+    }
+ 
+    //The inProgress bit should be set first and then the link training should complete so wait for it here
+    wait_child();
+
+    
+    //Links should be trained here so launch a set slot power limit
+    // expect that automatically gets generated when transitioning 
+    // to DL_Up status - PCIE rev 1.0a 2.2.8.5
+
+   //Determine the right link width
+    if( Scenario.ilupeuLinkCapMaxLinkWdth >= Scenario.denaliLinkCapMaxLinkWdth ){
+       calculatedWidth = Scenario.denaliLinkCapMaxLinkWdth;
+    }
+    else{
+       calculatedWidth = Scenario.ilupeuLinkCapMaxLinkWdth;
+    }
+
+
+   //Denali seems to change the timers after link comes up
+      //Set the Denali ACK/NAK and Replay timers
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_ACK_NAK_FREQ_TIMER, Scenario.denaliAckNakLatencyTimerThreshold );
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_REPLAY_TIMER, Scenario.denaliReplayTimerThreshold
+);
+
+
+    //Check the flow control init registers in both the ilupeu and denali
+    Check_Flow_Control_Init();
+
+    //Check the link status register
+    Check_Link_Status();
+
+    //Check the denali status registers
+    Check_Denali_Status();
+
+    //Make sure PCS alignment is set
+    ilupeuRegTmpData = Pod.CSRXtr.CSR.fire_plc_tlu_ctb_tlr_csr_a_core_status.read(CSRT_OMNI);
+    if( (ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_CORE_STATUS_PCS_ALIGN_STS_SLC ] == 0) ){
+       Report.report(RTYP_TEST_ERROR, "PEU DLPL Core Status register PCS_ALIGN_STS= %0h and should be 1.\n",ilupeuRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_CORE_STATUS_PCS_ALIGN_STS_SLC ] );
+        }
+    
+/*review - Enable 1 at a time!
+    //Disable the automatic Denali Flow Control DLLPs so no unexpected FC Updates are generated
+
+    //Check the lpusd status register
+    Check_LPUSD_Link_Layer_Status();
+
+    //Check the lpusd LTSSM status1 register
+    Check_LPUSD_LTSSM_Status1();
+
+    //Check the lpusd Receive Phy Status 2 register
+    Check_LPUSD_Rx_Phy_Stat2();
+
+    //Check the lpusd Receive Phy Status 3 register
+    Check_LPUSD_Rx_Phy_Stat3();
+
+    //Check the Transmit Phy Status register
+//review N2-    Check_LPUSD_Transmit_Phy_Status();
+
+    //Check Initial Retry Credits advertised by lpusd
+    if( Pod.LPUXtr._config._retryCredits !== LPUSD_DEFAULT_RETRY_CREDITS ){
+       Report.report(RTYP_TEST_ERROR, "LinkTrainingStrategy detected wrong initial retry credits:lpusd credits=%0h LPUSD_DEFAULT_RETRY_CREDITS=%0h .\n",Pod.LPUXtr._config._retryCredits,LPUSD_DEFAULT_RETRY_CREDITS);
+    }
+
+    
+
+*/
+
+    //Print value of Denali_Flow_Control_Timers
+//review    Denali_Flow_Control_Timers();
+
+  } 
+  else {
+     printf("AC:  link training goes to polling active state only \n"); 
+  } 
+}
+
+/*
+
+//Check status registers in the lpusd to make sure link training occured correctly
+task ilupeuLinkTrainingStrategy::Check_LPUSD_Link_Layer_Status(){
+
+    //Read Link Layer Status registers in the PTL to make sure they are correct
+    ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_lnk_sts.read();
+
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LL_STAT_LNK_STATE_MACH_STS_SLC] !== ILUPEU_DL_ACTIVE){ //3'b100
+       Report.report(RTYP_TEST_ERROR, "Link Layer status register NOT in DL_Active state LPU_LL_STAT_LNK_STATE_MACH_STS_SLC=%h linkStatus=%0h linkState=%0h.\n",ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LL_STAT_LNK_STATE_MACH_STS_SLC],Pod.LPUXtr._config._linkStatus,Pod.LPUXtr._config._linkState);
+    } 
+
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LL_STAT_DLUP_STS_SLC] !== LPUSD_LINK_UP){ //1'b1
+       Report.report(RTYP_TEST_ERROR, "Link Layer status register NOT in DL Up state LPU_LL_STAT_DLUP_STS_SLC=%h linkStatus=%0h linkState=%0h.\n",ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LL_STAT_DLUP_STS_SLC],Pod.LPUXtr._config._linkStatus,Pod.LPUXtr._config._linkState);
+    } 
+
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LL_STAT_INIT_FC_SM_STS_SLC] !== LPUSD_FC_INIT_DONE){ //2'b10
+       Report.report(RTYP_TEST_ERROR, "Link Layer status register NOT in Flow Control Init Done state LPU_LL_STAT_INIT_FC_SM_STS_SLC=%h linkStatus=%0h linkState=%0h.\n",ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LL_STAT_INIT_FC_SM_STS_SLC],Pod.LPUXtr._config._linkStatus,Pod.LPUXtr._config._linkState);
+    }
+
+}
+
+task ilupeuLinkTrainingStrategy::Check_LPUSD_LTSSM_Status1(){
+
+    //Read the LTSSM Status register to make sure it is correct
+    ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_lpr_csr_a_pcie_lpu_ltssm_stat1.read();
+
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LTSSM_STAT1_LN_RVRSD_SLC] !== LPUSD_LANE_NOT_REVERSED){ //1'b0
+       Report.report(RTYP_TEST_ERROR, "LTSSM status1 register NOT in lane not reversed state LPU_LTSSM_STAT1_LN_RVRSD_SLC=%h linkStatus=%0h linkState=%0h.\n",ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LTSSM_STAT1_LN_RVRSD_SLC],Pod.LPUXtr._config._linkStatus,Pod.LPUXtr._config._linkState);
+    } 
+
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LTSSM_STAT1_LNK_UP_DWN_STS_SLC] !== LPUSD_LINK_UP){ //1'b1
+       Report.report(RTYP_TEST_ERROR, "LTSSM status1 register NOT in link up state LPU_LTSSM_STAT1_LNK_UP_DWN_STS_SLC=%h linkStatus=%0h linkState=%0h.\n",ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LTSSM_STAT1_LNK_UP_DWN_STS_SLC],Pod.LPUXtr._config._linkStatus,Pod.LPUXtr._config._linkState);
+    } 
+
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LTSSM_STAT1_LTSSM_STATE_SLC] !== LPUSD_LTSSM_L0){ //5'h0d
+       Report.report(RTYP_TEST_ERROR, "LTSSM status1 register NOT in LTSSM L0 state LPU_LTSSM_STAT1_LTSSM_STATE_SLC=%h linkStatus=%0h linkState=%0h.\n",ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LTSSM_STAT1_LTSSM_STATE_SLC],Pod.LPUXtr._config._linkStatus,Pod.LPUXtr._config._linkState);
+    } 
+
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LTSSM_STAT1_CNFG_LNK_WDTH_SLC] != calculatedWidth-1){
+       Report.report(RTYP_TEST_ERROR, "LTSSM status1 register NOT in Correct Link Width LPU_LTSSM_STAT1_CNFG_LNK_WDTH_SLC=%h linkStatus=%0h linkState=%0h.\n",ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LTSSM_STAT1_CNFG_LNK_WDTH_SLC],Pod.LPUXtr._config._linkStatus,Pod.LPUXtr._config._linkState);
+    } 
+
+}
+*/
+
+
+
+//Check that the initial flow control values got sent and received correctly
+task ilupeuLinkTrainingStrategy::Check_Flow_Control_Init(){
+
+
+    //Make sure the right transmitted initialization flow control credits got captured by denali
+    //You must first write to the FC Control register and then read it
+    denRegTmpData = 0;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_OP_SLC] = PCIE_FCCTRL_get;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_VC_SLC] = 0;       //VC 0
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC] = PCIE_FCTYPE_PH;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_ID_SLC] = PCIE_FCID_TX_LIMIT;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_SLC] = 0;
+
+    regTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, denRegTmpData );
+    denRegTmpData = regTrans.ReadDenaliReg( PCIE_REG_DEN_FC_CTRL );
+    if( Scenario.ilupeuInitialPostedHeaderCredit !== denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_SLC] ){
+
+          Report.report(RTYP_TEST_ERROR, "Test failed with wrong Transmitted Flow Control Initialization value InitialPostedHeaderCredit=%0d Denali_PCIE_FCTYPEPH=%0d reg_id=%0h.\n",Scenario.ilupeuInitialPostedHeaderCredit,denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_SLC], denRegTmpData );
+    }
+
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC] = PCIE_FCTYPE_PD;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_SLC] = 0;
+    //You must first write to the FC Control register and then read it
+    regTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, denRegTmpData );
+    denRegTmpData = regTrans.ReadDenaliReg( PCIE_REG_DEN_FC_CTRL );
+    if( Scenario.ilupeuInitialPostedDataCredit !== denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_SLC] ){
+
+          Report.report(RTYP_TEST_ERROR, "Test failed with wrong Transmitted Flow Control Initialization value InitialPostedDataCredit=%0d Denali_PCIE_FCTYPE_PH=%0d reg_id=%0h.\n",Scenario.ilupeuInitialPostedDataCredit, denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_SLC], denRegTmpData );
+    }
+
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC] = PCIE_FCTYPE_NPH;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_SLC] = 0;
+    //You must first write to the FC Control register and then read it
+    regTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, denRegTmpData );
+    denRegTmpData = regTrans.ReadDenaliReg( PCIE_REG_DEN_FC_CTRL );
+    if( Scenario.ilupeuInitialNonPostedHeaderCredit !== denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_SLC] ){
+
+          Report.report(RTYP_TEST_ERROR, "Test failed with wrong Transmitted Flow Control Initialization value InitialNonPostedHeaderCredit=%0d Denali_PCIE_FCTYPE_NPH=%0d .\n",Scenario.ilupeuInitialNonPostedHeaderCredit, denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_SLC] );
+    }
+
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC] = PCIE_FCTYPE_NPD;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_SLC] = 0;
+    //You must first write to the FC Control register and then read it
+    regTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, denRegTmpData );
+    denRegTmpData = regTrans.ReadDenaliReg( PCIE_REG_DEN_FC_CTRL );
+    if( Scenario.ilupeuInitialNonPostedDataCredit !== denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_SLC] ){
+
+          Report.report(RTYP_TEST_ERROR, "Test failed with wrong Transmitted Flow Control Initialization value InitialNonPostedDataCredit=%0d Denali_PCIE_FCTYPE_NPH=%0d .\n",Scenario.ilupeuInitialNonPostedDataCredit, denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_SLC] );
+    }
+
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC] = PCIE_FCTYPE_CPLH;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_SLC] = 0;
+    //You must first write to the FC Control register and then read it
+    regTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, denRegTmpData );
+    denRegTmpData = regTrans.ReadDenaliReg( PCIE_REG_DEN_FC_CTRL );
+    //Since Denali's infinite credit is 12'hfff than concatenate a 4'hf to msb of InitialCompletionHeaderCredit
+    if( {4'hf,Scenario.ilupeuInitialCompletionHeaderCredit} !== denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_SLC] ){
+ 
+          Report.report(RTYP_TEST_ERROR, "Test failed with wrong Transmitted Flow Control Initialization value InitialCompletionHeaderCredit=%0d Denali_PCIE_FCTYPE_CPLH=%0d .\n",Scenario.ilupeuInitialCompletionHeaderCredit, denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_SLC] );
+    }
+ 
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC] = PCIE_FCTYPE_CPLD;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_SLC] = 0;
+    //You must first write to the FC Control register and then read it
+    regTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, denRegTmpData );
+    denRegTmpData = regTrans.ReadDenaliReg( PCIE_REG_DEN_FC_CTRL );
+    if( Scenario.ilupeuInitialCompletionDataCredit !== denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_SLC] ){
+ 
+          Report.report(RTYP_TEST_ERROR, "Test failed with wrong Transmitted Flow Control Initialization value InitialCompletionDataCredit=%0d Denali_PCIE_FCTYPE_CPLH=%0d .\n",Scenario.ilupeuInitialCompletionDataCredit, denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_SLC] );
+    }
+ 
+ 
+    //Read the PTL Egress Credit Limit register and verify correct values
+    ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_ecl.read();
+printf("ilupeuLinkTrainingStrategy fire_plc_tlu_ctb_tlr_csr_a_tlu_ecl=%0h denaliInitialCompletionHeaderCredit=%0h ECL_CHC_SLC=%0h denaliInitialNonPostedHeaderCredit=%0h ECL_NHC_SLC=%0h \n",ilupeuRegTmpData,Scenario.denaliInitialCompletionHeaderCredit,ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ECL_CHC_SLC],Scenario.denaliInitialNonPostedHeaderCredit,ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ECL_NHC_SLC]);
+
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ECL_CHC_SLC] !== Scenario.denaliInitialCompletionHeaderCredit ){ 
+       Report.report(RTYP_TEST_ERROR, "Test failed with wrong Received Flow Control Initialization value denaliInitialCompletionHeaderCredit=%0d PTL Egress Credit Limit Completion Header = %0d .\n",
+       Scenario.denaliInitialCompletionHeaderCredit, ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ECL_CHC_SLC] );
+    }
+
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ECL_CDC_SLC] !== Scenario.denaliInitialCompletionDataCredit ){ 
+       Report.report(RTYP_TEST_ERROR, "Test failed with wrong Received Flow Control Initialization value denaliInitialCompletionDataCredit=%0d PTL Egress Credit Limit Completion Data = %0d .\n",
+       Scenario.denaliInitialCompletionDataCredit, ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ECL_CDC_SLC] );
+    }
+
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ECL_NHC_SLC] !== Scenario.denaliInitialNonPostedHeaderCredit ){ 
+       Report.report(RTYP_TEST_ERROR, "Test failed with wrong Received Flow Control Initialization value denaliInitialNonPostedHeaderCredit=%0d PTL Egress Credit Limit Non Posted Header = %0d .\n",
+       Scenario.denaliInitialNonPostedHeaderCredit, ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ECL_NHC_SLC] );
+    }
+
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ECL_NDC_SLC] !== Scenario.denaliInitialNonPostedDataCredit ){ 
+       Report.report(RTYP_TEST_ERROR, "Test failed with wrong Received Flow Control Initialization value denaliInitialNonPostedDataCredit=%0d PTL Egress Credit Limit Non Posted Data = %0d .\n",
+       Scenario.denaliInitialNonPostedDataCredit, ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ECL_NDC_SLC] );
+    }
+
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ECL_PHC_SLC] !== Scenario.denaliInitialPostedHeaderCredit ){ 
+       Report.report(RTYP_TEST_ERROR, "Test failed with wrong Received Flow Control Initialization value denaliInitialPostedHeaderCredit=%0d PTL Egress Credit Limit Posted Header = %0d .\n",
+       Scenario.denaliInitialPostedHeaderCredit, ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ECL_PHC_SLC] );
+    }
+
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ECL_PDC_SLC] !== Scenario.denaliInitialPostedDataCredit ){ 
+       Report.report(RTYP_TEST_ERROR, "Test failed with wrong Received Flow Control Initialization value denaliInitialPostedDataCredit=%0d PTL Egress Credit Limit Posted Data = %0d .\n",
+       Scenario.denaliInitialPostedDataCredit, ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ECL_PDC_SLC] );
+    }
+
+
+}
+
+task ilupeuLinkTrainingStrategy::Check_Link_Status(){
+#ifndef N2_FC
+
+    //Read Link Status registers in the PEU to make sure they are correct
+  ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_lnk_sts.read();
+
+  
+    //Make sure link speed is the default value
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_STS_SPEED_SLC] !== 4'b0001){ // 2.5Gb/S
+       Report.report(RTYP_TEST_ERROR, "Link Status register link_speed is NOT 2.5Gb/S(only) value link_speed=%0b\n",ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_STS_SPEED_SLC] );
+    }
+
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_STS_WIDTH_SLC] !== calculatedWidth ){ 
+       Report.report(RTYP_TEST_ERROR, "Link Status register negotiated_width is NOT the correct value negotiated_width=%0b calculatedWidth=%0b \n",ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_STS_WIDTH_SLC], calculatedWidth );
+    }
+
+/* Removed in PRM 1.1 8/26/05 
+    //Make sure there is no link training error
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_STS_ERROR_SLC]  ){
+       Report.report(RTYP_TEST_ERROR, "Link Status register has the Link Training Error bit set  \n",ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_STS_ERROR_SLC] );
+    }
+*/
+
+    //Make sure link training in progress bit isn't set still 
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_STS_TRAIN_SLC]  ){
+       Report.report(RTYP_TEST_ERROR, "Link Status register has the Link Training In Progress bit set  \n",ilupeuRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_STS_TRAIN_SLC] );
+    }
+#endif
+}
+
+/*
+task ilupeuLinkTrainingStrategy::Check_LPUSD_Transmit_Phy_Status(){
+
+-N2 after prm 0.7 implemented
+    //Check the Transmit Phy Status negotiated width here
+    ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_lpr_csr_a_pcie_lpu_tx_phy_stat.read();
+
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_TX_PHY_STAT_NEG_LANE_WDTH_SLC] !== calculatedWidth-1 ){ 
+       Report.report(RTYP_TEST_ERROR, "Transmit Phy Status register negotiated_width is NOT the correct value negotiated_width=%0b calculatedWidth=%0b \n",ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_TX_PHY_STAT_NEG_LANE_WDTH_SLC], calculatedWidth );
+    }
+
+    //Make sure the Scrambling bit is set correctly - it is a disable scrambling status bit and not a received
+    // bit only like the lpusd Rx Phy Stat
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_TX_PHY_STAT_TXPHY_SCRAM_EN_SLC] !== !( Scenario.lpusdLtssmDisableScrambling || Scenario.denaliLtssmDisableScrambling ) ){
+          Report.report(RTYP_TEST_ERROR, "Transmit Phy Status register does NOT have the Scrambling bit set correctly denaliLtssmDisableScrambling=%0h lpusdLtssmDisableScrambling=%0h LPUSD Transmit Phy Reg =%0h \n",Scenario.denaliLtssmDisableScrambling, Scenario.lpusdLtssmDisableScrambling,ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_TX_PHY_STAT_TXPHY_SCRAM_EN_SLC]);
+    }
+
+    //Since Lane Reversal is not supportred in FNX1 than this should never be set
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_TX_PHY_STAT_TX_LANE_REV_SLC] ){
+          Report.report(RTYP_TEST_ERROR, "Transmit Phy Status register has the Lane Reversal bit set \n" );
+    }
+
+}
+*/
+
+
+/*
+
+task ilupeuLinkTrainingStrategy::Check_LPUSD_Rx_Phy_Stat2(){
+
+    //Read Receive Phy Status2 registers in the LPUSD to make sure they are correct
+    ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_lpr_csr_a_pcie_lpu_rx_phy_stat2.read();
+
+    //Make sure received disable scrambling bit is correctly set 
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_RX_PHY_STAT2_RCV_DIS_SCRAM_SLC]  !== Scenario.denaliLtssmDisableScrambling ){
+          Report.report(RTYP_TEST_ERROR, "Receive Phy Status2 register does NOT have the Received Disable Scrambling bit set correctly \n" );
+    }
+
+    //Make sure hot reset bit is correctly set 
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_RX_PHY_STAT2_RCV_HOT_RST_SLC] !== Scenario.denaliLtssmHotReset ){
+          Report.report(RTYP_TEST_ERROR, "Receive Phy Status2 register does NOT have the Received Hot Reset bit set   \n" );
+    }
+
+    //Make sure link disable bit is correctly set 
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_RX_PHY_STAT2_RCV_DIS_LINK_SLC] !== Scenario.denaliLtssmLinkDisable ){
+          Report.report(RTYP_TEST_ERROR, "Receive Phy Status2 register does NOT have the Received Disable Link bit set   \n" );
+    }
+
+    //Make sure enable loopback bit is correctly set 
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_RX_PHY_STAT2_RCV_EN_LOOPBACK_SLC] !== Scenario.denaliLtssmLinkLoopback ){
+          Report.report(RTYP_TEST_ERROR, "Receive Phy Status2 register does NOT have the Received Enable Loopback bit set   \n" );
+    }
+
+    //Make sure N_FTS bits are correctly set in lpusd
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_RX_PHY_STAT2_RCV_FTS_NUM_SLC] !== Scenario.denaliLtssmNFTS ){
+          Report.report(RTYP_TEST_ERROR, "Receive Phy Status2 register does NOT have the correct NFTS value STAT2_N_FTS_TSX_INT=%0b denaliLtssmNFTS=%0b \n",ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_RX_PHY_STAT2_RCV_FTS_NUM_SLC], Scenario.denaliLtssmNFTS );
+    }
+
+    //Make sure the Received Link Number is correct
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_RX_PHY_STAT2_RCV_LINK_NUM_SLC] !== Scenario.ilupeuLtssmLinkNumber ){
+          Report.report(RTYP_TEST_ERROR, "Receive Phy Status2 register does NOT have the correct Link Number=%0b denaliLtssmLinkNumber=%0b \n",ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_RX_PHY_STAT2_RCV_LINK_NUM_SLC], Scenario.denaliLtssmLinkNumber );
+    }
+
+
+
+}
+
+task ilupeuLinkTrainingStrategy::Check_LPUSD_Rx_Phy_Stat3(){
+
+    //Read Receive Phy Status3 registers in the LPUSD to make sure they are correct
+    ilupeuRegTmpData = CSR.fire_plc_tlu_ctb_lpr_csr_a_pcie_lpu_rx_phy_stat3.read();
+    //Make sure byte sync status is correctly set 
+    if( ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_RX_PHY_STAT3_BYTE_SYNC_STS_SLC]  !== {calculatedWidth{1'b1}} ){
+          Report.report(RTYP_TEST_ERROR, "Receive Phy Status3 register byte sync status WRONG! RX_PHY_STAT3_BYTE_SYNC_STS_SLC=%0b denaliLinkCapMaxLinkWdth=%0b \n", ilupeuRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_RX_PHY_STAT3_BYTE_SYNC_STS_SLC],Scenario.denaliLinkCapMaxLinkWdth );
+    }
+
+// review DENALI problem causes multiple bits to be inverted
+    //Make sure polarity reversal status is correctly set 
+    if( ilupeuRegTmpData[31:16]  !== Scenario.denaliLanePolarityInvert ){
+          Report.report(RTYP_TEST_ERROR, "Receive Phy Status3 register Lane Polarity Reversal Status WRONG! RX_PHY_STAT3=%8b denaliLanePolarityInvert=%8b \n", ilupeuRegTmpData[31:16],Scenario.denaliLanePolarityInvert );
+    }
+
+}
+*/
+
+task ilupeuLinkTrainingStrategy::Check_Denali_Status(){
+#ifndef N2_FC
+     
+     integer masterLane;
+
+    //Make sure the right N_FTS bits were correctly transmitted by ilupeu
+    denRegTmpData = regTrans.ReadDenaliReg( PCIE_REG_DEN_RX_NFTS );
+    if( denRegTmpData !== Scenario.ilupeuLtssmNFTS){
+          Report.report(RTYP_TEST_ERROR, "Denali PCIE_REG_DEN_RX_NFTS register does NOT have the correct NFTS value ilupeuLtssmNFTS=%0h PCIE_REG_DEN_RX_NFTS=%0h \n",Scenario.ilupeuLtssmNFTS, denRegTmpData );
+    }
+
+    //Read the Denali Link Status Register
+    denRegTmpData = regTrans.ReadDenaliReg( PCIE_REG_DEN_LINK_ST );
+
+    //Make sure the link is up
+    if( denRegTmpData[FNX_PCIE_XTR_REG_DEN_LINK_ST_LINK_UP_SLC] !== 1'b1 ){
+          Report.report(RTYP_TEST_ERROR, "Denali PCIE_REG_DEN_LINK_ST register does NOT have the Phy Laye Link Up bit set \n" );
+    }
+    
+    if( denRegTmpData[FNX_PCIE_XTR_REG_DEN_LINK_ST_DL_LINK_UP_SLC] !== 1'b1 ){
+          Report.report(RTYP_TEST_ERROR, "Denali PCIE_REG_DEN_LINK_ST register does NOT have the Data Layer Link Up bit set \n" );
+    }
+
+    //Make sure the right Link Width is set 
+    if( denRegTmpData[FNX_PCIE_XTR_REG_DEN_LINK_ST_LINK_WIDTH_SLC] !== calculatedWidth ){
+          Report.report(RTYP_TEST_ERROR, "Denali PCIE_REG_DEN_LINK_ST register does NOT have the correct Link Width value calculatedWidth=%0h PCIE_REG_DEN_LINK_ST=%0h \n",calculatedWidth, denRegTmpData[FNX_PCIE_XTR_REG_DEN_LINK_ST_LINK_WIDTH_SLC] );
+    }
+
+    //Make sure the right Link Number  was correctly transmitted by ilupeu
+    if( denRegTmpData[FNX_PCIE_XTR_REG_DEN_LINK_ST_LINK_NUM_SLC] !== Scenario.ilupeuLtssmLinkNumber){
+          Report.report(RTYP_TEST_ERROR, "Denali PCIE_REG_DEN_LINK_ST register does NOT have the correct Link Number value ilupeuLtssmLinkNumber=%0h PCIE_REG_DEN_LINK_ST=%0h \n",Scenario.ilupeuLtssmLinkNumber, denRegTmpData[FNX_PCIE_XTR_REG_DEN_LINK_ST_LINK_NUM_SLC] );
+    }
+
+    //Make sure the right Master Lane number is set 
+    if( !Scenario.denaliLaneReverse ){
+       masterLane = 0;
+    }
+    else{
+       masterLane = calculatedWidth - 1;
+    }
+    if( denRegTmpData[FNX_PCIE_XTR_REG_DEN_LINK_ST_LANE_NUM_SLC] !== masterLane ){
+          Report.report(RTYP_TEST_ERROR, "Denali PCIE_REG_DEN_LINK_ST register does NOT have the correct Master Lane number value = %0h PCIE_REG_DEN_LINK_ST=%0h \n",masterLane,denRegTmpData[FNX_PCIE_XTR_REG_DEN_LINK_ST_LANE_NUM_SLC] );
+    }
+
+    //Make sure the Lanes are reversed if commanded to 
+    if( denRegTmpData[FNX_PCIE_XTR_REG_DEN_LINK_ST_LANES_REVERSED_SLC] !== Scenario.denaliLaneReverse ){
+          Report.report(RTYP_TEST_ERROR, "Denali PCIE_REG_DEN_LINK_ST register does NOT have the lane reversed bit = 0 PCIE_REG_DEN_LINK_ST=%0h \n" );
+    }
+
+    //Make sure the Scrambling bit is set correctly - it is a disable scrambling status bit and not a received
+    // bit only like the ilupeu
+    if( denRegTmpData[FNX_PCIE_XTR_REG_DEN_LINK_ST_SCRAMBLING_SLC] !== ( Scenario.ilupeuLtssmDisableScrambling || Scenario.denaliLtssmDisableScrambling ) ){
+          Report.report(RTYP_TEST_ERROR, "Denali PCIE_REG_DEN_LINK_ST register does NOT have the Scrambling bit set correctly denaliLtssmDisableScrambling=%0h ilupeuLtssmDisableScrambling=%0h PCIE_REG_DEN_LINK_ST=%0h \n",Scenario.denaliLtssmDisableScrambling, Scenario.ilupeuLtssmDisableScrambling,denRegTmpData[FNX_PCIE_XTR_REG_DEN_LINK_ST_SCRAMBLING_SLC] );
+    }
+#endif
+}
+
+
+task ilupeuLinkTrainingStrategy::Denali_Flow_Control_Timers(){
+
+    //Just set the Denali Flow Control timer values
+    denRegTmpData = 0;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_OP_SLC] = PCIE_FCCTRL_set_timer;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_VC_SLC] = 0;       //VC 0
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC] = PCIE_FCTYPE_PH;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_TIMER_VAL_SLC] = 75;
+
+    regTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, denRegTmpData );
+
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC] = PCIE_FCTYPE_PD;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_TIMER_VAL_SLC] = 80;
+
+    regTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, denRegTmpData );
+
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC] = PCIE_FCTYPE_NPH;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_TIMER_VAL_SLC] = 85;
+
+    regTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, denRegTmpData );
+
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC] = PCIE_FCTYPE_NPD;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_TIMER_VAL_SLC] = 90;
+
+    regTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, denRegTmpData );
+
+//    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC] = PCIE_FCTYPE_CPLH;
+//    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_TIMER_VAL_SLC] = 95;
+
+//    regTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, denRegTmpData );
+
+//    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC] = PCIE_FCTYPE_CPLD;
+//    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_TIMER_VAL_SLC] = 100;
+
+//    regTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, denRegTmpData );
+
+    //Just read and print out Denali Flow Control timer values
+    denRegTmpData = 0;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_OP_SLC] = PCIE_FCCTRL_get_timer_limit;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_VC_SLC] = 0;       //VC 0
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC] = PCIE_FCTYPE_PH;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_TIMER_VAL_SLC] = 0;
+
+    regTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, denRegTmpData );
+    denRegTmpData = regTrans.ReadDenaliReg( PCIE_REG_DEN_FC_CTRL );
+
+    Report.report(RTYP_INFO, "Denali Flow Control Timer Limit Posted Header = %0d %h\n", denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_TIMER_VAL_SLC],denRegTmpData );
+
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC] = PCIE_FCTYPE_PD;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_TIMER_VAL_SLC] = 0;
+
+    regTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, denRegTmpData );
+    denRegTmpData = regTrans.ReadDenaliReg( PCIE_REG_DEN_FC_CTRL );
+
+    Report.report(RTYP_INFO, "Denali Flow Control Timer Limit Posted Data = %0d \n", denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_TIMER_VAL_SLC] );
+
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC] = PCIE_FCTYPE_NPH;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_TIMER_VAL_SLC] = 0;
+
+    regTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, denRegTmpData );
+    denRegTmpData = regTrans.ReadDenaliReg( PCIE_REG_DEN_FC_CTRL );
+
+    Report.report(RTYP_INFO, "Denali Flow Control Timer Limit Non-Posted Header = %0d \n", denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_TIMER_VAL_SLC] );
+
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC] = PCIE_FCTYPE_NPD;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_TIMER_VAL_SLC] = 0;
+
+    regTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, denRegTmpData );
+    denRegTmpData = regTrans.ReadDenaliReg( PCIE_REG_DEN_FC_CTRL );
+
+    Report.report(RTYP_INFO, "Denali Flow Control Timer Limit Non-Posted Data = %0d \n", denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_TIMER_VAL_SLC] );
+
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC] = PCIE_FCTYPE_CPLH;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_TIMER_VAL_SLC] = 0;
+
+    regTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, denRegTmpData );
+    denRegTmpData = regTrans.ReadDenaliReg( PCIE_REG_DEN_FC_CTRL );
+
+    Report.report(RTYP_INFO, "Denali Flow Control Timer Limit Completion Header = %0d \n", denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_TIMER_VAL_SLC] );
+
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC] = PCIE_FCTYPE_CPLD;
+    denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_TIMER_VAL_SLC] = 0;
+
+    regTrans.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, denRegTmpData );
+    denRegTmpData = regTrans.ReadDenaliReg( PCIE_REG_DEN_FC_CTRL );
+
+    Report.report(RTYP_INFO, "Denali Flow Control Timer Limit Completion Data = %0d \n", denRegTmpData[FNX_PCIE_XTR_REG_DEN_FC_CTRL_TIMER_VAL_SLC] );
+
+}
+
+task ilupeuLinkTrainingStrategy::toLtssmState( bit [4:0] ltssmState,
+                                               (integer timer=2000),
+                                               (integer accessMethod=OMNI) ){
+  bit [63:0] csrRegTmpData;
+  string msg;
+
+  csrRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_core_status.read(accessMethod);
+  fork
+  {
+     while( (csrRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_CORE_STATUS_LTSSM_STATE_SLC ] !== ltssmState) && timer ){
+       csrRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_core_status.read(accessMethod);
+       if( accessMethod === OMNI ) @(posedge CLOCK);
+     }
+  }
+  {
+     while( timer ){
+        @(posedge CLOCK);
+        timer--;
+     }
+  }
+  join any
+
+  if( !timer ){
+       Report.report(RTYP_TEST_ERROR,"::toLtssmState timed out waiting to enter LTSSM_STATE -%0h-  ---Still in state -%0h- ",ltssmState, csrRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_CORE_STATUS_LTSSM_STATE_SLC ] );
+  }else{
+     printf("\n=========== PEU Entered LTSSM_STATE -%h- at cycle %0d  ===========\n",csrRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_CORE_STATUS_LTSSM_STATE_SLC ], get_cycle());
+  }
+ 
+  terminate;    //Kill timer if transition happens
+}
+

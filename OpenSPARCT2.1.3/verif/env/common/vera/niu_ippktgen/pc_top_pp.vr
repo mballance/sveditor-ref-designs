@@ -1,0 +1,1929 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: pc_top_pp.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+#include "pcg_defines.vri"
+#include "pcg_types.vri"
+#include "pack_db.vrh"
+#include "flow_db.vrh"
+#include "flow_db_tasks.vrh"
+#include "mbox_class.vrh"
+#include "get_mbox_id.vrh"
+#include "pg_top_pp.vrh"
+#include "cMesg.vrh"
+#include "pcg_token.vrh"
+
+#include "bmac_util.vrh"
+#include "xmac_util.vrh"
+
+// extern pack_db_entry   pack_db[];
+extern flow_db_entry   flow_db[];
+
+extern mbox_class      mbox_id;
+extern integer         quiet_on;
+extern pg              ptr_to_first_pg;
+extern pg              pack_gen[16];
+extern class           pc;
+extern pc              pack_check[4];
+
+extern Mesg            be_msg;
+
+extern bmac_util_class bmac_util;
+extern mac_util_class mac_util;
+ 
+class pc {
+	local integer	warning_count=0;	 
+	local integer	error_count=0;		 
+	local bit [3:0]	port_type;		 
+	local integer	my_port;		 
+	local integer	pack_cnt=0;		 
+	static bit[19:0] pc_used_ports=0;	 
+	local integer port_speed ;		 
+	integer drrbypass_port_num;
+                                                 
+	local integer mac_speed ;		 
+	local integer om_token;			 
+	local bit tx_err=0;
+	integer col_start=0;			 
+	integer used_col_start=0;                
+	integer col_len=0;			 
+	integer col=0;				 
+	integer reset_col_parameters=0;	         
+	integer	last_time = -1;
+        integer debug_gmii     = 0; 
+        integer debug_mii      = 0;
+        integer debug_fa       = 0; 
+        integer debug_mii_rx   = 0; 
+        integer debug_gmii_rx  = 0;
+        integer debug_xgmii_rx = 0;
+        integer debug_rx       = 0; 
+        integer debug_dg       = 0; 
+        integer debug_db_in    = 0; 
+        integer debug_db_out   = 0; 
+        integer debug_checker  = 1;
+        integer debug_in_token = 1;
+	integer	ipg=-1;
+
+	function integer check_option(bit [63:0] option, bit [63:0] flag) ;
+	function integer drain_tokens(var CpgToken pgToken) ;
+	task pkt_auto_rx() ;
+	task rcv_packet(bit [3:0] ptype, byte_array buf, var integer len) ;
+	task assert_col (mii_def port_bind) ;
+	task ctrl_crs(bit crs_val) ;
+	task assert_crs (mii_def port_bind, bit crs_val) ;
+	task check_mii_ipg ( mii_def port_bind) ;
+	task check_gmii_ipg (gmii_def port_bind) ;
+	task check_xgmii_ipg (xgmii_def port_bind) ;
+	task rcv_packet_mii (mii_def port_bind, bit [3:0] ptype, byte_array buf, var integer len ) ;
+	task rcv_packet_gmii (gmii_def port_bind, bit [3:0] ptype, byte_array buf, var integer len) ;
+	task rcv_packet_xgmii (xgmii_def port_bind, bit [3:0] ptype, byte_array buf, var integer len) ;
+	task wait_clk(integer count) ;
+	task display_buf( byte_array buf, integer hwlen, (integer ifedx=0)) ;
+	task display_class(byte_array buf, var integer ptr) ;
+	task display_class_ipv6(byte_array buf, var integer ptr) ;
+	task display_data(byte_array buf, var integer ptr, integer len) ;
+	task display_id(bit [79:0] id) ;
+	task display_db(pack_db_entry pack_db) ;
+	task display_flow(integer flow_id) ;
+	task get_om_token() ;
+	task pkt_check(byte_array buf, integer hwlen) ;
+	task print_warn() ;
+	task print_err() ;
+	task new(integer my_porti, (bit [3:0] ptype=0)) ;
+	task status() ;
+	task config_rx (mii_def port_bind, integer mac_speed) ;
+
+}
+ 
+
+task pc::pkt_auto_rx() {
+	integer len;
+	byte_array buf;
+	buf = new;
+
+	while(1) {
+		rcv_packet( port_type, buf, len);
+		pack_cnt++;
+		if(debug_rx & len > 0)	display_buf( buf, len, port_type[1] );
+                 
+		 
+                 
+		if( (col  & (used_col_start > 124)) |
+                    (!col & (len > 0 )) )  {
+                    
+		    
+	 
+                   pkt_check(buf, len); 
+                  }
+
+		col = 0;
+	   }
+   }
+
+task pc::rcv_packet(bit [3:0] ptype, byte_array buf, var integer len) {
+	integer n;
+
+	case(my_port) {
+	   0:	{
+                if (ptype[3]) {
+		fork
+			check_xgmii_ipg (xgm0);
+			 
+		join none
+		rcv_packet_xgmii (xgm0, ptype, buf, len);
+                } else if (ptype[0]) {
+		fork
+			check_gmii_ipg (gm0);
+			 
+		join none
+		rcv_packet_gmii (gm0,ptype, buf, len);
+                } else {
+		fork
+			check_mii_ipg (m0);
+			 
+		join none
+		rcv_packet_mii (m0,ptype, buf, len);
+		}
+		}
+
+	   1:	{
+                if (ptype[3]) {
+		fork
+			check_xgmii_ipg (xgm1);
+			 
+		join none
+		rcv_packet_xgmii (xgm1, ptype, buf, len);
+                } else if (ptype[0]) {
+		fork
+			check_gmii_ipg (gm1);
+			 
+		//rcv_packet_gmii with  gm1(ptype, buf, len);
+		join none
+		rcv_packet_gmii (gm1,ptype, buf, len);
+                } else { 
+		fork
+			check_mii_ipg (  m1);
+			 
+		join none
+		rcv_packet_mii (m1,ptype, buf, len);
+                }
+		}
+
+	   2:	{
+                if (ptype[0]) {
+		fork
+			check_gmii_ipg (gm2);
+			 
+		join none
+		rcv_packet_gmii (gm2,ptype, buf, len);
+                } else { 
+		fork
+			check_mii_ipg (m2);
+			 
+		join none
+		rcv_packet_mii (m2,ptype, buf, len);
+                }
+
+		}
+	   3:	{
+                if (ptype[0]) {
+		fork
+			check_gmii_ipg (gm3);
+			 
+		join none
+		rcv_packet_gmii (gm3,ptype, buf, len);
+                } else { 
+		fork
+			check_mii_ipg (  m3);
+			 
+		join none
+		rcv_packet_mii (m3,ptype, buf, len);
+                }
+
+		}
+
+
+	   }
+
+   }
+
+task pc::assert_col (mii_def port_bind) {
+	integer itmp;
+
+	 
+	@(posedge port_bind.$txen async);
+        used_col_start = 0;
+
+	 
+
+	if( col_len>0 ) {
+		itmp = col_start;
+                used_col_start = col_start;
+		while(itmp>0) {
+			itmp--;
+			@(posedge port_bind.$txclk);
+		   }
+		if(port_bind.$txen)	col = 1;
+		port_bind.$rxcol = 1 async;
+		itmp = col_len;
+		while(itmp>0) {
+			itmp--;
+			@(posedge port_bind.$txclk);
+		   }
+		port_bind.$rxcol = 0 async;
+		col_len = 0;
+	   }
+
+   }
+
+task pc::ctrl_crs(bit crs_val) {
+	        case(my_port) {
+		           0:    assert_crs  (m0,crs_val);
+		           1:    assert_crs  (m1,crs_val);
+		           2:    assert_crs  (m2,crs_val);
+		           3:    assert_crs  (m3,crs_val);
+
+                }
+   }
+
+task pc::assert_crs (mii_def port_bind, bit crs_val) {
+	port_bind.$rxcrs = crs_val;
+   }
+
+task pc::check_mii_ipg ( mii_def port_bind) {
+	integer	current_time;
+	integer	cycle_time;
+
+	@(posedge port_bind.$txen);
+
+        if(port_speed==1)       cycle_time = 400;
+        else                    cycle_time = 40;
+
+        current_time = {get_time(HI),get_time(LO)};
+        if(last_time != -1) {
+		ipg = (current_time-last_time)/cycle_time;
+                if(debug_mii_rx)	printf("PC[%0d]: IPG: %0d (Time: %0d)\n",my_port,ipg,current_time);
+
+	   }
+
+	@(negedge port_bind.$txen);
+	last_time = {get_time(HI),get_time(LO)};
+   }
+
+task pc::check_gmii_ipg (gmii_def port_bind) {
+	integer	current_time;
+
+	@(posedge port_bind.$txen);
+
+        current_time = {get_time(HI),get_time(LO)};
+        if(last_time != -1) {
+		ipg = (current_time-last_time)/8;
+                if(debug_gmii_rx)	printf("PC[%0d]: IPG: %0d (Time: %0d)\n",my_port,ipg,current_time);
+	   }
+
+	@(negedge port_bind.$txen);
+	last_time = {get_time(HI),get_time(LO)};
+   }
+
+task pc::check_xgmii_ipg (xgmii_def port_bind) {
+	integer	current_time;
+
+	@(posedge port_bind.$txen);
+
+        current_time = {get_time(HI),get_time(LO)};
+        if(last_time != -1) {
+		ipg = (current_time-last_time)/8;
+                if(debug_xgmii_rx)	printf("PC[%0d]: IPG: %0d (Time: %0d)\n",my_port,ipg,current_time);
+	   }
+
+	@(negedge port_bind.$txen);
+	last_time = {get_time(HI),get_time(LO)};
+   }
+
+task pc::rcv_packet_mii (mii_def port_bind, bit [3:0] ptype, byte_array buf, var integer len ) {
+	integer n, cnt;
+	bit [7:0] tmp;
+
+	tx_err=0;
+	if(debug_mii_rx)	printf("RX: Using MII interface ...\n");
+
+	tmp[3:0] = port_bind.$txd;
+	while(tmp[3:0] !== 4'h5)  {
+		@(posedge port_bind.$txclk);
+		tmp[3:0] = port_bind.$txd;
+	   }
+
+	for(n=0;n<7;n++) {
+		while(!port_bind.$txen)	@(posedge port_bind.$txclk);
+		tmp[3:0] = port_bind.$txd;
+		@(posedge port_bind.$txclk);
+		while(!port_bind.$txen)	@(posedge port_bind.$txclk);
+		tmp[7:4] = port_bind.$txd;
+		if(debug_mii_rx)	printf("RX: Got preamble[%0d]: %h\n",n,tmp);
+		@(posedge port_bind.$txclk);
+		if(tmp != MII_PREAMBLE) {
+			if(tmp != MII_SOF)	{
+				print_err();
+				printf("Receiver Confused, got %0d preambles, then got %h.\n",n,tmp);
+				len = 0;
+				return;
+			   }
+			break;
+		   }
+	   }
+
+	 
+	 
+	 
+	while(tmp != MII_SOF) {
+		while(!port_bind.$txen)	@(posedge port_bind.$txclk);
+		tmp[3:0] = port_bind.$txd;
+		@(posedge port_bind.$txclk);
+		while(!port_bind.$txen)	@(posedge port_bind.$txclk);
+		tmp[7:4] = port_bind.$txd;
+		if(debug_mii_rx)	printf("RX: Got sof: %h\n",tmp);
+		@(posedge port_bind.$txclk);
+		if(tmp == MII_SOF)	break;
+		if(tmp != MII_PREAMBLE)	{
+			print_err();
+			printf("Receiver Confused, did not get SOF, got %h instead.\n",tmp);
+			len = 0;
+			return;
+		   }
+	   }
+
+	 
+	 
+	 
+	n = 0;
+	while(port_bind.$txen) {
+		if(port_bind.$txerr==1)	tx_err=1;
+		tmp[3:0] = port_bind.$txd;
+		if(!port_bind.$txen) { 
+			print_warn();
+			printf("Received an odd number (%0d) of nibbles ...\n",n);
+			buf.val[n++] = tmp;
+			len = n;
+			break;
+		   }
+		@(posedge port_bind.$txclk);
+		if(port_bind.$txerr==1)	tx_err=1;
+		tmp[7:4] = port_bind.$txd;
+		if(debug_mii_rx)	printf("RX: Got data[%0d]: %h\n",n,tmp);
+		@(posedge port_bind.$txclk);
+		buf.val[n++] = tmp;
+		len = n;
+	   }
+
+   }
+
+
+task pc::rcv_packet_gmii (gmii_def port_bind, bit [3:0] ptype, byte_array buf, var integer len) {
+	integer n, cnt;
+	bit [7:0] tmp;
+
+	 
+	 
+	 
+
+	if(debug_gmii_rx)	printf("RX: Using GMII interface ...\n");
+
+	tx_err=0;
+	 
+	tmp = port_bind.$txd;
+	while(tmp !== GMII_PREAMBLE)  {
+		@(posedge port_bind.$txclk);
+		tmp = port_bind.$txd;
+	   }
+
+	for(n=0;n<7;n++) {
+		while(!port_bind.$txen)	@(posedge port_bind.$txclk);
+		tmp = port_bind.$txd;
+		@(posedge port_bind.$txclk);
+		if(debug_gmii_rx)	printf("RX: Got preamble[%0d]: %h\n",n,tmp);
+		if(tmp != GMII_PREAMBLE) {
+			if(tmp != GMII_SOF)	{
+				print_err();
+				printf("Receiver Confused, got %0d preambles, then got %h.\n",n,tmp);
+				len = 0;
+				return;
+			   }
+			break;
+		   }
+	   }
+
+	 
+	 
+	 
+	while(tmp != GMII_SOF) {
+		while(!port_bind.$txen)	@(posedge port_bind.$txclk);
+		if(port_bind.$txerr==1)	tx_err=1;
+		tmp = port_bind.$txd;
+		@(posedge port_bind.$txclk);
+		if(debug_gmii_rx)	printf("RX: Got sof: %h\n",tmp);
+		if(tmp == GMII_SOF)	break;
+		if(tmp != GMII_PREAMBLE)	{
+			print_err();
+			printf("Receiver Confused, did not get SOF, got %h instead.\n",tmp);
+			len = 0;
+			return;
+		   }
+	   }
+
+	 
+	 
+	 
+	n = 0;
+	while(port_bind.$txen) {
+		if(port_bind.$txerr==1)	tx_err=1;
+		tmp = port_bind.$txd;
+		if(debug_gmii_rx)	printf("RX: Got data[%0d]: %h\n",n,tmp);
+		@(posedge port_bind.$txclk);
+		buf.val[n++] = tmp;
+		len = n;
+	   }
+
+
+   }
+
+task pc::rcv_packet_xgmii (xgmii_def port_bind, bit [3:0] ptype, byte_array buf, var integer len) {
+	integer n, cnt;
+	bit [7:0] tmp;
+        bit tmp1;
+
+	 
+	 
+	 
+
+	if(debug_xgmii_rx)	printf("RX: Using XGMII interface ...\n");
+
+	 
+	tmp = port_bind.$txd;
+	while(tmp !== XGMII_SOP)  {
+		@(posedge port_bind.$txclk_int);
+		tmp = port_bind.$txd;
+		 
+		tmp1 = port_bind.$txen;
+		if((tmp == XGMII_SOP) &&(tmp1 != 1)) {
+				print_err();
+				printf("Receiver Confused, got %0d as tx_control,\n",tmp1);
+	   }
+
+       }
+
+
+	for(n=0;n<6;n++) {
+		while(port_bind.$txen)	@(posedge port_bind.$txclk_int);
+		 
+		tmp = port_bind.$txd;
+		tmp1 = port_bind.$txen;
+		@(posedge port_bind.$txclk_int);
+		if(debug_xgmii_rx)	printf("RX: Got preamble[%0d]: %h\n",n,tmp);
+		if((tmp != XGMII_PREAMBLE) && (tmp1 !=0))  {
+				print_err();
+				printf("Receiver Confused, got %0d preambles, then got %h.\n",n,tmp);
+				len = 0;
+				return;
+			break;
+		   }
+	   }
+
+	 
+	 
+	 
+	while(tmp != XGMII_SOF) {
+		while(port_bind.$txen)	@(posedge port_bind.$txclk_int);
+		tmp = port_bind.$txd;
+		@(posedge port_bind.$txclk_int);
+		if(debug_xgmii_rx)	printf("RX: Got sof: %h\n",tmp);
+		if(tmp == XGMII_SOF)	break;
+		if(tmp != XGMII_PREAMBLE)	{
+			print_err();
+			printf("Receiver Confused, did not get SOF, got %h instead.\n",tmp);
+			len = 0;
+			return;
+		   }
+	   }
+
+	 
+	 
+	 
+	n = 0;
+	while(!port_bind.$txen) {
+		tmp = port_bind.$txd;
+		if(debug_xgmii_rx)	printf("RX: Got data[%0d]: %h\n",n,tmp);
+		@(posedge port_bind.$txclk_int);
+		buf.val[n++] = tmp;
+		len = n;
+	   }
+
+        
+
+		 
+		tmp = port_bind.$txd;
+		tmp1 = port_bind.$txen;
+		@(posedge port_bind.$txclk_int);
+		if(debug_xgmii_rx)	printf("RX: Got EOP: %h\n",tmp);
+		if(tmp != XGMII_EOP) {
+			// print_err();
+			printf("Receiver Confused, did not get EOP, got %h instead.\n",tmp);
+               } 
+
+
+   }
+
+
+
+task pc::wait_clk(integer count) {
+        repeat(count)   @(posedge CLOCK);
+   }
+
+ 
+task pc::display_buf( byte_array buf, integer hwlen, (integer ifedx=0)) {
+    integer ptr=0;
+    integer tunneling_ipv4 = 0;
+    integer tunneling_ipv6 = 0;
+    integer ah_transp_ipv4  = 0;
+    integer ah_transp_ipv6  = 0;
+    integer esp_transp_ipv4 = 0;
+    integer esp_transp_ipv6 = 0;
+
+    integer buf_shift;
+    integer n;
+    bit [15:0] len;
+    bit [7:0] flag_bit;
+    bit [79:0] id;
+    integer token;
+
+    bit [95:0] 	debug_mac_hdr_bits;
+    printf("\n\n______________________________________________________________\n");
+    printf("vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\n\n");
+
+    if(ifedx==1)	printf("This is an INTER FEDX packet\n\n");
+
+    printf("____________ Hex Dump ____________\n");
+    for(n=0;n<hwlen;n++) {
+        if( !(n % 16) ) printf("\n%d: ",n);
+        printf("%h ", buf.val[ptr++]);
+    }
+    printf("\n__________________________________\n\n");
+
+    ptr=0;
+
+    if(ifedx==1)	{
+        printf("Interfedx Control Word: %h\n\n", {buf.val[ptr+1], buf.val[ptr]} );
+        ptr=ptr+2;
+    }
+
+   debug_mac_hdr_bits = 0;
+   for(n=0;n<12;n++) {
+    debug_mac_hdr_bits = debug_mac_hdr_bits | (buf.val[11 - n] <<  8*n );
+   }
+     
+
+    printf("   L2 Header\n");
+    printf("+---------------\n");
+
+    printf("| Destination Address: %h.%h.%h.%h.%h.%h\n", buf.val[ptr++], buf.val[ptr++],
+        buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] ); 
+    printf("|      Source Address: %h.%h.%h.%h.%h.%h\n", buf.val[ptr++], buf.val[ptr++],
+        buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] ); 
+
+    len = {buf.val[ptr++], buf.val[ptr++]};
+
+    //printf("TEST:The val of ptr is %0d\n",ptr);
+
+     
+  if( get_plus_arg (CHECK,"ENABLE_MAC_HDR_DEBUG") ) {
+   printf(" DEBUG FROM PKTCHECKER - Received Packet With DMA# - %d, Port# - %d, PacketStartAddress[31:0] -0x%x , Length - %d , DescriptorAddress[31:0]-0x%x  \n", debug_mac_hdr_bits[95:91],debug_mac_hdr_bits[90:89],debug_mac_hdr_bits[88:57],debug_mac_hdr_bits [56:43],debug_mac_hdr_bits[42:11]);
+   // printf(" DEBUG From PktChecker: \n");
+
+  }
+    if( len == TPID_8021Q ) {	
+
+         
+        if( {buf.val[ptr+4], buf.val[ptr+5], buf.val[ptr+6]} == LLC_SNAP ) {
+            printf("|      L2 Header Type: 802.1Q Tagged LLC-SNAP Ethernet Header\n");
+            printf("|                TPID: %0h\n", len );
+            printf("|                 TCI: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+
+            len = {buf.val[ptr++], buf.val[ptr++]}; 
+      
+            printf("|            LEN/TYPE: 0x%h(%0d)\n", len, len );
+            printf("|                 LLC: %h\n", {buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] });
+            printf("|                SNAP: %h\n", {buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                                                             buf.val[ptr++], buf.val[ptr++] } );
+             
+            len = {buf.val[ptr - 2], buf.val[ptr - 1]}; 
+        }
+        else {  
+             
+
+            printf("|      L2 Header Type: 802.1Q Tagged Ethernet Header\n");
+            printf("|                TPID: %0h\n", len );
+            printf("|                 TCI: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+
+            len = {buf.val[ptr++], buf.val[ptr++]}; 
+
+            printf("|            TYPE/LEN: 0x%h(%d)\n", len, len);   
+        }
+    }
+    else if ( len == CNTL_FRAME )  { 
+         
+
+        printf("|      L2 Header Type:  MAC Control Frame Header\n");
+        printf("|                Type: %h\n", len );
+    }
+    else {
+         
+        if( {buf.val[ptr], buf.val[ptr+1], buf.val[ptr+2]} == LLC_SNAP ) {
+            printf("|    L2 Header Type: LLC-SNAP Ethernet Header\n");
+            printf("|    Data Length: 0x%h(%0d)\n", len, len);  
+            printf("|    LLC: %h\n", {buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] });
+            printf("|    SNAP: %h\n", {buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                                                             buf.val[ptr++], buf.val[ptr++] } );
+
+            
+
+        if( buf.val[ptr-2] == 8'h08 ) {  
+
+            ptr +=20;
+            if( buf.val[ptr - 11 ] == TCP_PROTO){
+            ptr +=20;
+            }
+        }
+
+        if( buf.val[ptr-2] == 8'h86 ) {  
+            ptr +=40;
+
+            if( buf.val[ptr - 34 ] == TCP_PROTO){
+            ptr +=20;
+            }
+        }
+
+
+            } else {
+
+        printf("|      L2 Header Type: 802.3 Ethernet Header\n");
+        printf("|    Data Length/Type: 0x%h(%0d)\n", len, len);  
+        }
+    }
+
+    token = { buf.val[ptr], buf.val[ptr+1] };
+
+
+    if((len>16'h0600 & len != CNTL_FRAME) || ((len == RARP_FRAME) &(len != CNTL_FRAME))){ 
+
+        len = -1;
+
+       if((buf.val[ptr - 2 ] == 8'h08 ) || (( buf.val[ptr-2] == 8'h80) &&\
+          (buf.val[ptr-1] == 8'h35))) { 
+
+
+             
+            if( buf.val[ptr + 9] == AH_PROTO) { 
+                 
+                printf("+-------------------------------------\n");
+                printf("   L3 Header-- Type: IPv4, IPSec: AH\n");
+                printf("+--------------------------------------\n");
+                ah_transp_ipv4 = 1;
+            } 
+            else if( buf.val[ptr + 9] == ESP_PROTO) {  
+                 
+                printf("+-------------------------------------\n");
+                printf("   L3 Header-- Type: IPv4, IPSec: ESP\n");
+                printf("+--------------------------------------\n");
+                esp_transp_ipv4 = 1;
+
+            }
+            else if( buf.val[ptr + 9] == IP_V4_PROTO) {
+                 
+                printf("+-------------------------------------\n");
+                printf("   L3 Header-- Type: Tunnel (IPv4/IPv4)\n");
+                printf("+--------------------------------------\n");
+                printf("|   IP Header Tunnel Layer 1: IPv4\n|   \n");   
+
+                tunneling_ipv4 = 1; 
+            }
+            else if( buf.val[ptr + 9] == IP_V6_PROTO) {
+                 
+                printf("+-------------------------------------\n");
+                printf("   L3 Header-- Type: Tunnel (IPv4/IPv6)\n");
+                printf("+--------------------------------------\n");
+                printf("|   IP Header Tunnel Layer 1: IPv4\n|   \n");   
+
+                tunneling_ipv6 = 1; 
+            }
+            else {
+                 
+                printf("+-------------------------------------\n");
+                printf("   L3 Header-- Type: IPv4\n");
+                printf("+--------------------------------------\n");
+            }
+            ptr--;
+            ptr--;
+
+            display_class(buf, ptr);
+
+             
+             
+            printf("|   IPV4 Payload Len: %h%h\n", buf.val[ptr-10], buf.val[ptr-9] );
+             
+            printf("|   IPV4 Checksum: %h%h\n", buf.val[ptr-2], buf.val[ptr-1] );
+
+            printf("|   IP SRC Address: %h.%h.%h.%h\n",
+                 buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+            printf("|   IP DST Address: %h.%h.%h.%h\n",
+                 buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+
+           if (esp_transp_ipv4) {
+            printf("|   ESP SPI : %h.%h.%h.%h\n",
+                 buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+
+            }
+
+           if (ah_transp_ipv4) {
+               ptr += 4;
+            printf("|   AH SPI : %h.%h.%h.%h\n",
+                 buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+
+            }
+             
+            if( tunneling_ipv4 ) {
+                 
+
+                printf("|  -----------  \n|\n");   
+                printf("|   IP Header Tunnel Layer 2: IPv4:\n");   
+                printf("|   \n");   
+
+                ptr--;
+                ptr--;
+
+                display_class(buf, ptr);
+
+                printf("|   IP SRC Address: %h.%h.%h.%h\n",
+                     buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+                printf("|   IP DST Address: %h.%h.%h.%h\n",
+                     buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+
+            }
+            else if( tunneling_ipv6) {
+                 
+
+                printf("|  -----------  \n|\n");   
+                printf("|   IP Header Tunnel Layer 2: IPv6:\n");   
+                printf("|   \n");   
+
+                ptr--;
+                ptr--;
+
+                display_class_ipv6(buf, ptr);
+
+                printf("|      Payload Len: 0x%h(%d)\n", buf.val[ptr++], buf.val[ptr++]);
+                printf("|      Next Header: 0x%h\n", buf.val[ptr++]);
+                printf("|      Hop Limit  : 0x%h\n", buf.val[ptr++]);
+                printf("|   IP SRC Address: %h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h\n",
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+                printf("|   IP DST Address: %h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h\n",
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+            }
+
+
+             
+             
+             
+
+             
+            if( tunneling_ipv6 ) 
+                 
+                buf_shift = 34;       
+            else 
+                buf_shift = 11;     
+
+             
+            if( buf.val[ptr - buf_shift ] == UDP_PROTO) {
+                 
+                printf("+-------------------------------------\n");
+                printf("   L4 Header-- Type: UDP  \n");
+                printf("+--------------------------------------\n");
+                printf("|     UDP SRC Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+                printf("|     UDP DST Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+
+                token = { buf.val[ptr + 4], buf.val[ptr + 5] };
+            }
+            else if( buf.val[ptr - buf_shift ] == TCP_PROTO) {
+                 
+                printf("+-------------------------------------\n");
+                printf("   L4 Header-- Type: TCP\n");
+                printf("+--------------------------------------\n");
+
+                printf("|     TCP SRC Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+                printf("|     TCP DST Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+                printf("|   TCP Sequence #: %h\n", {buf.val[ptr++], buf.val[ptr++], 
+                                                    buf.val[ptr++], buf.val[ptr++]} );
+                printf("|        TCP ACK #: %h\n", {buf.val[ptr++], buf.val[ptr++], 
+                                                    buf.val[ptr++], buf.val[ptr++]} );
+
+                 
+                ptr += 1;   
+
+                flag_bit = buf.val[ptr++];  
+
+                printf("|    TCP Flag bits: URG:%b ACK:%b PSH:%b RST:%b SYN:%b FIN:%b\n", 
+                      flag_bit[5], flag_bit[4], flag_bit[3], flag_bit[2], flag_bit[1], flag_bit[0]); 
+                printf("|      Window Size: %h\n", {buf.val[ptr++], buf.val[ptr++]});  
+                printf("|      TCP Checksum: %h\n", {buf.val[ptr++], buf.val[ptr++]});  
+                printf("+---------------\n");
+
+                token = { buf.val[ptr + 2], buf.val[ptr+3] };
+                 
+            }  
+
+
+            else if (esp_transp_ipv4) {
+
+                ptr += 8;
+
+                token = { buf.val[ptr], buf.val[ptr+1] };
+   
+            }
+
+            else if (ah_transp_ipv4) {
+
+                ptr += 4;
+
+                token = { buf.val[ptr], buf.val[ptr+1] };
+            }
+   
+
+            else {
+
+                 
+                token = { buf.val[ptr], buf.val[ptr+1] };
+            } 
+        }  
+        else {
+
+             
+
+             
+            if( buf.val[ptr + 6] == AH_PROTO) {
+                 
+                printf("+-------------------------------------\n");
+                printf("   L3 Header-- Type: IPv6, IPSec: AH\n");
+                printf("+--------------------------------------\n");
+                ah_transp_ipv6 = 1;
+            }
+            else if( buf.val[ptr + 6] == ESP_PROTO) {
+                 
+                printf("+-------------------------------------\n");
+                printf("   L3 Header-- Type: IPv6, IPSec: ESP\n");
+                printf("+--------------------------------------\n");
+                esp_transp_ipv6 = 1;
+            }
+            else if( buf.val[ptr + 6] == IP_V4_PROTO) {
+                 
+                printf("+-------------------------------------\n");
+                printf("   L3 Header-- Type: Tunnel (IPv6/IPv4)\n");
+                printf("+--------------------------------------\n");
+                printf("|   IP Header Tunnel Layer 1: IPv6\n");
+                printf("|   \n");
+
+                tunneling_ipv4 = 1;
+            }
+            else if( buf.val[ptr + 6] == IP_V6_PROTO) {
+                 
+                printf("+-------------------------------------\n");
+                printf("   L3 Header-- Type: Tunnel (IPv6/IPv6)\n");
+                printf("+--------------------------------------\n");
+                printf("|   IP Header Tunnel Layer 1: IPv6\n");
+                printf("|   \n");
+
+                tunneling_ipv6 = 1;
+            }
+            else {
+                 
+                printf("+-------------------------------------\n");
+                printf("   L3 Header-- Type: IPv6\n");
+                printf("+--------------------------------------\n");
+            }
+            ptr--;
+            ptr--;
+
+            display_class_ipv6(buf, ptr);
+             
+            printf("|      Payload Len: 0x%h(%d)\n", buf.val[ptr++], buf.val[ptr++]); 
+            printf("|      Next Header: 0x%h\n", buf.val[ptr++]); 
+            printf("|      Hop Limit  : 0x%h\n", buf.val[ptr++]); 
+            printf("|   IP SRC Address: %h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h\n",
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+            printf("|   IP DST Address: %h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h\n",
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+
+           if (esp_transp_ipv6) {
+            printf("|   ESP SPI : %h.%h.%h.%h\n",
+                 buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+
+            }
+
+           if (ah_transp_ipv6) {
+               ptr += 4;
+            printf("|   AH SPI : %h.%h.%h.%h\n",
+                 buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+
+            }
+             
+            if( tunneling_ipv4 ) {
+                 
+
+                printf("|  -----------  \n|\n");   
+                printf("|   IP Header Tunnel Layer 2: IPv4:\n");
+                printf("|   \n");
+
+                ptr--;
+                ptr--;
+
+                display_class(buf, ptr);
+
+                printf("|   IP SRC Address: %h.%h.%h.%h\n",
+                       buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+                printf("|   IP DST Address: %h.%h.%h.%h\n",
+                       buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+
+            }
+            else if( tunneling_ipv6) {
+                 
+
+                printf("|  -----------  \n|\n");   
+                printf("|   IP Header Tunnel Layer 2: IPv6:\n");
+                printf("|   \n");
+
+                ptr--;
+                ptr--;
+
+                display_class_ipv6(buf, ptr);
+
+                printf("|      Payload Len: 0x%h(%d)\n", buf.val[ptr++], buf.val[ptr++]);
+                printf("|      Next Header: 0x%h\n", buf.val[ptr++]);
+                printf("|      Hop Limit  : 0x%h\n", buf.val[ptr++]);
+                printf("|   IP SRC Address: %h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h\n",
+                        buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                        buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                        buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                        buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+                printf("|   IP DST Address: %h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h\n",
+                        buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                        buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                        buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                        buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+            }
+
+             
+             
+             
+
+             
+            if( tunneling_ipv4 )
+                 
+                buf_shift = 11;
+            else 
+                buf_shift = 34;  
+
+            if( buf.val[ptr - buf_shift ] == UDP_PROTO) {
+                 
+
+                printf("+-------------------------------------\n");
+                printf("   L4 Header-- Type: UDP  \n");
+                printf("+--------------------------------------\n");
+                printf("|     UDP SRC Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+                printf("|     UDP DST Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+
+                token = { buf.val[ptr + 4], buf.val[ptr+5] };
+            }
+            else if( buf.val[ptr - buf_shift ] == TCP_PROTO) {
+                 
+                printf("+-------------------------------------\n");
+                printf("   L4 Header-- Type: TCP\n");
+                printf("+--------------------------------------\n");
+
+                printf("|     TCP SRC Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+                printf("|     TCP DST Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+                printf("|   TCP Sequence #: %h\n", {buf.val[ptr++], buf.val[ptr++],
+                                                    buf.val[ptr++], buf.val[ptr++]} );
+                printf("|        TCP ACK #: %h\n", {buf.val[ptr++], buf.val[ptr++],
+                                                    buf.val[ptr++], buf.val[ptr++]} );
+
+                 
+                ptr += 1;   
+
+                flag_bit = buf.val[ptr++];
+
+                printf("|    TCP Flag bits: URG:%b ACK:%b PSH:%b RST:%b SYN:%b FIN:%b\n", 
+                      flag_bit[5], flag_bit[4], flag_bit[3], flag_bit[2], flag_bit[1], flag_bit[0]); 
+                printf("|      Window Size: %h\n", {buf.val[ptr++], buf.val[ptr++]});
+                printf("|      TCP Checksum: %h\n", {buf.val[ptr++], buf.val[ptr++]});  
+                printf("+---------------\n");
+
+                token = { buf.val[ptr + 2], buf.val[ptr+3] };
+
+            }  
+
+            else if (esp_transp_ipv6) {
+
+                ptr += 8;
+
+                token = { buf.val[ptr], buf.val[ptr+1] };
+   
+            }
+
+            else if (ah_transp_ipv6) {
+
+                ptr += 4;
+
+                token = { buf.val[ptr], buf.val[ptr+1] };
+            }
+            else {
+                 
+                token = { buf.val[ptr], buf.val[ptr+1] };
+            }
+        }  
+    }  
+	
+
+    if(len<0)	len = hwlen;
+
+    printf("\npc::display_buf Time: %0d\n",{get_time(HI),get_time(LO)});
+    printf("Token: %0d\n", token);
+
+     
+    printf("\n");
+    if(ifedx==1)  display_data(buf, ptr, hwlen-ptr-4-4 );
+    else          display_data(buf, ptr, hwlen-ptr-4 );
+
+    printf("\n");
+    printf("CRC: %h\n", { buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } );
+
+    if(ifedx==1)  
+        printf("\n INTER FEDX CRC: %h\n",
+             { buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } );
+
+    printf("\n^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n");
+    printf("--------------------------------------------------------------\n\n");
+
+}  
+ 
+
+task pc::display_class(byte_array buf, var integer ptr) {
+    integer n,last;
+
+    last = ptr+14;
+
+    printf("|              Class: ");
+
+     
+    for(n=0;n<14;n++)	printf("%h ", buf.val[ptr+n] ); 
+    printf("\n");
+
+    if( {buf.val[ptr], buf.val[ptr+1]} < 16'h0600)
+        printf("|             Length: %0d\n|\n", {buf.val[ptr++], buf.val[ptr++]} );
+    else
+        printf("|               Type: %0h\n|\n", {buf.val[ptr++], buf.val[ptr++]} );
+
+    ptr=last;
+}
+
+
+task pc::display_class_ipv6(byte_array buf, var integer ptr) {
+    integer n,last;
+
+    last = ptr+6;
+
+    printf("|              Class: ");
+
+     
+    for(n=0;n<10;n++)       printf("%h ", buf.val[ptr+n] );
+    printf("\n");
+
+    if( {buf.val[ptr], buf.val[ptr+1]} < 16'h0600)
+        printf("|             Length: %0d\n|\n", {buf.val[ptr++], buf.val[ptr++]} );
+    else
+        printf("|               Type: %0h\n|\n", {buf.val[ptr++], buf.val[ptr++]} );
+
+    ptr=last;
+}
+
+
+
+task pc::display_data(byte_array buf, var integer ptr, integer len) {
+    integer n;
+
+    printf("    Data:\n");
+    printf("+---------------");
+
+    if(len<1)
+        printf("\n| No Payload ...");
+    else
+
+    for(n=0;n< len ;n++) {
+        if( !(n % 16) ) printf("\n| %d: ",n);
+        printf("%h ", buf.val[ptr++]);
+    }
+    printf("\n+---------------\n");
+}
+
+
+task pc::display_id(bit [79:0] id) {
+
+    printf("    ID Tags:\n");
+    printf("+---------------\n");
+    printf("|       Src port: %0d\n", id[79:75] );
+    printf("|       Dst port: %0h\n", id[74:35] );
+    printf("|     Order Type: %0h\n", id[34:33] );
+    printf("|  Order Sequnce: %0d\n", id[32:27] );
+    printf("|  Packet number: %0d\n", id[26:11] );
+    printf("|      Data Type: %0d\n", id[10:8] );
+    printf("|      Data Seed: %0d\n", id[7:0] );
+    printf("+---------------\n");
+}
+
+
+task pc::display_db(pack_db_entry pack_db ) {
+
+    if(pack_db == null) {
+        printf("This entry is not allocated ...\n");
+    } else {
+        printf("\n========== Display DB Entry %0d ========== \n",pack_db.gId);
+        printf("\tframe.frame_type:  %h\n",pack_db.frame.frame_type);
+        printf("\tframe.frame_class: %h\n",pack_db.frame.frame_class);
+        printf("\tframe.class_mask:  %h\n",pack_db.frame.class_mask);
+        printf("\tframe.class_funct: %h\n",pack_db.frame.class_funct);
+        printf("\tframe.data_type:   %h\n",pack_db.frame.data_type);
+        printf("\tframe.data_seed:   %h\n",pack_db.frame.data_seed);
+        printf("\tframe.data_length: %h\n",pack_db.data_length);
+        printf("\n");
+        printf("\tsrc_node.l2_addr: %h\n",pack_db.src_node.l2_addr);
+        printf("\tsrc_node.tci:     %h\n",pack_db.src_node.tci);
+        printf("\tsrc_node.ip_addr: %h\n",pack_db.src_node.ip_addr);
+        printf("\tsrc_node.ipv6_addr: %h\n",pack_db.src_node.ipv6_addr);
+        printf("\n");
+        printf("\tdst_node.l2_addr: %h\n",pack_db.dst_node.l2_addr);
+        printf("\tdst_node.tci:     %h\n",pack_db.dst_node.tci);
+        printf("\tdst_node.ip_addr: %h\n",pack_db.dst_node.ip_addr);
+        printf("\tdst_node.ipv6_addr: %h\n",pack_db.dst_node.ipv6_addr);
+        printf("\n");
+        printf("\ttup.src_tcp_udp_port: %h\n",pack_db.tup.src_tcp_udp_port);
+        printf("\ttup.dst_tcp_udp_port: %h\n",pack_db.tup.dst_tcp_udp_port);
+        printf("\n");
+        printf("\trcv_isn: %0h\n",pack_db.rx_param.rcv_isn);
+        printf("\tlast_ackno: %0h\n",pack_db.rx_param.last_ackno);
+        printf("\tadv_isn: %0h\n",pack_db.tx_param.adv_isn);
+        printf("\tlast_seqno: %0h\n",pack_db.tx_param.last_seqno);
+        printf("\n");
+        printf("\torg_port:  %0d\n",pack_db.org_port);
+        printf("\torder_seq: %0d\n",pack_db.order_seq);
+        printf("\tpckt_num:  %0d\n",pack_db.pckt_num);
+        printf("\toptions:   %h\n",pack_db.options);
+    }
+    printf("========================================== \n\n");
+}
+
+task pc::display_flow(integer flow_id) {
+
+    printf("\n========== Display FLOW DB Entry %0d ========== \n",flow_id);
+    if(flow_db[flow_id] == null) {
+        printf("This entry is not allocated ...\n");
+    } else {
+        printf("\tframe.data_length: %h\n",flow_db[flow_id].data_length);
+        printf("\n");
+        printf("\ttup.src_tcp_udp_port: %h\n",flow_db[flow_id].tup.src_tcp_udp_port);
+        printf("\ttup.dst_tcp_udp_port: %h\n",flow_db[flow_id].tup.dst_tcp_udp_port);
+        printf("\n");
+        printf("\torg_port:  %0d\n",flow_db[flow_id].org_port);
+        printf("\trcv_isn: %0h\n",flow_db[flow_id].rx_param.rcv_isn);
+        printf("\tlast_ackno: %0h\n",flow_db[flow_id].rx_param.last_ackno);
+        printf("\tadv_isn: %0h\n",flow_db[flow_id].tx_param.adv_isn);
+        printf("\tlast_seqno: %0h\n",flow_db[flow_id].tx_param.last_seqno);
+         
+         
+    }
+    printf("========================================== \n\n");
+}
+
+task pc::get_om_token() {
+	// TOADS---
+	if(mbox_id != null & mbox_id.mac_opp[my_port] != -1) {
+		mailbox_get(NO_WAIT,mbox_id.mac_opp[my_port], om_token);
+		if( flag() ) {
+			om_token = -1;
+			flag(OFF);
+			print_err();
+			printf("Could not get token from OPP-MAC checker mailbox.\n");
+                   }
+	   } else {
+		om_token = -1;
+		print_err();
+		printf("OPP-MAC checker %0d outgoing mailbox not allocated.\n",
+				my_port);
+	   }
+	 
+   }
+
+function integer pc::drain_tokens( var CpgToken pgToken) {
+  integer no_of_tkns;
+  integer sync_up;
+  integer count =0;
+  sync_up = 0;
+
+ count = 0;
+ while(sync_up==0) {
+   no_of_tkns = mailbox_get(COPY_NO_WAIT,mbox_id.mac_opp[my_port], pgToken);
+    if(no_of_tkns == 0) { 
+        drain_tokens = 1; sync_up = 1;
+   } else if(pgToken.do_not_check==1) {
+        while((no_of_tkns != 0) && (pgToken.tx_request_seen==0) && (pgToken.do_not_check==1) && ( count <10000))  { 
+          no_of_tkns = mailbox_get(NO_WAIT,mbox_id.mac_opp[my_port], pgToken);
+          printf("pc_top_pp, drain_tokens, num_of_tokens %d\n",no_of_tkns);
+          count++;
+          printf("pc::drain_tokens REMOVING OLD TOKEN - %d \n",pgToken.gId);
+          printf("drain_tokens:: TX REQUEST SEEN - %d  FOR - ID - %d\n", pgToken.tx_request_seen , pgToken.gId);
+        }
+
+        if(count>=10000) {
+	 printf("TEST ERROR --  pc::drain_tokens: Some +args seems to be missing!!! \n");
+         exit(0);
+	}   
+
+	if(pgToken.do_not_check==0)  {
+	 drain_tokens = 0; sync_up = 1;
+	} else {
+	 drain_tokens = 1; sync_up = 1;
+	}
+   } else if(pgToken.do_not_check==0) {
+     no_of_tkns = mailbox_get(NO_WAIT,mbox_id.mac_opp[my_port], pgToken);
+     drain_tokens = 0; sync_up = 1;
+     printf("pc::drain_tokens POPPING NEW TOKEN - %d \n",pgToken.gId);
+     printf("CheckReqCbs:: TX REQUEST SEEN - %d  FOR - ID - %d\n", pgToken.tx_request_seen , pgToken.gId);
+       
+   }
+   @(posedge CLOCK);
+   // @(posedge port_bind.$txclk_int);
+  }
+
+}
+
+
+
+task pc::pkt_check(byte_array buf, integer hwlen) {
+	integer token;
+	integer ptr=0;
+	integer i,n,m;
+	integer len;
+	integer type_len;
+	integer error=0;
+	bit padded=0;
+	integer llc_snap=0;
+	bit [79:0] id;
+	byte_array nb;
+	bit [39:0] base_addr;
+	bit [31:0] min_frame_size, max_frame_size,tmp32;
+	bit [31:0]  min_size, max_size;
+	bit tmp1,bad_packet;
+	integer no_of_tkns ;
+	integer debug_checker = 1;
+	CpgToken pgToken;
+	pack_db_entry pack_db;
+        integer LLC_HACK = 1;
+	bit[15:0] llc_length;
+        integer dma_id;
+        bit [7:0] id_of_dma;
+        integer skip_checking;
+	integer dma_id_from_pkt;
+	bit[3:0] drr_bypass;
+
+#ifdef N2_FC
+        min_size = 10'h40;
+        max_size = 14'h5EE;
+#else
+
+        base_addr = bmac_util.get_mac_reg_base(my_port);
+	 
+	max_frame_size[31:14] = 0;
+        
+        if ((my_port ==0) || (my_port==1)) {
+        mac_util.ipp_shadow_rd(base_addr + XMAC_MAX,max_size,tmp32,tmp1);
+        }
+        else { 
+        bmac_util.ipp_shadow_rd(base_addr + BMAC_MAX,max_size,tmp32,tmp1);
+        }
+        //printf("The prog MAX_FRAME_SIZE is %0h\n",max_size);
+	//max_frame_size[13:0]  = 14'h5EE;
+	max_frame_size[13:0]  = max_size;
+	min_frame_size[31:10] = 0;
+	//min_frame_size[9:0] = 10'h040;
+        if ((my_port ==0) || (my_port==1)) {
+        mac_util.ipp_shadow_rd(base_addr + XMAC_MIN,min_size,tmp32,tmp1);
+        }
+        else { 
+        bmac_util.ipp_shadow_rd(base_addr + BMAC_MIN,min_size,tmp32,tmp1);
+        }
+	min_frame_size[9:0] = min_size;
+         
+#endif
+
+	nb = new;
+
+        id_of_dma = buf.val[ptr];	
+        dma_id = id_of_dma[7:3]; 
+        dma_id_from_pkt = dma_id;
+
+        if (get_plus_arg(CHECK,"BYPASS_TXDRR")) {
+          // this code used only to weed out other
+          // tx related issues and till the DRR checker
+          
+          be_msg.print(e_mesg_info, "IP_Packet_Chkr", "check_packet",
+         "Pulling token from DMA_MBX %0d bound to PORT %0d\n",dma_id,my_port);
+          no_of_tkns = mailbox_get(NO_WAIT,mbox_id.tx_dma_mb[dma_id], pgToken);
+        } else {
+
+         if(drrbypass_port_num == my_port) {
+          be_msg.print(e_mesg_info, "IP_Packet_Chkr", "check_packet",
+         "Pulling token from DMA_MBX %0d bound to PORT %0d\n",dma_id,my_port);
+          no_of_tkns = mailbox_get(NO_WAIT,mbox_id.tx_dma_mb[dma_id], pgToken);
+         } else  
+          no_of_tkns = mailbox_get(NO_WAIT,mbox_id.mac_opp[my_port], pgToken);
+        }
+
+	if(pgToken == null) {
+         be_msg.print(e_mesg_error, "IP_Packet_Chkr", "check_packet",
+         "IP Packet Checker[%0d]: Did not get token \n", my_port);
+          return;
+	} 
+
+	skip_checking = 0;
+
+	if( pgToken.do_not_check) {
+	 skip_checking = drain_tokens(pgToken);
+	}
+        if(pgToken!=null) {
+         printf("CheckReqCbs:: TX REQUEST SEEN - %d  FOR - ID - %d\n", pgToken.tx_request_seen , pgToken.gId);
+        }
+
+	if(skip_checking) {
+	 printf("PACKET ID - %d DMA ID - %d PortID - %d SKIPPED CHECKING\n",pgToken.gId,pgToken.tx_dma_id,my_port);
+	 return;
+        }
+
+	if(pgToken == null) {
+         be_msg.print(e_mesg_error, "IP_Packet_Chkr", "check_packet",
+         "IP Packet Checker[%0d]: Did not get token \n", my_port);
+          return;
+	} 
+
+	om_token = pgToken.gId;
+	pack_db = new pgToken.pack_db;
+
+         be_msg.print(e_mesg_info, "IP_Packet_Chkr", "check_packet",
+         "IP Packet Checker[%0d] : Received token from NTX-MAC Checker\n", \
+         my_port,token);
+
+	if(om_token == -1) {
+         be_msg.print(e_mesg_error, "IP_Packet_Chkr", "check_packet",
+         "IP Packet Checker[%0d]: Did not get token from NTX-MAC Checker\n",
+          my_port);
+          return;
+	   }
+
+      if ( my_port > 1) {
+       if(pgToken.exp_err == 1) {
+         error = 1;
+       } else {
+	if(tx_err & !check_option( pack_db.options, O_PC_EXP_TXERR) ) {
+         be_msg.print(e_mesg_error, "IP_Packet_Chkr", "check_packet",
+         "IP Packet Checker[%0d]: Got an unexpected tx_err: Token[%0d]\n",
+				my_port,om_token);
+	   }
+       }
+      }
+
+	if(!tx_err & check_option( pack_db.options, O_PC_EXP_TXERR) ) {
+		print_err();
+
+        
+         be_msg.print(e_mesg_error, "IP_Packet_Chkr", "check_packet",
+         "IP Packet Checker[%0d]: Expected tx_err, did not see it. (Token: %0d)\n"
+		,	my_port, om_token);
+	   }
+
+	if(tx_err & check_option( pack_db.options, O_PC_EXP_TXERR) ) {
+           error =1 ;
+        }
+
+	if( check_option( pack_db.options, O_PC_DO_NOT_CHECK) ) {
+		return;
+	   }
+
+	// Parse Header
+	// Get length and Payload beginning
+	//
+         be_msg.print(e_mesg_debug2, "IP_Packet_Chkr", "check_packet",
+         "IP Packet Checker[%0d]: Received frame:  (Token: %0d)\n",my_port,om_token);
+		display_buf(buf, hwlen, INTER_FEDX);
+
+	ptr += 12;
+
+	len = {buf.val[ptr++], buf.val[ptr++]};
+        type_len = len;
+	// printf(" type_len %x \n",type_len);
+
+	if( len === TPID_8021Q ) {	// Tagged packet
+                //printf("NVN it is a VLAN packet\n");
+		ptr += 2;
+                 type_len = {buf.val[ptr], buf.val[ptr+1]};
+		len = 2 + 12+4+2+{buf.val[ptr++], buf.val[ptr++]};
+	   }
+	else len=len+12+4+2;
+
+
+	if(LLC_HACK && ((pack_db.frame.frame_type== 5'h3 )|| (pack_db.frame.frame_type== 5'h7) 
+                         || (pack_db.frame.frame_type== 5'hb) || (pack_db.frame.frame_type== 5'hf))) {
+		
+	        if((pack_db.frame.frame_type== 5'h3 ) || (pack_db.frame.frame_type== 5'hb)) {
+                 type_len = {buf.val[ 6 +  ptr], buf.val[ 6 + ptr+1]};
+	        } else if((pack_db.frame.frame_type== 5'h7) || (pack_db.frame.frame_type== 5'hf)) {
+                 type_len = {buf.val[ 6 +  ptr], buf.val[ 6 + ptr+1]};
+		}
+                printf("LLC_HACK code executed\n");
+	}
+	printf(" type_len %d len - %d  ptr - %d  \n",type_len,len,ptr);
+	if( 
+           ( (type_len<16'h0600)  & ({buf.val[ptr+0], buf.val[ptr+1], buf.val[ptr+2]} === LLC_SNAP) ) |
+           ( (type_len==16'h8870) & ({buf.val[ptr+0], buf.val[ptr+1], buf.val[ptr+2]} === LLC_SNAP) )
+          ) {  // A LLC-SNAP packet
+		ptr += 6;	// bypass llc_snap value
+		ptr += 2;	// bypass the length field in following length feild
+		llc_snap = 1;
+	   }
+	printf(" PTR - bypass llc %d \n",ptr);
+
+        //pkt_gen allows the user to modify the type feild with user-defined feilds.
+        //Whenever user defines the frame.type!=(-1), then pkt_gen modifies the type
+        //feild with the frame.type value.
+        //if the user uses this option on a L3 packet, the checker will treat it as a
+        //standard ip pkt. if the user uses this option on a L2 pkt, the checker will
+        //treat this pkt like a L2 packet.
+        if(pack_db.frame.type != -1) {
+            if( (pack_db.frame.frame_type[1] == 1) ) 
+                 ptr += 24; //this will force the packet to be treated as a L3 pkt
+            else ptr += 0;  //this will force the packet to be treated as a L2 pkt
+           }
+        else {
+         //pkt_gen did not use the frame.type switch
+         //check if the packet has a IP Header
+         if(type_len>16'h05ff) {
+          if ( type_len == 16'h0800 ){ //IP Header
+              //printf("NVN packet is IPv4 \n");
+             //ptr += 24;
+             ptr += 20;
+          }
+          else if ( type_len == 16'h86dd ) //IPV6
+             ptr += 40;                //
+          else {
+         be_msg.print(e_mesg_debug2, "IP_Packet_Chkr", "check_packet",
+         "IP Packet Checker[%0d]:Unidentified packet Type : (Token: %0d)\n",my_port,token);
+                //Treat such packets also as they have IP Headers.
+                ptr += 24;
+               }
+           }
+          }
+	printf(" BEFORE TCP ptr -0 %d\n",ptr);
+
+         //check if the packet is a TCP packet
+          if ( ( (pack_db.frame.frame_type[1] == 1)  &&
+               ( (pack_db.frame.frame_class == CL_TCP)     || (pack_db.frame.frame_class == CL_TCP_IP_V6) ||
+                 (pack_db.frame.frame_class == CL_TCP_OPT) ||
+                 (pack_db.frame.frame_class == CL_TCP_FRAG) ) ) 
+              ) {
+                  ptr += 20;  //8words for TCP header
+         be_msg.print(e_mesg_info, "IP_Packet_Chkr", "check_packet",
+         "IP Packet Checker[%0d]: Received Token [%0d] detected to be a\
+          TCP Packet\n",my_port,token);
+            }
+         //check if the packet is a UDP packet
+          if ( (pack_db.frame.frame_type[1] == 1)  &&
+               ( (pack_db.frame.frame_class == CL_UDP)     || (pack_db.frame.frame_class == CL_UDP_IP_V6) || 
+                 (pack_db.frame.frame_class == CL_UDP_OPT) || 
+                 (pack_db.frame.frame_class == CL_UDP_FRAG) )
+              ) {
+                  ptr += 8;  //2words for UDP header
+
+         be_msg.print(e_mesg_info, "IP_Packet_Chkr", "check_packet",
+         "IP Packet Checker[%0d]: Received Token [%0d] detected to be a\
+          UDP Packet\n",my_port,token);
+            }
+
+
+
+
+         be_msg.print(e_mesg_debug2, "IP_Packet_Chkr", "check_packet",
+         "IP Packet Checker[%0d]: Extracted Length: [%0d], hw len: %0d\n",
+        		my_port,len,hwlen);
+
+	//
+	if(len<0)	len = hwlen;
+
+      	
+
+	ptr += (pack_db.frame.header_length - 5)*4;
+	printf(" PC: TOKEN PTR - %d frame_type - %x \n",ptr,pack_db.frame.frame_type);
+
+	if(LLC_HACK && ((pack_db.frame.frame_type== 5'h3 )|| (pack_db.frame.frame_type== 5'h7) 
+                         || (pack_db.frame.frame_type== 5'hb) || (pack_db.frame.frame_type== 5'hf))) {
+	   if((pack_db.frame.frame_type== 5'h3) || (pack_db.frame.frame_type== 5'hb))
+	    token = {buf.val[8+ ptr++], buf.val[8+ ptr++]};
+	   else if((pack_db.frame.frame_type== 5'h7) || (pack_db.frame.frame_type== 5'hf)) {
+	    token = {buf.val[8+ ptr++], buf.val[8+ ptr++]};
+	   }
+	} else token = {buf.val[ptr++], buf.val[ptr++]};
+
+         be_msg.print(e_mesg_debug2, "IP_Packet_Chkr", "check_packet",
+         "IP Packet Checker[%0d]: Extracted Token from Packet : %0d\n",
+        		my_port,token);
+
+	//
+	// Check if packet token matches recieved token
+	//
+#ifdef 0
+	// if LLC_HACK
+	  if(token !== om_token) {
+           be_msg.print(e_mesg_error, "IP_Packet_Chkr", "check_packet",
+           "IP Packet Checker[%0d]: Packet Token (%0d) does not match recived \
+            token (%0d).\n", my_port,token,om_token); 
+		  token = om_token;
+		display_buf(buf, hwlen, INTER_FEDX);
+                return;
+	     }
+#endif
+
+	//
+	// Check if entry exists
+	//
+        tmp32 = token;
+        if( tmp32 === 32'hxxxxxxxx ) {
+         be_msg.print(e_mesg_error, "IP_Packet_Chkr", "check_packet",
+         "IP Packet Checker[%0d]: Damaged Packet received (Packet token is \
+          unknown \n",my_port);
+		token = om_token;
+		display_buf(buf, hwlen, INTER_FEDX);
+                return;
+           }
+        if( pack_db== null ) {
+
+	// TOADS----
+         be_msg.print(e_mesg_error, "IP_Packet_Chkr", "check_packet",
+         "IP Packet Checker[%0d]: Spurious Packet received (token: %0d\n",
+          my_port,token);
+		token = om_token;
+		display_buf(buf, hwlen, INTER_FEDX);
+		return;
+	   }
+
+	// Now assemble the whole packet
+	//
+#ifdef MAC_SAT
+	if(debug_checker)
+		pack_gen[pgToken.port_id].build_frame(token | 32'h80000000, pack_db, nb, m, my_port, 1); 
+	else
+		pack_gen[pgToken.port_id].build_frame(token, pack_db, nb, m, my_port, 1); 
+#else
+	nb = new pgToken.buf;
+        m = assoc_index(CHECK,nb.val);
+#endif
+
+	 if (m<min_frame_size) {
+	   padded = 1'b0;
+         } else{ 
+	   padded = 1'b0;
+         }
+
+        printf("The val of padded is %0d\n",padded);
+
+        if (( (hwlen != m) & (m <= max_frame_size[13:0]) & (m >= min_frame_size[9:0]) & (!col) ) & ( !( check_option(pack_db.options, O_PC_DO_NOT_CHECK)))) {
+             if(pgToken.exp_err == 1) {
+                // don't print the error message for length mismatch
+             } else {
+                // this is real error print the length mismatch 
+		print_err();
+                printf("Rebuild frame length mismatch (Token: %0d): expected %0d, got: %0d.\n",
+                        token,m,hwlen);
+             }
+                error=1;
+           }
+
+        //-- Commenting out this piece of code
+        //-- 08/22/05
+        //-- MAC tx doesn't perform padding, hence check against min frame doesn't make sense
+
+        /* 
+	if(m < min_frame_size[9:0] & hwlen < min_frame_size[9:0] ) {
+		print_err();
+		printf("Packet was not padded. Min length: %0d, Sent packet Length: %0d, Rcvd Packet length: %0d\n",
+		min_frame_size[9:0], m, hwlen);
+	   }
+        */
+
+
+	bad_packet = m > max_frame_size;
+
+	if(hwlen<m)	m=hwlen;	// Take the shortest length
+
+        // If the packet had a late collision check only the first 55 bytes of the packet
+        // Anyway the packet is dropped!!
+        if(col)  m = 55;
+
+
+	if(padded) {
+          m=m-4;      // Do not compare crc
+          printf("Info:Packet Checker[%0d]: Token:%0d is a padded packet\n", my_port,token);
+         }
+
+	if(m>max_frame_size)	m = max_frame_size;	// Packet will be trunkated
+
+	//
+	// Now compare the new packet against the recived one
+	//
+	for(n=0;n<m;n++) {
+		//printf("buf[%0d]: %h\n",n,buf.val[n]);
+
+            be_msg.print(e_mesg_debug4, "IP_Packet_Chkr", "check_packet",
+            "DEBUG4:IP_Packet_Chkr[%0d]: byte: %0d Expected Data :%h Received Data:%0h\n" \
+             ,my_port,n,nb.val[n],buf.val[n]); 
+
+       if(nb.val[n] !== buf.val[n]) {
+
+              be_msg.print(e_mesg_error, "IP_Packet_Chkr", "check_packet",
+              " DATA_MISMAT:IP_Packet_ChkrPC[%0d]: Token: %0d byte: %0d Received Data :%h Expected Data:%0h\n" ,  my_port,pgToken.gId, n, buf.val[n], nb.val[n]); 
+			error = 1;
+		   }
+	   }
+
+	if(padded) {  // Verify CRC
+		tmp32 = pack_gen[pgToken.port_id].crc_gen(buf, 0, hwlen-4);
+
+		if( {buf.val[hwlen-4],buf.val[hwlen-3],buf.val[hwlen-2],buf.val[hwlen-1]} !== tmp32 ) {
+			print_err();
+			printf("ERROR: PC[%0d]: NEW CRC Error. Expeced: %h, Got: %h (Token: %0d).\n",
+				my_port,tmp32, {buf.val[hwlen-4],buf.val[hwlen-3],buf.val[hwlen-2],buf.val[hwlen-1]},
+				token);
+		   }
+	   }
+
+
+
+	if(error == 0) {
+           if(pgToken.exp_err == 1) {
+             pack_db.pc_check[my_port] = -1;
+              be_msg.print(e_mesg_error, "IP_Packet_Chkr", "check_packet",
+	     "INFO:IP_Packet_Chkr[%0d]: TokenFromRTL= %0d TokenFromVerif= %0d Packet Length= %0d \
+              Got a good pkt, when a error pkt expected : %0d\n" \
+	     ,my_port,token,pgToken.gId,hwlen,pack_db.pc_check[my_port]);
+           } else {
+             pack_db.pc_check[my_port] = 1;
+             be_msg.print(e_mesg_info, "IP_Packet_Chkr", "check_packet",
+             "INFO:IP_Packet_Chkr[%0d]: TokenFromRTL= %0d TokenFromVerif= %0d Packet Length= %0d \
+              Packet Checker DONE checker status : %0d\n" \
+             ,my_port,token,pgToken.gId,hwlen,pack_db.pc_check[my_port]); 
+          }
+         }
+
+	else	 {	pack_db.pc_check[my_port] = -1;
+
+	if( check_option( pack_db.options, O_PC_EXP_TXERR) ) {
+        } else if(pgToken.exp_err == 1) {
+          be_msg.print(e_mesg_info,"IP_Packet_Chkr","check_packet",
+             "INFO: IP_Packet_Chkr[%0d]: TokenFromRTL= %0d TokenFromVerif= %0d Packet Length= %0d \
+              Packet checker Expected_Err_pkt got Err_pkt\n" \
+              ,my_port,token,pgToken.gId,hwlen);
+        } else{
+         be_msg.print(e_mesg_error, "IP_Packet_Chkr", "check_packet",
+         "INFO:IP_Packet_Chkr[%0d]: Token= %0d Packet NOT Received  \
+         checker status : %0d\n", my_port,token, \
+         pack_db.pc_check[my_port]);
+        }
+         
+        }
+
+}
+ 
+ 
+function integer pc::check_option(bit [63:0] option, bit [63:0] flag) {
+        if((option[63:0] & flag[63:0]) > 64'h0) check_option = 1;
+        else                                    check_option = 0;
+   }
+
+
+
+
+task pc::print_warn() {
+	printf("WARNING: Packet Checker[%0d]: ", my_port);
+   }
+
+
+task pc::print_err() {
+        printf("ERROR: Packet Checker[%0d] time:%0d : ", my_port, {get_time(HI), get_time(LO)});
+   }
+
+
+// # 56 "pc_top.vr" 2
+
+
+	task pc::new(integer my_porti, (bit [3:0] ptype=0)) {
+		integer n,i;
+ 	        string init_bypass_mac_ports,temp_port;
+    	        bit[31:0] bypass_mac_port;
+	        bit[3:0] drr_bypass;
+
+		my_port = my_porti;		 
+		port_type = ptype;
+
+		 
+		 
+		 
+		if (my_port>8 ) {
+			printf("PC: INIT: Port %0d is invalid or out of range.\n", my_port);
+			 
+			terminate;
+		   }
+
+		if(!quiet_on)
+			printf("INFO: Packet Checker attaching to port %0d\n",my_port);
+
+		 
+		 
+		 
+		if(pc_used_ports[my_port] == 1) {
+			printf("PC: INIT: Port %0d already in use.\n", my_port);
+			 
+			terminate;
+		   }
+		pc_used_ports[my_port] = 1;
+
+		 
+		 
+		fork
+			pkt_auto_rx();
+		join none
+
+                printf("PKT_CHKR : MY_PORT_VAL %0d\n",my_port);
+
+                fork 
+		case(my_port) {
+
+                   0: if (get_plus_arg(CHECK, "MAC_SPEED0=")) {
+                        mac_speed = get_plus_arg(NUM,"MAC_SPEED0=");
+                        config_rx (m0,mac_speed);
+                        }
+
+                   1: if (get_plus_arg(CHECK, "MAC_SPEED1=")) {
+                        mac_speed = get_plus_arg(NUM,"MAC_SPEED1=");
+                        config_rx (m1,mac_speed);
+                        }
+
+                   2: if (get_plus_arg(CHECK, "MAC_SPEED2=")) {
+                        mac_speed = get_plus_arg(NUM,"MAC_SPEED2=");
+                        printf("PKT_CHKR : MY_PORT_VAL %0d\n",my_port);
+                        printf("PKT_CHKR : MAC_SPEED %0d\n",mac_speed);
+                        config_rx (m2,mac_speed);
+                        }
+
+                   3: if (get_plus_arg(CHECK, "MAC_SPEED3=")) {
+                        mac_speed = get_plus_arg(NUM,"MAC_SPEED3=");
+                        printf("PKT_CHKR : MY_PORT_VAL %0d\n",my_port);
+                        printf("PKT_CHKR : MAC_SPEED %0d\n",mac_speed);
+                        config_rx (m3,mac_speed);
+                        }
+
+
+		   }
+                join none
+/* drr bypass flag per port*/
+    if(get_plus_arg( CHECK, "TXDRR_BYPASS_PORT_NUM="))
+      bypass_mac_port = get_plus_arg( STR, "TXDRR_BYPASS_PORT_NUM=");
+    init_bypass_mac_ports.bittostr(bypass_mac_port);
+    for(i=0; i<init_bypass_mac_ports.len();i++) {
+      temp_port =init_bypass_mac_ports.substr(i,i);
+      drr_bypass = drr_bypass | ( 1<<temp_port.atoi());
+     }
+     if(drr_bypass[my_port]) {
+       drrbypass_port_num = my_port;
+     } else drrbypass_port_num = -1;
+}
+
+        task pc::status() {  
+		printf("\n"); 
+		printf("------------------------------\n");
+		printf("PC[%0d]: Status Report:\n",my_port);
+		printf("        Encountered %0d ERRORS\n",error_count);
+		printf("        Encountered %0d WARNINGS\n",warning_count);
+		printf("        Received %0d packets\n",pack_cnt);
+		printf("------------------------------\n\n");
+           }
+
+
+
+        task pc::config_rx (mii_def port_bind, integer mac_speed) {
+           
+                printf("PKT_CHKR : cfg_rx MAC_SPEED %d\n",mac_speed);
+
+                /* if(mac_speed == 10000) {  
+                      port_bind.$tx_config = 4;
+                      port_speed = 4;
+                      printf("PKT_CHKR : CONFIG 10G\n");
+                }
+ 
+                if(mac_speed == 1000)   {
+                      port_bind.$tx_config = 3;
+                      port_speed = 3;
+                      printf("PKT_CHKR : CONFIG 1G\n");
+                } 
+
+                if(mac_speed == 100 )   {
+                      port_bind.$tx_config = 2;
+                      port_speed = 2;
+                }
+
+                if((mac_speed != 10000) || (mac_speed != 1000) || (mac_speed != 100)) {
+                    port_bind.$tx_config = 1;
+                    port_speed = 1;
+                } */
+
+                case(mac_speed) {
+                  10000 : {
+                            port_bind.$tx_config = 4;
+                            port_speed = 4;
+                            printf("PKT_CHKR : CONFIG 10G\n");
+                          }
+
+                  1000 : {
+                            port_bind.$tx_config = 3;
+                            port_speed = 3;
+                            printf("PKT_CHKR : CONFIG 1G\n");
+                         }
+
+                  100 : {
+                            port_bind.$tx_config = 2;
+                            port_speed = 2;
+                        }
+                  default : {
+                            port_bind.$tx_config = 1;
+                            port_speed = 1;
+                        }
+               }
+
+          }
+
+
+

@@ -1,0 +1,820 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuErrCplPEUStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#define _INFO_MSG_ERR_CPL(msg) printf( "ErrCplPEUStr (cyc %0d) %s\n", get_cycle(), msg )
+
+class ErrCplPEUStr extends PEUStrBase
+{
+  local bit f_typeSpecified;			// Was a bad-boy type supplied?
+  local bit [4:0] f_type;			// The bad type
+  local bit f_write;				// Is it a PIO write?
+  local bit f_wrongData;    			// Send CplD when Cpl expected?
+  local bit [2:0] f_wrongStatus;   		// Status other than SC for Rd?
+  local integer f_adjustLen;			// The delta to the true length
+  local bit f_cplLk;				// Send CplLk instead of Cpl?
+  local bit f_crs;				// Send Cpl with CRS status?
+  local integer f_adjustCount;			// The delta to the true bcount
+  local integer f_adjustAddr;			// The delta to the true laddr
+  local bit [15:0] f_reqID;			// The req-ID to be used
+  local bit [7:0] f_tagMask;			// A mask for polluting the tag
+  local bit [2:0] f_TC;				// The TC to be used
+  local bit [1:0] f_Attr;			// The "Attr" to be used
+  local bit f_sendReq;				// Send the PIO request?
+  local bit f_sendValid;			// Send a correct Cpl(D) after?
+  local integer f_errQueue;			// A mailbox for bad pkt headers
+  local bit f_badCpl;				// Was a bad Cpl method called?
+  local bit f_errCpl;				// Was an erroneous Cpl called?
+  local bit[2:0] f_badStatus;
+  local bit f_sendCpl;
+
+  task new( PEUTestEnv a_env )
+  {
+    super.new( a_env );
+
+    f_typeSpecified = 0;
+    f_adjustLen = 0;
+    f_wrongData = 0;
+    f_wrongStatus = 0;
+    f_cplLk = 0;
+    f_crs = 0;
+    f_sendValid = 1;
+    f_sendReq = 1;
+    f_adjustCount = 0;
+    f_adjustAddr = 0;
+    f_reqID = 0;
+    f_tagMask = 0;
+    f_TC = 0;
+    f_Attr = 0;
+    f_errQueue = 0;
+    f_badCpl = 0;
+    f_errCpl = 0;
+    f_badStatus = 3'b000;
+    f_sendCpl = 0;
+  } /* end new */
+
+  task SetType( bit [4:0] a_type, bit a_write )
+  {
+    f_typeSpecified = 1;
+    f_type = a_type;
+    f_write = a_write;
+  } /* end SetType */
+
+  task BadStatus( (bit[2:0] a_status = 3'b0) )
+  {
+    if ( a_status == 3'b000 )
+      f_badStatus = (urandom()%2) ? PEC_PCI__CPL_STATUS_CA 
+                                  : PEC_PCI__CPL_STATUS_UR;
+    else
+      f_badStatus = a_status;
+  } /* end SetType */
+
+  task AdjustLen( integer a_lengthDelta )
+  {
+    f_adjustLen = a_lengthDelta;
+    f_errCpl = 1;
+  } /* end AdjustLen */
+
+  task WrongData( (bit [2:0] a_status = 3'b0) )
+  {
+    f_wrongData = 1;
+    f_errCpl = 1;
+  } /* end WrongData */
+
+  task WrongStatus( (bit [2:0] a_status = 3'b0) )
+  {
+    if ( a_status == 3'b0 )
+      f_wrongStatus = urandom()%7 + 1;
+    else
+      f_wrongStatus = a_status;
+    if ( f_wrongStatus == PEC_PCI__CPL_STATUS_CRS )
+      f_wrongStatus = PEC_PCI__CPL_STATUS_UR;
+
+    f_errCpl = 1;
+  } /* end WrongStatus */
+
+  task SendCplLk()
+  {
+    f_cplLk = 1;
+    f_badCpl = 1;
+  } /* end SendCplLk */
+
+  task CRS()
+  {
+    f_crs = 1;
+  } /* end CRS */
+
+  task TimeOut()
+  {
+    f_sendValid = 0;
+  } /* end TimeOut */
+
+  task NoRequest()
+  {
+    f_sendReq = 0;
+  } /* end NoRequest */
+
+  task AdjustCount( integer a_delta )
+  {
+    f_adjustCount = a_delta;
+    f_errCpl = 1;
+  } /* end AdjustCount */
+
+  task AdjustAddr( integer a_delta )
+  {
+    f_adjustAddr = a_delta;
+    f_errCpl = 1;
+  } /* end AdjustAddr */
+
+  task BadReqID( (bit[15:0] a_id = 16'b0) )
+  {
+    if ( a_id == 16'b0 )
+      f_reqID = urandom() % 65535 + 1;
+    else
+      f_reqID = a_id;
+    f_badCpl = 1;
+  } /* end BadReqID */
+
+  task BadTag( (bit[7:0] a_mask = 8'b0) )
+  {
+    if ( a_mask == 8'b0 )
+      f_tagMask = (urandom() % 7 + 1) << 5;
+    else
+      f_tagMask = a_mask;
+    f_badCpl = 1;
+  } /* end BadReqID */
+
+  task BadTC( (bit[2:0] a_tc = 3'b0) )
+  {
+    if ( a_tc == 3'b0 )
+      f_TC = urandom() % 7 + 1;
+    else
+      f_TC = a_tc;
+    f_errCpl = 1;
+  } /* end BadTC */
+
+  task BadAttr( (bit[1:0] a_attr = 2'b0) )
+  {
+    if ( a_attr == 2'b0 )
+      f_Attr = urandom() % 3 + 1;
+    else
+      f_Attr = a_attr;
+    f_errCpl = 1;
+  } /* end BadAttr */
+
+  task SetErrQueue( integer a_queue )
+  {
+    f_errQueue = a_queue;
+  } /* end SetErrQueue */
+
+  task SendCpl()
+  {
+    f_sendCpl = 1;
+  } /* end SendCpl */
+
+  task Execute()
+  {
+    bit [ 7:0 ] reqTag;   		// The tag for the PIO request
+    bit [ PEC_PCI__HDR ] reqHdr;	// The request TLP's header
+    bit [ 7:0 ] reqAddr;		// The DOU address for a write-request
+    integer reqData;			// The request's payload
+    integer reqLen;			// The request's length (if adjusted)
+    bit [ PEC_PCI__HDR ] cplHdr;	// The completion TLP's header
+    bit [ PEC_PCI__HDR ] badCplHdr;	// The corrupted completion TLP's header
+    integer cplData;                    // The completion's payload
+    PEC_ERRtype err;			// The sort of error we're generating
+    bit [ 63:0 ] tluCtl;
+    bit quick;				// Does good Cpl follow on heels of bad?
+    event quickDone;			// Announces receipt of good Cpl
+    integer maxLen;
+    bit [ 31:0 ] cplDatah;
+    bit [ 63:0 ] diagCsr = 0;
+    bit disableErrCheck = 0;
+    bit CfgRdCpl = 0;       		//If set the env will flip the completion byte order
+                        		// since Denali does it automatically so DMUXtr doesn't
+                        		// need to store an array for the payload
+
+					// If nothing bad was specified, then
+					// we should pick something...
+    if ( !f_badCpl && !f_errCpl && !f_crs )
+      {
+      randcase
+        {
+        1: { f_adjustLen = 1; f_errCpl = 1; }
+        1: { f_wrongData = 1; f_errCpl = 1; }
+        1: { f_crs = 1;  }
+        1: { f_adjustCount = 1; f_errCpl = 1; }
+        1: { f_adjustAddr = 1; f_errCpl = 1; }
+        1: { f_tagMask = 8'b00010000 << (urandom() % 4); f_badCpl = 1; }
+        1: { f_reqID = 1 << (urandom() % 16); f_badCpl = 1; }
+        1: { f_sendReq = 0; f_badCpl = 1; }
+        1: { f_TC = 1; f_errCpl = 1; }
+        1: { f_Attr = 1; f_errCpl = 1; }
+        1: { f_cplLk = 1; f_badCpl = 1; }
+        }
+      }
+
+					// A negative length adjustment demands
+					// a memory-read request.
+    if ( f_adjustLen < 0 )
+      {
+      f_typeSpecified = 1;
+      f_type = PEC_PCI__TYPE_MEM;
+      }
+
+					// If no type was specified, pick one.
+    if ( !f_typeSpecified )
+      {
+      f_write = urandom()%2;
+      randcase
+        {
+        1: f_type = PEC_PCI__TYPE_MEM;
+        1: f_type = PEC_PCI__TYPE_CFG0;	//Since data gets flipped around
+        1: f_type = PEC_PCI__TYPE_CFG1; //lets just use mem and IO for random
+        1: f_type = PEC_PCI__TYPE_IO;
+        }
+      }
+    //N2 review - Only allow CFG1 Writes so Denali doesn't get messed up
+    if( f_write && f_type == PEC_PCI__TYPE_CFG0 ){
+       f_type = PEC_PCI__TYPE_CFG1;
+    }
+    if( f_badCpl && (f_type === PEC_PCI__TYPE_CFG0 ||
+                     f_type === PEC_PCI__TYPE_CFG1)){
+      randcase
+        {
+        1: f_type = PEC_PCI__TYPE_MEM;
+        1: f_type = PEC_PCI__TYPE_IO;
+        }
+    }
+					// It only makes sense to adjust the
+					// length of a CplD ("read" response)
+					// and a MEM-write is posted!
+					// And a "wrong status" only makes
+					// sense for a completion with data!
+    if ( f_adjustLen 
+      || f_type == PEC_PCI__TYPE_MEM 
+      || f_wrongStatus != 0 ) f_write = 0;
+    if ( (f_wrongStatus != 0 || f_crs) && f_badStatus != 0 )
+      {
+      _INFO_MSG_ERR_CPL( "BadStatus supplied, but ignored due to other status req" );
+      f_badStatus = 0;
+      }
+    if ( f_wrongData && f_badStatus != 0 )
+      {
+      _INFO_MSG_ERR_CPL( "BadStatus supplied, but ignored due to incorrect data bit" );
+      f_badStatus = 0;
+      }
+
+                                        // Get in line for a PIO tag
+    reqAddr = 0;
+    if ( f_write )
+      f_env.allocWrTag( reqTag, reqAddr );
+    else
+      f_env.allocRdTag( reqTag );
+
+					// Then build a TLP.
+    if ( f_write )
+      f_env.genEgressWrReq( reqTag, reqHdr, reqData, *, f_type );
+    else if ( f_adjustLen < 0 )
+      f_env.genEgressRdReq( reqTag, reqHdr, reqData, 1-f_adjustLen, f_type );
+//  else if ( f_adjustLen > 0 && f_type == PEC_PCI__TYPE_MEM )
+//    {
+//    reqLen = f_env.getMaxPayloadSize()/4;
+//    if ( reqLen <= f_adjustLen ) f_adjustLen = reqLen - 1;
+//    reqLen = urandom() % ( reqLen - f_adjustLen ) + 1;
+//    f_env.genEgressRdReq( reqTag, reqHdr, reqData, reqLen, f_type );
+//    }
+    else 
+      f_env.genEgressRdReq( reqTag, reqHdr, reqData, *, f_type );
+
+					// ...and the correct completion.
+    f_env.genIngressCpl( reqHdr, cplHdr, cplData );
+
+					// If a positive length-adjustment was
+					// given, make sure the result does not
+					// exceed the max payload size.
+    maxLen = f_env.getMaxPayloadSize() / 4;
+    if ( f_adjustLen > 0 )
+      {
+      if ( reqHdr[PEC_PCI__LEN] + f_adjustLen > maxLen )
+        {
+        f_adjustLen = maxLen - reqHdr[PEC_PCI__LEN];
+        if ( f_adjustLen == 0 ) f_adjustLen = -1;
+        }
+      }
+
+    _INFO_MSG_ERR_CPL( "-----------------------" );
+    _INFO_MSG_ERR_CPL( psprintf( "%s %s tag=%h",
+        reqHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_IO ? "IO" :
+        reqHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_CFG0 ? "CFG0" :
+        reqHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_CFG1 ? "CFG1" : "MEM",
+        f_write ? "Write" : "Read", reqTag ) );
+    _INFO_MSG_ERR_CPL( psprintf( "adjustLen=%0d", f_adjustLen ) );
+    _INFO_MSG_ERR_CPL( psprintf( "wrongData=%0d", f_wrongData ) );
+    _INFO_MSG_ERR_CPL( psprintf( "wrongStatus='b%b", f_wrongStatus ) );
+    _INFO_MSG_ERR_CPL( psprintf( "badStatus='b%b", f_badStatus ) );
+    _INFO_MSG_ERR_CPL( psprintf( "CRS=%0d", f_crs ) );
+    _INFO_MSG_ERR_CPL( psprintf( "adjustCount=%0d", f_adjustCount ) );
+    _INFO_MSG_ERR_CPL( psprintf( "adjustAddr=%0d", f_adjustAddr ) );
+    _INFO_MSG_ERR_CPL( psprintf( "tagMask=%b", f_tagMask ) );
+    _INFO_MSG_ERR_CPL( psprintf( "reqID=%h", f_reqID ) );
+    _INFO_MSG_ERR_CPL( psprintf( "sendReq=%b", f_sendReq ) );
+    _INFO_MSG_ERR_CPL( psprintf( "cplLk=%b", f_cplLk ) );
+    _INFO_MSG_ERR_CPL( psprintf( "TC=%b", f_TC ) );
+    _INFO_MSG_ERR_CPL( psprintf( "Attr=%b", f_Attr ) );
+    _INFO_MSG_ERR_CPL( psprintf( "Req ID=%h tag=%h len=%d DWBE=%h/%h addr=%h",
+            reqHdr[PEC_PCI__REQ_ID], reqHdr[PEC_PCI__TLP_TAG], 
+            reqHdr[PEC_PCI__LEN], reqHdr[PEC_PCI__FIRST_DWBE],
+            reqHdr[PEC_PCI__LAST_DWBE], 
+            reqHdr[PEC_PCI__FMT_4DW] ? reqHdr[PEC_PCI__ADDR]
+                                     : reqHdr[PEC_PCI__ADDR32] ) );
+    _INFO_MSG_ERR_CPL( psprintf( "Cpl ID=%h tag=%h len=%d lowaddr=%h byteCount=%h",
+            cplHdr[PEC_PCI__CPL_REQ_ID], cplHdr[PEC_PCI__CPL_TAG],
+            cplHdr[PEC_PCI__LEN], cplHdr[PEC_PCI__LOWADDR],
+            cplHdr[PEC_PCI__BYTECOUNT] ) );
+    _INFO_MSG_ERR_CPL( "-----------------------" );
+
+					// Now, pollute the completion based on
+					// the user's requirement(s).
+    badCplHdr = cplHdr;
+    badCplHdr[PEC_PCI__LEN] = cplHdr[PEC_PCI__LEN] + f_adjustLen;
+    if ( f_wrongData )
+      {
+      badCplHdr[PEC_PCI__FMT_DATA] = ~cplHdr[PEC_PCI__FMT_DATA];
+      if ( badCplHdr[PEC_PCI__FMT_DATA] )
+        badCplHdr[PEC_PCI__LEN] = reqHdr[PEC_PCI__LEN];
+      else
+        badCplHdr[PEC_PCI__LEN] = 0;
+      }
+    if ( f_cplLk ) badCplHdr[PEC_PCI__TYPE] = PEC_PCI__TYPE_CPL_LK;
+    if ( f_crs ) badCplHdr[PEC_PCI__CPL_STATUS] = PEC_PCI__CPL_STATUS_CRS;
+    if ( f_wrongStatus ) badCplHdr[PEC_PCI__CPL_STATUS] = f_wrongStatus;
+    if ( f_badStatus ) badCplHdr[PEC_PCI__CPL_STATUS] = f_badStatus;
+    if ( f_badStatus ) badCplHdr[PEC_PCI__FMT_DATA] = 0;
+    badCplHdr[PEC_PCI__BYTECOUNT] = cplHdr[PEC_PCI__BYTECOUNT] + f_adjustCount;
+    badCplHdr[PEC_PCI__LOWADDR] = cplHdr[PEC_PCI__LOWADDR] + f_adjustAddr;
+    badCplHdr[PEC_PCI__CPL_REQ_ID] = cplHdr[PEC_PCI__CPL_REQ_ID] ^ f_reqID;
+    badCplHdr[PEC_PCI__CPL_TAG] = cplHdr[PEC_PCI__CPL_TAG] ^ f_tagMask;
+    badCplHdr[PEC_PCI__TC] = f_TC;
+    badCplHdr[PEC_PCI__ATTR] = f_Attr;
+
+    //Determine if this is a Config Read
+    CfgRdCpl = (reqHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_CFG0 || 
+                reqHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_CFG1) && !f_write;
+         
+					// Send the request, if we should.
+    if ( f_sendReq )
+      {
+      _INFO_MSG_ERR_CPL( psprintf( "Send nonposted request (tag=%h) type=%h CfgRdCpl=%0d", reqTag,reqHdr[PEC_PCI__TYPE], CfgRdCpl ) );
+      f_env.driveILU( reqHdr, reqAddr, reqData );
+      _INFO_MSG_ERR_CPL( psprintf( "Expect nonposted request (tag=%h)", reqTag ) );
+      f_env.expectPCIE( reqHdr, reqData );
+      }
+
+					// A legit "retry" completion must not
+					// have any data!
+    if ( f_crs && !f_badCpl && !f_errCpl
+         && ( f_type == PEC_PCI__TYPE_CFG0 || f_type == PEC_PCI__TYPE_CFG1 ) )
+      {
+      badCplHdr[PEC_PCI__FMT_DATA] = 1'b0;
+      /* The length-field is reserved */
+      }
+
+					// If we never sent the original request
+					// or if we dorked with the req-ID, then
+					// this is an unexpected completion.
+					// Just wait for the packet to make it
+					// through the TLU.
+    if ( !f_sendReq || f_badCpl )
+      {
+      err = e_ERR_ue_uc;
+      }
+
+					// If the completion is only a CSR 
+					// response to a config request, then
+					// we expect a "retry" error.
+    else if ( f_crs && !f_badCpl && !f_errCpl
+         && ( f_type == PEC_PCI__TYPE_CFG0 || f_type == PEC_PCI__TYPE_CFG1 ) )
+      {
+      err = e_ERR_oe_crs;
+      } 
+
+					// Anything else is a malformed cpl'n  
+    else
+      {
+//N2 0.83 PRM      err = e_ERR_ue_mfp;
+      err = e_ERR_oe_mfc;
+      }
+
+					// Maybe send in a good completion
+					// immediately after the bad...
+					// To do this, we'll plug up the egress
+					// pipeline and send in our completions
+					// as "high priority".
+    quick = 0;
+    if ( f_sendReq )
+      {
+      if ( err == e_ERR_ue_uc )
+        quick = !( urandom() % 3);	// One of three is "quick"
+      else 
+        quick = f_sendCpl;
+      }
+    if ( quick ) f_env.suspendIngressPipeline();
+                                        
+                                        // Send the bad-boy completion...
+    _INFO_MSG_ERR_CPL( psprintf( "Sending %s completion (bad tag=%h) (good tag=%h)",
+               (err == e_ERR_ue_uc) ? "unexpected" :
+               (err == e_ERR_oe_crs) ? "retry" : "erroneous",  
+               badCplHdr[ PEC_PCI__CPL_TAG ] ,
+               cplHdr[ PEC_PCI__CPL_TAG ] ) );
+    //Since the bad packet should be dropped change the data 
+    cplDatah = cplData;
+
+    //Disable the DENALI checks
+    if ( (f_badStatus && !f_write) ||
+         (f_crs && !f_badCpl && !f_errCpl &&
+          ( f_type == PEC_PCI__TYPE_CFG0 || f_type == PEC_PCI__TYPE_CFG1 ) )){
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLenRsv0 ); //Erroneous TLP [Cpl] - Non-0 Length field (1), which is Reserved and should be 0
+    }
+    if( (f_type === PEC_PCI__TYPE_MEM || f_type === PEC_PCI__TYPE_IO ) &&
+        badCplHdr[PEC_PCI__CPL_STATUS] === PEC_PCI__CPL_STATUS_CRS ){
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_CplCRS ); //Malformed TLP - Completion (Cpl) has Configuration Request Retry Status (CRS), but its corresponding Request (IOWr) is not a Configuration Request
+    }
+    if( f_Attr != 0 ){
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLATTR_MRd64_2 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLATTR_MRd32_2 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLATTR_IORd_2 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLATTR_IOWr_2 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLATTR_CfgRd0_2 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLATTR_CfgRd1_2 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLATTR_CfgWr0_2 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLATTR_CfgWr1_2 );
+    }
+    if( f_TC != 0 ){
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLTC_MRd64_2 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLTC_MRd32_2 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLTC_IORd_2 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLTC_IOWr_2 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLTC_CfgRd0_2 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLTC_CfgRd1_2 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLTC_CfgWr0_2 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLTC_CfgWr1_2 );
+    }
+    if( f_adjustCount != 0 ){
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLBC_MRd64_2 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLBC_MRd32_2 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLBC_IORd_1 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLBC_IORd_2 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLEN_MRd64 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLEN_MRd32 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLBC_CfgRd0_1 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLBC_CfgRd1_1 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLBC_CfgWr0_1 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLBC_CfgWr1_1 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLRCB_MRd32_3 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLRCB_MRd64_3 );
+    }
+    if( f_adjustAddr != 0 ){
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_MRd64_2 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_MRd32_2 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA64_MRd64_1 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA64_MRd32_1 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_IORd_1 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_IORd_2 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_IOWr_1 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_CfgRd0_1 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_CfgRd1_1 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_CfgWr0_1 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_CfgWr1_1 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLRCB_MRd32_3 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLRCB_MRd64_3 );
+    }
+    if( f_cplLk != 0 ){
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLkEP );
+    }
+    if( f_wrongStatus != 0 ){
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlCplSt );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_CPLD );
+    }
+    if( f_adjustLen != 0 ){
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlSizeTotal );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLRCB_MRd32_3 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLRCB_MRd64_3 );
+    }
+
+
+    f_env.drivePCIE( badCplHdr, {cplDatah[31:8],(cplDatah[7:0]-1)}, *, *, quick, super.f_abortErrTlp, CfgRdCpl );
+
+      //Enable the DENALI check
+    if ( (f_badStatus && !f_write) ||
+         (f_crs && !f_badCpl && !f_errCpl &&
+          ( f_type == PEC_PCI__TYPE_CFG0 || f_type == PEC_PCI__TYPE_CFG1 ) )){
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLenRsv0 );
+    }
+    if( (f_type === PEC_PCI__TYPE_MEM || f_type === PEC_PCI__TYPE_IO ) &&
+        badCplHdr[PEC_PCI__CPL_STATUS] === PEC_PCI__CPL_STATUS_CRS ){
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_CplCRS ); 
+    }
+
+   if( f_Attr != 0 ){
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLATTR_MRd64_2
+);
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLATTR_MRd32_2
+);
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLATTR_IORd_2 )
+;
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLATTR_IOWr_2 )
+;
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLATTR_CfgRd0_2
+ );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLATTR_CfgRd1_2
+ );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLATTR_CfgWr0_2
+ );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLATTR_CfgWr1_2
+ );
+    }
+    if( f_TC != 0 ){
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLTC_MRd64_2 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLTC_MRd32_2 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLTC_IORd_2 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLTC_IOWr_2 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLTC_CfgRd0_2 )
+;
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLTC_CfgRd1_2 )
+;
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLTC_CfgWr0_2 )
+;
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLTC_CfgWr1_2 )
+;
+    }
+    if( f_adjustCount != 0 ){
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLBC_MRd64_2 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLBC_MRd32_2 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLBC_IORd_1 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLBC_IORd_2 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLEN_MRd64 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLEN_MRd32 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLBC_CfgRd0_1 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLBC_CfgRd1_1 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLBC_CfgWr0_1 );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLBC_CfgWr1_1 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLRCB_MRd32_3 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLRCB_MRd64_3 );
+    }
+    if( f_adjustAddr != 0 ){
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_MRd64_2 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_MRd32_2 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA64_MRd32_1 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA64_MRd64_1 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_IORd_1 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_IORd_2 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_IOWr_1 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_CfgRd0_1 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_CfgRd1_1 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_CfgWr0_1 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_CfgWr1_1 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLRCB_MRd32_3 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLRCB_MRd64_3 );
+    }
+    if( f_cplLk != 0 ){
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLkEP );
+    }
+    if( f_wrongStatus != 0 ){
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlCplSt );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_CPLD );
+    }
+    if( f_adjustLen != 0 ){
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlSizeTotal );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLRCB_MRd32_3 );
+      f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLRCB_MRd64_3 );
+    }
+
+    //Check to see if any of the optional checks are disabled
+    //  If they are then the transaction has to pass like a good packet
+    diagCsr = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_tlu_diag ) );
+
+    if( err === e_ERR_oe_mfc &&
+        ( f_TC && diagCsr[41] ) ||
+        ( f_Attr && diagCsr[42] ) ||
+        ( f_adjustCount && diagCsr[43] ) ||
+        ( f_adjustAddr && diagCsr[44] ) ||
+        ( f_crs && diagCsr[40] ) ){ 
+
+    
+       //Nonconfig CRS errors will be logged as WUC or RUC if the crs check
+       // is disabled
+       if( f_crs ){
+          if( f_write )
+             err = e_ERR_oe_wuc;
+          if( !f_write )
+             err = e_ERR_oe_ruc;
+
+          badCplHdr[PEC_PCI__CPL_STATUS] = PEC_PCI__CPL_STATUS_UR;
+          f_env.expectILU( badCplHdr, {cplDatah[31:8],(cplDatah[7:0]-1)} );
+       }
+       if( !f_crs ){
+          f_env.expectILU( badCplHdr, {cplDatah[31:8],(cplDatah[7:0]-1)} );
+       }
+
+       disableErrCheck = 1;
+       //Only check errors if this was a crs 
+       if( f_crs ){
+          repeat( 10 ) @(posedge CLOCK);
+          //The header capture gets the status before its changed
+          badCplHdr[PEC_PCI__CPL_STATUS] = PEC_PCI__CPL_STATUS_CRS;
+          if( f_errQueue != 0 ){
+             mailbox_put( f_errQueue, e_ERR_none );
+             mailbox_put( f_errQueue, -1 );
+             mailbox_put( f_errQueue, reqHdr );
+             mailbox_put( f_errQueue, err );
+             mailbox_put( f_errQueue, badCplHdr );
+          }
+       }
+    }
+
+					// ...immediately followed by the good
+					// completion if we're being "quick".
+					// Or if we aborted the bad-boy and
+					// must answer a PIO request.
+    trigger( OFF, quickDone );
+    //If the error check is disabled then we're done
+    if( !disableErrCheck ){
+    if ( quick || (super.f_abortErrTlp && f_sendReq) ){
+      fork
+        {
+          if( CfgRdCpl && ( err == e_ERR_ue_uc || super.f_abortErrTlp )){
+             if( cplHdr[PEC_PCI__CPL_TAG] === badCplHdr[PEC_PCI__CPL_TAG] &&
+                 cplHdr[PEC_PCI__CPL_REQ_ID] === badCplHdr[PEC_PCI__CPL_REQ_ID]){
+
+                  CfgRdCpl = 0;
+             }else if(
+                 cplHdr[PEC_PCI__CPL_TAG] !== badCplHdr[PEC_PCI__CPL_TAG] &&
+                 cplHdr[PEC_PCI__CPL_REQ_ID] === badCplHdr[PEC_PCI__CPL_REQ_ID] &&
+                 reqHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_CFG0){
+          
+                  CfgRdCpl = 0;
+             }else{
+                CfgRdCpl = 1;
+             }
+          }
+
+
+/*
+        if( CfgRdCpl && ( ( err == e_ERR_ue_uc || super.f_abortErrTlp )  &&
+                              (( cplHdr[PEC_PCI__CPL_TAG] !== badCplHdr[PEC_PCI__CPL_TAG] ) && 
+                              ( cplHdr[PEC_PCI__CPL_REQ_ID] !== badCplHdr[PEC_PCI__CPL_REQ_ID]))) )){
+           CfgRdCpl = 1; 
+        }else{
+           CfgRdCpl = 0; 
+        }
+
+*/
+        _INFO_MSG_ERR_CPL( psprintf( "Send %s Cpl (tag=%h) quick=%0d CfgRdCpl=%0d", 
+                             err==e_ERR_ue_uc ? "valid" : "unexpected valid",
+                             cplHdr[PEC_PCI__CPL_TAG] , quick, CfgRdCpl ) );
+        f_env.drivePCIE( cplHdr, cplData, *, *, 1,*,CfgRdCpl );
+        if ( quick ) f_env.resumeIngressPipeline();
+        if ( err == e_ERR_ue_uc || super.f_abortErrTlp )
+          {
+          _INFO_MSG_ERR_CPL( psprintf( "Expect valid Cpl (tag=%h)", 
+                               cplHdr[PEC_PCI__CPL_TAG] ) );
+          f_env.expectILU( cplHdr, cplData );
+          }
+        else f_env.waitIngressLatency( cplHdr );
+        trigger( ON, quickDone );
+        }
+      join none
+    }
+      
+
+					// We have to wait for the bad Cpl
+					// to take effect.  The TLU just drops
+					// an unexpected completion.  The ILU
+					// produces a "time-out" response for
+					// all other cases.
+    if ( err == e_ERR_ue_uc || super.f_abortErrTlp )
+      {
+      _INFO_MSG_ERR_CPL( psprintf( "Wait for Cpl to enter TLU (tag=%h)",
+                           badCplHdr[PEC_PCI__CPL_TAG]) );
+      f_env.waitIngressLatency( cplHdr );
+      }
+    else
+      {
+      _INFO_MSG_ERR_CPL( psprintf( "Wait for timeout (tag=%h)", 
+                           cplHdr[PEC_PCI__CPL_TAG] ) );
+      f_env.expectTimeoutCpl( reqHdr );
+      }
+
+					// If we sent an unexpected valid
+					// completion, then wait for it to 
+					// pass through the TLU. 
+    if ( quick || (super.f_abortErrTlp && f_sendReq) )
+      {
+      sync( ANY, quickDone );
+      }
+
+                                        // Tell the error-checker (if any)
+                                        // about our problem.
+    if ( f_errQueue != 0 )
+      {
+      if ( err != e_ERR_ue_uc && quick )        // We sent in a "valid" cpl'n
+        {
+        mailbox_put( f_errQueue, e_ERR_none );
+        mailbox_put( f_errQueue, 2 );
+        mailbox_put( f_errQueue, e_ERR_ue_uc );
+        mailbox_put( f_errQueue, cplHdr );
+        }
+      if ( err != e_ERR_ue_uc )
+        {
+        mailbox_put( f_errQueue, e_ERR_none );
+        mailbox_put( f_errQueue, -1 );
+        mailbox_put( f_errQueue, reqHdr );
+        }
+      mailbox_put( f_errQueue, err );
+      mailbox_put( f_errQueue, badCplHdr );
+      }
+
+					// If we sent a PIO request and the
+					// "bad" completion was unexpected, then
+					// we have to send a good completion.
+    if ( !quick && !super.f_abortErrTlp && f_sendReq && err == e_ERR_ue_uc )
+      {
+      //Since a bad completion was already sent if tags don't match Denali flip data bytes
+
+          if( CfgRdCpl ){
+             if( cplHdr[PEC_PCI__CPL_TAG] === badCplHdr[PEC_PCI__CPL_TAG] &&
+                 cplHdr[PEC_PCI__CPL_REQ_ID] === badCplHdr[PEC_PCI__CPL_REQ_ID]){
+                   
+                  CfgRdCpl = 0;
+             }else if(
+                 cplHdr[PEC_PCI__CPL_TAG] !== badCplHdr[PEC_PCI__CPL_TAG] &&
+                 cplHdr[PEC_PCI__CPL_REQ_ID] === badCplHdr[PEC_PCI__CPL_REQ_ID] &&
+                 reqHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_CFG0){
+          
+                  CfgRdCpl = 0;
+             }else{
+                CfgRdCpl = 1;
+             }
+          }
+
+/*
+      if( CfgRdCpl ){
+         if( reqHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_CFG1 ||
+             (( cplHdr[PEC_PCI__CPL_TAG] !== badCplHdr[PEC_PCI__CPL_TAG] ) && // 
+             ( cplHdr[PEC_PCI__CPL_REQ_ID] !== badCplHdr[PEC_PCI__CPL_REQ_ID])) ){
+            CfgRdCpl = 1; 
+         }else{
+            CfgRdCpl = 0; 
+         }
+      }
+*/
+
+      _INFO_MSG_ERR_CPL( psprintf( "Send valid Cpl (tag=%h) !quick CfgRdCpl=%0h (badTag=%h)", 
+                           cplHdr[PEC_PCI__CPL_TAG], CfgRdCpl, badCplHdr[PEC_PCI__CPL_TAG] ) );
+
+      f_env.drivePCIE( cplHdr, cplData,*,*,*,*,CfgRdCpl );
+      _INFO_MSG_ERR_CPL( psprintf( "Expect valid Cpl (tag=%h)", 
+                           cplHdr[PEC_PCI__CPL_TAG] ) );
+      f_env.expectILU( cplHdr, cplData );
+      }
+
+    }	// End !disableErrCheck
+
+					// Finally, free the PIO tag.
+    _INFO_MSG_ERR_CPL( psprintf( "Free PIO tag=%h", reqTag ) );
+    f_env.freePioTag( reqTag );
+    } /* end Execute */
+
+} /* end ErrCplPEUStr */
+

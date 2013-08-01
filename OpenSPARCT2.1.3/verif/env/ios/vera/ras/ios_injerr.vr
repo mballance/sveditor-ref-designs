@@ -1,0 +1,1118 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ios_injerr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <VeraListProgram.vrh>
+#include <ListMacros.vrh>
+#include "ios_ras.if.vrh"
+#include "ios_ras_ports_binds.vrh"
+#include "std_display_class.vrh"
+#include "ios_err_packet.vrh"
+#include "verilog_tasks_InjErr.vri"
+
+ExternVeraList(ios_err_packet);
+
+class ios_ras_inj {
+// added this code for removing NIU
+#ifndef FC_NO_NIU_T2
+  niu_sii_inj_port	niusii;
+#endif
+  dmu_sii_inj_port	dmusii;
+#ifndef FC_NO_NIU_T2
+  sio_niu_inj_port	sioniu;
+#endif
+  sio_dmu_inj_port	siodmu;
+// sii_l2_inj_port	siil2;
+  l2_sio_inj_port	l2sio[8];
+  sii_ncu_inj_port 	siincu;
+// niu_ncu_inj_port	niuncu;
+// ncu_dmu_inj_port	ncudmu;
+
+  local bit [39:0]	niu_tagtopa[];
+  local bit [39:0]	dmu_tagtopa[];
+  local bit [15:0]	dmu_credittotag[16];
+
+  StandardDisplay dbg;
+  local string    	myname;
+  local integer 	myid;
+  bit			injector_on;
+
+  VeraList_ios_err_packet niusii_err_list, sioniu_err_list, dmusii_err_list, siodmu_err_list, l2sio_err_list[8],
+		siincu_err_list, dmuncu_wrack_err_list, ncudmu_mondo_err_list, siidmu_err_list;
+
+  VeraList_ios_err_packet injected_err_list;
+
+  task new(
+#ifndef FC_NO_NIU_T2
+    niu_sii_inj_port niusii, 
+#endif
+    dmu_sii_inj_port dmusii, 
+#ifndef FC_NO_NIU_T2
+    sio_niu_inj_port sioniu, 
+#endif
+    sio_dmu_inj_port siodmu, 
+	l2_sio_inj_port l2sio0, l2_sio_inj_port l2sio1, l2_sio_inj_port l2sio2, l2_sio_inj_port l2sio3,
+	l2_sio_inj_port l2sio4, l2_sio_inj_port l2sio5, l2_sio_inj_port l2sio6, l2_sio_inj_port l2sio7,
+	sii_ncu_inj_port siincu, StandardDisplay dbg);
+
+#ifndef FC_NO_NIU_T2
+  task niu_sii_err_inj();
+  task sio_niu_err_inj();
+#endif
+  task dmu_sii_err_inj();
+  task sio_dmu_err_inj();
+  task l2_sio_err_inj(integer bank);
+  task sii_ncu_err_inj();
+  task dmu_ncu_err_inj();
+  task ncu_dmu_err_inj();
+  task sii_dmu_err_inj();
+  task vinjector(SocErr_Type type);
+  task vl2injector(SocErr_Type type, integer bank);
+
+  function integer inj_err_packet(ios_err_packet err_pkt);
+  function integer inj_rand_err(SocErr_Type err_type, integer num_errs, integer weight ); 
+}
+
+task ios_ras_inj::new(
+#ifndef FC_NO_NIU_T2
+        niu_sii_inj_port niusii, 
+#endif
+        dmu_sii_inj_port dmusii, 
+#ifndef FC_NO_NIU_T2
+        sio_niu_inj_port sioniu, 
+#endif
+        sio_dmu_inj_port siodmu, 
+		l2_sio_inj_port l2sio0, l2_sio_inj_port l2sio1, l2_sio_inj_port l2sio2, l2_sio_inj_port l2sio3,
+		l2_sio_inj_port l2sio4, l2_sio_inj_port l2sio5, l2_sio_inj_port l2sio6, l2_sio_inj_port l2sio7,
+		sii_ncu_inj_port siincu, StandardDisplay dbg) 
+{
+  integer i;
+
+#ifndef FC_NO_NIU_T2
+  this.niusii = niusii;
+  this.sioniu = sioniu;
+#endif
+  this.dmusii = dmusii;
+  this.siodmu = siodmu;
+  this.siincu = siincu;
+
+  this.l2sio[0] = l2sio0;
+  this.l2sio[1] = l2sio1;
+  this.l2sio[2] = l2sio2;
+  this.l2sio[3] = l2sio3;
+  this.l2sio[4] = l2sio4;
+  this.l2sio[5] = l2sio5;
+  this.l2sio[6] = l2sio6;
+  this.l2sio[7] = l2sio7;
+
+  this.myname = "IOS_errinj";
+  this.dbg = dbg;
+
+#ifndef FC_NO_NIU_T2
+  niusii_err_list = new();
+  sioniu_err_list = new();
+#endif
+  dmusii_err_list = new();
+  siodmu_err_list = new();
+  siincu_err_list = new();
+  for (i=0; i<8; i++)
+	l2sio_err_list[i] = new();
+  dmuncu_wrack_err_list = new();
+  ncudmu_mondo_err_list = new();
+  siidmu_err_list = new();
+  injected_err_list = new();
+  injector_on = 1;
+
+#ifndef FC_NO_NIU_T2
+  fork { niu_sii_err_inj(); } join none
+  fork { sio_niu_err_inj(); } join none
+#endif
+  fork { dmu_sii_err_inj(); } join none
+  fork { sio_dmu_err_inj(); } join none
+  fork { sii_ncu_err_inj(); } join none
+  fork { l2_sio_err_inj(0); } join none
+  fork { l2_sio_err_inj(1); } join none
+  fork { l2_sio_err_inj(2); } join none
+  fork { l2_sio_err_inj(3); } join none
+  fork { l2_sio_err_inj(4); } join none
+  fork { l2_sio_err_inj(5); } join none
+  fork { l2_sio_err_inj(6); } join none
+  fork { l2_sio_err_inj(7); } join none
+  fork { dmu_ncu_err_inj(); } join none
+  fork { ncu_dmu_err_inj(); } join none
+  fork { sii_dmu_err_inj(); } join none
+}
+
+function integer ios_ras_inj::inj_err_packet(ios_err_packet err_pkt)
+{
+  ios_err_packet tmp_pkt = err_pkt;
+  integer result = 1;
+
+  case (err_pkt.type) {
+#ifndef FC_NO_NIU_T2
+	NIUSII_CUE: niusii_err_list.push_back(tmp_pkt);
+	NIUSII_CCE: niusii_err_list.push_back(tmp_pkt);
+	NIUSII_AP:  niusii_err_list.push_back(tmp_pkt);
+	NIUSII_DP:  niusii_err_list.push_back(tmp_pkt);
+	NIUSII_CMDP:  niusii_err_list.push_back(tmp_pkt);
+	NIUSII_IOAE:  niusii_err_list.push_back(tmp_pkt);
+	NIUSII_IOUE:  niusii_err_list.push_back(tmp_pkt);
+	SIONIU_DP:  sioniu_err_list.push_back(tmp_pkt);
+	SIONIU_CUE: sioniu_err_list.push_back(tmp_pkt);
+	SIONIU_CCE: sioniu_err_list.push_back(tmp_pkt);
+#endif
+	DMUSII_CUE: dmusii_err_list.push_back(tmp_pkt);
+	DMUSII_CCE: dmusii_err_list.push_back(tmp_pkt);
+	DMUSII_AP:  dmusii_err_list.push_back(tmp_pkt);
+	DMUSII_DP:  dmusii_err_list.push_back(tmp_pkt);
+	DMUSII_BEP:  dmusii_err_list.push_back(tmp_pkt);
+	DMUSII_CMDP:  dmusii_err_list.push_back(tmp_pkt);
+	DMUSII_TOUT:  dmusii_err_list.push_back(tmp_pkt);
+	DMUSII_IOAE:  dmusii_err_list.push_back(tmp_pkt);
+	DMUSII_IOUE:  dmusii_err_list.push_back(tmp_pkt);
+	SIODMU_DP:  siodmu_err_list.push_back(tmp_pkt);
+	SIODMU_CUE: siodmu_err_list.push_back(tmp_pkt);
+	SIODMU_CCE: siodmu_err_list.push_back(tmp_pkt);
+	L2SIO_DP:   l2sio_err_list[tmp_pkt.pa[8:6]].push_back(tmp_pkt);
+	L2SIO_EBIT:    l2sio_err_list[tmp_pkt.pa[8:6]].push_back(tmp_pkt);
+	L2SIO_CUE:  l2sio_err_list[tmp_pkt.pa[8:6]].push_back(tmp_pkt);
+	L2SIO_CCE:  l2sio_err_list[tmp_pkt.pa[8:6]].push_back(tmp_pkt);
+	SIINCU_DP:  siincu_err_list.push_back(tmp_pkt);
+	SIINCU_CUE: siincu_err_list.push_back(tmp_pkt);
+	SIINCU_CCE: siincu_err_list.push_back(tmp_pkt);
+	DMUNCU_WRACK_P: dmuncu_wrack_err_list.push_back(tmp_pkt);
+	NCUDMU_MONDO_IDP: ncudmu_mondo_err_list.push_back(tmp_pkt);
+	SIIDMU_WRACK_P: siidmu_err_list.push_back(tmp_pkt);
+		
+	default:	result = -1;
+  }
+	inj_err_packet = result;
+}
+
+function integer ios_ras_inj::inj_rand_err(SocErr_Type err_type, integer num_errs, integer weight)
+{
+  integer result = 1;
+  integer i, bank;
+  ios_err_packet tmp_pkt;
+
+  case (err_type) {
+#ifndef FC_NO_NIU_T2
+	NIUSII_CCE, NIUSII_CUE, NIUSII_AP, NIUSII_DP : 
+			for (i=0; i<num_errs; i++)
+			{
+				tmp_pkt = new(err_type, 16'hFFFF, 40'h8000000000);
+				result = tmp_pkt.set_rand(weight);
+				niusii_err_list.push_back(tmp_pkt);
+			}
+	SIONIU_CCE: 	for (i=0; i<num_errs; i++)
+			{
+				tmp_pkt = new(SIONIU_CCE, 16'hFFFF, 40'h8000000000);
+				result = tmp_pkt.set_rand(weight);
+				sioniu_err_list.push_back(tmp_pkt);
+			}
+#endif
+	DMUSII_CCE, DMUSII_CUE, DMUSII_AP, DMUSII_DP : 
+			for (i=0; i<num_errs; i++)
+			{
+				tmp_pkt = new(err_type, 16'hFFFF, 40'h8000000000);
+				result = tmp_pkt.set_rand(weight);
+				dmusii_err_list.push_back(tmp_pkt);
+			}
+	SIODMU_CCE: 	for (i=0; i<num_errs; i++)
+			{
+				tmp_pkt = new(SIODMU_CCE, 16'hFFFF, 40'h8000000000);
+				result = tmp_pkt.set_rand(weight);
+				siodmu_err_list.push_back(tmp_pkt);
+			}
+	L2SIO_CCE:  	for (i=0; i<num_errs; i++)
+			{
+				tmp_pkt = new(L2SIO_CCE, 16'hFFFF, 40'h8000000000);
+				result = tmp_pkt.set_rand(weight);
+				bank = random() % 8;
+				l2sio_err_list[bank].push_back(tmp_pkt);
+			}
+	SIINCU_CCE: 	for (i=0; i<num_errs; i++)
+			{
+				tmp_pkt = new(SIINCU_CCE, 16'hFFFF, 40'h8000000000);
+				result = tmp_pkt.set_rand(weight);
+				siincu_err_list.push_back(tmp_pkt);
+			}
+	default: result = -1;
+  }
+}
+
+#ifndef FC_NO_NIU_T2
+task ios_ras_inj::niu_sii_err_inj()
+{
+  ios_err_packet ptr_pkt;
+  bit[39:0] tpa;
+  bit[15:0] ttag;
+  VeraListIterator_ios_err_packet list_ptr;
+  SocErr_Type pkt_type;
+  integer dice;
+
+    while (1)
+    {
+	@(negedge niusii.$clk);
+	if (niusii.$req_vld === 1) niu_tagtopa[niusii.$data[79:64]] = niusii.$data[39:0];
+	if (niusii.$req_vld === 1 && !niusii_err_list.empty() && injector_on)
+	{
+		tpa = niusii.$data[39:0];
+
+		list_ptr = niusii_err_list.start();
+		ptr_pkt = list_ptr.data();	
+		if (ptr_pkt!= null && ptr_pkt.rand_weight >= 0) 
+		{
+			dice = urandom_range(10); 
+			//printf ("IOS-RAS: try to inject random error packet dice=%d weight=%d\n", dice, ptr_pkt.rand_weight);
+			if (dice > (10 - ptr_pkt.rand_weight))
+			{
+				pkt_type = ptr_pkt.type;
+				dbg.dispmon(myname, MON_NORMAL, psprintf("niu-sii: inject random error to pkt pa=%x", tpa));
+				fork 
+				  {
+					vinjector(pkt_type);
+				  }
+				join none
+				injected_err_list.push_back(ptr_pkt);
+				list_ptr = niusii_err_list.erase(list_ptr);
+			}
+		}
+		else
+		while (!niusii_err_list.empty() && ptr_pkt != null)
+		{
+			//printf ("IOS-RAS: try to match error pkt pa=%x with curent pa=%x\n", ptr_pkt.pa, tpa);
+			if (ptr_pkt.pa === tpa)
+			{
+				pkt_type = ptr_pkt.type;
+				//printf ("IOS-RAS: niu-sii inject error pkt pa=%x \n", tpa);
+				dbg.dispmon(myname, MON_NORMAL, psprintf("niu-sii: inject error to pkt pa=%x", tpa));
+				fork 
+				  {
+					vinjector(pkt_type);
+				  }
+				join none
+				injected_err_list.push_back(ptr_pkt);
+				list_ptr = niusii_err_list.erase(list_ptr);
+			}
+			else
+				list_ptr.next();
+
+			if (list_ptr != null)
+				ptr_pkt = list_ptr.data();
+		}
+	}
+    }	
+}
+#endif
+
+task ios_ras_inj::dmu_sii_err_inj()
+{
+  ios_err_packet ptr_pkt;
+  bit[39:0] tpa;
+  bit[15:0] tctag;
+  VeraListIterator_ios_err_packet list_ptr;
+  SocErr_Type pkt_type;
+  integer dice;
+
+    while (1)
+    {
+	@(negedge dmusii.$clk);
+	if (dmusii.$req_vld === 1 && dmusii.$data[125:122] !== 4'b0110) 
+	{
+		dmu_tagtopa[dmusii.$data[79:64]] = dmusii.$data[39:0];
+		dmu_credittotag[dmusii.$data[78:75]] = dmusii.$data[79:64];
+	}
+	if (dmusii.$req_vld === 1 && !dmusii_err_list.empty() && injector_on)
+	{
+		tpa = dmusii.$data[39:0];
+		tctag = dmusii.$data[79:64];
+
+		list_ptr = dmusii_err_list.start();
+		ptr_pkt = list_ptr.data();	
+
+		if (ptr_pkt!= null && ptr_pkt.rand_weight >= 0) 
+		{
+			dice = urandom_range(10); 
+			//printf ("IOS-RAS: try to inject random error packet dice=%d weight=%d\n", dice, ptr_pkt.rand_weight);
+			if (dice > (10 - ptr_pkt.rand_weight))
+			{
+				pkt_type = ptr_pkt.type;
+				dbg.dispmon(myname, MON_NORMAL, psprintf("dmu-sii: inject random error to pkt pa=%x", tpa));
+				fork 
+				  {
+					vinjector(pkt_type);
+				  }
+				join none
+				ptr_pkt.ctag = tctag;			
+				injected_err_list.push_back(ptr_pkt);
+				list_ptr = dmusii_err_list.erase(list_ptr);
+			}
+		}
+		else
+		while (!dmusii_err_list.empty() && ptr_pkt != null)
+		{
+			//printf ("IOS-RAS: match with err list pa=%x\n", ptr_pkt.pa);
+			if (ptr_pkt.pa === tpa)
+			{
+				pkt_type = ptr_pkt.type;
+				dbg.dispmon(myname, MON_NORMAL, psprintf("dmu-sii: inject error to pkt pa=%x", tpa));
+				fork 
+				  {
+					vinjector(pkt_type);
+				  }
+				join none
+				ptr_pkt.ctag = tctag;			
+				injected_err_list.push_back(ptr_pkt);
+				list_ptr = dmusii_err_list.erase(list_ptr);
+			}
+			else
+				list_ptr.next();
+
+			if (list_ptr != null)
+				ptr_pkt = list_ptr.data();
+		}
+	}
+    }	
+}
+
+#ifndef FC_NO_NIU_T2
+task ios_ras_inj::sio_niu_err_inj()
+{
+  ios_err_packet ptr_pkt;
+  bit[15:0] tid;
+  VeraListIterator_ios_err_packet list_ptr;
+  SocErr_Type pkt_type;
+  integer dice;
+
+    while (1)
+    {
+	@(negedge sioniu.$clk);
+	if (sioniu.$req_vld === 1 && !sioniu_err_list.empty() && injector_on)
+	{
+		tid = sioniu.$data[79:64];
+
+		list_ptr = sioniu_err_list.start();
+		ptr_pkt = list_ptr.data();	
+		if (ptr_pkt!= null && ptr_pkt.rand_weight >= 0) 
+		{
+			dice = urandom_range(10); 
+			//printf ("IOS-RAS: try to inject random error packet dice=%d weight=%d\n", dice, ptr_pkt.rand_weight);
+			if (dice > (10 - ptr_pkt.rand_weight))
+			{
+				pkt_type = ptr_pkt.type;
+				dbg.dispmon(myname, MON_NORMAL, psprintf("sio-niu: inject random error to pkt id=%x", tid));
+				fork 
+				  {
+					vinjector(pkt_type);
+				  }
+				join none
+				injected_err_list.push_back(ptr_pkt);
+				list_ptr = sioniu_err_list.erase(list_ptr);
+			}
+		}
+		else
+		while (!sioniu_err_list.empty() && ptr_pkt != null)
+		{
+			//printf ("IOS-RAS: match with err list id=%x\n", ptr_pkt.ctag);
+			if (ptr_pkt.pa === niu_tagtopa[tid])
+			{
+				pkt_type = ptr_pkt.type;
+				fork 
+				  {
+					dbg.dispmon(myname, MON_NORMAL, psprintf("sio-niu: inject error to pkt ctag=%x pa=%x", tid, niu_tagtopa[tid]));
+					vinjector(pkt_type);
+				  }
+				join none
+				injected_err_list.push_back(ptr_pkt);
+				list_ptr = sioniu_err_list.erase(list_ptr);
+			}
+			else
+				list_ptr.next();
+
+			if (list_ptr != null)
+				ptr_pkt = list_ptr.data();
+		}
+	}
+    }	
+}
+#endif
+
+task ios_ras_inj::sio_dmu_err_inj()
+{
+  ios_err_packet ptr_pkt;
+  bit[15:0] tid;
+  VeraListIterator_ios_err_packet list_ptr;
+  SocErr_Type pkt_type;
+  integer dice;
+
+    while (1)
+    {
+	@(negedge siodmu.$clk);
+	if (siodmu.$req_vld === 1 && !siodmu_err_list.empty() && injector_on)
+	{
+		tid = siodmu.$data[79:64];
+
+		list_ptr = siodmu_err_list.start();
+		ptr_pkt = list_ptr.data();	
+		if (ptr_pkt!= null && ptr_pkt.rand_weight >= 0) 
+		{
+			dice = urandom_range(10); 
+			//printf ("IOS-RAS: try to inject random error packet dice=%d weight=%d\n", dice, ptr_pkt.rand_weight);
+			if (dice > (10 - ptr_pkt.rand_weight))
+			{
+				pkt_type = ptr_pkt.type;
+				dbg.dispmon(myname, MON_NORMAL, psprintf("sio-dmu: inject random error to pkt id=%x", tid));
+				fork 
+				  {
+					vinjector(pkt_type);
+				  }
+				join none
+				injected_err_list.push_back(ptr_pkt);
+				list_ptr = siodmu_err_list.erase(list_ptr);
+			}
+		}
+		else
+		while (!siodmu_err_list.empty() && ptr_pkt != null)
+		{
+			//printf ("IOS-RAS: match with err list pa=%x\n", ptr_pkt.pa);
+			if (ptr_pkt.pa === dmu_tagtopa[tid])
+			{
+				pkt_type = ptr_pkt.type;
+				fork 
+				  {
+					dbg.dispmon(myname, MON_NORMAL, psprintf("sio-dmu: inject error to pkt ctag=%x pa=%x", tid, dmu_tagtopa[tid]));
+					vinjector(pkt_type);
+				  }
+				join none
+				injected_err_list.push_back(ptr_pkt);
+				list_ptr = siodmu_err_list.erase(list_ptr);
+			}
+			else
+				list_ptr.next();
+
+			if (list_ptr != null)
+				ptr_pkt = list_ptr.data();
+		}
+	}
+    }	
+}
+
+task ios_ras_inj::l2_sio_err_inj(integer bank)
+{
+  ios_err_packet ptr_pkt;
+  bit[15:0] tid;
+  VeraListIterator_ios_err_packet list_ptr;
+  SocErr_Type pkt_type;
+  integer dice;
+
+  //printf ("%d IOS-RAS l2b%1d-sio: ready...\n",get_time(LO), bank);
+
+    while (1)
+    {
+	@(negedge l2sio[bank].$clk);
+	if (l2sio[bank].$ctag_vld === 1 && !l2sio_err_list[bank].empty() && injector_on)
+	{
+		tid = l2sio[bank].$data[15:0];
+		//printf ("IOS-RAS random: match id=%x with err list...\n", tid);
+
+		list_ptr = l2sio_err_list[bank].start();
+		ptr_pkt = list_ptr.data();	
+		if (ptr_pkt!= null && ptr_pkt.rand_weight >= 0) 
+		{
+			dice = urandom_range(10); 
+			//printf ("IOS-RAS: try to inject random error packet dice=%d weight=%d\n", dice, ptr_pkt.rand_weight);
+			if (dice > (10 - ptr_pkt.rand_weight))
+			{
+				pkt_type = ptr_pkt.type;
+				dbg.dispmon(myname, MON_NORMAL, psprintf("l2-sio: inject random error to pkt id=%x", tid));
+				fork 
+				  {
+					vl2injector(pkt_type, bank);
+				  }
+				join none
+				injected_err_list.push_back(ptr_pkt);
+				list_ptr = l2sio_err_list[bank].erase(list_ptr);
+			}
+		}
+		else
+		while (!l2sio_err_list[bank].empty() && ptr_pkt != null)
+		{
+			//printf ("IOS-RAS: match bus id %x with err list ctag=%x\n", tid, ptr_pkt.ctag);
+			if (ptr_pkt.ctag === tid)
+			{
+				pkt_type = ptr_pkt.type;
+				fork 
+				  {
+					dbg.dispmon(myname, MON_NORMAL, psprintf("l2b%1d-sio: inject error to pkt ctag=%x", bank, tid));
+					vl2injector(pkt_type, bank);
+				  }
+				join none
+				injected_err_list.push_back(ptr_pkt);
+				list_ptr = l2sio_err_list[bank].erase(list_ptr);
+			}
+			else
+				list_ptr.next();
+
+			if (list_ptr != null)
+				ptr_pkt = list_ptr.data();
+		}
+	}
+    }	
+}
+
+task ios_ras_inj::dmu_ncu_err_inj()
+{
+  ios_err_packet ptr_pkt;
+  bit [3:0] ttag;
+  VeraListIterator_ios_err_packet list_ptr;
+  SocErr_Type pkt_type;
+
+    while (1)
+    {
+	@(negedge dmu_ncu_inj.clk);
+	if (dmu_ncu_inj.wrack_vld === 1 && injector_on)
+	{
+		ttag = dmu_ncu_inj.wrack_tag;
+		//printf ("IOS-RAS: match id=%x with err list...\n", tid);
+
+		if (!dmuncu_wrack_err_list.empty())
+		{
+			list_ptr = dmuncu_wrack_err_list.start();
+			ptr_pkt = list_ptr.data();	
+		}
+		while (!dmuncu_wrack_err_list.empty() && ptr_pkt != null)
+		{
+			//printf ("IOS-RAS: match with err list id=%x\n", ptr_pkt.ctag);
+			if (ptr_pkt.ctag == ttag)
+			{
+				pkt_type = ptr_pkt.type;
+				fork 
+				  {
+					dbg.dispmon(myname, MON_NORMAL, psprintf("dmu-ncu wrack: inject error to pkt ctag=%x", ttag));
+					vinjector(pkt_type);
+				  }
+				join none
+				injected_err_list.push_back(ptr_pkt);
+				list_ptr = dmuncu_wrack_err_list.erase(list_ptr);
+			}
+			else
+				list_ptr.next();
+
+			if (list_ptr != null)
+				ptr_pkt = list_ptr.data();
+		}
+	}
+    }	
+}
+
+task ios_ras_inj::ncu_dmu_err_inj()
+{
+  ios_err_packet ptr_pkt;
+  bit [3:0] ttag;
+  VeraListIterator_ios_err_packet list_ptr;
+  SocErr_Type pkt_type;
+
+    while (1)
+    {
+	@(negedge dmu_ncu_inj.clk);
+	if (dmu_ncu_inj.mondo_ack === 1 || dmu_ncu_inj.mondo_nack === 1 && injector_on)
+	{
+		ttag = dmu_ncu_inj.mondo_id;
+		//printf ("IOS-RAS: match id=%x with err list...\n", tid);
+
+		if (!ncudmu_mondo_err_list.empty())
+		{
+			list_ptr = ncudmu_mondo_err_list.start();
+			ptr_pkt = list_ptr.data();	
+		}
+		while (!ncudmu_mondo_err_list.empty() && ptr_pkt != null)
+		{
+			//printf ("IOS-RAS: match with err list id=%x\n", ptr_pkt.ctag);
+			if (ptr_pkt.ctag == ttag)
+			{
+				pkt_type = ptr_pkt.type;
+				fork 
+				  {
+					dbg.dispmon(myname, MON_NORMAL, psprintf("ncu-dmu mondo: inject error to pkt tag=%x", ttag));
+					vinjector(pkt_type);
+				  }
+				join none
+				injected_err_list.push_back(ptr_pkt);
+				list_ptr = ncudmu_mondo_err_list.erase(list_ptr);
+			}
+			else
+				list_ptr.next();
+
+			if (list_ptr != null)
+				ptr_pkt = list_ptr.data();
+		}
+	}
+    }	
+}
+
+task ios_ras_inj::sii_dmu_err_inj()
+{
+  ios_err_packet ptr_pkt;
+  bit [3:0] ttag;
+  VeraListIterator_ios_err_packet list_ptr;
+  SocErr_Type pkt_type;
+
+    while (1)
+    {
+	@(negedge dmusii.$clk);
+	if (dmusii.$wrack_vld === 1 && injector_on)
+	{
+		ttag = dmusii.$wrack_tag;
+		//printf ("IOS-RAS: match id=%x with err list...\n", tid);
+
+		if (!siidmu_err_list.empty())
+		{
+			list_ptr = siidmu_err_list.start();
+			ptr_pkt = list_ptr.data();	
+		}
+		while (!siidmu_err_list.empty() && ptr_pkt != null)
+		{
+			//printf ("IOS-RAS: match with err list id=%x\n", ptr_pkt.ctag);
+			if (ptr_pkt.pa == dmu_tagtopa[dmu_credittotag[ttag]])
+			{
+				pkt_type = ptr_pkt.type;
+				fork 
+				  {
+					dbg.dispmon(myname, MON_NORMAL, psprintf("sii-dmu wrack: inject error to pkt ctag=%x", ttag));
+					vinjector(pkt_type);
+				  }
+				join none
+				injected_err_list.push_back(ptr_pkt);
+				list_ptr = siidmu_err_list.erase(list_ptr);
+			}
+			else
+				list_ptr.next();
+
+			if (list_ptr != null)
+				ptr_pkt = list_ptr.data();
+		}
+	}
+    }	
+}
+
+task ios_ras_inj::sii_ncu_err_inj()
+{
+  ios_err_packet ptr_pkt;
+  bit[15:0] tid;
+  VeraListIterator_ios_err_packet list_ptr;
+  SocErr_Type pkt_type;
+
+    while (1)
+    {
+	@(negedge siincu.$clk);
+	if (siincu.$gnt === 1 && injector_on)
+	{
+		@(negedge siincu.$clk);
+		@(negedge siincu.$clk);
+		tid = siincu.$data[15:0];
+		//printf ("IOS-RAS: match id=%x with err list...\n", tid);
+
+		if (!siincu_err_list.empty())
+		{
+			list_ptr = siincu_err_list.start();
+			ptr_pkt = list_ptr.data();	
+		}
+		while (!siincu_err_list.empty() && ptr_pkt != null)
+		{
+			//printf ("IOS-RAS: match with err list id=%x\n", ptr_pkt.ctag);
+			if (ptr_pkt.ctag === tid)
+			{
+				pkt_type = ptr_pkt.type;
+				fork 
+				  {
+					dbg.dispmon(myname, MON_NORMAL, psprintf("sii-ncu: inject error to pkt ctag=%x", tid));
+					vinjector(pkt_type);
+				  }
+				join none
+				injected_err_list.push_back(ptr_pkt);
+				list_ptr = siincu_err_list.erase(list_ptr);
+			}
+			else
+				list_ptr.next();
+
+			if (list_ptr != null)
+				ptr_pkt = list_ptr.data();
+		}
+	}
+    }	
+}
+
+task ios_ras_inj::vl2injector(SocErr_Type type, integer bank)
+{
+	bit data, data2;
+
+	case (type) {
+	L2SIO_DP: 
+	  {
+		@(negedge l2sio[bank].$clk);
+		data = l2sio[bank].$parity[0];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d to l2b%1d-sio data parity", ~data, bank));
+		SetL2SioDP0(~data, bank);			
+		@(posedge l2sio[bank].$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release l2b%1d-sio data parity", bank));
+		RelL2SioDP0(bank);
+	  }
+	L2SIO_EBIT: 
+	  {
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject 1 to l2b%1d-sio ebit", bank));
+		SetL2SioEBIT(1, bank);			
+		@(posedge l2sio[bank].$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release l2b%1d-sio ebit", bank));
+		RelL2SioEBIT(bank);
+	  }
+	L2SIO_CCE: 
+	  {
+		data = l2sio[bank].$data[25];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d to l2b%1d-sio cecc", ~data, bank));
+		SetL2SioCECC0(~data, bank);			
+		@(posedge l2sio[bank].$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release l2b%1d-sio cecc", bank));
+		RelL2SioCECC0(bank);
+	  }
+	L2SIO_CUE: 
+	  {
+		data = l2sio[bank].$data[25];
+		data2 = l2sio[bank].$data[26];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d %d to l2b%1d-sio cue", ~data, ~data2, bank));
+		SetL2SioCECC0(~data, bank);			
+		SetL2SioCECC1(~data2, bank);			
+		@(posedge l2sio[bank].$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release l2b%1d-sio cue", bank));
+		RelL2SioCECC0(bank);
+		RelL2SioCECC1(bank);
+	  }
+	}
+}
+
+task ios_ras_inj::vinjector(SocErr_Type type)
+{
+	bit data, data2;
+
+	case (type) {
+#ifndef FC_NO_NIU_T2
+	NIUSII_DP: 
+	  {
+		@(negedge niusii.$clk);
+		data = niusii.$parity[0];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d to niu-sii data parity", ~data));
+		SetNiuSiiDP0(~data);			
+		@(posedge niusii.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release niu-sii data parity"));
+		RelNiuSiiDP0();
+	  }
+#endif
+	DMUSII_DP: 
+	  {
+		@(negedge dmusii.$clk);
+		data = dmusii.$parity[0];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d to dmu-sii data parity", ~data));
+		SetDmuSiiDP0(~data);			
+		@(posedge dmusii.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release dmu-sii data parity"));
+		RelDmuSiiDP0();
+	  }
+	DMUSII_BEP: 
+	  {
+		@(negedge dmusii.$clk);
+		data = dmusii.$be_parity;
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d to dmu-sii byte enable parity", ~data));
+		SetDmuSiiBEP(~data);			
+		@(posedge dmusii.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release dmu-sii byte enable parity"));
+		RelDmuSiiBEP();
+	  }
+#ifndef FC_NO_NIU_T2
+	NIUSII_AP: 
+	  {
+		data = niusii.$data[83];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d to niu-sii addr parity", ~data));
+		SetNiuSiiAP0(~data);			
+		@(posedge niusii.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release niu-sii addr parity"));
+		RelNiuSiiAP0();
+	  }
+#endif
+	DMUSII_AP: 
+	  {
+		data = dmusii.$data[83];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d to dmu-sii addr parity", ~data));
+		SetDmuSiiAP0(~data);			
+		@(posedge dmusii.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release dmu-sii addr parity"));
+		RelDmuSiiAP0();
+	  }
+#ifndef FC_NO_NIU_T2
+	NIUSII_CMDP: 
+	  {
+		data = niusii.$data[62];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d to niu-sii cmd parity", ~data));
+		SetNiuSiiCMDP(~data);			
+		@(posedge niusii.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release niu-sii cmd parity"));
+		RelNiuSiiCMDP();
+	  }
+#endif
+	DMUSII_CMDP: 
+	  {
+		data = dmusii.$data[62];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d to dmu-sii cmd parity", ~data));
+		SetDmuSiiCMDP(~data);			
+		@(posedge dmusii.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release dmu-sii cmd parity"));
+		RelDmuSiiCMDP();
+	  }
+	DMUSII_TOUT: 
+	  {
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject 1 to dmu-sii TOUT"));
+		SetDmuSiiTOUT();			
+		@(posedge dmusii.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release dmu-sii TOUT "));
+		RelDmuSiiTOUT();
+	  }
+#ifndef FC_NO_NIU_T2
+	NIUSII_IOAE: 
+	  {
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject 1 to niu-sii IoAE"));
+		SetNiuSiiIOAE();			
+		@(posedge niusii.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release niu-sii IoAE "));
+		RelNiuSiiIOAE();
+	  }
+#endif
+	DMUSII_IOAE: 
+	  {
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject 1 to dmu-sii IoAE"));
+		SetDmuSiiIOAE();			
+		@(posedge dmusii.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release dmu-sii IoAE "));
+		RelDmuSiiIOAE();
+	  }
+#ifndef FC_NO_NIU_T2
+	NIUSII_IOUE: 
+	  {
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject 1 to niu-sii IoUE"));
+		SetNiuSiiIOUE();			
+		@(posedge niusii.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release niu-sii IoUE "));
+		RelNiuSiiIOUE();
+	  }
+#endif
+	DMUSII_IOUE: 
+	  {
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject 1 to dmu-sii IoUE"));
+		SetDmuSiiIOUE();			
+		@(posedge dmusii.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release dmu-sii IoUE "));
+		RelDmuSiiIOUE();
+	  }
+#ifndef FC_NO_NIU_T2
+	NIUSII_CCE: 
+	  {
+		data = niusii.$data[56];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d to niu-sii cce", ~data));
+		SetNiuSiiCECC0(~data);			
+		@(posedge niusii.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release niu-sii cce "));
+		RelNiuSiiCECC0();
+	  }
+#endif
+	DMUSII_CCE: 
+	  {
+		data = dmusii.$data[56];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d to dmu-sii cce", ~data));
+		SetDmuSiiCECC0(~data);			
+		@(posedge dmusii.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release dmu-sii cce "));
+		RelDmuSiiCECC0();
+	  }
+#ifndef FC_NO_NIU_T2
+	NIUSII_CUE: 
+	  {
+		data = niusii.$data[56];
+		data2 = niusii.$data[57];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d %d to niu-sii cue", ~data, ~data2));
+		SetNiuSiiCECC0(~data);			
+		SetNiuSiiCECC1(~data2);			
+		@(posedge niusii.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release niu-sii cue"));
+		RelNiuSiiCECC0();
+		RelNiuSiiCECC1();
+	  }
+#endif
+	DMUSII_CUE: 
+	  {
+		data = dmusii.$data[56];
+		data2 = dmusii.$data[57];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d %d to dmu-sii cue", ~data, ~data2));
+		SetDmuSiiCECC0(~data);			
+		SetDmuSiiCECC1(~data2);			
+		@(posedge dmusii.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release dmu-sii cue"));
+		RelDmuSiiCECC0();
+		RelDmuSiiCECC1();
+	  }
+#ifndef FC_NO_NIU_T2
+	SIONIU_DP: 
+	  {
+		@(negedge sioniu.$clk);
+		data = sioniu.$parity[0];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d to sio-niu data parity", ~data));
+		SetSioNiuDP0(~data);			
+		@(posedge sioniu.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release sio-niu data parity"));
+		RelSioNiuDP0();
+	  }
+#endif
+	SIODMU_DP: 
+	  {
+		@(negedge siodmu.$clk);
+		data = siodmu.$parity[0];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d to sio-dmu data parity", ~data));
+		SetSioDmuDP0(~data);			
+		@(posedge siodmu.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release sio-dmu data parity"));
+		RelSioDmuDP0();
+	  }
+#ifndef FC_NO_NIU_T2
+	SIONIU_CCE: 
+	  {
+		data = sioniu.$data[56];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d to sio-niu cce", ~data));
+		SetSioNiuCECC0(~data);			
+		@(posedge sioniu.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release sio-niu cce"));
+		RelSioNiuCECC0();
+	  }
+#endif
+	SIODMU_CCE: 
+	  {
+		data = siodmu.$data[56];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d to sio-dmu cce", ~data));
+		SetSioDmuCECC0(~data);			
+		@(posedge siodmu.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release sio-dmu cce"));
+		RelSioDmuCECC0();
+	  }
+#ifndef FC_NO_NIU_T2
+	SIONIU_CUE: 
+	  {
+		data = sioniu.$data[56];
+		data2 = sioniu.$data[57];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d %d to sio-niu cue", ~data, ~data2));
+		SetSioNiuCECC0(~data);			
+		SetSioNiuCECC1(~data2);			
+		@(posedge sioniu.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release sio-niu cue"));
+		RelSioNiuCECC0();
+		RelSioNiuCECC1();
+	  }
+#endif
+	SIODMU_CUE: 
+	  {
+		data = siodmu.$data[56];
+		data2 = siodmu.$data[57];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d %d to sio-dmu cue", ~data, ~data2));
+		SetSioDmuCECC0(~data);			
+		SetSioDmuCECC1(~data2);			
+		@(posedge siodmu.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release sio-dmu cue"));
+		RelSioDmuCECC0();
+		RelSioDmuCECC1();
+	  }
+	SIINCU_DP: 
+	  {
+		@(negedge siincu.$clk);
+		data = siincu.$parity[0];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d to sii-ncu data parity", ~data));
+		SetSiiNcuDP0(~data);			
+		@(posedge siincu.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release sii-ncu data parity"));
+		RelSiiNcuDP0();
+	  }
+	SIINCU_CCE: 
+	  {
+		data = siincu.$data[16];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d to sii-ncu cce", ~data));
+		SetSiiNcuCECC0(~data);			
+		@(posedge siincu.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release sii-ncu cce parity"));
+		RelSiiNcuCECC0();
+	  }
+	SIINCU_CUE: 
+	  {
+		data = siincu.$data[16];
+		data2 = siincu.$data[17];
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d %d to sii-ncu cue", ~data, ~data2));
+		SetSiiNcuCECC0(~data);			
+		SetSiiNcuCECC1(~data2);			
+		@(posedge siincu.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release sii-ncu cue"));
+		RelSiiNcuCECC0();
+		RelSiiNcuCECC1();
+	  }
+	DMUNCU_WRACK_P:
+	  {
+		data = dmu_ncu_inj.wrack_par;
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d to dmu-ncu wrack", ~data));
+		SetDmuNcuWRACKPAR(~data);
+		@(posedge dmu_ncu_inj.clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release dmu-ncu wrack"));
+		RelDmuNcuWRACKPAR();
+	  }
+	NCUDMU_MONDO_IDP:
+	  {
+		data = dmu_ncu_inj.mondo_id_par;
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d to dmu-ncu mondo id par", ~data));
+		SetNcuDmuMONDOPAR(~data);
+		@(posedge dmu_ncu_inj.clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release dmu-ncu mondo id par"));
+		RelNcuDmuMONDOPAR();
+	  }
+	SIIDMU_WRACK_P:
+	  {
+		data = dmusii.$wrack_par;
+		dbg.dispmon(myname, MON_NORMAL, psprintf("inject %d to sii-dmu wrack", ~data));
+		SetSiiDmuWRACKPAR(~data);
+		@(posedge dmusii.$clk);
+		dbg.dispmon(myname, MON_NORMAL, psprintf("release sii-dmu wrack"));
+		RelSiiDmuWRACKPAR();
+	  }
+	}
+}

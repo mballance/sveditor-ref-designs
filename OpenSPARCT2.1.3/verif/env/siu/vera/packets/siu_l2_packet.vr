@@ -1,0 +1,108 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: siu_l2_packet.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "siu_basic_packet.vrh"
+
+// extended packet class for the L2
+class Siu_L2_Packet extends siu_basic_packet {
+        reg             source;                 // source
+        reg [7:0]       byte_en;                // byte enable for WR8
+	reg [5:0]	ctagecc;
+        reg [6:0]       ecc[16];                // Ecc
+        reg             valid;                  // Packet valid bit, for list control
+	reg		jtag_access;
+	integer		deq_delay;
+	integer		wib_delay;
+	integer		ctag_delay;
+
+        task new(
+	Siu_Packet_Type type,
+	reg [15:0] id,
+	reg [39:0] pa,
+	reg        bypass = 0,
+	reg        ue = 0,
+	reg	   posted = 0,
+	reg [63:0] data0 = 64'h0,
+	reg [63:0] data1 = 64'h0,
+	reg [63:0] data2 = 64'h0,
+	reg [63:0] data3 = 64'h0,
+	reg [63:0] data4 = 64'h0,
+	reg [63:0] data5 = 64'h0,
+	reg [63:0] data6 = 64'h0,
+	reg [63:0] data7 = 64'h0,
+	reg	source,
+	reg [7:0] byte_en,
+	reg	valid = 0, 
+	integer	deq_delay,
+	integer	wib_delay,
+	integer	ctag_delay
+	);
+}
+
+MakeVeraList(Siu_L2_Packet);
+
+task Siu_L2_Packet::new(
+     Siu_Packet_Type type,
+     reg [15:0] id,
+     reg [39:0] pa,
+     reg        bypass = 0,
+     reg        ue = 0,
+     reg	posted = 0,
+     reg [63:0] data0 = 64'h0,
+     reg [63:0] data1 = 64'h0,
+     reg [63:0] data2 = 64'h0,
+     reg [63:0] data3 = 64'h0,
+     reg [63:0] data4 = 64'h0,
+     reg [63:0] data5 = 64'h0,
+     reg [63:0] data6 = 64'h0,
+     reg [63:0] data7 = 64'h0,
+     reg 	source,
+     reg [7:0]	byte_en,
+     reg 	valid, 
+     integer	deq_delay,
+     integer	wib_delay,
+     integer	ctag_delay
+)
+{
+	super.new(type, id, pa, bypass, posted, ue, data0, data1, data2, data3, data4, data5, data6, data7);
+
+	// l2-siu variables init
+	this.source = source;
+	this.byte_en = byte_en;
+	this.valid = valid;
+	this.jtag_access = 0;
+	this.deq_delay = deq_delay;
+	this.wib_delay = wib_delay;
+	this.ctag_delay = ctag_delay;
+}

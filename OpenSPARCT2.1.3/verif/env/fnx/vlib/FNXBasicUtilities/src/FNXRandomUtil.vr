@@ -1,0 +1,157 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: FNXRandomUtil.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "FNXRandomUtilDefines.vri"
+#include "report_macros.vri"
+#include "cReport.vrh"
+
+class FNXRandomUtil {
+
+  ReportClass Report;
+
+  task new( ReportClass Report );
+
+  // Generates a random 32-bit unsigned number between min and max
+  function bit [31:0] Rand32 ( bit [31:0] min = 0,
+			       bit [31:0] max = FNX_UTIL_MAX_32_BIT_UNSIGNED_VAL ); 
+  
+  // Generates a random 64-bit unsigned number between min and max
+  function bit [63:0] Rand64 ( bit [63:0] min = 0, 
+			       bit [63:0] max = FNX_UTIL_MAX_64_BIT_UNSIGNED_VAL );
+  
+  // Generates a random 96-bit unsigned number between min and max
+  function bit [95:0] Rand96 ( bit [95:0] min = 0, 
+			       bit [95:0] max = FNX_UTIL_MAX_96_BIT_UNSIGNED_VAL );
+  
+  // Generates a random 128-bit unsigned number between min and max
+  function bit [127:0] Rand128 ( bit [127:0] min = 0, 
+				 bit [127:0] max = FNX_UTIL_MAX_128_BIT_UNSIGNED_VAL );
+
+  // Set The Random Seed. Default will be set with Time of Day
+  task SetSeed( bit [31:0] RandSeed = get_systime() );
+
+  // Set Random Seed with the Time of Day
+  task SeedWithTOD();
+}
+
+task FNXRandomUtil::new ( ReportClass Report ) {
+  this.Report = Report;
+}
+
+function bit [31:0] FNXRandomUtil::Rand32 ( bit [31:0] min = 0,
+					    bit [31:0] max = FNX_UTIL_MAX_32_BIT_UNSIGNED_VAL ) 
+{
+  bit [31:0] divisor;
+
+  if (max >= min) {
+    if ((max - min) == FNX_UTIL_MAX_32_BIT_UNSIGNED_VAL) {
+      Rand32 = urandom();
+    } 
+    else {
+      Rand32 = (urandom() % (max-min+1)) + min;
+    }
+  } else {
+    Rand32 = min;
+  }
+  
+}
+
+function bit [63:0] FNXRandomUtil::Rand64 ( bit [63:0] min = 0, 
+					    bit [63:0] max = FNX_UTIL_MAX_64_BIT_UNSIGNED_VAL)
+{  
+  if (max >= min) {  
+    if ((max - min) == FNX_UTIL_MAX_64_BIT_UNSIGNED_VAL) {
+      Rand64 = {urandom(), urandom()};
+    } 
+    else {
+      Rand64 = ({urandom(), urandom()} % (max-min+1)) + min;
+    }
+  } else {
+    Rand64 = min;
+  }
+}
+
+function bit [95:0] FNXRandomUtil::Rand96 ( bit [95:0] min = 0, 
+					    bit [95:0] max = FNX_UTIL_MAX_96_BIT_UNSIGNED_VAL )
+{  
+  if (max >= min) {  
+    if ((max - min) == FNX_UTIL_MAX_96_BIT_UNSIGNED_VAL) {
+      Rand96 = {urandom(), urandom(), urandom()};
+    } 
+    else {
+      Rand96 = ({urandom(), urandom(), urandom()} % (max-min+1)) + min;
+    }
+  } else {
+    Rand96 = min;
+  }
+}
+
+function bit [127:0] FNXRandomUtil::Rand128 ( bit [127:0] min = 0, 
+					      bit [127:0] max = FNX_UTIL_MAX_128_BIT_UNSIGNED_VAL )
+{  
+  if (max >= min) {  
+    if ((max - min) == FNX_UTIL_MAX_128_BIT_UNSIGNED_VAL) {
+      Rand128 = {urandom(), urandom(), urandom(), urandom()};
+    } 
+    else {
+      Rand128 = ({urandom(), urandom(), urandom(), urandom()} % (max-min+1)) + min;
+    }
+  } else {
+    Rand128 = min;
+  }
+}
+
+task FNXRandomUtil::SetSeed( bit [31:0] RandSeed = get_systime() )
+{
+  urandom(RandSeed);
+  QuickReport( Report,
+	       RTYP_INFO,
+	       "FNXRandomUtil::SetSeed(): urandom() seed set to %0h", 
+	       RandSeed );
+}
+
+task FNXRandomUtil::SeedWithTOD()
+{
+  bit [31:0] time_0, urand_seed;
+  
+  time_0 = get_systime();
+  urandom(time_0);
+  urand_seed = time_0 + urandom();
+  urandom(urand_seed);
+  
+  QuickReport( Report,  
+	       RTYP_INFO,
+	       "FNXRandomUtil::SeedWithTOD(): urandom() seeded with time of day, seed=%h", 
+	       urand_seed );
+}

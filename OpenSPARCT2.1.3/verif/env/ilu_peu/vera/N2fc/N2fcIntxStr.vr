@@ -1,0 +1,120 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: N2fcIntxStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class N2fcIntxStr extends DmaMsgPEUStr {
+
+  // ******************************************************************
+  // Constructor
+  // ******************************************************************
+  public task new (PEUTestEnv a_env,
+                   string     a_cmd,
+                   string     a_option
+                   );
+}
+
+//--------------------------------------------------------------------
+// Method Name: new()
+// Description: drive an INTx or other msg based on user event options
+//--------------------------------------------------------------------
+task N2fcIntxStr::new(PEUTestEnv a_env,
+                      string     a_cmd,
+                      string     a_option
+                      )
+{
+  bit [2:0] type_msg = 3'b100;
+  super.new(a_env);
+
+  case( a_cmd ) {
+    "INTA" :
+      case ( a_option ) {
+      "ASSERT"  : this.SetMsgCode(PEC_PCI__MSG_CODE_ASSERT_INTA);
+      "DEASSERT": this.SetMsgCode(PEC_PCI__MSG_CODE_DEASSERT_INTA);
+      default   : error("N2fcIntxStr::new INTA invalid option: %s\n", a_option);
+    }
+    "INTB" :
+      case ( a_option ) {
+      "ASSERT"  : this.SetMsgCode(PEC_PCI__MSG_CODE_ASSERT_INTB);
+      "DEASSERT": this.SetMsgCode(PEC_PCI__MSG_CODE_DEASSERT_INTB);
+      default   : error("N2fcIntxStr::new INTB invalid option: %s\n", a_option);
+    }
+    "INTC" :
+      case ( a_option ) {
+      "ASSERT"  : this.SetMsgCode(PEC_PCI__MSG_CODE_ASSERT_INTC);
+      "DEASSERT": this.SetMsgCode(PEC_PCI__MSG_CODE_DEASSERT_INTC);
+      default   : error("N2fcIntxStr::new INTC invalid option: %s\n", a_option);
+    }
+    "INTD" :
+      case ( a_option ) {
+      "ASSERT"  : this.SetMsgCode(PEC_PCI__MSG_CODE_ASSERT_INTD);
+      "DEASSERT": this.SetMsgCode(PEC_PCI__MSG_CODE_DEASSERT_INTD);
+      default   : error("N2fcIntxStr::new INTD invalid option: %s\n", a_option);
+    }
+    "PM_PME" : {
+      this.SetMsgCode(PEC_PCI__MSG_CODE_PM_PME);
+      type_msg = 3'b000;
+    }
+    "PM_TO_ACK" : {
+      this.SetMsgCode(PEC_PCI__MSG_CODE_PM_TO_ACK);
+      type_msg = 3'b101;
+    }
+    "ERR_COR" : {
+      this.SetMsgCode(PEC_PCI__MSG_CODE_ERR_COR);
+      type_msg = 3'b000;
+    }
+    "ERR_NONFATAL" : {
+      this.SetMsgCode(PEC_PCI__MSG_CODE_ERR_NONFATAL);
+      type_msg = 3'b000;
+    }
+    "ERR_FATAL" : {
+      this.SetMsgCode(PEC_PCI__MSG_CODE_ERR_FATAL);
+      type_msg = 3'b000;
+    }
+    "ATTN" : {
+      this.SetMsgCode(PEC_PCI__MSG_CODE_ATTN);
+      type_msg = 3'b100;
+    }
+    "VENDOR_TYPE_0" : {
+      this.SetMsgCode(PEC_PCI__MSG_CODE_VENDOR_TYPE_0);
+      type_msg = a_option.atohex();
+    }
+    "VENDOR_TYPE_1" : {
+      this.SetMsgCode(PEC_PCI__MSG_CODE_VENDOR_TYPE_1);
+      type_msg = a_option.atohex();
+    }
+  } // case(a_cmd)
+
+  this.SetRoutingCode(PEC_PCI__TYPE_MSG + type_msg);
+  
+  this.Execute ();
+}

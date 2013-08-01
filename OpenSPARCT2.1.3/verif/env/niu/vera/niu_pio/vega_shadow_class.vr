@@ -1,0 +1,99 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: vega_shadow_class.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "neptune_memory_map.vri"
+#include "mac_shadow_class.vrh"
+#include "xmac_shadow_class.vrh"
+
+
+class shadow_cl {
+ mac_shadow_cl  mac_shadow_class[4];
+ xmac_shadow_cl xmac_shadow_class[4];
+
+
+ task new() {
+   integer i;
+   for(i = 0;i<2;i++){
+     xmac_shadow_class[i] = new(i);
+   }
+       
+}
+
+// get_data
+// The user provides a 33 bit address.  If the register
+// corresponding to the address does not exist in the shadow
+// space, then the data_valid bit will be set to zero.
+// Otherwise, the data and mask corresponding to the address
+// will be provided to the user.
+//
+task get_data (bit [32:0] addr, var bit [31:0] data,
+        var bit [31:0] data_mask, var bit data_valid) {
+ bit [32:0] addr1;
+integer port_id;
+
+ addr1 = {1'b0,addr[31:0]};
+ case (addr1[31:0] & ADDRESS_RANGE_MASK) {
+   MAC_ADDRESS_RANGE : {
+     mac_shadow_class[port_id].get_data(addr1, data, data_mask, data_valid);
+     xmac_shadow_class[port_id].get_data(addr1, data, data_mask, data_valid);
+     }
+
+   default : {
+     data_valid = 0;
+     }
+  }  // end of case
+}    // end of task get_data
+
+// put_data
+// The user provides a 33 bit address and 32 bit data.
+// If the address exists in the shadow space then the
+// data is updated.  If the address does not exist, then
+// it is ignored -- no error message results from attempting
+// to updated non-existant locations.
+//
+task put_data (bit [32:0] addr, bit [31:0] data) {
+ bit [32:0] addr1;
+integer port_id;
+
+ addr1 = {1'b0,addr[31:0]};
+ case (addr1[31:0] & ADDRESS_RANGE_MASK) {
+   MAC_ADDRESS_RANGE : {
+     mac_shadow_class[port_id].put_data(addr1, data);
+     xmac_shadow_class[port_id].put_data(addr1, data);
+     }
+
+  }  // end of case
+}    // end of task put_data
+
+}    // end of class

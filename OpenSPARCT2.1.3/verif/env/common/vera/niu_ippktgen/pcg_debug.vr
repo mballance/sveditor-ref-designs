@@ -1,0 +1,614 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: pcg_debug.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+task display_buf( byte_array buf, integer hwlen, (integer ifedx=0)) {
+    integer ptr=0;
+    integer tunneling_ipv4 =0;
+    integer tunneling_ipv6 =0;
+    integer buf_shift;
+    integer n;
+    bit [15:0] len;
+    bit [7:0] flag_bit;
+    bit [79:0] id;
+    integer token;
+
+    printf("\n\n______________________________________________________________\n");
+    printf("vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\n\n");
+
+    if(ifedx==1)	printf("This is an INTER FEDX packet\n\n");
+
+    printf("____________ Hex Dump ____________\n");
+    for(n=0;n<hwlen;n++) {
+        if( !(n % 16) ) printf("\n%d: ",n);
+        printf("%h ", buf.val[ptr++]);
+    }
+    printf("\n__________________________________\n\n");
+
+    ptr=0;
+
+    if(ifedx==1)	{
+        printf("Interfedx Control Word: %h\n\n", {buf.val[ptr+1], buf.val[ptr]} );
+        ptr=ptr+2;
+    }
+
+
+    // L2 Header Info   
+
+    printf("   L2 Header\n");
+    printf("+---------------\n");
+
+    printf("| Destination Address: %h.%h.%h.%h.%h.%h\n", buf.val[ptr++], buf.val[ptr++],
+        buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] ); 
+    printf("|      Source Address: %h.%h.%h.%h.%h.%h\n", buf.val[ptr++], buf.val[ptr++],
+        buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] ); 
+
+    len = {buf.val[ptr++], buf.val[ptr++]};
+
+
+    // check if it is an Ethernet Tagged (802.Q) Frame 
+    if( len == TPID_8021Q ) {	
+
+        // check to see if it is an LLC-SNAP packet 
+        if( {buf.val[ptr+4], buf.val[ptr+5], buf.val[ptr+6]} == LLC_SNAP ) {
+            printf("|      L2 Header Type: 802.1Q Tagged LLC-SNAP Ethernet Header\n");
+            printf("|                TPID: %0h\n", len );
+            printf("|                 TCI: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+
+            len = {buf.val[ptr++], buf.val[ptr++]}; 
+      
+            printf("|            LEN/TYPE: 0x%h(%0d)\n", len, len );
+            printf("|                 LLC: %h\n", {buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] });
+            printf("|                SNAP: %h\n", {buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                                                             buf.val[ptr++], buf.val[ptr++] } );
+            // Store L2 pkt type  
+            len = {buf.val[ptr - 2], buf.val[ptr - 1]}; 
+        }
+        else {  
+            // it is not an LLC-SNAP packet   
+
+            printf("|      L2 Header Type: 802.1Q Tagged Ethernet Header\n");
+            printf("|                TPID: %0h\n", len );
+            printf("|                 TCI: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+
+            len = {buf.val[ptr++], buf.val[ptr++]}; 
+
+            printf("|            TYPE/LEN: 0x%h(%d)\n", len, len);   
+        }
+    }
+    else if ( len == CNTL_FRAME )  { 
+        // Check to see if it is a MAC control Frame
+
+        printf("|      L2 Header Type:  MAC Control Frame Header\n");
+        printf("|                Type: %h\n", len );
+    }
+    else {
+        // packet is a regular 802.3 Ethernet packet  
+        printf("|      L2 Header Type: 802.3 Ethernet Header\n");
+        printf("|    Data Length/Type: 0x%h(%0d)\n", len, len);  
+    }
+
+    token = { buf.val[ptr], buf.val[ptr+1] };
+
+
+    // Check to see if it has an L3 Header  
+    if(len>16'h0600 & len != CNTL_FRAME) {
+        len = -1;
+
+        // check version field to see whether it is an IPv4 or IPv6 packet
+        if( buf.val[ptr - 2 ] == 8'h08 ) {  
+
+            // it is an IPv4 packet 
+
+            // Check protocol field to see if it is an IPSec packet
+            if( buf.val[ptr + 9] == AH_PROTO) { 
+                //  Authetication Header (AH) option present 
+                printf("+-------------------------------------\n");
+                printf("   L3 Header-- Type: IPv4, IPSec: AH\n");
+                printf("+--------------------------------------\n");
+            } 
+            else if( buf.val[ptr + 9] == ESP_PROTO) {  
+                //  Encapsulating Security Payload (ESP) option present 
+                printf("+-------------------------------------\n");
+                printf("   L3 Header-- Type: IPv4, IPSec: ESP\n");
+                printf("+--------------------------------------\n");
+            }
+            else if( buf.val[ptr + 9] == IP_V4_PROTO) {
+                //  Tunneled IP packet   
+                printf("+-------------------------------------\n");
+                printf("   L3 Header-- Type: Tunnel (IPv4/IPv4)\n");
+                printf("+--------------------------------------\n");
+                printf("|   IP Header Tunnel Layer 1: IPv4\n|   \n");   
+
+                tunneling_ipv4 = 1; 
+            }
+            else if( buf.val[ptr + 9] == IP_V6_PROTO) {
+                //  Tunneled IP packet   
+                printf("+-------------------------------------\n");
+                printf("   L3 Header-- Type: Tunnel (IPv4/IPv6)\n");
+                printf("+--------------------------------------\n");
+                printf("|   IP Header Tunnel Layer 1: IPv4\n|   \n");   
+
+                tunneling_ipv6 = 1; 
+            }
+            else {
+                //  Regular IP packet   
+                printf("+-------------------------------------\n");
+                printf("   L3 Header-- Type: IPv4\n");
+                printf("+--------------------------------------\n");
+            }
+            ptr--;
+            ptr--;
+
+            display_class(buf, ptr);
+
+            //
+            // L3 Header parsing   
+            //
+            printf("|   IPV4 Checksum: %h%h\n", buf.val[ptr-2], buf.val[ptr-1] );
+
+            printf("|   IP SRC Address: %h.%h.%h.%h\n",
+                 buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+            printf("|   IP DST Address: %h.%h.%h.%h\n",
+                 buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+
+            // Check if tunneling present
+            if( tunneling_ipv4 ) {
+                // IPv4/IPv4 Tunneling
+
+                printf("|  -----------  \n|\n");   
+                printf("|   IP Header Tunnel Layer 2: IPv4:\n");   
+                printf("|   \n");   
+
+                ptr--;
+                ptr--;
+
+                display_class(buf, ptr);
+
+                printf("|   IP SRC Address: %h.%h.%h.%h\n",
+                     buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+                printf("|   IP DST Address: %h.%h.%h.%h\n",
+                     buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+
+            }
+            else if( tunneling_ipv6) {
+                // IPv4/IPv6 Tunneling
+
+                printf("|  -----------  \n|\n");   
+                printf("|   IP Header Tunnel Layer 2: IPv6:\n");   
+                printf("|   \n");   
+
+                ptr--;
+                ptr--;
+
+                display_class_ipv6(buf, ptr);
+
+                printf("|      Payload Len: 0x%h(%d)\n", buf.val[ptr++], buf.val[ptr++]);
+                printf("|      Next Header: 0x%h\n", buf.val[ptr++]);
+                printf("|      Hop Limit  : 0x%h\n", buf.val[ptr++]);
+                printf("|   IP SRC Address: %h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h\n",
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+                printf("|   IP DST Address: %h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h\n",
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+            }
+
+
+            //
+            // L4 Header Parsing    
+            //
+
+            // Determine location of protocol/next header field in buffer 
+            if( tunneling_ipv6 ) 
+                // Tunnel layer 2 of hdr was IPv6  
+                buf_shift = 34;       
+            else 
+                buf_shift = 11;     
+
+            // Check Protocol field to see if it has a L4 Header  
+            if( buf.val[ptr - buf_shift ] == UDP_PROTO) {
+                //  UDP L4 pkt present 
+                printf("+-------------------------------------\n");
+                printf("   L4 Header-- Type: UDP  \n");
+                printf("+--------------------------------------\n");
+                printf("|     UDP SRC Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+                printf("|     UDP DST Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+
+                token = { buf.val[ptr + 4], buf.val[ptr + 5] };
+            }
+            else if( buf.val[ptr - buf_shift ] == TCP_PROTO) {
+                //  TCP L4 pkt present
+                printf("+-------------------------------------\n");
+                printf("   L4 Header-- Type: TCP\n");
+                printf("+--------------------------------------\n");
+
+                printf("|     TCP SRC Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+                printf("|     TCP DST Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+                printf("|   TCP Sequence #: %h\n", {buf.val[ptr++], buf.val[ptr++], 
+                                                    buf.val[ptr++], buf.val[ptr++]} );
+                printf("|        TCP ACK #: %h\n", {buf.val[ptr++], buf.val[ptr++], 
+                                                    buf.val[ptr++], buf.val[ptr++]} );
+
+                // increment ptr to pass viewing of uncessary bits
+                ptr += 1;   
+
+                flag_bit = buf.val[ptr++];  
+
+                printf("|    TCP Flag bits: URG:%b ACK:%b PSH:%b RST:%b SYN:%b FIN:%b\n", 
+                      flag_bit[5], flag_bit[4], flag_bit[3], flag_bit[2], flag_bit[1], flag_bit[0]); 
+                printf("|      Window Size: %h\n", {buf.val[ptr++], buf.val[ptr++]});  
+                printf("|      TCP Checksum: %h\n", {buf.val[ptr++], buf.val[ptr++]});  
+                printf("+---------------\n");
+
+                token = { buf.val[ptr + 2], buf.val[ptr+3] };
+                //token = { buf.val[ptr + 4], buf.val[ptr+5] };
+            } // end else if
+            else {
+                // No L4 pkt present 
+                token = { buf.val[ptr], buf.val[ptr+1] };
+            } 
+        } // end if (IPv4 pkt)  
+        else {
+
+            // it is an IPv6 packet 
+
+            // Check Next Header field to see if it is an IPSec packet
+            if( buf.val[ptr + 6] == AH_PROTO) {
+                //  Authetication Header (AH) option present
+                printf("+-------------------------------------\n");
+                printf("   L3 Header-- Type: IPv6, IPSec: AH\n");
+                printf("+--------------------------------------\n");
+            }
+            else if( buf.val[ptr + 6] == ESP_PROTO) {
+                //  Encapsulating Security Payload (ESP) option present
+                printf("+-------------------------------------\n");
+                printf("   L3 Header-- Type: IPv6, IPSec: ESP\n");
+                printf("+--------------------------------------\n");
+            }
+            else if( buf.val[ptr + 6] == IP_V4_PROTO) {
+                //  Tunneled IP packet
+                printf("+-------------------------------------\n");
+                printf("   L3 Header-- Type: Tunnel (IPv6/IPv4)\n");
+                printf("+--------------------------------------\n");
+                printf("|   IP Header Tunnel Layer 1: IPv6\n");
+                printf("|   \n");
+
+                tunneling_ipv4 = 1;
+            }
+            else if( buf.val[ptr + 6] == IP_V6_PROTO) {
+                //  Tunneld IP packet
+                printf("+-------------------------------------\n");
+                printf("   L3 Header-- Type: Tunnel (IPv6/IPv6)\n");
+                printf("+--------------------------------------\n");
+                printf("|   IP Header Tunnel Layer 1: IPv6\n");
+                printf("|   \n");
+
+                tunneling_ipv6 = 1;
+            }
+            else {
+                //  Regular IP packet
+                printf("+-------------------------------------\n");
+                printf("   L3 Header-- Type: IPv6\n");
+                printf("+--------------------------------------\n");
+            }
+            ptr--;
+            ptr--;
+
+            display_class_ipv6(buf, ptr);
+             
+            printf("|      Payload Len: 0x%h(%d)\n", buf.val[ptr++], buf.val[ptr++]); 
+            printf("|      Next Header: 0x%h\n", buf.val[ptr++]); 
+            printf("|      Hop Limit  : 0x%h\n", buf.val[ptr++]); 
+            printf("|   IP SRC Address: %h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h\n",
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+            printf("|   IP DST Address: %h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h\n",
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+
+            // Check if tunneling present
+            if( tunneling_ipv4 ) {
+                // IPv6/IPv4 Tunneling
+
+                printf("|  -----------  \n|\n");   
+                printf("|   IP Header Tunnel Layer 2: IPv4:\n");
+                printf("|   \n");
+
+                ptr--;
+                ptr--;
+
+                display_class(buf, ptr);
+
+                printf("|   IP SRC Address: %h.%h.%h.%h\n",
+                       buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+                printf("|   IP DST Address: %h.%h.%h.%h\n",
+                       buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+
+            }
+            else if( tunneling_ipv6) {
+                // IPv6/IPv6 Tunneling
+
+                printf("|  -----------  \n|\n");   
+                printf("|   IP Header Tunnel Layer 2: IPv6:\n");
+                printf("|   \n");
+
+                ptr--;
+                ptr--;
+
+                display_class_ipv6(buf, ptr);
+
+                printf("|      Payload Len: 0x%h(%d)\n", buf.val[ptr++], buf.val[ptr++]);
+                printf("|      Next Header: 0x%h\n", buf.val[ptr++]);
+                printf("|      Hop Limit  : 0x%h\n", buf.val[ptr++]);
+                printf("|   IP SRC Address: %h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h\n",
+                        buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                        buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                        buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                        buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+                printf("|   IP DST Address: %h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h\n",
+                        buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                        buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                        buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                        buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+            }
+
+            //
+            // L4 Header Parsing
+            //
+
+            // Determine location of protocol/next header field in buffer
+            if( tunneling_ipv4 )
+                // Tunnel layer 2 of hdr was IPv4 
+                buf_shift = 11;
+            else 
+                buf_shift = 34;  
+
+            if( buf.val[ptr - buf_shift ] == UDP_PROTO) {
+                //  UDP L4 pkt present
+
+                printf("+-------------------------------------\n");
+                printf("   L4 Header-- Type: UDP  \n");
+                printf("+--------------------------------------\n");
+                printf("|     UDP SRC Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+                printf("|     UDP DST Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+
+                token = { buf.val[ptr + 4], buf.val[ptr+5] };
+            }
+            else if( buf.val[ptr - buf_shift ] == TCP_PROTO) {
+                //  TCP L4 pkt present
+                printf("+-------------------------------------\n");
+                printf("   L4 Header-- Type: TCP\n");
+                printf("+--------------------------------------\n");
+
+                printf("|     TCP SRC Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+                printf("|     TCP DST Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+                printf("|   TCP Sequence #: %h\n", {buf.val[ptr++], buf.val[ptr++],
+                                                    buf.val[ptr++], buf.val[ptr++]} );
+                printf("|        TCP ACK #: %h\n", {buf.val[ptr++], buf.val[ptr++],
+                                                    buf.val[ptr++], buf.val[ptr++]} );
+
+                // increment ptr to pass viewing of uncessary bits
+                ptr += 1;   
+
+                flag_bit = buf.val[ptr++];
+
+                printf("|    TCP Flag bits: URG:%b ACK:%b PSH:%b RST:%b SYN:%b FIN:%b\n", 
+                      flag_bit[5], flag_bit[4], flag_bit[3], flag_bit[2], flag_bit[1], flag_bit[0]); 
+                printf("|      Window Size: %h\n", {buf.val[ptr++], buf.val[ptr++]});
+                printf("+---------------\n");
+
+                token = { buf.val[ptr + 4], buf.val[ptr+5] };
+
+            } // end else if TCP pkt   
+            else {
+                // No L4 pkt present
+                token = { buf.val[ptr], buf.val[ptr+1] };
+            }
+        } // end else (IPv6 Pkt)  
+    } // end if L3 Header Present 
+	
+
+    if(len<0)	len = hwlen;
+
+    printf("\nTime: %0d\n",{get_time(HI),get_time(LO)});
+    printf("Token: %0d\n", token);
+
+    // See if packet (Token) exists in DB  
+    if( assoc_index(CHECK, pack_db, token) == 0 ) {
+        printf("Warning: Could Not find Packet in Packet Database\n");
+    } else {
+        printf("Packet originated on Port: %0d\n",  pack_db[token].org_port );
+    }
+
+    // Display Data payload portion of packet   
+    printf("\n");
+    if(ifedx==1)  display_data(buf, ptr, hwlen-ptr-4-4 );
+    else          display_data(buf, ptr, hwlen-ptr-4 );
+
+    printf("\n");
+    printf("CRC: %h\n", { buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } );
+
+    if(ifedx==1)  
+        printf("\n INTER FEDX CRC: %h\n",
+             { buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } );
+
+    printf("\n^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n");
+    printf("--------------------------------------------------------------\n\n");
+
+} // end task   
+ 
+
+task display_class(byte_array buf, var integer ptr) {
+    integer n,last;
+
+    last = ptr+14;
+
+    printf("|              Class: ");
+
+    // Hex Dump
+    for(n=0;n<14;n++)	printf("%h ", buf.val[ptr+n] ); 
+    printf("\n");
+
+    if( {buf.val[ptr], buf.val[ptr+1]} < 16'h0600)
+        printf("|             Length: %0d\n|\n", {buf.val[ptr++], buf.val[ptr++]} );
+    else
+        printf("|               Type: %0h\n|\n", {buf.val[ptr++], buf.val[ptr++]} );
+
+    ptr=last;
+}
+
+
+task display_class_ipv6(byte_array buf, var integer ptr) {
+    integer n,last;
+
+    last = ptr+6;
+
+    printf("|              Class: ");
+
+    // Hex Dump
+    for(n=0;n<10;n++)       printf("%h ", buf.val[ptr+n] );
+    printf("\n");
+
+    if( {buf.val[ptr], buf.val[ptr+1]} < 16'h0600)
+        printf("|             Length: %0d\n|\n", {buf.val[ptr++], buf.val[ptr++]} );
+    else
+        printf("|               Type: %0h\n|\n", {buf.val[ptr++], buf.val[ptr++]} );
+
+    ptr=last;
+}
+
+
+
+task display_data(byte_array buf, var integer ptr, integer len) {
+    integer n;
+
+    printf("    Data:\n");
+    printf("+---------------");
+
+    if(len<1)
+        printf("\n| No Payload ...");
+    else
+
+    for(n=0;n< len ;n++) {
+        if( !(n % 16) ) printf("\n| %d: ",n);
+        printf("%h ", buf.val[ptr++]);
+    }
+    printf("\n+---------------\n");
+}
+
+
+task display_id(bit [79:0] id) {
+
+    printf("    ID Tags:\n");
+    printf("+---------------\n");
+    printf("|       Src port: %0d\n", id[79:75] );
+    printf("|       Dst port: %0h\n", id[74:35] );
+    printf("|     Order Type: %0h\n", id[34:33] );
+    printf("|  Order Sequnce: %0d\n", id[32:27] );
+    printf("|  Packet number: %0d\n", id[26:11] );
+    printf("|      Data Type: %0d\n", id[10:8] );
+    printf("|      Data Seed: %0d\n", id[7:0] );
+    printf("+---------------\n");
+}
+
+
+task display_db(integer token) {
+
+    printf("\n========== Display DB Entry %0d ========== \n",token);
+    if(pack_db[token] == null) {
+        printf("This entry is not allocated ...\n");
+    } else {
+        printf("\tframe.frame_type:  %h\n",pack_db[token].frame.frame_type);
+        printf("\tframe.frame_class: %h\n",pack_db[token].frame.frame_class);
+        printf("\tframe.class_mask:  %h\n",pack_db[token].frame.class_mask);
+        printf("\tframe.class_funct: %h\n",pack_db[token].frame.class_funct);
+        printf("\tframe.data_type:   %h\n",pack_db[token].frame.data_type);
+        printf("\tframe.data_seed:   %h\n",pack_db[token].frame.data_seed);
+        printf("\tframe.data_length: %h\n",pack_db[token].data_length);
+        printf("\n");
+        printf("\tsrc_node.l2_addr: %h\n",pack_db[token].src_node.l2_addr);
+        printf("\tsrc_node.tci:     %h\n",pack_db[token].src_node.tci);
+        printf("\tsrc_node.ip_addr: %h\n",pack_db[token].src_node.ip_addr);
+        printf("\tsrc_node.ipv6_addr: %h\n",pack_db[token].src_node.ipv6_addr);
+        printf("\n");
+        printf("\tdst_node.l2_addr: %h\n",pack_db[token].dst_node.l2_addr);
+        printf("\tdst_node.tci:     %h\n",pack_db[token].dst_node.tci);
+        printf("\tdst_node.ip_addr: %h\n",pack_db[token].dst_node.ip_addr);
+        printf("\tdst_node.ipv6_addr: %h\n",pack_db[token].dst_node.ipv6_addr);
+        printf("\n");
+        printf("\ttup.src_tcp_udp_port: %h\n",pack_db[token].tup.src_tcp_udp_port);
+        printf("\ttup.dst_tcp_udp_port: %h\n",pack_db[token].tup.dst_tcp_udp_port);
+        printf("\n");
+        printf("\trcv_isn: %0h\n",pack_db[token].rx_param.rcv_isn);
+        printf("\tlast_ackno: %0h\n",pack_db[token].rx_param.last_ackno);
+        printf("\tadv_isn: %0h\n",pack_db[token].tx_param.adv_isn);
+        printf("\tlast_seqno: %0h\n",pack_db[token].tx_param.last_seqno);
+        printf("\n");
+        printf("\torg_port:  %0d\n",pack_db[token].org_port);
+        printf("\torder_seq: %0d\n",pack_db[token].order_seq);
+        printf("\tpckt_num:  %0d\n",pack_db[token].pckt_num);
+        printf("\toptions:   %h\n",pack_db[token].options);
+    }
+    printf("========================================== \n\n");
+}
+
+task display_flow(integer flow_id) {
+
+    printf("\n========== Display FLOW DB Entry %0d ========== \n",flow_id);
+    if(flow_db[flow_id] == null) {
+        printf("This entry is not allocated ...\n");
+    } else {
+        printf("\tframe.data_length: %h\n",flow_db[flow_id].data_length);
+        printf("\n");
+        printf("\ttup.src_tcp_udp_port: %h\n",flow_db[flow_id].tup.src_tcp_udp_port);
+        printf("\ttup.dst_tcp_udp_port: %h\n",flow_db[flow_id].tup.dst_tcp_udp_port);
+        printf("\n");
+        printf("\torg_port:  %0d\n",flow_db[flow_id].org_port);
+        printf("\trcv_isn: %0h\n",flow_db[flow_id].rx_param.rcv_isn);
+        printf("\tlast_ackno: %0h\n",flow_db[flow_id].rx_param.last_ackno);
+        printf("\tadv_isn: %0h\n",flow_db[flow_id].tx_param.adv_isn);
+        printf("\tlast_seqno: %0h\n",flow_db[flow_id].tx_param.last_seqno);
+        //printf("\tpckt_num:  %0d\n",pack_db[token].pckt_num);
+        //printf("\toptions:   %h\n",pack_db[token].options);
+    }
+    printf("========================================== \n\n");
+}

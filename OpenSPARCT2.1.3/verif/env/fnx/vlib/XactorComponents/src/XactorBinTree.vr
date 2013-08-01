@@ -1,0 +1,537 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: XactorBinTree.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "XactorUtilities.vrh"
+#include "XactorBasePacket.vrh"
+#include "XactorBaseExpectDataStruct.vrh"
+#include "XactorDefines.vri"
+#include "XactorComponentsDefines.vri"
+
+typedef class TreeNode;
+
+// This class declares and implements the node used by the binary tree data structure.
+class TreeNode {
+
+  event RemoveEvents[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]; // Removed is an event flag that will be 
+                                                      // triggered when the node is removed
+  XactorBasePacket Item; // Xactor Packet
+  TreeNode Left; // Pointer to the left node
+  TreeNode Right; // Pointer to the right node
+  TreeNode Parent; // Pointer to the parent node
+
+  task new (XactorBasePacket i,
+	    var event e[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]
+	    ) {
+
+    integer EventCnt;
+    
+    for(EventCnt = 0; EventCnt <= XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS - 1; EventCnt++) {
+      RemoveEvents[EventCnt] = e[EventCnt];
+    }
+
+    Item = i;
+    Left = null;
+    Right = null;
+    Parent = null;
+  }
+}
+
+// This is the class that declares and implements the binary tree 
+// data structure.
+class XactorBinTree extends XactorBaseExpectDataStruct {
+
+  // Head node of the binary tree
+  protected TreeNode Head;
+
+  task new ();
+
+  virtual protected task AssignEvent(var event Dest[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS], 
+				     var event Src[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]
+				     );
+
+  // Local method. Will search Key within the binary tree. 
+  virtual protected function TreeNode WCTreeSearch(TreeNode x, 
+						   XactorBasePacket Key
+						   );
+
+  // Local method. Will search Key within the binary tree. 
+  virtual protected function TreeNode TreeSearch(TreeNode x, 
+						 XactorBasePacket Key
+						 );
+
+  // Local method. Will search Key within the binary tree. 
+  virtual protected function TreeNode RefTreeSearch(TreeNode x, 
+						    XactorBasePacket Key
+						    );
+
+  // Local method. Will return the left most node of the tree (the one
+  // with the minimum value)
+  virtual protected function TreeNode TreeMin(TreeNode x);
+
+  // Local method. Returns the successor to node x
+  virtual protected function TreeNode TreeSuccessor(TreeNode x);
+
+  // Public method. Inserts a new node with the specified values.
+  virtual task Insert (XactorBasePacket Item,
+		       var event e[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]
+		       );
+
+  virtual protected task DeleteNode (var TreeNode z);
+
+  // Checks if there are duplicated packets after a node is deleted. 
+  // No Wildcards
+  virtual protected task CheckDuplicatedExpects (XactorBasePacket Key,
+						 TreeNode NodePtr
+						 );
+
+  // Public method. Deletes a node with the specified values and returns 
+  // Success = 1 if the node was found and deleted and Success = 0 otherwise.
+  virtual task Delete (XactorBasePacket Key,
+		       var bit Success
+		       );
+
+  // Public method. Deletes a node with the specified values and returns 
+  // Success = 1 if the node was found and deleted and Success = 0 otherwise.
+  virtual task RefDelete (XactorBasePacket Key,
+			  var bit Success
+			  );
+
+  // Checks for duplicated expects after a node is deleted
+  // Use of wildcards
+  virtual protected task CheckWCDuplicatedExpects (XactorBasePacket Key,
+						   TreeNode NodePtr
+						   );
+ 
+  // Using Wildcards, deletes first node that match Key
+  virtual task WildCardDelete1 (XactorBasePacket Key,
+				var bit Success
+				);
+
+  // Local method. Will do and inorder traversal of the binary tree
+  // and will return the number of nodes through Counter
+  virtual protected task InorderCount(TreeNode Node,
+				      var integer Counter
+				      );
+ 
+  // Public method. Will return the number of nodes in the binary tree.
+  virtual function integer CountNodes();
+  
+  // Local method. will do an inorder walk of the binary tree and will
+  // print every node. Each "compressed" expected value is decoded by
+  // a packet object. Once decoded, each field will be stored within the
+  // same packet and printed.
+  virtual protected task InorderPrint(TreeNode Node);
+
+  // Public method. Calls InorderPrint to print the nodes within the
+  // binary tree.
+  virtual task PrintNodes();
+
+  // Public method. Returns 1 if Item is within the binary tree and
+  // 0 otherwise. Accepts "wildcards"
+  virtual function bit InStructure(XactorBasePacket Item);
+
+  // Public method. Returns 1 if the binary tree is empty and 0 otherwise.
+  virtual function bit Empty();
+
+  // Local method. Inorder walk of the binary tree. It triggers the event
+  // of every node.
+  virtual protected task InorderReset(TreeNode Node);
+
+  // Public method. Calls InorderReset and after that, it deletes the complete
+  // binary tree.
+  virtual task Reset();
+
+}
+
+  ////////////////
+ // Definitions
+////////////////
+
+task XactorBinTree::new () {
+  Head = null;
+}
+
+task XactorBinTree::AssignEvent(var event Dest[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS], 
+				var event Src[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]
+				) {
+  integer EventCnt;
+
+  for(EventCnt = 0; EventCnt <= XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS - 1; EventCnt++) {
+    Dest[EventCnt] = Src[EventCnt];
+  }
+}
+
+// Local method. Will search Key within the binary tree. 
+function TreeNode XactorBinTree::WCTreeSearch(TreeNode x, 
+					      XactorBasePacket Key
+					      ) {
+  if((x == null) || (x.Item.PktCompare("=?=", Key)))
+    WCTreeSearch = x;
+  else {
+    if(x.Item.PktCompare(">", Key))
+      WCTreeSearch = WCTreeSearch(x.Left, Key);
+    else
+      WCTreeSearch = WCTreeSearch(x.Right, Key);
+  }
+}
+
+// Local method. Will search Key within the binary tree. 
+function TreeNode XactorBinTree::TreeSearch(TreeNode x, 
+					    XactorBasePacket Key
+					    ) {
+  if((x == null) || (x.Item.PktCompare("===", Key)))
+    TreeSearch = x;
+  else {
+    if(x.Item.PktCompare(">", Key))
+      TreeSearch = TreeSearch(x.Left, Key);
+    else
+      TreeSearch = TreeSearch(x.Right, Key);
+  }
+}
+
+// Local method. Will search Key within the binary tree. 
+function TreeNode XactorBinTree::RefTreeSearch(TreeNode x, 
+					       XactorBasePacket Key
+					       ) {
+  if((x == null) || (x.Item === Key))
+    RefTreeSearch = x;
+  else {
+    if(x.Item.PktCompare(">", Key))
+      RefTreeSearch = RefTreeSearch(x.Left, Key);
+    else
+      RefTreeSearch = RefTreeSearch(x.Right, Key);
+  }
+}
+
+// Local method. Will return the left most node of the tree (the one
+// with the minimum value)
+function TreeNode XactorBinTree::TreeMin(TreeNode x) {
+  while(x.Left != null)
+    x = x.Left;
+  TreeMin = x;
+}
+
+// Local method. Returns the successor to node x
+function TreeNode XactorBinTree::TreeSuccessor(TreeNode x) {
+  TreeNode y;
+  
+  if(x.Right != null)
+    TreeSuccessor = TreeMin(x.Right);
+  else {
+    y = x.Parent;
+    while((y != null) && (x == y.Right)) {
+      x = y;
+      y = y.Parent;
+    }
+    TreeSuccessor = y;
+  }
+}
+
+// Public method. Inserts a new node with the specified values.
+task XactorBinTree::Insert (XactorBasePacket Item,
+			    var event e[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]
+			    ) {
+  TreeNode x;
+  TreeNode y;
+  TreeNode z;
+  
+  z = new(Item, e);    
+  y = null;
+  x = Head;
+  
+  if(Head != null) 
+    while(x != null) {
+      y = x;
+      if((x.Item.PktCompare("<", z.Item)) || (x.Item.PktCompare("=?=", z.Item))) {
+	if(x.Item.PktCompare("=?=", z.Item)) {
+	  x.Item.PktDisplay(RTYP_XACTOR_FMWORK_DUP_EXPECT_ERR, "Posting a duplicated Expect");
+	}
+	x = x.Right;
+      }
+      else {
+	x = x.Left;
+      }
+    }
+  
+  z.Parent = y;
+  if(y == null)
+    Head = z;
+  else {
+    if((y.Item.PktCompare("<", z.Item)) || (y.Item.PktCompare("=?=", z.Item)))
+      y.Right = z;
+    else
+      y.Left = z;
+  }
+}
+
+task XactorBinTree::DeleteNode (var TreeNode z) {
+  
+  TreeNode y;
+  TreeNode x;
+  
+  if((z.Left == null) || (z.Right == null))
+    y = z;
+  else
+    y = TreeSuccessor(z);
+  
+  if(y.Left != null)
+    x = y.Left;
+  else
+    x = y.Right;
+  
+  if(x != null)
+    x.Parent = y.Parent;
+  
+  if(y.Parent == null)
+    Head = x;
+  else {
+    if(y == y.Parent.Left)
+      y.Parent.Left = x;
+    else
+      y.Parent.Right = x;
+  }
+  if(y != z) {
+    AssignEvent(z.RemoveEvents, y.RemoveEvents);
+    z.Item = y.Item;
+  }
+}
+
+// Checks if there are duplicated packets after a node is deleted. 
+// No Wildcards
+task XactorBinTree::CheckDuplicatedExpects (XactorBasePacket Key,
+					    TreeNode NodePtr
+					    ) {
+  TreeNode z;
+  
+  z = TreeSearch(NodePtr, Key);
+  
+  if(z !== null) {
+    z.Item.PktDisplay(RTYP_XACTOR_FMWORK_SAMPLED_DUP_XACTION_ERR, "Sampled Transaction satisfies duplicated Expect");
+    if(z.Right != null) {
+      CheckDuplicatedExpects (Key,
+			      z.Right
+			      );				
+    }
+  }
+}
+
+// Public method. Deletes a node with the specified values and returns 
+// Success = 1 if the node was found and deleted and Success = 0 otherwise.
+task XactorBinTree::Delete (XactorBasePacket Key,
+			    var bit Success
+			    ) {
+  TreeNode z;
+  
+  z = TreeSearch(Head, Key);
+  
+  if(z !== null) {
+    Key.SetID(z.Item.GetID());
+    if(z.Right != null)
+      CheckDuplicatedExpects(Key,
+			     z.Right
+			     );
+    trigger(ON, z.RemoveEvents[XACT_COMP_EXPECT_REMOVED_EVENT]); // Remove event
+    trigger(ON, z.RemoveEvents[XACT_COMP_EXPECT_REMOVED_BY_XACTOR_EVENT]); // Removed by xactor
+
+    Success = 1'b1;
+    DeleteNode(z);
+  }
+  else {
+    Success = 1'b0;
+  }
+}
+
+// Public method. Deletes a node with the specified values and returns 
+// Success = 1 if the node was found and deleted and Success = 0 otherwise.
+task XactorBinTree::RefDelete (XactorBasePacket Key,
+			       var bit Success
+			       ) {
+  TreeNode z;
+  
+  z = RefTreeSearch(Head, Key);
+  
+  if(z !== null) {
+    Key.SetID(z.Item.GetID());
+
+    trigger(ON, z.RemoveEvents[XACT_COMP_EXPECT_REMOVED_EVENT]); // Remove event
+    trigger(ON, z.RemoveEvents[XACT_COMP_EXPECT_REMOVED_BY_USER_EVENT]); // Removed by user
+
+    Success = 1'b1;    
+    DeleteNode(z);
+  }
+  else {
+    Success = 1'b0;
+  }
+}
+
+
+// Checks for duplicated expects after a node is deleted
+// Use of wildcards
+task XactorBinTree::CheckWCDuplicatedExpects (XactorBasePacket Key,
+					      TreeNode NodePtr
+					      ) {
+  TreeNode z;
+  
+  z = WCTreeSearch(NodePtr, Key);
+  
+  if(z !== null) {
+    z.Item.PktDisplay(RTYP_XACTOR_FMWORK_SAMPLED_DUP_XACTION_ERR, "Sampled Transaction satisfies duplicated Expect");
+    if(z.Right !== null) {
+      CheckWCDuplicatedExpects (Key,
+				z.Right
+				);				
+    }
+  }
+}
+
+// Using Wildcards, deletes first node that match Key
+task XactorBinTree::WildCardDelete1 (XactorBasePacket Key,
+				     var bit Success
+				     ) {
+  TreeNode z;
+  
+  z = WCTreeSearch(Head, Key);
+  
+  if(z != null) {
+    Key.SetID(z.Item.GetID());
+    z.Item.PktCopy(Key); // Copy contents of sampled packet to expected packet
+    if(z.Right != null)
+      CheckWCDuplicatedExpects(Key, z.Right);
+
+    trigger(ON, z.RemoveEvents[XACT_COMP_EXPECT_REMOVED_EVENT]); // Remove event
+    trigger(ON, z.RemoveEvents[XACT_COMP_EXPECT_REMOVED_BY_XACTOR_EVENT]); // Removed by xactor
+
+    Success = 1'b1;    
+    DeleteNode(z);
+  }
+  else
+    Success = 1'b0;
+}
+
+// Local method. Will do and inorder traversal of the binary tree
+// and will return the number of nodes through Counter
+task XactorBinTree::InorderCount(TreeNode Node,
+				 var integer Counter
+				 ) {
+  if(Node != null) {
+    InorderCount(Node.Left, Counter);
+    Counter++;
+    InorderCount(Node.Right, Counter);
+  }
+}
+
+// Public method. Will return the number of nodes in the binary tree.
+function integer XactorBinTree::CountNodes() {
+  integer Counter = 0;
+  
+  if(Head != null)
+    InorderCount(Head, Counter);        
+  
+  CountNodes = Counter;
+}
+
+// Local method. will do an inorder walk of the binary tree and will
+// print every node. Each "compressed" expected value is decoded by
+// a packet object. Once decoded, each field will be stored within the
+// same packet and printed.
+task XactorBinTree::InorderPrint(TreeNode Node
+				 ) {
+  if(Node != null) {
+    InorderPrint(Node.Left);
+    Node.Item.PktDisplay(RTYP_INFO, "Dump Expect List");
+    InorderPrint(Node.Right);
+  }    
+}
+
+// Public method. Calls InorderPrint to print the nodes within the
+// binary tree.
+task XactorBinTree::PrintNodes() {
+  if(Head != null)       
+    InorderPrint(Head);
+}  
+
+// Public method. Returns 1 if Item is within the binary tree and
+// 0 otherwise. Accepts "wildcards"
+function bit XactorBinTree::InStructure (XactorBasePacket Item
+					 ) {
+  TreeNode x;
+  
+  x = TreeSearch(Head, Item);
+  
+  if(x != null)
+    InStructure = 1'b1;
+  else
+    InStructure = 1'b0;
+}
+
+// Public method. Returns 1 if the binary tree is empty and 0 otherwise.
+function bit XactorBinTree::Empty() {
+  if (Head == null)
+    Empty = 1'b1;
+  else
+    Empty = 1'b0;
+}
+
+// Local method. Inorder walk of the binary tree. It triggers the event
+// of every node.
+task XactorBinTree::InorderReset(TreeNode Node
+				 ) {
+  if(Node != null) {
+    InorderReset(Node.Left);
+    trigger(ON, Node.RemoveEvents[XACT_COMP_EXPECT_REMOVED_EVENT]); // Trigger remove event
+    trigger(ON, Node.RemoveEvents[XACT_COMP_EXPECT_REMOVED_BY_USER_EVENT]); // Trigger removed
+                                                                            // by user event
+    InorderReset(Node.Right);
+  }    
+}  
+
+// Public method. Calls InorderReset and after that, it deletes the complete
+// binary tree.
+task XactorBinTree::Reset() {
+  if(Head != null)
+    InorderReset(Head);
+  
+  Head = null;
+}
+
+
+
+
+
+
+
+
+
+

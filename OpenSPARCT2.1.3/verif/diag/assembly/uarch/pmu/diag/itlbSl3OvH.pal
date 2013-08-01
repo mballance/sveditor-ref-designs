@@ -1,0 +1,85 @@
+# 1 "pmu_sl4_mask_n2.pal" 
+
+:#define MAIN_PAGE_NUCLEUS_ALSO
+:#define MAIN_PAGE_HV_ALSO
+:#define DMMU_SKIP_IF_NO_TTE
+:#define CREGS_PIL 0x0
+ 
+:#include "mmu_custom_intr_handlers.s"   
+:#include "hboot.s"
+
+:
+
+
+
+:.text
+:.global main
+
+:main:		
+
+
+:! Thread 0 Start
+
+:!main_t0:
+
+:	set	0x20010044,	%l0 ! Reserved
+:	set	0x20110084,	%l1 ! Reserved
+:	set	0x5822c132,	%l2 ! Count ITLB References to L2 
+:	set     0x1840c202,     %l3 ! Count DTLB References to L2 
+:	set     0x20810402,     %l4 ! Count ITLB References to L2 which miss in L2
+:       set     0x21010802,     %l5 ! count DTLB References to L2 which miss in L2
+:	set     0x22011004,     %l6 ! Reserved
+:	set     0x24012004,     %l7 ! Reserved
+
+:	! Execute Main Diag ..
+:	ta T_CHANGE_PRIV            ! Should cause Watchdog_reset trap
+	
+
+:!Count_ITLB_References:	
+	
+:	wr 	%l2, %g0, %pcr 	 !  count ITLB References
+:       setx    0xFFFFFFE0FFFFFF00, %l5, %l6
+:	wr 	%l6, %g0, %pic   !  zero out the counter
+
+for ($i=0; $i<10; $i++) {
+:    ta T_CHANGE_HPRIV
+:    set 0x80, %g1
+:    stxa %g1, [%g1] 0x57
+:    ta T_CHANGE_NONHPRIV
+:    and %g1, %g2, %g3
+ }             
+
+:     nop
+:     nop
+:     nop
+:     nop
+:     nop
+:     nop
+:     nop
+:     nop
+:     nop
+:     nop
+
+                          	
+:fail:
+:	EXIT_BAD	
+
+
+
+
+:.data
+:user_data_start:
+:scratch_area:
+:.align 16	
+:load_1:	
+:.word 0xFFFF2e2d       
+:.word 0x2e2dFFFF
+:.align 16
+
+:store_1:
+:.align 16
+:.word 0xDEADBEEF			
+:.word 0xAAAAAAAA		
+:.align 16	
+
+:.end

@@ -1,0 +1,119 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: plusArgMacros.vri
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#ifndef INC__TMP_PLUSARGMACROS_VRI
+#define INC__TMP_PLUSARGMACROS_VRI
+
+// WARNING: do not quote your text when using these macros
+// The macro will add them. You will not have a clash with a var name
+// that is the same as the text even though it "looks" that way.
+// for example, this is OK:
+// integer myint ; getPlusargDec(myint,myint); // sims -vcs_run_args=+myint=5
+// because it really becomes:
+// myint = get_plus_arg(NUM, "myint=");
+
+// You are expected to include the trailing =
+
+// see examples below
+
+#ifdef NTB
+// returns arg in PLUSvar and inferred status in PLUSvar if PLUSvar not null/0
+// but it is better to use mChkPlusarg to be sure a plus arg exists
+#define mChkPlusarg(PLUSname) test_plusargs("PLUSname")
+#define mGetPlusargStr(PLUSname,PLUSvar) void = value_plusargs("PLUSname%s", PLUSvar)
+#define mGetPlusargDec(PLUSname,PLUSvar) void = value_plusargs("PLUSname%d", PLUSvar)
+#define mGetPlusargHex(PLUSname,PLUSvar) void = value_plusargs("PLUSname%h", PLUSvar)
+
+// use these if you are using a string variable as the PLUSname rather than text.
+#define mChkPlusargSvar(PLUSname) test_plusargs(PLUSname)
+// THESE MAY NEED { } ARROUND THEM. THEY ARE TWO STATEMENTS, NOT ONE!!!
+#define mGetPlusargStrSvar(PLUSname,PLUSvar) sprintf(PLUSname,"%s%%s",PLUSname); void = value_plusargs(PLUSname, PLUSvar) 
+#define mGetPlusargDecSvar(PLUSname,PLUSvar) sprintf(PLUSname,"%s%%d",PLUSname); void = value_plusargs(PLUSname, PLUSvar) 
+#define mGetPlusargHexSvar(PLUSname,PLUSvar) sprintf(PLUSname,"%s%%h",PLUSname); void = value_plusargs(PLUSname, PLUSvar) 
+#else
+// returns arg in PLUSvar and inferred status in PLUSvar if PLUSvar not null/0
+// but it is better to use mChkPlusarg to be sure a plus arg exists
+#define mChkPlusarg(PLUSname) get_plus_arg(CHECK, "PLUSname")
+#define mGetPlusargStr(PLUSname,PLUSvar) PLUSvar = get_plus_arg(STR, "PLUSname")
+#define mGetPlusargDec(PLUSname,PLUSvar) PLUSvar = get_plus_arg(NUM, "PLUSname")
+#define mGetPlusargHex(PLUSname,PLUSvar) PLUSvar = get_plus_arg(HNUM, "PLUSname")
+
+// use these if you are using a string variable as the PLUSname rather than text.
+#define mChkPlusargSvar(PLUSname) get_plus_arg(CHECK, PLUSname)
+#define mGetPlusargStrSvar(PLUSname,PLUSvar) PLUSvar = get_plus_arg(STR, PLUSname)
+#define mGetPlusargDecSvar(PLUSname,PLUSvar) PLUSvar = get_plus_arg(NUM, PLUSname)
+#define mGetPlusargHexSvar(PLUSname,PLUSvar) PLUSvar = get_plus_arg(HNUM, PLUSname)
+
+#endif
+
+
+
+// // usage:
+// //
+// // a flag
+// sims -vcs_run_args=+seed
+// // value (missing)
+// sims -vcs_run_args=+seed=
+// // value (string)
+// sims -vcs_run_args=+seed=me
+// // value (decimal)
+// sims -vcs_run_args=+seed=1234
+// // value (hex)
+// sims -vcs_run_args=+seed=0xA5b
+// 
+// // in the code
+// reg [2048:0] retstr;
+// integer reti;
+// reg [63:0] reth;
+//    
+// if (mChkPlusarg(seed=)) {
+//   mGetPlusargStr(seed=,retstr);
+//   printf("retstr not null, is %s\n",retstr);
+// } else printf("retstr not found.\n");
+// 
+// if (mChkPlusarg(seed=)) {
+//   mGetPlusargDec(seed=,reti);
+//   printf("reti not null, is %0d\n",reti);
+// } else printf("reti not found.\n");
+// 
+// if (mChkPlusarg(seed=)) {
+//   mGetPlusargHex(seed=,reth);
+//   printf("reth not null, is %0h\n",reth);
+// } else printf("reth not found.\n");
+
+
+
+
+
+#endif

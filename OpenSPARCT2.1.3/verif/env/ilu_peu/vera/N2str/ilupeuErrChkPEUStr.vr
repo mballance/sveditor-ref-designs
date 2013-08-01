@@ -1,0 +1,697 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuErrChkPEUStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "report_info.vrh"
+
+#define _REPORT_ERR(msg) Report.report(RTYP_TEST_ERROR,"ErrChkPEUStr (cycle %0d) %s\n", get_cycle(),msg)
+#define ERR_INFO(msg)   printf("%s\n",msg)
+
+class ErrChkPEUStr extends PEUStrBase 
+  {
+  local integer f_errQueue;			// A mailbox for bad pkt headers
+  local integer f_errCount;			// The number of expected errors
+  static integer f_ueQueue = 0;                 // An old UE mailbox
+  static integer f_oeQueue = 0;                 // An old OE mailbox
+  ReportClass  Report;
+
+  task new( PEUTestEnv a_env, integer a_queue, integer a_errCount )
+    {
+    super.new( a_env );
+    f_errQueue = a_queue;
+    f_errCount = a_errCount;
+    Report = a_env.Report;
+    } /* end new */
+
+  local task allocQueues( var integer ueQueue, var integer oeQueue )
+    {
+    if ( f_ueQueue == 0 )
+      ueQueue = alloc( MAILBOX, 0, 1 );
+    else
+      ueQueue = f_ueQueue;
+    f_ueQueue = 0;
+
+    if ( f_oeQueue == 0 )
+      oeQueue = alloc( MAILBOX, 0, 1 );
+    else
+      oeQueue = f_oeQueue;
+    f_oeQueue = 0;
+    }
+
+  local task freeQueues( integer ueQueue, integer oeQueue )
+    {
+    bit garb;
+
+    while( mailbox_get( NO_WAIT, ueQueue, garb ) ) { /* empty the queue */ }
+    while( mailbox_get( NO_WAIT, oeQueue, garb ) ) { /* empty the queue */ }
+    f_ueQueue = ueQueue;
+    f_oeQueue = oeQueue;
+    }
+
+  local task CheckLoggedHdr( integer errQueue, 
+                             bit[127:0] tlpHdr, bit[127:0] txHdr,
+                             string errClass )
+    {
+    bit gotX;
+    bit[127:0] errHdr;
+    bit[127:0] reqHdr;
+    PEC_ERRtype errType;
+
+
+						// Ignore the TD bit in the
+						// "tlpHdr".
+    tlpHdr[ PEC_PCI__TD ] = 1'b0;
+
+						// Expected headers will be put
+						// back to our "errQueue".
+						// A "none" error marks the end
+						// of the original contents.
+    mailbox_put( errQueue, e_ERR_none );
+
+						// Look at all the different
+						// error-packets...
+    gotX = 0;
+    mailbox_get( NO_WAIT, errQueue, errType ); 
+    while( errType != e_ERR_none )
+      {
+      mailbox_get( NO_WAIT, errQueue, errHdr );
+      mailbox_get( NO_WAIT, errQueue, reqHdr );
+
+						// A time-out? Check the header
+						// from the error-queue against
+						// the logged request header.
+      if ( errType == e_ERR_ue_cto || errType == e_ERR_oe_cto ) 
+        {
+        if ( errHdr === 128'bx )
+          gotX = 1;
+        else if ( txHdr[PEC_PCI__FMT_4DW] )
+          {
+          if ( txHdr == errHdr ) return;
+          mailbox_put( errQueue, errHdr );
+          }
+        else
+          {
+          if ( txHdr[127:32] == errHdr[127:32] ) return;
+          mailbox_put( errQueue, errHdr );
+          }
+        }
+
+						// If the header is "X", then
+						// anything is OK.
+      else if ( errHdr === 128'bx )
+        {
+        gotX = 1;
+        }
+
+						// Otherwise, check to see if
+						// we've got one of the bad-boy
+						// packet headers in the log.
+      else if ( tlpHdr[PEC_PCI__FMT_4DW] )
+        {
+        errHdr[ PEC_PCI__TD ] = 1'b0;
+        if ( tlpHdr == errHdr ) 
+          {
+          if ( reqHdr !== 128'bx )
+            {
+            if ( reqHdr[PEC_PCI__FMT_4DW] ? ( reqHdr != txHdr )
+                                          : ( reqHdr[127:32] != txHdr[127:32] ))
+              {
+              _REPORT_ERR( "Incorrect PIO request header logged" );
+              ERR_INFO( psprintf( "Actual: %h", txHdr ) );
+              ERR_INFO( psprintf( "Expect: %h", reqHdr ) );
+              }
+            } 
+          return;
+          }
+        mailbox_put( errQueue, errHdr );
+        }
+      else
+        {
+        errHdr[ PEC_PCI__TD ] = 1'b0;
+        if ( tlpHdr[127:32] == errHdr[127:32] )
+          {
+          if ( reqHdr !== 128'bx )
+            {
+            if ( reqHdr[PEC_PCI__FMT_4DW] ? ( reqHdr != txHdr )
+                                          : ( reqHdr[127:32] != txHdr[127:32] ))
+              {
+              _REPORT_ERR( "Incorrect PIO request header logged" );
+              ERR_INFO( psprintf( "Actual: %h", txHdr ) );
+              ERR_INFO( psprintf( "Expect: %h", reqHdr ) );
+              }
+            } 
+          return;
+          }
+        mailbox_put( errQueue, errHdr );
+        }
+
+						// Get the next guy in the queue
+      mailbox_get( NO_WAIT, errQueue, errType ); 
+      }
+
+						// If we got here, then none of
+						// the erroneous TLP headers 
+						// matched.  Complain if none
+						// of them was an "X".
+    if ( !gotX )
+      {
+      _REPORT_ERR( psprintf("Incorrect %s header logged", errClass) );
+      if ( tlpHdr[PEC_PCI__FMT_4DW] )
+        ERR_INFO( psprintf("Actual: %h", tlpHdr) );
+      else
+        ERR_INFO( psprintf("Actual: %h", tlpHdr[127:32]) );
+      while( mailbox_get( NO_WAIT, errQueue, errHdr ) )
+        {
+        if ( errHdr[PEC_PCI__FMT_4DW] )
+          ERR_INFO( psprintf("Expect: %h", errHdr) );
+        else
+          ERR_INFO( psprintf("Expect: %h", errHdr[127:32]) );
+        }
+      }
+      
+    } /* end CheckLoggedHdr */
+
+  local function
+  bit CheckErrorStatus( bit[63:0] errCSR,		//Actual Error
+                        bit[63:0] logEnab,
+                        bit[63:0] intEnab,
+                        bit[63:0] intCSR,
+                        bit[63:0] intMask,
+                        var bit[31:0] primaryErr,	//Expected Error
+                        var bit[31:0] secondaryErr,	//Expected Error
+                        string errType )
+    {
+    string msg;
+    bit [31:0] primaryLog;
+    bit [31:0] secondaryLog;
+    bit [31:0] secondaryOvfl;
+
+					// Determine which primary errors 
+					// should be logged.
+    primaryLog = primaryErr & logEnab[31:0];
+
+					// Primary errors which aren't
+					// recorded in the status register
+					// become secondary errors.
+					// This only applies to primary errors
+					// which are in the "data log" group.
+    secondaryOvfl = primaryLog & ~errCSR[31:0];
+    primaryLog = primaryLog & errCSR[31:0];
+
+					// All logged secondary errors must be 
+					// mentioned in the error status CSR.
+					// The primary and secondary log-enables
+					// are the same!
+    secondaryLog = (secondaryErr | secondaryOvfl) & logEnab[31:0];
+    if ( (secondaryLog & errCSR[63:32]) != secondaryLog )
+      {
+      sprintf( msg, "Expected %s error status bits are not set", errType );
+      _REPORT_ERR( msg );
+      sprintf( msg, "    Primary errors..... %h", primaryErr );
+      ERR_INFO( msg );
+      sprintf( msg, "    Secondary errors... %h", secondaryErr );
+      ERR_INFO( msg );
+      sprintf( msg, "    Error status CSR... %h", errCSR );
+      ERR_INFO( msg );
+      sprintf( msg, "    Log enable CSR..... %h", logEnab );
+      ERR_INFO( msg );
+      }
+
+					// If that looks OK, then make sure that
+					// an interrupt is presented to the top
+					// level error/interrupt register AS A
+					// RESULT OF THESE ERRORS.
+    else if ( ({secondaryLog,primaryLog} & intEnab)
+           && !(intCSR & intMask) )
+      {
+      sprintf( msg, "PEC error register does not reflect %s errors", errType );
+      _REPORT_ERR( msg );
+      sprintf( msg, "    PEC error status...... %h", intCSR );
+      ERR_INFO( msg );
+      sprintf( msg, "    Logged errors......... %h", errCSR );
+      ERR_INFO( msg );
+      sprintf( msg, "    Enabled interrupts.... %h", intEnab );
+      ERR_INFO( msg );
+      sprintf( msg, "    Primary errors........ %h", primaryErr );
+      ERR_INFO( msg );
+      sprintf( msg, "    Secondary errors...... %h", secondaryErr );
+      ERR_INFO( msg );
+      sprintf( msg, "    secondaryLog= %h primaryLog=%h intMask=%h", secondaryLog,primaryLog,intMask );
+      ERR_INFO( msg );
+      }
+      
+					// Do we expect an interrupt as a result
+					// of these errors?
+    CheckErrorStatus = ({secondaryLog,primaryLog} & intEnab)
+                    && (intCSR & intMask);
+
+					// Expected errors which are logged
+					// must be cleared.
+    primaryErr = primaryLog & errCSR[31:0];
+    secondaryErr = secondaryLog & errCSR[63:32];
+    } /* end CheckErrorStatus */
+
+  task Execute()
+    {
+    integer oeErrQueue;  			// OEs from "f_errQueue"
+    integer ueErrQueue;  			// UEs from "f_errQueue"
+    integer errTotal;				// # of errors expected
+    integer errCount;				// # of errors seen so far
+    integer multErrCount;			// # of errors from one strat'y
+    PEC_ERRtype errType;			// The sort of error
+    bit[127:0]  errHdr;				// The offending TLP's header
+    bit[127:0]  reqHdr;				// A transmitted request?
+    bit[31:0] primaryILU;
+    bit[31:0] primaryUE;
+    bit[31:0] primaryCE;
+    bit[31:0] primaryOE;
+    bit[31:0] primaryDLPL;
+    bit[31:0] secondaryILU;
+    bit[31:0] secondaryUE;
+    bit[31:0] secondaryCE;
+    bit[31:0] secondaryOE;
+    bit[31:0] secondaryDLPL;		//Should never be anything but 0
+    bit[31:0] optionalILU;
+    bit[31:0] optionalUE;
+    bit[31:0] optionalCE;
+    bit[31:0] optionalOE;
+    bit[31:0] optionalDLPL;
+    bit[63:0] pecErr;
+    bit[63:0] logErr;
+    bit[63:0] logEnab;
+    bit[63:0] intEnab;
+    bit[63:0] logHdr1;
+    bit[63:0] logHdr2;
+    bit[63:0] reqHdr1;
+    bit[63:0] reqHdr2;
+    bit       iluInt = 0;
+    bit       ueInt = 0;
+    bit       ceInt = 0;
+    bit       oeInt = 0;
+    bit       optIluInt = 0;
+    bit       optUeInt = 0;
+    bit       optCeInt = 0;
+    bit       optOeInt = 0;
+    integer   errBit;
+    string    msg;
+    integer   timerErrQueue;
+
+					// Build other mailboxes to hold the
+					// descriptors for the expected 
+					// UE and OE errors.
+    allocQueues( ueErrQueue, oeErrQueue );
+
+					// There are two entries in the
+					// "f_errQueue" for every error.
+					// We're going to take errors from the
+					// "f_errQueue" and mark a "primary"
+					// bit if the error is expected, and a
+					// "secondary" bit if it's expected to
+					// happen more than once.
+    errCount = 0;
+    primaryILU = 32'b0;
+    primaryUE = 32'b0;
+    primaryCE = 32'b0;
+    primaryOE = 32'b0;
+    primaryDLPL = 32'b0;
+    secondaryILU = 32'b0;
+    secondaryUE = 32'b0;
+    secondaryCE = 32'b0;
+    secondaryOE = 32'b0;
+    secondaryDLPL = 32'b0;
+    optionalILU = 32'b0;
+    optionalUE = 32'b0;
+    optionalCE = 32'b0;
+    optionalOE = 32'b0;
+    optionalDLPL = 32'b0;
+    reqHdr = 128'bx;
+
+    errTotal = f_errCount;
+    while( errCount < errTotal )
+      {
+
+      fork
+      {
+         void = mailbox_get( WAIT, f_errQueue, errType );
+      }
+      {
+         //Timeout if errors never make it to f_errQueue
+         timerErrQueue = 10000;
+         while( timerErrQueue ){
+            @(posedge CLOCK);
+            timerErrQueue--;
+         }
+      }
+      join any
+      if( !timerErrQueue ){
+         Report.report(RTYP_TEST_ERROR,"ErrChkPEUStr timed out waiting for mailbox_get of f_errQueue\n");
+      }
+      terminate;
+					// If the error is "none", then what
+					// follows is the actual number of 
+					// errors generated by a strategy.
+      if ( errType == e_ERR_none )
+        {
+        void = mailbox_get( WAIT, f_errQueue, multErrCount );
+        if ( multErrCount < 0 )
+          void = mailbox_get( WAIT, f_errQueue, reqHdr );
+        else
+          errTotal = errTotal + multErrCount - 1;
+        continue;
+        }
+
+					// Otherwise, put the error and the
+					// associated header in the local FIFO.
+      void = mailbox_get( WAIT, f_errQueue, errHdr );
+      if ( PEC_ERR_isUE(errType) && errHdr !== 128'bx0 )
+        {
+        mailbox_put( ueErrQueue, errType );
+        mailbox_put( ueErrQueue, errHdr );
+        mailbox_put( ueErrQueue, reqHdr );
+        }
+      else if ( PEC_ERR_isOE(errType) && errHdr !== 128'bx0 )
+        {
+        mailbox_put( oeErrQueue, errType );
+        mailbox_put( oeErrQueue, errHdr );
+        mailbox_put( oeErrQueue, reqHdr );
+        }
+      reqHdr = 128'bx;
+      errCount = errCount + 1;
+
+					// Mark the error-status bit associated
+					// with this error as expected.
+      errBit = PEC_ERR_bitIndex(errType);
+      if ( errBit < 0 ) 
+        _REPORT_ERR( "Internal BUG! Invalid error type?!?" );
+      else if ( PEC_ERR_isILU(errType) ) 
+        {
+        if ( errHdr === 128'bx0 )
+          optionalILU[errBit] = 1'b1;
+        else if ( primaryILU[errBit] )
+          secondaryILU[errBit] = 1'b1;
+        else
+          primaryILU[errBit] = 1'b1;
+        }
+      else if ( PEC_ERR_isUE(errType) ) 
+        {
+        if ( errHdr === 128'bx0 )
+          optionalUE[errBit] = 1'b1;
+        else if ( primaryUE[errBit] )
+          secondaryUE[errBit] = 1'b1;
+        else
+          primaryUE[errBit] = 1'b1;
+        }
+      else if ( PEC_ERR_isCE(errType) ) 
+        {
+        if ( errHdr === 128'bx0 )
+          optionalCE[errBit] = 1'b1;
+        else if ( primaryCE[errBit] )
+          secondaryCE[errBit] = 1'b1;
+        else
+          primaryCE[errBit] = 1'b1;
+        }
+      else if ( PEC_ERR_isOE(errType) ) 
+        {
+        if ( errHdr === 128'bx0 )
+          optionalOE[errBit] = 1'b1;
+        else if ( errBit === 11 )	//LIN is primary only
+          primaryOE[errBit] = 1'b1; 
+        else if ( primaryOE[errBit] )
+          secondaryOE[errBit] = 1'b1;
+        else
+          primaryOE[errBit] = 1'b1;
+        }
+      else if ( PEC_ERR_isDLPL(errType) ) 
+        {
+        
+        if ( errHdr === 128'bx0 )
+          optionalDLPL[errBit] = 1'b1;
+        else	//There are only primary errors in the DLPL register
+          primaryDLPL[errBit] = 1'b1;
+        }
+      }
+
+    Report.report( RTYP_INFO, "ErrChkPEUStr errTotal=%0d received pILU=%0h pUE=%0h pCE=%0h pOE=%0h sILU=%0h sUE=%0h sCE=%0h sOE=%0h \n", errTotal,primaryILU,primaryUE,primaryCE,primaryOE,secondaryILU,secondaryUE,secondaryCE,secondaryOE );
+    Report.report( RTYP_INFO, "ErrChkPEUStr  oILU=%0h oUE=%0h oCE=%0h oOE=%0h \n", optionalILU,optionalUE,optionalCE,optionalOE );
+
+					// We've received all the errors that
+					// we expect.  Now check that the
+					// errors were recorded correctly by
+					// the DUT.  First, make sure that the
+					// ILU/UE/CE/OE bit(s) are correct.
+#ifdef N2_IOS
+    pecErr = readPECRegister();
+#else
+    pecErr = f_env.readCSR( f_env.getCSRaddr( e_CSR_pec_err ) );
+#endif
+
+
+					// Make sure that the individual
+					// error bits are set correctly.
+					// and that the "pecErr" is set if any
+					// error is enabled for both logging
+					// and for interrupts!
+					// Be sure to check the secondary bits!
+    if ( primaryILU || optionalILU )
+      {
+      logErr = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_ilu_err ) );
+      logEnab = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_ilu_log_en ) );
+      intEnab = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_ilu_int_en ) );
+      
+      if( primaryILU ){
+         iluInt = CheckErrorStatus( logErr, logEnab, intEnab, 
+                                    pecErr, PEC_ERR_ILU_mask,
+                                    primaryILU, secondaryILU, "ILU" );
+      }else if( optionalILU ){
+         //Check for optional errors that are log and interrupt enabled
+         optIluInt = |( {optionalILU,optionalILU} &
+                        logErr &
+                        {logEnab[31:0],logEnab[31:0]} &
+                        intEnab );
+      }
+      }
+
+					// Are we expecting a UE?
+    if ( primaryUE || optionalUE )
+      {
+					// Get the UE error status
+      logErr = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_ue_err ) );
+      logEnab = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_ue_log_en ) );
+      intEnab = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_ue_int_en ) );
+     
+					// Make sure the error status agrees
+					// with the errors that have been
+					// stimulated, and those that have
+					// been logged. 
+      if( primaryUE ){
+         ueInt = CheckErrorStatus( logErr, logEnab, intEnab, 
+                                   pecErr, PEC_ERR_UE_mask,
+                                   primaryUE, secondaryUE, "'uncorrectable'" );
+
+					// If one of our UEs was logged, then
+					// make sure that the captured TLP
+					// header is correct.
+         if( primaryUE ){
+            logHdr1 = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_ue_recv_hdr1 ) );
+            logHdr2 = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_ue_recv_hdr2 ) );
+            reqHdr1 = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_ue_xmit_hdr1 ) );
+            reqHdr2 = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_ue_xmit_hdr2 ) );
+            CheckLoggedHdr( ueErrQueue, { logHdr1, logHdr2 }, {reqHdr1, reqHdr2},
+                            "uncorrectable" );
+         }
+      }else if( optionalUE ){
+         //Check for optional errors that are log and interrupt enabled
+         optUeInt = |( {optionalUE,optionalUE} &
+                       logErr &
+                       {logEnab[31:0],logEnab[31:0]} &
+                       intEnab );
+      }
+      }
+
+    if ( primaryCE || optionalCE )
+      {
+      logErr = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_ce_err ) );
+      logEnab = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_ce_log_en ) );
+      intEnab = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_ce_int_en ) );
+      
+      if( primaryCE ){
+         ceInt = CheckErrorStatus( logErr, logEnab, intEnab,
+                                   pecErr, PEC_ERR_CE_mask,
+                                   primaryCE, secondaryCE, "'correctable'" );
+      }else if( optionalCE ){
+         //Check for optional errors that are log and interrupt enabled
+         optCeInt = |( {optionalCE,optionalCE} &
+                       logErr &
+                       {logEnab[31:0],logEnab[31:0]} &
+                       intEnab );
+      }
+      }
+
+    if ( primaryOE || optionalOE )
+      {
+      logErr = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_oe_err ) );
+      logEnab = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_oe_log_en ) );
+      intEnab = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_oe_int_en ) );
+      
+      if( primaryOE ){
+         oeInt = CheckErrorStatus( logErr, logEnab, intEnab,
+                                   pecErr, PEC_ERR_OE_mask,
+                                   primaryOE, secondaryOE, "'other'" );
+
+					// If one of our OEs was logged, then
+					// make sure that the captured TLP
+					// header is correct.
+         if ( primaryOE )
+           {
+           logHdr1 = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_oe_recv_hdr1 ) );
+           logHdr2 = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_oe_recv_hdr2 ) );
+           reqHdr1 = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_oe_xmit_hdr1 ) );
+           reqHdr2 = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_oe_xmit_hdr2 ) );
+           CheckLoggedHdr( oeErrQueue, { logHdr1, logHdr2 }, { reqHdr1, reqHdr2 },
+                           "other" );
+           }
+      }else if( optionalOE ){
+         //Check for optional errors that are log and interrupt enabled
+         optOeInt = |( {optionalOE,optionalOE} &
+                       logErr &
+                       {logEnab[31:0],logEnab[31:0]} &
+                       intEnab );
+      }
+      }
+
+    if ( primaryDLPL )
+      {
+      logErr = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_dlpl_ee_err ) );
+      logEnab = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_dlpl_ee_log_en ) );
+      intEnab = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_dlpl_ee_int_en ) );
+      
+      //DLPL errors will also generate a OE Link error that will generate
+      // the interrupt
+      //Only check the errors and not the events
+      void = CheckErrorStatus( (logErr & 32'h3ffff), logEnab, intEnab,
+                                pecErr, PEC_ERR_OE_mask,
+                                primaryDLPL, secondaryDLPL, "'DLPL'" );
+      }
+
+      //If there were no primary interrupts expected then check for any optional errors
+      // that could cause an interrupt
+      if( iluInt | ueInt | ceInt | oeInt ){
+         // Make sure an interrupt was presented.
+         Report.report( RTYP_DEBUG_3, "ErrChkPEUStr call f_env.expectInterrupt iluInt=%0h ueInt=%0h ceInt=%0h oeInt=%0h \n",iluInt,ueInt,ceInt,oeInt ); 
+         void = f_env.expectInterrupt( 1 );
+      }else if( optIluInt | optUeInt | optCeInt | optOeInt ){
+         // Make sure an optional interrupt was presented if no primary.
+         Report.report( RTYP_DEBUG_3, "ErrChkPEUStr call f_env.expectInterrupt optIluInt=%0h optUeInt=%0h optCeInt=%0h optOeInt=%0h \n",optIluInt,optUeInt,optCeInt,optOeInt ); 
+         void = f_env.expectInterrupt( 1 );
+      }
+
+
+
+
+					// Clear the logged error bits. 
+#ifdef N2_IOS
+    if ( primaryILU | secondaryILU | optionalILU )
+        {
+      f_env.writeCSRdirect( f_env.getCSRaddr( e_CSR_ilu_err ),
+                      { secondaryILU | optionalILU, primaryILU | optionalILU });
+        }
+
+    if ( primaryUE | secondaryUE | optionalUE )
+        {
+      f_env.writeCSRdirect( f_env.getCSRaddr( e_CSR_ue_err ),
+                      { secondaryUE | optionalUE, primaryUE | optionalUE } );
+        }
+
+    if ( primaryCE | secondaryCE | optionalCE )
+        {
+      f_env.writeCSRdirect( f_env.getCSRaddr( e_CSR_ce_err ),
+                      { secondaryCE | optionalCE, primaryCE | optionalCE } );
+        }
+
+    //DLPL Errors must be cleared before OE so Link Up bit gets cleared
+    if ( primaryDLPL | secondaryDLPL | optionalDLPL )
+      {
+      f_env.writeCSRdirect( f_env.getCSRaddr( e_CSR_dlpl_ee_err ),
+                      { secondaryDLPL | optionalDLPL, primaryDLPL | optionalDLPL } );
+      }
+
+    if ( primaryOE | secondaryOE | optionalOE )
+        {
+      f_env.writeCSRdirect( f_env.getCSRaddr( e_CSR_oe_err ),
+                { secondaryOE | optionalOE, primaryOE | optionalOE } );
+        }
+
+#else
+    if ( primaryILU | secondaryILU | optionalILU )
+      {
+      f_env.writeCSR( f_env.getCSRaddr( e_CSR_ilu_err ),
+                      { secondaryILU | optionalILU, primaryILU | optionalILU });
+      }
+
+    if ( primaryUE | secondaryUE | optionalUE )
+      {
+      f_env.writeCSR( f_env.getCSRaddr( e_CSR_ue_err ),
+                      { secondaryUE | optionalUE, primaryUE | optionalUE } );
+      }
+
+    if ( primaryCE | secondaryCE | optionalCE )
+      {
+      f_env.writeCSR( f_env.getCSRaddr( e_CSR_ce_err ),
+                      { secondaryCE | optionalCE, primaryCE | optionalCE } );
+      }
+
+    //DLPL Errors must be cleared before OE so Link Up bit gets cleared
+    if ( primaryDLPL | secondaryDLPL | optionalDLPL )
+      {
+      f_env.writeCSR( f_env.getCSRaddr( e_CSR_dlpl_ee_err ),
+                      { secondaryDLPL | optionalDLPL, primaryDLPL | optionalDLPL } );
+      }
+
+    if ( primaryOE | secondaryOE | optionalOE )
+      {
+      f_env.writeCSR( f_env.getCSRaddr( e_CSR_oe_err ),
+                      { secondaryOE | optionalOE, primaryOE | optionalOE } );
+      }
+
+#endif
+					// All done! 
+    f_env.enableInterrupt();
+    freeQueues( ueErrQueue, oeErrQueue );
+
+    } /* end Execute */
+
+  virtual function bit [63:0] readPECRegister() {
+
+  }
+} /* end ErrChkPEUStr */
+

@@ -1,0 +1,109 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_rx_crentry.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "pcg_defines.vri"
+
+// Completion ring Error defines
+#define CR_NO_ERROR 0
+#define CR_L2_ERROR 1
+#define CR_L4_ERROR 3
+#define CR_FFLP_ERROR 4
+#define CR_ZCP_ERROR 5
+
+// copied from niu_rx_descp_cr.vr
+class Ccr_entry {
+   bit [63:0] entry;
+   bit [63:0] address; 
+
+   bit multi;
+   bit [1:0] pkt_type;
+   bit zcp,promis,dcf_error;
+   bit frag;
+   bit no_port;
+   bit dcf_err;
+   bit [2:0] errors;
+   bit[13:0] length;
+   bit [1:0] pktbufsz;
+   bit[63:0] pkt_buf_address;
+
+   task new(){
+    entry = 0;
+   }
+
+   task print()  {
+     printf(" CR DEBUG - Entry =%x Address - %x \n",entry,address);
+     printf(" CR DEBUG - multi - %b, promis - %b, errors - %b pkt_type = %b length - %d pktbufsz - %b address - %x \n",entry[63],entry[58],entry[57:55],entry[62:61], entry[53:40], entry[39:38], entry[37:0]);
+   }
+   task set_fields(bit[63:0] data) {
+    pkt_buf_address = 64'h0;
+    multi = data[63];
+    pkt_type = data[62:61];
+    zcp = data[60];
+    no_port = data[59];
+    promis = data[58];
+    errors = data[57:55];
+    dcf_err = data[54];
+    length = data[53:40];
+    pktbufsz = data[39:38];
+    pkt_buf_address[43:6] = data[37:0];
+   }
+   function integer setCRErrorCode(integer error_code) {
+     if ((error_code&PG_CHKSUM_ERR)|( error_code&PG_CHKSUM_USER_DEF)) {
+        if (!frag)
+          setCRErrorCode = CR_L4_ERROR;
+        else
+          setCRErrorCode = CR_NO_ERROR;
+     } else if((error_code&PG_CRC_ERR)|( error_code&PG_TYPE_LEN_ERR)) {
+        setCRErrorCode = CR_L2_ERROR;
+     } else setCRErrorCode = CR_NO_ERROR;
+	// Add more stuff here for FFLP & ZCP ERROR
+   }
+}
+MakeVeraList(Ccr_entry) // list of completion ring entries
+
+
+class Ccr_update {
+ integer dma_no;
+ integer no_of_entries;
+ task new(){}
+}
+class Crcr_update {
+  integer dma_no;
+  integer no_of_entries;
+  integer pkts_checked;
+  integer scatters[*];
+  task new(){}
+}

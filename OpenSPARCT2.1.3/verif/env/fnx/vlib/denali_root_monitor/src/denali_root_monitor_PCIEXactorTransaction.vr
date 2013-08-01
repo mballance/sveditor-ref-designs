@@ -1,0 +1,710 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: denali_root_monitor_PCIEXactorTransaction.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "XactorUtilities.vrh"
+#include "XactorBaseTransaction.vrh"
+#include "XactorBaseBuilder.vrh"
+#include "XactorClk.port.vri"
+
+#include "FNXPCIEXactor.vrh"
+
+class denali_root_monitor_PCIEXactorTransaction extends XactorBaseTransaction {
+
+  // inherited members
+  //   string XactorName
+  //   XactorBasePacket Packet
+  //   XactorBaseManager Manager
+  //   XactorBaseSignalInterface SignalInterface
+  //   ReportClass MyReport
+
+  // Base Class and Method Names For QR Macros
+  local string ClassName  = "denali_root_monitor_PCIEXactorTransaction";
+  local string MethodName = null;
+  
+  FNXPCIEXactorPacket MyPacket;
+  
+//   protected FNXPCIEXactorSignalInterface MySignalInterface;
+  protected FNXPCIEXactorManager MyManager;
+  protected FNXPCIEXactorUtilities Util;
+  protected FNXPCIEXactorFCEngine  FCEngine;
+  protected XactorClk clock;
+
+  protected denali_root_monitor_PCIEXactorSignalInterface MySignalInterface;
+
+  // SelfExpect members
+  bit SelfExpectEnable = 1'b0;
+  integer MinSelfExpectDly = 0;
+  integer MaxSelfExpectDly = 50;
+
+  // constructor
+//   task new( FNXPCIEXactorBuilder Builder );
+  task new( denali_root_monitor_PCIEXactorBuilder Builder );
+
+  virtual task SetID( CTTransactionID XactionID );
+  virtual function CTTransactionID GetID();
+  virtual task SetPacket( string FieldType, bit [ XACT_FIELD_WIDTH-1:0 ] FieldValue );
+  virtual task EnableExpects();
+  virtual task DisableExpects();
+  virtual task EnableTlpDiscard();
+  virtual task DisableTlpDiscard();
+  virtual task EnableReplayMonitor();
+  virtual task DisableReplayMonitor();
+  virtual function bit [ XACT_FIELD_WIDTH-1:0 ] GetPacket( string FieldType );
+  virtual task ResetPacket();
+  virtual task ZeroPacket();
+  virtual task CopyPacket( denali_root_monitor_PCIEXactorTransaction PktTrans );
+  virtual task Display( string msg = "" );
+  virtual function string Name();
+  virtual task DumpExpectList();
+  virtual function bit IsExpectPending();
+  virtual function integer ExpectCount();
+  virtual function integer TlpExpectCount();
+  virtual function integer DllpExpectCount();
+  virtual function bit ExpectExpire( integer Window );
+  virtual function bit Expect( integer Window );
+  virtual task Sample( XactorBasePacket Pkt, integer Window = 50000 );
+  virtual task SampleTlp( XactorBasePacket Pkt, integer Window = 50000 );
+  virtual task SampleDllp( XactorBasePacket Pkt, integer Window = 50000 );
+  virtual function bit Remove();
+  virtual task Drive( integer D = 0 );
+  virtual task Enable();
+  virtual task Disable();
+  virtual task Reset();
+  virtual task WriteDenaliReg( integer iDenReg, bit [FNX_PCIE_XTR_REG_DEN_WIDTH-1:0] data );
+  virtual function bit [FNX_PCIE_XTR_REG_DEN_WIDTH-1:0] ReadDenaliReg( integer iDenReg );
+  virtual task SuppressDenaliErr( denaliPcieErrorTypeT denErr );
+  virtual task tempSuppressDenaliErr( denaliPcieErrorTypeT denErr );
+  virtual task unSuppressDenaliErr( denaliPcieErrorTypeT denErr );
+  virtual task SetPyld( bit [7:0] pyld[ * ] );
+  virtual task GetPyld( var bit [7:0] pyld[ * ] );
+  virtual task SetupBAR32( integer denReg,
+			   integer addrWidth,
+			   bit [FNX_PCIE_XTR_PCI_BAR_WIDTH-1:0] baseAddr );
+  virtual task SetupBAR64( integer denRegLower,
+			   integer denRegUpper,
+			   integer addrWidth,
+			   bit [FNX_PCIE_XTR_PCI_BAR_WIDTH*2-1:0] baseAddr );
+  virtual task SetReqID( bit [FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH-1:0]    busNum,
+			 bit [FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH-1:0] devNum,
+			 bit [FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH-1:0]   funcNum,
+			 integer                                     regOffset = 0 );
+  virtual task SetFCUpdateFreq( denaliPcieFcTypeT denFcType,
+				integer fcTimerVal );
+  virtual function integer GetFCUpdateFreq( denaliPcieFcTypeT denFcType );
+  virtual task SetFCData( denaliPcieFcTypeT denFcType,
+			  denaliPcieFcIdT denFcId,
+			  bit [FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_WIDTH-1:0] fcData );
+  virtual function bit[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_WIDTH-1:0] GetFCData( denaliPcieFcTypeT denFcType,
+										   denaliPcieFcIdT denFcId );
+  virtual task SetAckNakUpdateFreq( integer ackNakTimerVal );
+  virtual function integer GetAckNakUpdateFreq();
+  virtual task SetReplayTimer( integer replayTimerVal );
+  virtual function integer GetReplayTimer();
+  virtual task SetFCCredit( denaliPcieFcTypeT denFcType,
+			    integer fcCredit );
+  virtual task SetFCUpdateRange( denaliPcieFcTypeT denFcType, 
+				 integer fcUpdateMin,
+				 integer fcUpdateMax );
+  virtual task WaitLinkUp();
+  virtual task WaitDLLActive();
+  virtual task SyncDriveStart();
+  virtual task SyncDriveEnd();
+  
+  // Added to allow Vera 6.1 to compile
+  task SetSignalInterface(string FieldType, bit [XACT_FIELD_WIDTH-1:0] FieldValue) {}
+  function bit [XACT_FIELD_WIDTH-1:0] GetSignalInterface(string FieldType) {}
+
+  // 3/4/04
+//   virtual task SetRcvDetMode( bit _rcvDetMode );
+//   virtual task SetRcvDetLanes( bit[FNX_PCIE_XTR_RCV_DET_LANES_WIDTH-1:0] _rcvDetLanes );
+  virtual task SetDenaliReset( bit _denaliReset );
+  virtual task ResetReplayMonitor();
+  virtual task EnableSampleIngressDllp();
+  virtual task DisableSampleIngressDllp();
+  virtual task SampleIngressDllp( XactorBasePacket Pkt, integer Window = 50000 );
+  virtual task EnableAckDiscard();
+  virtual task DisableAckDiscard();
+
+}
+
+task denali_root_monitor_PCIEXactorTransaction::new( denali_root_monitor_PCIEXactorBuilder Builder )
+{
+  Util = Builder.Util;
+  XactorName = Builder.CreateName();
+  MyReport = Builder.CreateReport();
+  SelfExpectEnable = Builder.SelfExpectEnable;
+  MinSelfExpectDly = Builder.MinSelfExpectDly;
+  MaxSelfExpectDly = Builder.MaxSelfExpectDly;
+  cast_assign( MyPacket, Builder.CreatePacket() );
+  cast_assign( MyManager, Builder.CreateManager() );
+  cast_assign( MySignalInterface, Builder.CreateSignalInterface() );
+  FCEngine = Builder.FCEngine;
+  clock = Builder.CreateClock();
+}
+
+task denali_root_monitor_PCIEXactorTransaction::SetID( CTTransactionID XactionID )
+{
+  MyPacket.SetID( XactionID );
+}
+
+function CTTransactionID denali_root_monitor_PCIEXactorTransaction::GetID()
+{
+  GetID = MyPacket.GetID();
+}
+
+task denali_root_monitor_PCIEXactorTransaction::SetPacket( string FieldType,
+					  bit [ XACT_FIELD_WIDTH-1:0 ] FieldValue )
+{
+  MyPacket.Set( FieldType, FieldValue );
+}
+
+function bit [ XACT_FIELD_WIDTH-1:0 ] denali_root_monitor_PCIEXactorTransaction::GetPacket( string FieldType )
+{
+  GetPacket = MyPacket.Get( FieldType );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::ResetPacket()
+{
+  MyPacket.PktReset();
+}
+
+task denali_root_monitor_PCIEXactorTransaction::ZeroPacket()
+{
+  MyPacket.PktZero();
+}
+
+task denali_root_monitor_PCIEXactorTransaction::CopyPacket( denali_root_monitor_PCIEXactorTransaction PktTrans )
+{
+  MyPacket.PktCopy( PktTrans.MyPacket );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::Display( string msg = "" )
+{
+  MyPacket.PktDisplay( RTYP_FNX_PCIE_XTR_INFO, msg );
+}
+
+function string denali_root_monitor_PCIEXactorTransaction::Name()
+{
+  Name = XactorName;
+}
+
+task denali_root_monitor_PCIEXactorTransaction::DumpExpectList()
+{
+  string MethodName = "DumpExpectList";
+  
+  PCIEX_QR_D1( "%s -> Dumping Expects", XactorName );
+  MyManager.DumpExpects();
+}
+
+function bit denali_root_monitor_PCIEXactorTransaction::IsExpectPending()
+{
+  IsExpectPending = MyManager.ExpectPending( MyPacket );
+}
+
+function integer denali_root_monitor_PCIEXactorTransaction::ExpectCount()
+{
+  ExpectCount = MyManager.NumExpects();
+}
+
+function integer denali_root_monitor_PCIEXactorTransaction::TlpExpectCount()
+{
+  TlpExpectCount = MyManager.NumTlpExpects();
+}
+
+function integer denali_root_monitor_PCIEXactorTransaction::DllpExpectCount()
+{
+  DllpExpectCount = MyManager.NumDllpExpects();
+}
+
+function bit denali_root_monitor_PCIEXactorTransaction::ExpectExpire( integer Window )
+{
+  // Status[1] = 1'b0 Expect not removed
+  // Status[1] = 1'b1 Expect removed
+  // Status[0] = 1'b0 Expect removed by transactor
+  // Status[0] = 1'b1 Expect removed by user
+  bit [1:0] TransactionRemovedStatus = 2'b00;
+  bit success;
+  string MethodName = "ExpectExpire";
+
+  if (!SelfExpectEnable) {
+    MyPacket.PktDisplay( RTYP_FNX_PCIE_XTR_DEBUG_1, psprintf("%s %s -> Launching Expect Expire", PCIEX_QR_PREFIX, XactorName ) );
+    MyManager.ExpectPkt( MyPacket, Window, TransactionRemovedStatus );
+    
+    if( TransactionRemovedStatus === 2'b10 ) {
+      // Expect Expire removed by transactor
+      success = 1'b1;  
+      MyPacket.PktDisplay( RTYP_FNX_PCIE_XTR_INFO, psprintf("%s %s -> Expect Expire Satisfied", PCIEX_QR_PREFIX, XactorName ) );
+    }
+    else {
+      if( TransactionRemovedStatus === 2'b11 ) {
+	// Expect Expire removed by user
+	success = 1'b0;
+	MyPacket.PktDisplay( RTYP_XACTOR_FMWORK_EXPECT_REMOVED_BY_USER,
+			     psprintf("%s %s -> Expect Expire Removed by User", PCIEX_QR_PREFIX, XactorName ) );
+      }
+      else {
+	// Expect Expire expired
+	success = 1'b0;
+	MyPacket.PktDisplay( RTYP_XACTOR_FMWORK_EXPECT_TIMEOUT_ERR,
+			     psprintf("%s %s -> Expect Expire Expired", PCIEX_QR_PREFIX, XactorName ) );
+      }
+    }
+  } else {
+    MyPacket.PktDisplay( RTYP_FNX_PCIE_XTR_INFO, psprintf("%s %s -> Launching SelfExpectExpire", PCIEX_QR_PREFIX, XactorName ) );    
+    repeat((urandom() % (MaxSelfExpectDly-MinSelfExpectDly+1)) + MinSelfExpectDly) @(posedge clock.$XClk);
+    MyPacket.PktDisplay(RTYP_FNX_PCIE_XTR_INFO, "SelfExpectExpire satisfied");
+    success = 1'b1;
+  }
+
+  ExpectExpire = success;
+}
+
+function bit denali_root_monitor_PCIEXactorTransaction::Expect( integer Window )
+{
+  bit [1:0] TransactionRemovedStatus;
+  bit success;
+  string MethodName = "Expect";
+
+  if (!SelfExpectEnable) {
+    MyPacket.PktDisplay( RTYP_FNX_PCIE_XTR_INFO, psprintf("%s %s -> Launching Expect", PCIEX_QR_PREFIX, XactorName ) );
+    MyManager.ExpectPkt( MyPacket, Window, TransactionRemovedStatus );
+    if( TransactionRemovedStatus === 2'b10 ) {
+      // Expect removed by transactor
+      success = 1'b1;
+      MyPacket.PktDisplay( RTYP_FNX_PCIE_XTR_INFO, psprintf("%s %s -> Expect Satisfied", PCIEX_QR_PREFIX, XactorName ) );
+    }
+    else {
+      if( TransactionRemovedStatus === 2'b11 ) {
+	// Expect removed by user
+	success = 1'b0;
+	MyPacket.PktDisplay( RTYP_XACTOR_FMWORK_EXPECT_REMOVED_BY_USER,
+			     psprintf("%s %s -> Expect Removed by User", PCIEX_QR_PREFIX, XactorName ) );
+      }
+      else {
+	// Expect timeout
+	success = 1'b0;
+	MyPacket.PktDisplay( RTYP_XACTOR_FMWORK_EXPECT_TIMEOUT_ERR,
+			     psprintf("%s %s -> Expect Expired", PCIEX_QR_PREFIX, XactorName ) );
+      }
+    }
+  } else {
+    MyPacket.PktDisplay( RTYP_FNX_PCIE_XTR_INFO, psprintf("%s %s -> Launching SelfExpect", PCIEX_QR_PREFIX, XactorName ) );    
+    repeat((urandom() % (MaxSelfExpectDly-MinSelfExpectDly+1)) + MinSelfExpectDly) @(posedge clock.$XClk);
+    MyPacket.PktDisplay(RTYP_FNX_PCIE_XTR_INFO, "SelfExpect satisfied");
+    success = 1'b1;
+  }
+
+  Expect = success;
+}
+
+task denali_root_monitor_PCIEXactorTransaction::Sample( XactorBasePacket Pkt, integer Window = 50000 )
+{
+  string MethodName = "Sample";
+  PCIEX_QR_I( "%s-> Waiting to Receive Next Packet", XactorName );
+  MyManager.SamplePkt( Pkt, Window );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::SampleTlp( XactorBasePacket Pkt, integer Window = 50000 )
+{
+  string MethodName = "SampleTlp";
+  PCIEX_QR_I( "%s-> Waiting to Receive Next TLP Packet", XactorName );
+  MyManager.SampleTlpPkt( Pkt, Window );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::SampleDllp( XactorBasePacket Pkt, integer Window = 50000 )
+{
+  string MethodName = "SampleDllp";
+  PCIEX_QR_I( "%s-> Waiting to Receive Next DLLP Packet", XactorName );
+  MyManager.SampleDllpPkt( Pkt, Window );
+}
+
+function bit denali_root_monitor_PCIEXactorTransaction::Remove()
+{
+  string MethodName = "Remove";
+  
+  Remove = MyManager.Remove( MyPacket );
+  if ( Remove )
+    MyPacket.PktDisplay( RTYP_FNX_PCIE_XTR_INFO, psprintf("%s %s -> Packet Successfully Removed", PCIEX_QR_PREFIX, XactorName ) );
+  else
+    MyPacket.PktDisplay( RTYP_FNX_PCIE_XTR_INFO, psprintf("%s %s -> Failed to Remove Packet", PCIEX_QR_PREFIX, XactorName ) );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::Drive( integer D = 0 )
+{
+  if (!SelfExpectEnable) {
+    MyManager.DrivePkt( MyPacket.FormDriven(), D );
+  } else {
+    MyPacket.PktDisplay(RTYP_FNX_PCIE_XTR_INFO, "SelfDrive issued");    
+    repeat(D) @(posedge clock.$XClk);
+    MyPacket.PktDisplay(RTYP_FNX_PCIE_XTR_INFO, "SelfDrive completed");    
+  }
+}
+
+task denali_root_monitor_PCIEXactorTransaction::Enable()
+{
+  string MethodName = "Enable";
+  
+  MyManager.EnableManager();
+  PCIEX_QR_I( "%s -> Manager Enabled", XactorName );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::Disable()
+{
+  string MethodName = "Disable";
+
+  MyManager.DisableManager();
+  PCIEX_QR_I( "%s -> Manager Disabled", XactorName );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::Reset()
+{
+  string MethodName = "Reset";
+  
+  PCIEX_QR_I( "%s -> Resetting Manager", XactorName );
+  MyPacket.PktReset();
+  MyManager.ResetManager();
+}
+
+task denali_root_monitor_PCIEXactorTransaction::SetPyld( bit [7:0] pyld[ * ] )
+{
+  MyPacket.SetPyld( pyld );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::GetPyld( var bit [7:0] pyld[ * ] )
+{
+  MyPacket.GetPyld( pyld );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::EnableExpects()
+{
+  string MethodName = "EnableExpects";
+
+  MyManager.ExpectsOn = 1;
+  PCIEX_QR_I( "%s -> Expects Enabled.", XactorName );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::DisableExpects()
+{
+  string MethodName = "DisableExpects";
+
+  MyManager.ExpectsOn = 0;
+  PCIEX_QR_I( "%s -> Expects Disabled. Sampling Only", XactorName );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::EnableTlpDiscard()
+{
+  string MethodName = "EnableTlpDiscard";
+  
+  MySignalInterface.TlpDiscardOn = 1;
+  PCIEX_QR_I( psprintf("%s -> TLP Discard Enabled. TLPs Generated By Denali Memory Model Will NOT Be Transmitted.", XactorName) );  
+}
+
+task denali_root_monitor_PCIEXactorTransaction::DisableTlpDiscard()
+{ 
+  string MethodName = "DisableTlpDiscard";
+
+  MySignalInterface.TlpDiscardOn = 0;
+  PCIEX_QR_I( psprintf("%s -> TLP Discard Disabled. TLPs Generated By Denali Memory Model Will Be Transmitted.", XactorName) );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::EnableReplayMonitor()
+{
+  string MethodName = "EnableReplayMonitor";
+
+  MySignalInterface.ReplayMonitorOn = 1;
+  PCIEX_QR_I( psprintf("%s -> Replayed TLP Checking Enabled.", XactorName) );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::DisableReplayMonitor()
+{
+  string MethodName = "DisableReplayMonitor";
+
+  MySignalInterface.ReplayMonitorOn = 0;
+  PCIEX_QR_I( psprintf("%s -> Replayed TLP Checking Disabled.", XactorName) );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::WriteDenaliReg( integer iDenReg, bit [FNX_PCIE_XTR_REG_DEN_WIDTH-1:0] data )
+{
+  MySignalInterface.WriteDenaliReg( iDenReg, data );
+}
+
+function bit [FNX_PCIE_XTR_REG_DEN_WIDTH-1:0] denali_root_monitor_PCIEXactorTransaction::ReadDenaliReg( integer iDenReg )
+{
+  ReadDenaliReg = MySignalInterface.ReadDenaliReg( iDenReg );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::SuppressDenaliErr( denaliPcieErrorTypeT denErr )
+{
+  MySignalInterface.SuppressDenaliErr( denErr );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::tempSuppressDenaliErr( denaliPcieErrorTypeT denErr )
+{
+  MySignalInterface.SuppressDenaliErr( denErr );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::unSuppressDenaliErr( denaliPcieErrorTypeT denErr )
+{
+  MySignalInterface.SuppressDenaliErr( denErr );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::SetupBAR32( integer denReg,
+					   integer addrWidth,
+					   bit [FNX_PCIE_XTR_PCI_BAR_WIDTH-1:0] baseAddr )
+{  
+  MySignalInterface.SetupBAR32( denReg, addrWidth, baseAddr );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::SetupBAR64( integer denRegLower,
+					   integer denRegUpper,
+					   integer addrWidth,
+					   bit [FNX_PCIE_XTR_PCI_BAR_WIDTH*2-1:0] baseAddr )
+{  
+  MySignalInterface.SetupBAR64( denRegLower, denRegUpper, addrWidth, baseAddr );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::SetReqID( bit [FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH-1:0]    busNum,
+					 bit [FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH-1:0] devNum,
+					 bit [FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH-1:0]   funcNum,
+					 integer                                     regOffset = 0 )
+{
+  MySignalInterface.SetReqID( busNum, devNum, funcNum, regOffset );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::SetFCUpdateFreq( denaliPcieFcTypeT denFcType,
+						integer fcTimerVal )
+{
+  bit [FNX_PCIE_XTR_REG_DEN_WIDTH-1:0] fcRegVal;
+  integer idenFcType, iFcOp, iVc;
+
+  // Disable Generation of Denali FC Updates For This Credit Type
+  SetFCCredit( denFcType, 0 );
+  
+  // Set Denali FC Update Timer
+  idenFcType = denFcType;
+  iFcOp = PCIE_FCCTRL_set_timer;
+  iVc = PCIE_VCID_VC0; // FNX Only Implements VC 0
+  fcRegVal = 0;
+  fcRegVal[FNX_PCIE_XTR_REG_DEN_FC_CTRL_TIMER_VAL_SLC] = fcTimerVal;
+  fcRegVal[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC]   = idenFcType;
+  fcRegVal[FNX_PCIE_XTR_REG_DEN_FC_CTRL_VC_SLC]        = iVc;
+  fcRegVal[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_CMD_SLC]    = iFcOp;
+  WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, fcRegVal );
+
+  // Enable FC Timer Updates in FC Engine
+  FCEngine.EnableFCTimer( denFcType );
+  FCEngine.SetFCTimerMax( denFcType, fcTimerVal );
+}
+
+function integer denali_root_monitor_PCIEXactorTransaction::GetFCUpdateFreq( denaliPcieFcTypeT denFcType )
+{
+  bit [FNX_PCIE_XTR_REG_DEN_WIDTH-1:0] fcRegVal;
+  integer idenFcType, iFcOp, iVc;
+
+  idenFcType = denFcType;
+  iFcOp = PCIE_FCCTRL_get_timer_limit;
+  iVc = PCIE_VCID_VC0; // FNX Only Implements VC 0
+  fcRegVal = 0;
+  fcRegVal[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC] = idenFcType;
+  fcRegVal[FNX_PCIE_XTR_REG_DEN_FC_CTRL_VC_SLC]      = iVc;
+  fcRegVal[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_CMD_SLC]  = iFcOp;
+  WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, fcRegVal );
+  
+  fcRegVal = ReadDenaliReg( PCIE_REG_DEN_FC_CTRL );
+  GetFCUpdateFreq = fcRegVal[FNX_PCIE_XTR_REG_DEN_FC_CTRL_TIMER_VAL_SLC];
+}
+
+task denali_root_monitor_PCIEXactorTransaction::SetFCUpdateRange( denaliPcieFcTypeT denFcType, 
+						 integer fcUpdateMin,
+						 integer fcUpdateMax ) {
+  FCEngine.SetFCUpdateRange( denFcType, fcUpdateMin, fcUpdateMax );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::SetFCData( denaliPcieFcTypeT denFcType,
+					  denaliPcieFcIdT denFcId,
+					  bit [FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_WIDTH-1:0] fcData )
+{
+  FCEngine.SetFCData( denFcType, denFcId, fcData );
+}
+
+function bit[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_WIDTH-1:0] denali_root_monitor_PCIEXactorTransaction::GetFCData( denaliPcieFcTypeT denFcType,
+												   denaliPcieFcIdT denFcId )
+{
+  GetFCData = FCEngine.GetFCData( denFcType, denFcId );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::SetAckNakUpdateFreq( integer ackNakTimerVal )
+{
+  WriteDenaliReg( PCIE_REG_DEN_ACK_NAK_FREQ_TIMER, ackNakTimerVal );
+}
+
+function integer denali_root_monitor_PCIEXactorTransaction::GetAckNakUpdateFreq()
+{
+  GetAckNakUpdateFreq = ReadDenaliReg( PCIE_REG_DEN_ACK_NAK_FREQ_TIMER );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::SetReplayTimer( integer replayTimerVal )
+{
+  WriteDenaliReg( PCIE_REG_DEN_REPLAY_TIMER, replayTimerVal );
+}
+
+function integer denali_root_monitor_PCIEXactorTransaction::GetReplayTimer()
+{
+  GetReplayTimer = ReadDenaliReg( PCIE_REG_DEN_REPLAY_TIMER );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::SetFCCredit( denaliPcieFcTypeT denFcType,
+					    integer fcCredit )
+{
+  bit [FNX_PCIE_XTR_REG_DEN_WIDTH-1:0] fcRegVal;
+
+  // Negative fcCredit Interpreted as Infinite, Postive as Actual Value
+  if (fcCredit < 0)
+    fcRegVal = { FNX_PCIE_XTR_REG_DEN_WIDTH {1'b1} }; // Denali Defines Infinite as 32'hfffffff
+  else
+    fcRegVal = fcCredit;
+
+  case (denFcType) {
+    PCIE_FCTYPE_PH   : WriteDenaliReg( PCIE_REG_DEN_FC0_PH, fcRegVal );
+    PCIE_FCTYPE_PD   : WriteDenaliReg( PCIE_REG_DEN_FC0_PD, fcRegVal );
+    PCIE_FCTYPE_NPH  : WriteDenaliReg( PCIE_REG_DEN_FC0_NPH, fcRegVal );
+    PCIE_FCTYPE_NPD  : WriteDenaliReg( PCIE_REG_DEN_FC0_NPD, fcRegVal );
+    PCIE_FCTYPE_CPLH : WriteDenaliReg( PCIE_REG_DEN_FC0_CPLH, fcRegVal );
+    PCIE_FCTYPE_CPLD : WriteDenaliReg( PCIE_REG_DEN_FC0_CPLD, fcRegVal );
+    PCIE_FCTYPE_TOTAL : {
+      WriteDenaliReg( PCIE_REG_DEN_FC0_PH, fcRegVal );
+      WriteDenaliReg( PCIE_REG_DEN_FC0_PD, fcRegVal );
+      WriteDenaliReg( PCIE_REG_DEN_FC0_NPH, fcRegVal );
+      WriteDenaliReg( PCIE_REG_DEN_FC0_NPD, fcRegVal );
+      WriteDenaliReg( PCIE_REG_DEN_FC0_CPLH, fcRegVal );
+      WriteDenaliReg( PCIE_REG_DEN_FC0_CPLD, fcRegVal );
+    }
+    default : PCIEX_QR_ERR( "%s-> Hit Default Case Element denFcType=%0d",
+			    XactorName, denFcType );
+  }
+}
+
+task denali_root_monitor_PCIEXactorTransaction::WaitLinkUp()
+{
+  MySignalInterface.WaitLinkUp();  
+}
+
+task denali_root_monitor_PCIEXactorTransaction::WaitDLLActive()
+{
+  MySignalInterface.WaitDLLActive();
+}
+
+task denali_root_monitor_PCIEXactorTransaction::SyncDriveStart()
+{
+  MyPacket.SyncDriveStart();
+}
+
+task denali_root_monitor_PCIEXactorTransaction::SyncDriveEnd()
+{
+  MyPacket.SyncDriveEnd();
+}
+
+// task denali_root_monitor_PCIEXactorTransaction::SetRcvDetMode( bit _rcvDetMode )
+// {
+//   string MethodName = "SetRcvDetMode";
+// 
+//   MySignalInterface.SetRcvDetMode( _rcvDetMode );
+//   PCIEX_QR_I( psprintf("%s -> Drive rcvDetMode = %b : 0=fast receive detect 1=slow receive detect", XactorName,_rcvDetMode) );
+// }
+// 
+// task denali_root_monitor_PCIEXactorTransaction::SetRcvDetLanes( bit[FNX_PCIE_XTR_RCV_DET_LANES_WIDTH-1:0] _rcvDetLanes )
+// {
+//   string MethodName = "SetRcvDetLanes";
+// 
+//   MySignalInterface.SetRcvDetLanes( _rcvDetLanes );
+//   PCIEX_QR_I( psprintf("%s -> Drive rcvDetLanes = %b ", XactorName,_rcvDetLanes) );
+// }
+
+task denali_root_monitor_PCIEXactorTransaction::SetDenaliReset( bit _denaliReset )
+{
+  string MethodName = "SetDenaliReset";
+
+  MySignalInterface.SetDenaliReset( _denaliReset );
+  PCIEX_QR_I( psprintf("%s -> Drive denaliReset = %b ", XactorName,_denaliReset) );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::ResetReplayMonitor()
+{
+  string MethodName = "ResetReplayMonitor";
+
+  MySignalInterface.ResetReplayMonitor();
+  PCIEX_QR_I( psprintf("%s -> Reset FNXPCIEXtr Replay Monitor ", XactorName) );
+}
+
+
+task denali_root_monitor_PCIEXactorTransaction::EnableSampleIngressDllp()
+{
+  string MethodName = "EnableSampleIngressDllp";
+
+  MySignalInterface.EnableSampleDllpToLink();
+  PCIEX_QR_I( psprintf("%s -> EnableSampleIngressDllp allows Ingress(xtr to dut) DLLPs to be passed to the testbench.", XactorName) );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::DisableSampleIngressDllp()
+{
+  string MethodName = "DisableSampleIngressDllp";
+
+  MySignalInterface.DisableSampleDllpToLink();
+  PCIEX_QR_I( psprintf("%s -> DisableSampleIngressDllp will NOT pass Ingress(xtr to dut) DLLPs to the testbench.", XactorName) );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::SampleIngressDllp( XactorBasePacket Pkt, integer Window = 50000 )
+{
+  string MethodName = "SampleIngressDllp";
+  PCIEX_QR_D3( "%s-> Waiting to Receive Next Ingress DLLP Packet", XactorName );
+  MySignalInterface.SampleDllpPktToLink( Pkt, Window );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::EnableAckDiscard()
+{
+  string MethodName = "EnableAckDiscard";
+
+  MySignalInterface.AckDiscardOn = 1;
+  PCIEX_QR_I( psprintf("%s -> ACK Discard Enabled. DLLP ACKs Generated By Denali Model Will NOT Be Transmitted.", XactorName) );
+}
+
+task denali_root_monitor_PCIEXactorTransaction::DisableAckDiscard()
+{
+  string MethodName = "DisableAckDiscard";
+
+  MySignalInterface.AckDiscardOn = 0;
+  PCIEX_QR_I( psprintf("%s -> ACK Discard Disabled. DLLP ACKs Generated By Denali Model Will Be Transmitted.", XactorName) );
+}
+

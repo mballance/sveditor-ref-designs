@@ -1,0 +1,114 @@
+# 1 "pmu_sl4_mask_n2.pal" 
+
+:#define MAIN_PAGE_NUCLEUS_ALSO
+:#define MAIN_PAGE_HV_ALSO
+:#define DMMU_SKIP_IF_NO_TTE
+ 
+:#include "hboot.s"
+
+:
+
+
+
+:.text
+:.global main
+
+:main:		
+
+
+:! Thread 0 Start
+
+:!main_t0:
+
+:	setx	0x0000000080040030, %i0, %l0 ! Write    value
+:       setx    0x0000000080040030, %i0, %l1 ! Expected value
+:       setx    0x0000000000000000, %i0, %l2
+:       setx    0x0000000000000000, %i0, %l3 ! Second expected value
+:       setx    0x8000000080040030, %i0, %l4 ! Should update Ov0, but not Ov1
+:       setx    0x0000000000040030, %i0, %l5 ! Expected value
+:       setx    0x4000000080000030, %i0, %l6 ! Should update Ov1, but not Ov0
+:       setx    0x0000000080000030, %i0, %l7 ! Expectd Value
+:       setx    0xC000000080040030, %i0, %i5 ! Should update neither
+:       setx    0x0000000000000030, %i0, %i6 ! Expected Value
+:       setx    0xC000000000000000, %i0, %i3 ! Make sure a write doesn't off them
+:       setx    0x0000000080040000, %i0, %i4 ! Expected Value
+:       setx    0xFFFFFFFFFFFFFFFF, %i0, %g3 ! make sure it doesn't affect bits
+:       setx    0x000000007FFBFFFF, %i0, %g4 ! Expected
+
+:	! Execute Main Diag ..
+:	ta T_CHANGE_HPRIV            ! Should cause Watchdog_reset trap
+	
+
+:!Count_ITLB_References:	
+	
+:	wr 	%l0, %g0, %pcr 	 !  Write the PCR and overflow bits
+:       rd      %pcr, %i0        !
+:	xor 	%l1, %i0, %i1    !  see if the expected read, compares
+:                                !  compares to the actual read
+:       brnz    %i1, fail
+:       rd      %pcr, %i2       ! Read it again to make sure the OV bits
+:                                ! were not cleared
+:       xor     %i2,  %l1, %i1
+:       brnz    %i1,  fail
+
+:       wr      %i3, %g0, %pcr   !  Now try to clear it with the 63,62 on
+:       rd      %pcr, %i0        !  Read it back, they should still be set
+:       xor     %i4,  %i0, %i1   
+:       brnz    %i1, fail
+
+:	wr 	%l2, %g0, %pcr 	 !  Write the PCR and clear the overflow bits
+:       wr      %g3, %g0, %pcr   !  Now try to write all bits with the 63,62 on
+:       rd      %pcr, %i0        !  Read it back, they should still be set
+:       xor     %g4,  %i0, %i1   
+:       brnz    %i1, fail
+
+
+:	wr 	%l2, %g0, %pcr 	 !  Write the PCR and clear the overflow bits
+:       rd      %pcr, %i0        !
+:	xor 	%31, %i0, %i1    !  see if the expected read, compares
+:                                !  compares to the actual read       
+:       brnz    %i1, fail
+:       rd      %pcr, %i2       ! Read it again to make sure the OV bits
+:                                ! were not cleared
+:       ! Testing Ov1 Off, Ov0 on
+:	wr 	%l2, %g0, %pcr 	 !  Clear the PCR
+:	wr 	%l4, %g0, %pcr 	 !  Write the PCR and overflow bits
+:       rd      %pcr, %i0        !
+:	xor 	%l5, %i0, %i1    !  see if the expected read, compares
+:                                !  compares to the actual read
+:       brnz    %i1, fail
+
+:       ! Testing Ov0 Off, Ov1 on
+:	wr 	%l2, %g0, %pcr 	 !  Clear the PCR
+:	wr 	%l6, %g0, %pcr 	 !  Write the PCR and overflow bits
+:       rd      %pcr, %i0        !
+:	xor 	%l7, %i0, %i1    !  see if the expected read, compares
+:                                !  compares to the actual read
+:       brnz    %i1, fail
+
+:       ! Testing both off
+:	wr 	%l2, %g0, %pcr 	 !  Clear the PCR
+:	wr 	%i5, %g0, %pcr 	 !  Write the PCR and overflow bits
+:       rd      %pcr, %i0        !
+:	xor 	%i6, %i0, %i1    !  see if the expected read, compares
+:                                !  compares to the actual read
+:       brnz    %i1, fail
+
+:     nop
+:     nop
+:     nop
+:     nop
+:     nop
+:     EXIT_GOOD
+:     nop
+:     nop
+:     nop
+:     nop
+
+                          	
+:fail:
+:	EXIT_BAD	
+
+
+
+

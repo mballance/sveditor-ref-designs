@@ -1,0 +1,402 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: cpxorder.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <VeraListProgram.vrh>
+#include <ListMacros.vrh>
+// #include<defines.vri>
+#include<ccx.vri>
+#include<defines.vri>
+#include<cpxorder_ports_binds.vrh>
+//#include<iop_rtl.h>
+// #include<ccm_top.if.vrh>
+#include<std_display_class.vrh>
+#include<std_display_defines.vri>
+#include "globals.vri"
+
+
+class ccmCpxPkt {
+
+    integer index;
+    bit [CPX_WIDTH-1:0] packet;
+}
+
+// declare list of ccmCpxPkt objects
+MakeVeraList(ccmCpxPkt)
+
+// This class is an ordered list. All packets should be removed from this list
+// in the same order as they were added to this list.
+class ccmCpxPktFIFO {
+
+    integer core, indexCounter;
+    VeraList_ccmCpxPkt List;
+    VeraListIterator_ccmCpxPkt I;
+    ccmCpxPkt p;
+
+
+    task new(integer core) {
+        this.core = core;
+        indexCounter = 0;
+        List = new();
+    }
+
+    task Add(ccmCpxPkt packet) {
+
+        // assign an identifying number to the packet
+        packet.index = indexCounter++;
+        
+        // add packet to back of list.
+        List.push_back(packet);
+
+        return;
+    }
+
+    task Remove(bit [CPX_WIDTH-1:0] packet) {
+        // packets issued in PerformEndChecks() are not added to OqOrder and therefore
+        // cannot be removed
+        if(List.empty())
+            return;
+        
+        // packet to be removed must be the p on the list
+        p = List.front();
+
+        if(p.packet =?= packet)
+            List.pop_front();
+        else {
+          //error("%0d: CPXORDER ERROR: Packet received (%x) is not the first (%x) on Core %0d's list\n", get_time(LO), packet, p.packet, core);
+          PR_ERROR("CPXORDER", MON_ERR, psprintf ("%0d: CPXORDER ERROR: Packet received (%x) is not the first (%x) on Core %0d's list\n", get_time(LO), packet, p.packet, core));
+        }
+        return;
+    }
+
+    function integer LastIndex() {
+
+        p = List.back();
+        LastIndex = p.index;
+        
+        return;
+    }
+
+    task Replace(integer index, bit [CPX_WIDTH-1:0] packet) {
+
+        if(!List.empty()) {
+            I = List.start();
+            p = I.data();
+            
+            while(p.index != index) {
+                I.next();
+                p = I.data();
+            }
+
+            p.packet = packet;
+        }
+    }
+
+    task Reset() {
+        indexCounter = 0;
+        List.clear();
+    }
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////
+
+task MonitorCPX() {
+//    local StandardDisplay dbg;
+    string myname;
+    shadow integer i, j, k;
+    integer reqcount[72];
+    bit [7:0] sctag_cpx_req_cq;
+    bit [7:0] sctag_cpx_ifill2_cq[9];
+
+    // a single pulse of bit j of request[i] represents 1 packet being sent from Bank i to Core j.
+    bit [7:0] request[9];
+    bit [7:0] request_d1[9];
+    bit [8:0] atom = 0, atom_d1 = 0;
+    // a single pulse of bit j of ifill2[i] represents 1 IFILL_RET2 being sent from Bank i to Core j.
+    bit [7:0] ifill2[9];
+    bit [7:0] ifill2_d1[9];
+    bit [145:0] io_cpx_data_ca;
+    shadow bit [7:0] scratch;
+
+    l2port lp[9];
+    cpxport cp[8];
+    ccmCpxPktFIFO Core[8];
+    ccmCpxPkt packet;
+
+
+    // bind ports
+    cp[0] = cpxbind_0;
+    cp[1] = cpxbind_1;
+    cp[2] = cpxbind_2;
+    cp[3] = cpxbind_3;
+    cp[4] = cpxbind_4;
+    cp[5] = cpxbind_5;
+    cp[6] = cpxbind_6;
+    cp[7] = cpxbind_7;
+    lp[0] = l2bind_0;
+    lp[1] = l2bind_1;
+    lp[2] = l2bind_2;
+    lp[3] = l2bind_3;
+    lp[4] = l2bind_4;
+    lp[5] = l2bind_5;
+    lp[6] = l2bind_6;
+    lp[7] = l2bind_7;
+    lp[8] = iobind;
+
+    //dbg = new;   
+
+    // initialize variables
+    for(i=0; i<9; i++) {
+        sctag_cpx_ifill2_cq[i] = 8'b0;
+        request_d1[i] = 8'b0;
+        request[i] = 8'b0;
+        ifill2_d1[i] = 8'b0;
+        ifill2[i] = 8'b0;
+        
+        for(j=0; j<8; j++)
+            reqcount[i*8 + j] = 0;
+    }
+
+    for(j=0; j<8; j++)
+        Core[j] = new(j);
+    
+    myname = "CPXORDER";    
+
+    PR_NORMAL(myname, MON_NORMAL, psprintf("%0d: CPX Ordering Monitor started\n", get_time(LO)));
+    //printf("%0d: CPX Ordering Monitor started\n", get_time(LO));
+
+
+    fork
+    {
+        while(1) {
+            // if reset is active, drop all requests
+            if(cpxorder.ccx_gdbginit_l == 1'b0) {
+                for(i=0; i<9; i++) {
+                    sctag_cpx_ifill2_cq[i] = 8'b0;
+                    request_d1[i] = 8'b0;
+                    request[i] = 8'b0;
+                    ifill2_d1[i] = 8'b0;
+                    ifill2[i] = 8'b0;
+                    
+                    for(j=0; j<8; j++)
+                        reqcount[i*8 + j] = 0;
+                }
+                
+                for(j=0; j<8; j++)
+                    Core[j].Reset();
+
+                @(posedge cpxorder.ccx_gdbginit_l);
+            }
+                
+            /// Determine if a packet is being passed to the CPX by each bank in this cycle
+            // 8 banks + io
+            for(i=0; i<9; i++) {
+                sctag_cpx_req_cq = lp[i].$sctag_cpx_req_cq;
+
+                // add to reqcount[dest_core] for each request if reqcount[dest_core] is less than 3
+                if(sctag_cpx_req_cq != 8'b0) {
+                    for(j=0; j<8; j++) {
+                        if(sctag_cpx_req_cq[j] && reqcount[i*8+j] < 3) {
+                            reqcount[i*8+j]++;
+                        }
+                    }
+                }
+
+                // subtract from reqcount[dest_core] if grant for dest_core is given
+                if(lp[i].$cpx_sctag_grant_cx != 0) {
+                    for(j=0; j<8; j++) {
+                        if(lp[i].$cpx_sctag_grant_cx[j])
+                            reqcount[i*8+j]--;
+                    }
+                }
+
+                if(sctag_cpx_req_cq != 8'b0 || sctag_cpx_ifill2_cq[i] != 8'b0) {
+                    if(reqcount[i*8]   < 3 && reqcount[i*8+1] < 3 && reqcount[i*8+2] < 3 && reqcount[i*8+3] < 3 &&
+                       reqcount[i*8+4] < 3 && reqcount[i*8+5] < 3 && reqcount[i*8+6] < 3 && reqcount[i*8+7] < 3) {
+                        // signifies that this packet(s) is/are to be passed to the CPX
+                        request[i] = sctag_cpx_req_cq;
+                        
+                        // IFILL_RET1
+                        if(lp[i].$sctag_cpx_atom_cq) {
+                            // signifies that the next packet to be passed to the CPX is an IFILL_RET1
+                            atom[i] = 1'b1;
+                            
+                            // remember that next request from the same bank to the same core is an IFILL_RET2 request
+                            // (since sctag_cpx_req_cq is not asserted for IFILL_RET2 packets)
+                            sctag_cpx_ifill2_cq[i] = sctag_cpx_req_cq;
+                            
+                            // increment reqcount[dest_core] for IFILL_RET2 after IFILL_RET1 is dequeued
+                            for(j=0; j<8; j++) {
+                                if(sctag_cpx_req_cq[j])
+                                    reqcount[i*8+j]++;
+                            }
+                        }
+                        // all other packets
+                        else {
+                            ifill2[i] = sctag_cpx_ifill2_cq[i];
+                            sctag_cpx_ifill2_cq[i] = 8'b0;
+                        }
+                    }  // if(reqcount[i*8] < 3 && ... && reqcount[i*8+7] < 3)
+                } // if(sctag_cpx_req_cq[i] != 8'b0 || sctag_cpx_ifill2_cq[i] != 8'b0)
+            } // for(i=0; i<9; i++)
+
+            
+            /// Arrange CPX packets in the order that each Core is supposed to receive them
+            if(request[0] != 8'b0 || request[1] != 8'b0 || request[2] != 8'b0 || request[3] != 8'b0 ||
+               request[4] != 8'b0 || request[5] != 8'b0 || request[6] != 8'b0 || request[7] != 8'b0 | request[8] != 8'b0) {
+                fork
+                {
+                    // direction of priority is determined 1 cycle after the request is asserted
+                    if(i==8)
+		       io_cpx_data_ca = lp[8].$sctag_cpx_data_ca;
+                    @(posedge cpxorder.ccx_rclk);
+                    
+                    for(j=0; j<8; j++) {
+                        // ascending priority (bank0 > bank2 ... bank7 > NCU)
+                        if(cp[j].$dir_a) {
+                            for(i=0; i<9; i++) {
+                                scratch = request_d1[i];
+                                
+                                if(scratch[j]) {
+                                    packet = new();
+				    if(i==8)
+                                       //packet.packet = lp[i].$sctag_cpx_data_ca ^ 146'b1;
+                                       packet.packet = io_cpx_data_ca;
+				    else 
+                                       packet.packet = lp[i].$sctag_cpx_data_ca;
+
+                                    Core[j].Add(packet); 
+                                    PR_INFO(myname, MON_INFO, psprintf("CPXORDER: Added %x from Bank%0d to Core%0d\n", packet.packet, i, j));
+                                    //printf("CPXORDER: Added %x from Bank%0d to Core%0d\n", packet.packet, i, j);
+                                    
+                                    if(atom_d1[i]) {
+                                        packet = new();
+                                        Core[j].Add(packet); // add empty packet to list
+                                        k = Core[j].LastIndex();
+                                        
+                                        fork
+                                        {
+                                            @(posedge cpxorder.ccx_rclk);
+                                            while(1) {
+                                                scratch = ifill2_d1[i];
+                                                if(scratch[j])
+                                                    break;
+                                                @(posedge cpxorder.ccx_rclk);
+                                            }
+                                            Core[j].Replace(k, lp[i].$sctag_cpx_data_ca);
+
+                                            PR_INFO(myname, MON_INFO, psprintf("CPXORDER: Replaced %x from Bank%0d to Core%0d\n", lp[i].$sctag_cpx_data_ca, i, j));
+                                            //printf("CPXORDER: Replaced %x from Bank%0d to Core%0d\n", lp[i].$sctag_cpx_data_ca, i, j);
+                                        }
+                                        join none
+                                    }
+                                }
+                            }
+                        }
+                        // descending priority ( NCU > bank7 > ... bank2 > bank1 > bank0)
+                        else {
+                            for(i=8; i>=0; i--) {
+                                scratch = request_d1[i];
+                                
+                                if(scratch[j]) {
+                                    packet = new();
+				    if(i==8)
+                                       //packet.packet = lp[i].$sctag_cpx_data_ca ^ 145'b1;
+                                       packet.packet = io_cpx_data_ca;
+				    else 
+                                       packet.packet = lp[i].$sctag_cpx_data_ca;
+                                    Core[j].Add(packet);
+                                    PR_INFO(myname, MON_INFO, psprintf("CPXORDER: Added %x from Bank%0d to Core%0d\n", packet.packet, i, j));
+                                    //printf("CPXORDER: Added %x from Bank%0d to Core%0d\n", packet.packet, i, j);
+                                    
+                                    if(atom_d1[i]) {
+                                        packet = new();
+                                        Core[j].Add(packet); // add empty packet to list
+                                        k = Core[j].LastIndex();
+                                        
+                                        fork
+                                        {
+                                            @(posedge cpxorder.ccx_rclk);
+                                            while(1) {
+                                                scratch = ifill2_d1[i];
+                                                if(scratch[j])
+                                                    break;
+                                                @(posedge cpxorder.ccx_rclk);
+                                            }
+                                            Core[j].Replace(k, lp[i].$sctag_cpx_data_ca);
+                                            PR_INFO(myname, MON_INFO, psprintf("CPXORDER: Replaced %x from Bank%0d to Core%0d\n", lp[i].$sctag_cpx_data_ca, i, j));
+                                            //printf("CPXORDER: Replaced %x from Bank%0d to Core%0d\n", lp[i].$sctag_cpx_data_ca, i, j);
+                                        }
+                                        join none
+                                    }
+                                }
+                            }
+                        }
+                    } // for(j=0; j<8; j++)
+                }
+                join none
+            }
+            
+            
+            /// Check that CPX packets arrive at the Cores in the correct order
+            // (packets from the NCU are excluded)
+            for(j=0; j<8; j++) {
+                if(cp[j].$cpx_spc_data_cx2[CPX_VALID]) {
+                    Core[j].Remove(cp[j].$cpx_spc_data_cx2);
+                    PR_INFO(myname, MON_INFO, psprintf("CPXORDER: Removed %x from Core%0d\n", cp[j].$cpx_spc_data_cx2, j));
+                    //printf("CPXORDER: Removed %x from Core%0d\n", cp[j].$cpx_spc_data_cx2, j);
+                }
+            }
+            
+
+            /// Stage request signals to the next cycle (on negedge cpxorder.ccx_rclk to prevent possible
+            /// race between forked threads)
+            @(negedge cpxorder.ccx_rclk);
+
+            for(i=0; i<9; i++) {
+                request_d1[i] = request[i];
+                request[i] = 8'b0;
+                ifill2_d1[i] = ifill2[i];
+                ifill2[i] = 8'b0;
+            }
+            atom_d1 = atom;
+            atom = 9'b0;
+            
+
+            @(posedge cpxorder.ccx_rclk);
+        } // while(1)
+    }
+    join none
+}

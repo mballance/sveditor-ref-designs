@@ -1,0 +1,372 @@
+/*
+* ========== Copyright Header Begin ==========================================
+* 
+* OpenSPARC T2 Processor File: peu_defines.h
+* Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+* 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+*
+* DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License as published by
+* the Free Software Foundation; version 2 of the License.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+*
+* For the avoidance of doubt, and except that if any non-GPL license 
+* choice is available it will apply instead, Sun elects to use only 
+* the General Public License version 2 (GPLv2) at this time for any 
+* software where a choice of GPL license versions is made 
+* available with the language indicating that GPLv2 or any later version 
+* may be used, or where a choice of which version of the GPL is applied is 
+* otherwise unspecified. 
+*
+* Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+* CA 95054 USA or visit www.sun.com if you need additional information or 
+* have any questions. 
+*
+* 
+* ========== Copyright Header End ============================================
+*/
+#define	N2_DMU_PEU_BASE_ADDR				0x8800000000
+#define	N2_PCIE_BASE_ADDR				0xc000000000
+#ifndef	PCIE_MEM64_OFFSET
+#define PCIE_MEM64_OFFSET		0x0000000100000000
+#endif
+
+#include "dmu_peu_regs.h"
+
+
+
+
+#ifndef	linkTrainingTimeout
+#define	linkTrainingTimeout				0x20
+#endif
+
+#ifdef	PEU_CSR_SLAM
+#define peu_loop_count					0x10
+#else
+#define peu_loop_count					0x20
+#endif
+
+
+#define	PCIE_1B						0x01
+#define	PCIE_2B						0x02
+#define	PCIE_3B						0x03
+#define	PCIE_1DW       					0x04
+#define	PCIE_2DW       					0x08
+
+
+! addr[63:39] == 0x1fff800 for bypass
+#define	IOMMU_BYP_SADDR  				0xfffc000000000000
+#define	IOMMU_BYP_EADDR  				0xfffc007fffffffff
+
+
+#define	FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_DATA		0x00000010000200c0		/* PWR_ON Values */
+#define	FIRE_PLC_TLU_CTB_TLR_CSR_A_DEV_CTL_DATA		0x0000000000000000
+#define FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_CTL_DATA		0x0000000000000001     /* Turn off Detect.Quiet */
+#define	FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CTL_DATA		0x0000000000000000
+#define	FIRE_PLC_TLU_CTB_TLR_CSR_A_SLT_CAP_DATA		0x0000000000000000
+
+#define	MEM32_OFFSET_BASE_REG_ADDR			0x8000002000
+#define	MEM32_OFFSET_MASK_REG_ADDR			0x8000002008
+#define	MEM64_OFFSET_BASE_REG_ADDR			0x8000002010
+#define	MEM64_OFFSET_MASK_REG_ADDR			0x8000002018
+
+#define	IOCFG_OFFSET_BASE_REG_ADDR			0x8000002020
+#define	IOCFG_OFFSET_MASK_REG_ADDR			0x8000002028
+
+#define	MEM32_OFFSET_BASE_REG_DATA			0x8000000100000000
+#define MEM32_OFFSET_MASK_REG_DATA                      0x000000ff00000000  /* 0 to 4gig */
+
+#define MEM64_OFFSET_BASE_REG_DATA                      0x8000000800000000
+#define MEM64_OFFSET_MASK_REG_DATA                      0x000000f800000000  /* 0 to ?gig */
+
+#define IOCFG_OFFSET_BASE_REG_DATA                      0x8000000000000000
+#define	IOCFG_OFFSET_MASK_REG_DATA			0x000000ffc0000000  /* 0 to 512Meg */
+
+#define	CFG1_ACCESS_PA					0x000000000ef00000
+#define	IO_ACCESS_PA					0x0000000010000000
+
+/*
+! Bit definitions of PIU registers used for compare.
+! These defines are used as data 64-bit to check for a bit state.
+! All instructions that use these defines are expected to use a setx instruction to load
+! data. The appropriate conditions condes must be checked.
+!
+! This section follows the format specified below
+! RegisterName__BitName
+! Example : 
+! FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_CTL__DET_QUIET implies
+! Bit named    DET_QUIET
+! in register  FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_CTL
+!
+*/
+
+#define FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_CTL__DET_QUIET        0x00100
+#define FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_EN_ERR__LUP_P          0x00100
+#define FIRE_DLC_MMU_CSR_A_CTL__TRANSLATE_EN                 0x00001
+#define FIRE_DLC_MMU_CSR_A_CTL__BYPASS_EN                    0x00002
+
+
+/*
+! The following defines were added for interrupt diags.
+! These include references to defines in dmu_peu_regs.h,
+! so changes there are automatically included here also.
+!   07/19/05
+*/
+
+/*
+ * Interrupt Mapping Registers
+ *
+ * NOTE - There are 2 interrupt mapping/clear registers "missing" in N2!
+ *        These are for mondo's 60 and 61.  There the two register
+ *        at  (40 * PCI_E_INT_xxx_STEP) + PCI_E_INT_xxx_ADDR
+ *        and (41 * PCI_E_INT_xxx_STEP) + PCI_E_INT_xxx_ADDR
+ *        don't exist.  The PCI_E_INT_MAP_COUNT = 40 to make loops
+ *        simplier, BUT it does include that last two registers
+ *        for which seperate offsets are defined here.
+ */
+
+#define PCI_E_INT_MAP_ADDR			FIRE_DLC_IMU_ISS_CSR_A_INTERRUPT_MAPPING_20_ADDR
+#define PCI_E_INT_MAP_STEP			8
+#define PCI_E_INT_MAP_COUNT			40
+#define PCI_E_INT_MAP_MONDO_62_OFFSET		mpeval(42 * PCI_E_INT_MAP_STEP)
+#define PCI_E_INT_MAP_MONDO_63_OFFSET		mpeval(43 * PCI_E_INT_MAP_STEP)
+
+#define PCI_E_INT_MAP_MDO_MODE_SHIFT		63
+#define PCI_E_INT_MAP_V_SHIFT			31
+#define PCI_E_INT_MAP_THREADID_SHIFT		25
+#define PCI_E_INT_MAP_INT_CNTRL_NUM_SHIFT	6
+
+#define PCI_E_INT_CLEAR_ADDR			FIRE_DLC_IMU_ISS_CSR_A_CLR_INT_REG_20_ADDR
+#define PCI_E_INT_CLEAR_STEP			8
+#define PCI_E_INT_CLEAR_COUNT			40
+#define PCI_E_INT_CLEAR_MONDO_62_OFFSET         mpeval(42 * PCI_E_INT_CLEAR_STEP)
+#define PCI_E_INT_CLEAR_MONDO_63_OFFSET         mpeval(43 * PCI_E_INT_CLEAR_STEP)
+
+#define PCI_E_INT_RETRY_TIMER_ADDR		FIRE_DLC_IMU_ISS_CSR_A_INTERRUPT_RETRY_TIMER_ADDR
+
+#define PCI_E_INT_STATE_STATUS_1_ADDR		FIRE_DLC_IMU_ISS_CSR_A_INTERRUPT_STATE_STATUS_1_ADDR
+#define PCI_E_INT_STATE_STATUS_2_ADDR		FIRE_DLC_IMU_ISS_CSR_A_INTERRUPT_STATE_STATUS_2_ADDR
+
+#define PCI_E_INTX_STATUS_ADDR			FIRE_DLC_IMU_RDS_INTX_CSR_A_INTX_STATUS_REG_ADDR
+
+#define PCI_E_INT_A_CLEAR_ADDR			FIRE_DLC_IMU_RDS_INTX_CSR_A_INT_A_INT_CLR_REG_ADDR
+#define PCI_E_INT_B_CLEAR_ADDR			FIRE_DLC_IMU_RDS_INTX_CSR_A_INT_B_INT_CLR_REG_ADDR
+#define PCI_E_INT_C_CLEAR_ADDR			FIRE_DLC_IMU_RDS_INTX_CSR_A_INT_C_INT_CLR_REG_ADDR
+#define PCI_E_INT_D_CLEAR_ADDR			FIRE_DLC_IMU_RDS_INTX_CSR_A_INT_D_INT_CLR_REG_ADDR
+
+#define PCI_E_EV_QUE_BASE_ADDRESS_ADDR		FIRE_DLC_IMU_EQS_CSR_A_EQ_BASE_ADDRESS_ADDR
+
+#define PCI_E_EV_QUE_CTL_SET_ADDR		FIRE_DLC_IMU_EQS_CSR_A_EQ_CTRL_SET_ADDR
+#define PCI_E_EV_QUE_CTL_SET_COUNT		36
+#define PCI_E_EV_QUE_CTL_SET_STEP		8
+
+#define PCI_E_EV_QUE_CTL_CLEAR_ADDR		FIRE_DLC_IMU_EQS_CSR_A_EQ_CTRL_CLR_ADDR
+#define PCI_E_EV_QUE_CTL_CLEAR_COUNT		36
+#define PCI_E_EV_QUE_CTL_CLEAR_STEP		8
+
+#define PCI_E_EV_QUE_STATE_ADDR			FIRE_DLC_IMU_EQS_CSR_A_EQ_STATE_ADDR
+#define PCI_E_EV_QUE_STATE_COUNT		36
+#define PCI_E_EV_QUE_STATE_STEP			8
+
+#define PCI_E_EV_QUE_TAIL_ADDR			FIRE_DLC_IMU_EQS_CSR_A_EQ_TAIL_ADDR
+#define PCI_E_EV_QUE_TAIL_COUNT			36
+#define PCI_E_EV_QUE_TAIL_STEP			8
+
+#define PCI_E_EV_QUE_HEAD_ADDR			FIRE_DLC_IMU_EQS_CSR_A_EQ_HEAD_ADDR
+#define PCI_E_EV_QUE_HEAD_COUNT			36
+#define PCI_E_EV_QUE_HEAD_STEP			8
+
+#define PCI_E_MSI_MAP_ADDR			FIRE_DLC_IMU_RDS_MSI_CSR_A_MSI_MAPPING_ADDR
+#define PCI_E_MSI_MAP_COUNT			256
+#define PCI_E_MSI_MAP_STEP			8
+
+#define PCI_E_MSI_CLEAR_ADDR			FIRE_DLC_IMU_RDS_MSI_CSR_A_MSI_CLEAR_REG_RW1C_ALIAS_ADDR
+#define PCI_E_MSI_CLEAR_COUNT			256
+#define PCI_E_MSI_CLEAR_STEP			8
+
+#define PCI_E_INT_MONDO_DATA_0_ADDR		FIRE_DLC_IMU_RDS_MSI_CSR_A_INT_MONDO_DATA_0_REG_ADDR
+#define PCI_E_INT_MONDO_DATA_1_ADDR		FIRE_DLC_IMU_RDS_MSI_CSR_A_INT_MONDO_DATA_1_REG_ADDR
+
+#define PCI_E_ERR_COR_MAP_ADDR			FIRE_DLC_IMU_RDS_MESS_CSR_A_ERR_COR_MAPPING_ADDR
+
+#define PCI_E_ERR_NONFATAL_MAP_ADDR		FIRE_DLC_IMU_RDS_MESS_CSR_A_ERR_NONFATAL_MAPPING_ADDR
+
+#define PCI_E_ERR_FATAL_MAP_ADDR		FIRE_DLC_IMU_RDS_MESS_CSR_A_ERR_FATAL_MAPPING_ADDR
+
+#define PCI_E_PM_PME_MAP_ADDR			FIRE_DLC_IMU_RDS_MESS_CSR_A_PM_PME_MAPPING_ADDR
+
+#define PCI_E_PME_ACK_MAP_ADDR			FIRE_DLC_IMU_RDS_MESS_CSR_A_PME_TO_ACK_MAPPING_ADDR
+
+/*
+! IMU Interrupt Enable Register
+! IMU Interrupt Status Register
+! IMU Error Status Clear Register
+! IMU Error Status Set Register
+*/
+
+#define PCI_E_IMU_INT_ENB_ADDR			FIRE_DLC_IMU_ICS_CSR_A_IMU_INT_EN_REG_ADDR
+#define PCI_E_IMU_INT_STAT_ADDR			FIRE_DLC_IMU_ICS_CSR_A_IMU_ENABLED_ERROR_STATUS_REG_ADDR
+#define PCI_E_IMU_ERR_STAT_CLR_ADDR		FIRE_DLC_IMU_ICS_CSR_A_IMU_LOGGED_ERROR_STATUS_REG_RW1C_ALIAS_ADDR
+#define PCI_E_IMU_ERR_STAT_SET_ADDR		FIRE_DLC_IMU_ICS_CSR_A_IMU_LOGGED_ERROR_STATUS_REG_RW1S_ALIAS_ADDR
+
+#define PCI_E_IMU_INT_EN_SPARE_S_SHIFT			42
+#define PCI_E_IMU_INT_EN_SPARE_P_SHIFT			10
+#define PCI_E_IMU_INT_EN_EQ_OVER_S_SHIFT		41
+#define PCI_E_IMU_INT_EN_EQ_OVER_P_SHIFT		9
+#define PCI_E_IMU_INT_EN_EQ_NOT_EN_S_SHIFT		40
+#define PCI_E_IMU_INT_EN_EQ_NOT_EN_P_SHIFT		8
+#define PCI_E_IMU_INT_EN_MSI_MAL_ERR_S_SHIFT		39
+#define PCI_E_IMU_INT_EN_MSI_MAL_ERR_P_SHIFT		7
+#define PCI_E_IMU_INT_EN_MSI_PAR_ERR_S_SHIFT		38
+#define PCI_E_IMU_INT_EN_MSI_PAR_ERR_P_SHIFT		6
+#define PCI_E_IMU_INT_EN_PMEACK_MES_NOT_EN_S_SHIFT	37
+#define PCI_E_IMU_INT_EN_PMEACK_MES_NOT_EN_P_SHIFT	5
+#define PCI_E_IMU_INT_EN_PMPME_MES_NOT_EN_S_SHIFT	36
+#define PCI_E_IMU_INT_EN_PMPME_MES_NOT_EN_P_SHIFT	4
+#define PCI_E_IMU_INT_EN_FATAL_MES_NOT_EN_S_SHIFT	35
+#define PCI_E_IMU_INT_EN_FATAL_MES_NOT_EN_P_SHIFT	3
+#define PCI_E_IMU_INT_EN_NONFATAL_MES_NOT_EN_S_SHIFT	34
+#define PCI_E_IMU_INT_EN_NONFATAL_MES_NOT_EN_P_SHIFT	2
+#define PCI_E_IMU_INT_EN_COR_MES_NOT_EN_S_SHIFT		33
+#define PCI_E_IMU_INT_EN_COR_MES_NOT_EN_P_SHIFT		1
+#define PCI_E_IMU_INT_EN_MSI_NOT_EN_S_SHIFT		32
+#define PCI_E_IMU_INT_EN_MSI_NOT_EN_P_SHIFT		0
+
+/* DMU Core and Block Interrupt Enable Register */
+
+#define PCI_E_DMU_CORE_BLK_INT_ENB_ADDR		FIRE_DLC_IMU_ICS_CSR_A_DMC_INTERRUPT_MASK_REG_ADDR
+#define PCI_E_DMU_INT_ENB_ADDR			FIRE_DLC_IMU_ICS_CSR_A_DMC_INTERRUPT_MASK_REG_ADDR
+
+#define PCI_E_DMU_CORE_BLK_INT_EN_DMC_SHIFT	63
+#define PCI_E_DMU_CORE_BLK_INT_EN_DMC_MASK	0x8000000000000000
+#define PCI_E_DMU_CORE_BLK_INT_EN_DEBUG_TRIG_EN_SHIFT	62
+#define PCI_E_DMU_CORE_BLK_INT_EN_DEBUG_TRIG_EN_MASK	0x4000000000000000
+#define PCI_E_DMU_CORE_BLK_INT_EN_MMU_SHIFT	1
+#define PCI_E_DMU_CORE_BLK_INT_EN_MMU_MASK	0x2
+#define PCI_E_DMU_CORE_BLK_INT_EN_IMU_SHIFT	0
+#define PCI_E_DMU_CORE_BLK_INT_EN_IMU_MASK	0x1
+
+/* DMU Core and Block Error Status Register */
+
+#define PCI_E_DMU_CORE_BLK_ERR_STAT_ADDR	FIRE_DLC_IMU_ICS_CSR_A_DMC_INTERRUPT_STATUS_REG_ADDR
+#define PCI_E_DMU_ERR_STAT_ADDR			FIRE_DLC_IMU_ICS_CSR_A_DMC_INTERRUPT_STATUS_REG_ADDR
+
+#define PCI_E_DMU_CORE_BLK_ERR_STAT_MMU_SHIFT	1
+#define PCI_E_DMU_CORE_BLK_ERR_STAT_MMU_MASK	0x2
+#define PCI_E_DMU_CORE_BLK_ERR_STAT_IMU_SHIFT	0
+#define PCI_E_DMU_CORE_BLK_ERR_STAT_IMU_MASK	0x1
+
+/* MSI 32 Bit Address Register */
+
+#define PCI_E_MSI_32_ADDRESS_ADDR		FIRE_DLC_IMU_ICS_CSR_A_MSI_32_ADDR_REG_ADDR
+
+#define PCI_E_MSI_64_ADDRESS_ADDR		FIRE_DLC_IMU_ICS_CSR_A_MSI_64_ADDR_REG_ADDR
+
+/*
+! MMU Interrupt Enable Register
+! MMU Interrupt Status Register
+! MMU Error Status Clear Register
+! MMU Error Status Set Register
+ */
+
+#define PCI_E_MMU_INT_ENB_ADDR			FIRE_DLC_MMU_CSR_A_INT_EN_ADDR
+#define PCI_E_MMU_INT_STAT_ADDR			FIRE_DLC_MMU_CSR_A_EN_ERR_ADDR
+#define PCI_E_MMU_ERR_STAT_CL_ADDR		FIRE_DLC_MMU_CSR_A_ERR_RW1C_ALIAS_ADDR
+#define PCI_E_MMU_ERR_STAT_SET_ADDR	        FIRE_DLC_MMU_CSR_A_ERR_RW1S_ALIAS_ADDR
+
+#define PCI_E_MMU_INT_EN_SUN4V_KEY_ERR_S_SHIFT		52
+#define PCI_E_MMU_INT_EN_SUN4V_KEY_ERR_P_SHIFT		20
+#define PCI_E_MMU_INT_EN_SUN4V_VA_ADI_UF_S_SHIFT	51
+#define PCI_E_MMU_INT_EN_SUN4V_VA_ADI_UF_P_SHIFT	19
+#define PCI_E_MMU_INT_EN_SUN4V_VA_OOR_S_SHIFT		50
+#define PCI_E_MMU_INT_EN_SUN4V_VA_OOR_P_SHIFT		18
+#define PCI_E_MMU_INT_EN_IOTSBDESC_DPE_S_SHIFT		49
+#define PCI_E_MMU_INT_EN_IOTSBDESC_DPE_P_SHIFT		17
+#define PCI_E_MMU_INT_EN_IOTSBDESC_INV_S_SHIFT		48
+#define PCI_E_MMU_INT_EN_IOTSBDESC_INV_P_SHIFT		16
+#define PCI_E_MMU_INT_EN_TBW_DPE_S_SHIFT		47
+#define PCI_E_MMU_INT_EN_TBW_DPE_P_SHIFT		15
+#define PCI_E_MMU_INT_EN_TBW_ERR_S_SHIFT		46
+#define PCI_E_MMU_INT_EN_TBW_ERR_P_SHIFT		14
+#define PCI_E_MMU_INT_EN_TBW_UDE_S_SHIFT		45
+#define PCI_E_MMU_INT_EN_TBW_UDE_P_SHIFT		13
+#define PCI_E_MMU_INT_EN_TBW_DME_S_SHIFT		44
+#define PCI_E_MMU_INT_EN_TBW_DME_P_SHIFT		12
+#define PCI_E_MMU_INT_EN_SPARE3_S_SHIFT			43
+#define PCI_E_MMU_INT_EN_SPARE3_P_SHIFT			11
+#define PCI_E_MMU_INT_EN_SPARE2_S_SHIFT			42
+#define PCI_E_MMU_INT_EN_SPARE2_P_SHIFT			10
+#define PCI_E_MMU_INT_EN_TTC_CAE_S_SHIFT		41
+#define PCI_E_MMU_INT_EN_TTC_CAE_P_SHIFT		9
+#define PCI_E_MMU_INT_EN_TTC_DPE_S_SHIFT		40
+#define PCI_E_MMU_INT_EN_TTC_DPE_P_SHIFT		8
+#define PCI_E_MMU_INT_EN_TTE_PRT_S_SHIFT		39
+#define PCI_E_MMU_INT_EN_TTE_PRT_P_SHIFT		7
+#define PCI_E_MMU_INT_EN_TTE_INV_S_SHIFT		38
+#define PCI_E_MMU_INT_EN_TTE_INV_P_SHIFT		6
+#define PCI_E_MMU_INT_EN_TRN_OOR_S_SHIFT		37
+#define PCI_E_MMU_INT_EN_TRN_OOR_P_SHIFT		5
+#define PCI_E_MMU_INT_EN_TRN_ERR_S_SHIFT		36
+#define PCI_E_MMU_INT_EN_TRN_ERR_P_SHIFT		4
+#define PCI_E_MMU_INT_EN_SPARE1_S_SHIFT			35
+#define PCI_E_MMU_INT_EN_SPARE1_P_SHIFT			3
+#define PCI_E_MMU_INT_EN_SPARE0_S_SHIFT			34
+#define PCI_E_MMU_INT_EN_SPARE0_P_SHIFT			2
+#define PCI_E_MMU_INT_EN_BYP_OOR_S_SHIFT		33
+#define PCI_E_MMU_INT_EN_BYP_OOR_P_SHIFT		1
+#define PCI_E_MMU_INT_EN_BYP_ERR_S_SHIFT		32
+#define PCI_E_MMU_INT_EN_BYP_ERR_P_SHIFT		0
+
+#define PCI_E_ILU_INT_ENB_ADDR			FIRE_DLC_ILU_CIB_CSR_A_ILU_INT_EN_ADDR
+
+#define PCI_E_ILU_INT_STAT_ADDR			FIRE_DLC_ILU_CIB_CSR_A_ILU_EN_ERR_ADDR
+
+#define PCI_E_ILU_ERR_STAT_CL_ADDR		FIRE_DLC_ILU_CIB_CSR_A_ILU_LOG_ERR_RW1C_ALIAS_ADDR
+
+#define PCI_E_ILU_ERR_STAT_SET_ADDR	        FIRE_DLC_ILU_CIB_CSR_A_ILU_LOG_ERR_RW1S_ALIAS_ADDR
+
+#define PCI_E_PEU_INT_ENB_ADDR			FIRE_DLC_ILU_CIB_CSR_A_PEC_INT_EN_ADDR
+
+#define PCI_E_PEU_INT_STAT_ADDR			FIRE_DLC_ILU_CIB_CSR_A_PEC_EN_ERR_ADDR
+
+#define PCI_E_PEU_OTHER_INT_ENB_ADDR		FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_INT_EN_ADDR
+
+#define PCI_E_PEU_OTHER_INT_STAT_ADDR	        FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_EN_ERR_ADDR
+
+#define PCI_E_PEU_OTHER_ERR_STAT_CL_ADDR	FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_ADDR
+
+#define PCI_E_PEU_OTHER_ERR_STAT_SET_ADDR	FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1S_ALIAS_ADDR
+
+#define PCI_E_PEU_UE_INT_ENB_ADDR		FIRE_PLC_TLU_CTB_TLR_CSR_A_UE_INT_EN_ADDR
+
+#define PCI_E_PEU_UE_INT_STAT_ADDR	        FIRE_PLC_TLU_CTB_TLR_CSR_A_UE_EN_ERR_ADDR
+
+#define PCI_E_PEU_UE_STAT_CL_ADDR		FIRE_PLC_TLU_CTB_TLR_CSR_A_UE_ERR_RW1C_ALIAS_ADDR
+
+#define PCI_E_PEU_UE_STAT_SET_ADDR		FIRE_PLC_TLU_CTB_TLR_CSR_A_UE_ERR_RW1S_ALIAS_ADDR
+
+#define PCI_E_PEU_CE_INT_ENB_ADDR		FIRE_PLC_TLU_CTB_TLR_CSR_A_CE_INT_EN_ADDR
+
+#define PCI_E_PEU_CE_INT_STAT_ADDR	        FIRE_PLC_TLU_CTB_TLR_CSR_A_CE_EN_ERR_ADDR
+
+#define PCI_E_PEU_CE_STAT_CL_ADDR		FIRE_PLC_TLU_CTB_TLR_CSR_A_CE_ERR_RW1C_ALIAS_ADDR
+
+#define PCI_E_PEU_CE_STAT_SET_ADDR		FIRE_PLC_TLU_CTB_TLR_CSR_A_CE_ERR_RW1S_ALIAS_ADDR
+
+#define PCI_E_PEU_DLPL_INT_ENB_ADDR		FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_INT_EN_ADDR
+
+#define PCI_E_PEU_DLPL_INT_STAT_ADDR	        FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_INT_STS_ADDR
+
+#define PCI_E_PEU_DLPL_STAT_CL_ADDR		FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_STS_CLR_RW1C_ALIAS_ADDR
+
+#define PCI_E_PEU_DLPL_STAT_SET_ADDR		FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_STS_CLR_RW1S_ALIAS_ADDR

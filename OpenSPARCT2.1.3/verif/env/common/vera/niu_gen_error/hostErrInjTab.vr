@@ -1,0 +1,119 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: hostErrInjTab.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+
+#include "niu_error_dfn.vri"
+#include "niu_cbclass.vrh"
+
+class CHostErrInjTab {
+
+  integer no_of_errors_set;
+  local CcbErrArray cberrDfn[];
+  
+  function integer SetErrorDfn( CcbErrDfn cb);
+  function integer ChkErrorDfn(CcbErrDfn cb, var integer status );
+  function integer ClrErrorDfn(CcbErrDfn cb);
+  task new() {
+    no_of_errors_set = 0;
+  }
+  
+}
+
+function integer CHostErrInjTab::SetErrorDfn( CcbErrDfn cb){
+// N2 - 64 byte aligned address only
+cb.address = ((cb.address)>>6)<<6;
+ if ( assoc_index(CHECK,this.cberrDfn,cb.address)) {
+   printf(" Error Defination  already set  for address - %x Adding one more for this address -- \n",cb.address);
+   cberrDfn[cb.address].add(cb);
+   SetErrorDfn = no_of_errors_set;
+   printf("ErrCB DEBUG- Callback Set for address - %x , NoofActiveErrCBS - %d \n",cb.address,no_of_errors_set);
+  } else {
+   cberrDfn[cb.address] = new ();
+   cberrDfn[cb.address].add(cb);
+   no_of_errors_set ++;
+   SetErrorDfn = no_of_errors_set;
+   printf("ErrCB DEBUG- Callback Set for address - %x , NoofActiveErrCBS - %d \n",cb.address,no_of_errors_set);
+
+
+
+
+/* how to add this to Denali-
+  1.  Set Call back on Denali for address  cb.address
+  2.  Once the call back is successful, call ClrErrorDfn function
+*/
+ 
+  }
+
+}
+function integer CHostErrInjTab::ChkErrorDfn(CcbErrDfn cb, var integer status ){
+  CcbErrDfn error_dfn;
+  integer s,d;
+  if(assoc_index(CHECK,this.cberrDfn,cb.address))  {
+    s= this.cberrDfn[cb.address].get(error_dfn);
+    if(s==0) { // No More for this address
+       if(error_dfn.error_code & SIU_SpuriousResp) {
+	 d = ClrErrorDfn(cb);
+       } else {
+	// add this back into the queue 
+	cberrDfn[cb.address].add_front(error_dfn);
+       }
+    } else {
+	// Do Nothing
+    }
+    status = 1;
+    ChkErrorDfn = error_dfn.error_code;
+    printf("CHostErrInjTab::ChkErrorDfn ErrorCode for Address - %x is - %d \n",cb.address,ChkErrorDfn);
+  } else { 
+  status = -1;
+  ChkErrorDfn = -1;
+  }
+  printf("CHostErrInjTab::ChkErrorDfn ErrorCode for Address - %x is - %d \n",cb.address,ChkErrorDfn);
+}
+
+function integer CHostErrInjTab::ClrErrorDfn(CcbErrDfn cb) {
+CcbErrDfn cb_delete;
+integer status;
+if(assoc_index(CHECK,this.cberrDfn,cb.address)) {
+  // do the appropriate action and return the status
+  ClrErrorDfn = 1;
+  status = assoc_index(DELETE,this.cberrDfn,cb.address);
+  // printf("CHostErrInjTab::ClrErrorDfn ErrorCode for Address - %x is - %d \n",cb.address,status);
+  no_of_errors_set--;
+  ClrErrorDfn = status;
+} else ClrErrorDfn = -1;
+}
+
+

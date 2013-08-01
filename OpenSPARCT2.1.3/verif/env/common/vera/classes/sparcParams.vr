@@ -1,0 +1,761 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: sparcParams.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <globals.vri>
+
+// defines
+#include <plusArgMacros.vri>
+#include <ccx.vri>
+#include <std_display_defines.vri>
+#include <baseParamDefines.vri>
+
+// classes
+#include <std_display_class.vrh>
+#include <baseParamsClass.vrh>
+
+class Params extends BaseParams {
+
+  local string className = "paramsClass";
+  local StandardDisplay dbg;
+
+  // Temporary/scratch  variables
+  local string tempstr, tempstr2;
+  local reg [2048:0] getstr;
+  local integer i;
+  local bit [63:0] tmp;
+
+  // misc
+  integer coreCount = 0;
+
+    
+  ///////////////////////////////////////
+  // variables that only come in as +args (not in a config file)
+
+  string paramPath = null;
+  string paramFile = null;
+  string forceParamFile = null;
+  string dv_root = null;
+//   reg [63:0] thread_enables = 1;
+
+  // CCX
+  reg ccxPktPrint [5];  // print packets
+  reg [16:0] ccxPktPrintMask = 0;
+  reg ccxPktPrintOn = 0;
+  
+  // MCU
+  reg mcuMemPrint [2];
+  reg mcuMemPrintOn = 0;
+  
+  string veraDiagName = null;
+  string asmDiagName = null;
+
+  //
+  ///////////////////////////////////////
+
+  
+  ///////////////////////////////////////
+  // config file paramaters (can also be +args)
+
+  // -- SPC2 specific
+  reg stub_l1_enable;   // if 0, disable tag table updates in ccx stub
+  reg [7:0] min_ccx_gnt_delay;
+  reg [7:0] max_ccx_gnt_delay;
+  reg rand_ccx_gnt_enable;
+  reg l2latOn;          // To use L2 latency values from file
+  reg l2lat_fixed;      // Allow L2 latency to vary
+  integer l2lat_value;  // L2 latency between gnt and gnt_data 
+  // file names
+  string l2lat_in = null;
+  integer FPl2lat;          // Used for file pointers
+  
+  // SPC2 debug testing
+  reg noDebugDrv;
+  reg noDebugChecks;
+  reg noDebugModes;
+  reg showDebugCounts;
+  reg wmrVecMask;
+  integer ssModeFreq;
+  integer ssModeMaxSessions;
+  integer ssModeInterleaveWeight;
+  reg [7:0] ssModeTidMask;
+  integer ssModeMin;
+  integer ssModeMax;
+  integer ssModeBurstMin;
+  integer ssModeBurstMax;
+  integer ssModeHolesMin;
+  integer ssModeHolesMax;
+  integer doModeFreq;
+  integer doModeMaxSessions;
+  reg [7:0] doModeTidMask;
+  integer doModeLenMin;
+  integer doModeLenMax;
+  integer   softStopFreq;
+  integer   softStopMaxSessions;
+  reg [7:0] softStopTidMask;
+  integer   softStopLenMin;
+  integer   softStopLenMax;
+  reg nodebugParkExit;
+  
+  // POR/WMR/MBIST/LBIST
+  reg        por_enable;
+  reg        lbist_enable;
+  reg  [2:0] mbist_mode;
+  reg        mbist_enable;
+  reg        mbist_errinj;
+  reg  [7:0] user_loop_count;
+  reg        user_loop_mode;
+  reg [15:0] lbist_abort_count;
+  reg  [2:0] lbist_run_count;
+  reg        lbist_pgm;
+  reg [23:0] mbist_fail_count;
+
+  //err
+  integer err_freq;
+  integer err_burst_freq;
+  integer err_burst_len_min;
+  integer err_burst_len_max;
+  integer err_ce_wt;
+  integer err_nd_wt;
+  reg rand_err;
+  reg err_itlb_on;
+  integer err_itlb_freq;
+  reg err_dtlb_on;
+  integer err_dtlb_freq;
+  reg err_ic_on;
+  integer err_ic_freq;
+  reg err_dc_on;
+  integer err_dc_freq;
+  reg err_irf_on;
+  integer err_irf_freq;
+  reg err_frf_on;
+  integer err_frf_freq;
+  reg err_stb_on;
+  integer err_stb_freq;
+  reg err_sca_on;
+  integer err_sca_freq;
+  reg err_tcc_on;
+  integer err_tcc_freq;
+  reg err_tsa_on;
+  integer err_tsa_freq;
+  reg err_mra_on;
+  integer err_mra_freq;
+  reg err_l2c_on;
+  integer err_l2c_freq;
+  reg err_mamem_on;
+  integer err_mamem_freq;
+  // -- end SPC2 specific
+
+  
+  
+  // Coverage Vars
+  reg coverage_on;
+  reg coverage_off;
+  reg force_save_cov;
+
+
+  // CMP regs
+  reg [63:0] coreAvilableReg;
+  reg [63:0] coreEnableReg;
+  // copies reduced to 8
+  reg [7:0] coreAvilable;
+  reg [7:0] coreEnable;
+  reg [2:0] coreMax = 0;  // max/highest core number (0-7)
+  reg [3:0] bank_set_mask = 4'hf;
+  reg [7:0] banksMask = 8'hff;
+  
+  // MCU BFM (CMP bench)
+  integer mcuReq2ackDelayMin;
+  integer mcuReq2ackDelayMax;
+  integer mcuAck2dataDelayMin;
+  integer mcuAck2dataDelayMax;
+  integer mcuIntraDataDelayMin;
+  integer mcuIntraDataDelayMax;
+  integer mcuWrReq2ackDelayMin;
+  integer mcuWrReq2ackDelayMax;
+  integer mcuWrReq2ackFullDelay;
+
+  // CCX BFMs (CMP/CCM bench)
+  reg [7:0] enableSpcBFM; // instantiate if set
+  reg [7:0] enableMemBFM; // instantiate if set
+  integer stallStart;   // start stalling when this many outstanding requests
+  integer stallStop;    // stop  stalling when this many outstanding requests
+  integer hitRate;      // percent of time that shorter "hit" latencies will be used
+  integer hitDelayMin;  // min value of latency if "hit"
+  integer hitDelayMax;  // max value of latency if "hit"
+  integer missDelayMin; // min value of latency if NOT "hit"
+  integer missDelayMax; // max value of latency if NOT "hit"
+  integer pkt2DelayMin; // min value of latency for second pkt of pair
+  integer pkt2DelayMax; // max value of latency for second pkt of pair
+
+  integer evictFloodFreq;
+  integer evictFloodAmount;
+  reg [7:0] evictFloodTargets;
+  integer bufferFloodFreq;
+  integer bufferFloodAmount;
+  integer bufferFloodTarget;
+  
+  integer burstAmount;
+  integer burstHoldoff;
+  integer burstSync;
+
+  
+  // misc
+  reg        hash_on;
+  integer    por_delay_min;  // # clocks between POR packets
+  integer    por_delay_max;  // # clocks between POR packets
+  reg        pokeCorners;  // concentrate randoms on corner cases.
+  reg        show_store;       // Display store data to logfile
+  reg        show_load;        // Display load data to logfile
+  integer    inval_rate;     // evict # times per 10000
+  reg [2:0]  inval_type;
+  reg[39:0]  inval_pa_min; // eviction pa range
+  reg[39:0]  inval_pa_max;
+  reg[1:0]   l2miss_type;  // 0,1,2 - off, on, random
+  reg        forcePORstate;
+  
+  // interrupts
+  integer    intr_tid;    // 1st TID that get Interrupt packet
+  integer    intr_delay;  // # clocks between Intr packets
+  integer    intr_wait;   // # clocks before Intr packets
+  reg [1:0]  intr_type;   // Ext Intr type value
+  reg [5:0]  intr_vect;   // Ext Intr vector value
+  reg [63:0] intr_en;     // Threads that are enabled to send ext Intr
+
+ 
+  // simulation
+  integer maxCycle; // max clks
+  integer timeOut;  // idle
+
+  reg [63:0] finishMask;
+
+  
+  task new(StandardDisplay dbgin);
+  task getCfg(string fileName);
+  local task getPlus();
+  task check4conflict();
+}
+
+
+task Params::new(StandardDisplay dbgin) {
+  integer i;
+  
+  this.dbg = dbgin;
+  for (i=0;i<5;i++) ccxPktPrint[i] = 0;
+  for (i=0;i<2;i++) mcuMemPrint[i] = 0;
+  this.getPlus();
+  this.getCfg(paramFile);
+}
+
+// This is where it all happens. Put all knobs, +args here.
+// Paramater precedence is:
+// highest) If paramater is a +arg passed into vcs.
+// middle)  If paramater is in the config/param file.
+// last)    Default value given in getParam call.
+// There will always be a value.
+//
+// Any vera testcase can change knobs on the fly, after the fact,
+// by calling getCfg(path/testcaseTestConfig.cfg);
+task Params::getCfg(string fileName = null)
+{
+
+  integer i;
+
+  // check to see if fileName is null or bogus
+  // if so, we will be using defaults only.
+  if (fileName.len() < 3) fileName = null;
+
+  // "open" config/param/knob file for the testcase, even if null!
+  openFile(fileName);
+
+
+  // CMP regs
+  coreAvilableReg = getParam(HEX, "ASI_CORE_AVILABLE", 0, 64'hFFFFFFFFFFFFFFFF, 64'hFF);
+  for (i=0;i<8;i++)
+    if (coreAvilableReg[i*8+7:i*8]) {
+      coreAvilable[i] = 1;
+      coreMax = i;
+    } else coreAvilable[i] = 0;
+  coreEnableReg = getParam(HEX, "ASI_CORE_ENABLE", 0, 64'hFFFFFFFFFFFFFFFF, 64'hFF);
+  for (i=0;i<8;i++)
+    if (coreEnableReg[i*8+7:i*8]) {
+      coreEnable[i] = 1;
+      coreCount++;
+    }
+    else coreEnable[i] = 0;
+
+  
+  //               getParam(type,name,min,max,default,RANDOK)
+  //               see base class
+
+  // partial banks
+  bank_set_mask = getParam(HEX, "bank_set_mask", 1, 4'hf, 4'hf);
+  banksMask[1:0] = {bank_set_mask[0],bank_set_mask[0]};
+  banksMask[3:2] = {bank_set_mask[1],bank_set_mask[1]};
+  banksMask[5:4] = {bank_set_mask[2],bank_set_mask[2]};
+  banksMask[7:6] = {bank_set_mask[3],bank_set_mask[3]};
+      
+#ifdef CMP_BENCH
+  // MCU
+  // delay from read request to read ack
+  mcuReq2ackDelayMin = getParam(DEC, "mcuReq2ackDelayMin", 1, 500, 1);
+  mcuReq2ackDelayMax = getParam(DEC, "mcuReq2ackDelayMax", 1, 500, 8);
+  // delay from read ack to read data returning
+  mcuAck2dataDelayMin = getParam(DEC, "mcuAck2dataDelayMin", 1, 500, 4);
+  mcuAck2dataDelayMax = getParam(DEC, "mcuAck2dataDelayMax", 1, 500, 11);
+  // delay between the 4 read data chunks
+  mcuIntraDataDelayMin = getParam(DEC, "mcuIntraDataDelayMin", 1, 16, 1);
+  mcuIntraDataDelayMax = getParam(DEC, "mcuIntraDataDelayMax", 1, 16, 9);
+  // delay from write request to write ack
+  mcuWrReq2ackDelayMin = getParam(DEC, "mcuWrReq2ackDelayMin", 1, 500, 2);
+  mcuWrReq2ackDelayMax = getParam(DEC, "mcuWrReq2ackDelayMax", 1, 500, 5);
+  // every 64 writes, really extend the ack delay as if the 8 write buffers are full.
+  mcuWrReq2ackFullDelay = getParam(DEC, "mcuWrReq2ackFullDelay", 1, 500, 6);
+#endif
+  
+  // CCX BFMs instantiate if set
+  enableSpcBFM = getParam(HEX, "enableSpcBFM", 0, 8'hff, 8'h00);
+  enableMemBFM = getParam(HEX, "enableMemBFM", 0, 8'hff, 8'h00);
+
+  // CCX BFMs
+  // getArray(DEC, "knobName", min, max, default, variableName, elementCount);
+  //
+  // percent of time that shorter "hit" latencies will be used
+  hitRate = getParam(DEC, "hitRate", 1, 100, 90);
+  // min value of latency if "hit"
+  hitDelayMin = getParam(DEC, "hitDelayMin", 1, 30, 1);
+  // max value of latency if "hit"
+  hitDelayMax = getParam(DEC, "hitDelayMax", 2, 60, 5);
+  // min value of latency if NOT "hit"
+  missDelayMin = getParam(DEC, "missDelayMin", 1, 100, 10);
+  // max value of latency if NOT "hit"
+  missDelayMax = getParam(DEC, "missDelayMax", 2, 500, 20);
+  // min value of latency for second pkt of pair
+  pkt2DelayMin = getParam(DEC, "pkt2DelayMin", 1, 3, 1);
+  // max value of latency for second pkt of pair
+  pkt2DelayMax = getParam(DEC, "pkt2DelayMax", 1, 5, 3);
+  // start stalling when this many outstanding requests
+  // Number of cores * 8 (should be based on # cores)
+  stallStart = getParam(DEC, "stallStart", 4, 50, coreCount*8);
+  // stallStartNcu = (DEC, "stallStartNcu", 4, 50, coreCount*12);
+  // stop  stalling when this many outstanding requests
+  // Number of cores * 8 - 2 (should be based on # cores)
+  stallStop = getParam(DEC, "stallStop", 2, 45, (coreCount*8)-3);
+
+  // make responses bursty. Will burst once there are this many responses held up.
+  burstAmount = getParam(DEC, "burstAmount", 0, 35, 0);
+  // Will always burst when this many clocks have elapsed. Prevents starvation.
+  burstHoldoff = getParam(DEC, "burstHoldoff", 10, 500, 150);
+  // Setting burstSync will cause all banks to burst at once
+  // if possible. All banks will follow the master bank when it bursts.
+  // +burstSync=master <0-16> port number
+  burstSync = getParam(DEC, "burstSync", 0, 16, 99);
+  
+  // CCX coverage/irritator activity. Flood of bogus evictions.
+  evictFloodFreq = getParam(DEC, "evictFloodFreq", 0, 100000, 0);
+  evictFloodAmount = getParam(DEC, "evictFloodAmount", 1, 100, 10);
+  evictFloodTargets = getParam(HEX, "evictFloodTargets", 1, 8'hff, 1);
+
+  // CCX coverage/irritator activity. ifills followed by evictions.
+  // Will target any SPC port that does not have a real core.
+  bufferFloodFreq = getParam(DEC, "bufferFloodFreq", 0, 100000, 0);
+  bufferFloodAmount = getParam(DEC, "bufferFloodAmount", 1, 100, 10);
+  bufferFloodTarget = getParam(HEX, "bufferFloodTarget", 0, 7, 7);
+
+
+  
+  
+  hash_on = getParam(FLAG, "hash_on", 0, 1, 0);
+  
+  // clocks between POR
+  por_delay_min = getParam(DEC, "por_delay_min", 1, 10000, 25);
+  por_delay_max = getParam(DEC, "por_delay_max", 1, 20000, 200);
+
+  // FC like state for SPC
+  forcePORstate = getParam(FLAG, "forcePORstate", 0, 1, 0);
+  
+  // concentrate randoms on corner cases (if you coded it that way).
+  pokeCorners = getParam(DEC, "pokeCorners", 0, 1, 0);
+
+  // interrupts (from spc)
+  // 1st TID that get Interrupt packet
+  intr_tid = getParam(DEC,"intr_tid", 0, 63, RAND, RANDOK);
+  // # clocks between Intr packets
+  intr_delay = getParam(DEC,"intr_delay", 0, 100000, 10);
+  // # clocks before Intr packets
+  intr_wait = getParam(DEC,"intr_wait", 0, 100000, 3000);
+  // Ext Intr type value
+  intr_type = getParam(HEX, "intr_type", 0, 32'hffffffff, INTR_RESET);
+  // Ext Intr vector value
+  intr_vect = getParam(HEX, "intr_vect", 0, 32'hffffffff, INTR_XIR);
+  // Threads that are enabled to send ext Intr
+  intr_en = getParam(HEX, "intr_en", 0, 64'hFFFFFFFFFFFFFFFF, 0);
+
+  // # times per 10000 to evict
+  inval_rate = getParam(DEC, "inval_rate", 0, 10000, 0);  // Default OFF
+  inval_type = getParam(DEC, "inval_type", 1, 7, 1);      // Default evict only
+
+  inval_pa_min = getParam(HEX, "inval_pa_min", 0, 40'hffffffffff, 0);
+  inval_pa_max = getParam(HEX, "inval_pa_max", 0, 40'hffffffffff, 40'hffffffffff);
+  
+  // value that CCX stub will use for l2miss
+  l2miss_type = getParam(HEX, "l2miss_type", 0, 2'h2, 2'h2);
+  
+  // sim
+  maxCycle = getParam(DEC,"max_cycle", 0, MAXINT,MAXINT);//,*,NOWARN); // max clks
+  timeOut = getParam(DEC,"TIMEOUT", 0, MAXINT,MAXINT);//,*,NOWARN);    // idle timmer
+
+  show_store = getParam(FLAG, "show_store", 0, 1, 0);
+  show_load = getParam(FLAG, "show_load", 0, 1, 0);
+
+  // coverage
+  force_save_cov = getParam(FLAG, "force_save_cov", 0, 1, 0);
+  coverage_on = getParam(FLAG, "coverage_on", 0, 1, 0);
+  coverage_on = ~getParam(FLAG, "coverage_off", 0, 1, 0);
+
+  
+
+  //                     //
+  // debug logic testing //
+  //                     //
+#ifdef SPC_BENCH
+  // enable warm reset vector
+  wmrVecMask = getParam(FLAG, "wmrVecMask", 0, 1, 0);
+  // enable fast boot
+  wmrVecMask = getParam(FLAG, "fast_boot", 0, 1, 0); // alias
+  // do not use
+  showDebugCounts = getParam(FLAG, "showDebugCounts", 0, 1, 0);
+  // no vera driver
+  noDebugDrv = getParam(FLAG, "noDebugDrv", 0, 1, 0);
+#endif
+  
+  // no verilog checker
+  noDebugChecks = getParam(FLAG, "noDebugChecks", 0, 1, 0);
+
+  // cancel all use of debug knobs. for diags that can not do debug.
+  noDebugModes = getParam(FLAG, "noDebugModes", 0, 1, 0);
+  
+  // ssModeFreq = initiate SS session every freq clocks.
+  ssModeFreq = getParam(DEC, "ssModeFreq", 0, 100000, 0);
+  // ssModeMaxSessions = limit SS sessions to this many sessions
+  ssModeMaxSessions = getParam(DEC, "ssModeMaxSessions", 0, 100, 50);
+  // ssModeInterleaveWeight = do interleaving or not within SS session based on weight
+  ssModeInterleaveWeight = getParam(DEC, "ssModeInterleaveWeight", 0, 100, 40);
+  // ssModeTidMask = which tids to involve in SS sessions
+  ssModeTidMask = getParam(HEX, "ssModeTidMask", 0, 8'hff, 0);
+  // ssModeBurstMin,ssModeBurstMax = how many steps to take per tid interleave
+  ssModeBurstMin = getParam(DEC, "ssModeBurstMin", 0, 500, 10);
+  ssModeBurstMax = getParam(DEC, "ssModeBurstMax", 1, 500, 250);
+  // ssModeMin,ssModeMax = how many total steps to take per SS session
+  ssModeMin = getParam(DEC, "ssModeMin", 0, 5000, 20+ssModeBurstMin);
+  ssModeMax = getParam(DEC, "ssModeMax", 1, 5000, 500+ssModeBurstMax);
+  // let dead clks pass before next SS req in session
+  ssModeHolesMin = getParam(DEC, "ssModeHolesMin", 0, 500, 0);
+  ssModeHolesMax = getParam(DEC, "ssModeHolesMax", 1, 500, 10);
+
+  // doModeFreq = initiate session every freq clocks.
+  doModeFreq = getParam(DEC, "doModeFreq", 0, 100000, 0);
+  // doModeMaxSessions = limit DO sessions to this many sessions
+  doModeMaxSessions = getParam(DEC, "doModeMaxSessions", 0, 100, 50);
+  // doModeTidMask = which tids to involve in sessions
+  doModeTidMask = getParam(DEC, "doModeTidMask", 0, 8'hff, 0);
+  // doModeLenMin,doModeLenMax = how many total clocks to run per session
+  doModeLenMin = getParam(DEC, "doModeLenMin", 1, 5000000, 200);
+  doModeLenMax = getParam(DEC, "doModeLenMax", 1, 5000000, 5000);
+
+  // softStopFreq  = initiate session every freq clocks.
+  softStopFreq = getParam(DEC, "softStopFreq", 1000, 100000, 0);
+  // softStopMaxSessions = limit sessions to this many sessions
+  softStopMaxSessions = getParam(DEC, "softStopMaxSessions", 0, 100, 50);
+  // doModeTidMask = which tids to involve in sessions
+  softStopTidMask = getParam(DEC, "softStopTidMask", 0, 8'hff, 0);
+  // softStopLenMin,doModeLenMax = how many total clocks to run per session
+  softStopLenMin = getParam(DEC, "softStopLenMin", 0, 500, 50);
+  softStopLenMax = getParam(DEC, "softStopLenMax", 1, 600, 500);
+
+  // exit diag if it parks and we are doing do/ss/softStop
+  nodebugParkExit = getParam(FLAG, "nodebugParkExit", 0, 1, 0);
+  
+  //                         //
+  // end debug logic testing //
+  //                         //
+
+
+
+#ifdef SPC_BENCH  
+  // ccx stub
+  rand_ccx_gnt_enable = getParam(FLAG, "random_ccx_gnt", 0, 1, 0);
+  min_ccx_gnt_delay   = getParam(DEC, "min_ccx_gnt_delay", 0, 1000, 0);
+  max_ccx_gnt_delay   = getParam(DEC, "max_ccx_gnt_delay", 0, 1000, 0);
+  stub_l1_enable = getParam(FLAG, "stub_l1_disable", 0, 1, 1);
+  l2lat_value = getParam(DEC, "l2lat_value", 0, 500, 6);
+  l2lat_fixed = getParam(FLAG, "l2lat_fixed", 0, 1, 0); 
+  l2lat_in = getStringParam("latmom");
+
+  // POR/WMR/LBIST/MBISI
+  por_enable        = getParam(FLAG, "por_enable",   0, 1, 0); 
+  lbist_enable      = getParam(FLAG, "lbist_enable", 0, 1, 0); 
+  mbist_mode        = getParam(DEC, "mbist_mode",  0, 7, 0); 
+  mbist_enable      = mbist_mode[2];
+  mbist_errinj      = getParam(FLAG, "mbist_errinj", 0, 1, 0);
+  user_loop_mode    = getParam(DEC, "user_loop_mode",  0, 1, 0); 
+  user_loop_count   = getParam(DEC, "user_loop_count",  0, 256, 3); 
+  lbist_abort_count = getParam(DEC, "lbist_abort_count",  0, 65000, 0); 
+  lbist_run_count   = getParam(HEX, "lbist_run_count",  1, 7, 1); 
+  lbist_pgm         = getParam(DEC, "lbist_pgm",0, 1, 0);
+  mbist_fail_count  = getParam(DEC, "mbist_fail_count",  0, 16777000, 0); 
+
+  //err
+  err_freq = getParam(DEC, "err_freq", 0, 100, 10);
+  err_burst_freq = getParam(DEC, "err_burst_freq", 0, 100, 5);
+  err_burst_len_min = getParam(DEC, "err_burst_len_min", 0, 10, 1);
+  err_burst_len_max = getParam(DEC, "err_burst_len_max", 1, 50, 10);
+  err_ce_wt = getParam(DEC, "err_ce_wt", 0, 100, 50);
+  err_nd_wt = getParam(DEC, "err_nd_wt", 0, 100, 25);
+  rand_err = getParam(FLAG, "rand_err", 0, 1, 0);
+
+  err_itlb_on = getParam(FLAG, "err_itlb_on", 0, 1, 0);
+  err_itlb_freq = getParam(DEC, "err_itlb_freq", 0, 100, 20);
+  
+  err_dtlb_on = getParam(FLAG, "err_dtlb_on", 0, 1, 0);
+  err_dtlb_freq = getParam(DEC, "err_dtlb_freq", 0, 100, 5);
+  
+  err_ic_on = getParam(FLAG, "err_ic_on", 0, 1, 0);
+  err_ic_freq = getParam(DEC, "err_ic_freq", 0, 100, 20);
+  
+  err_dc_on = getParam(FLAG, "err_dc_on", 0, 1, 0);
+  err_dc_freq = getParam(DEC, "err_dc_freq", 0, 100, 5);
+  
+  err_irf_on = getParam(FLAG, "err_irf_on", 0, 1, 0);
+  err_irf_freq = getParam(DEC, "err_irf_freq", 0, 100, 20);
+  
+  err_frf_on = getParam(FLAG, "err_frf_on", 0, 1, 0);
+  err_frf_freq = getParam(DEC, "err_frf_freq", 0, 100, 20);
+  
+  err_stb_on = getParam(FLAG, "err_stb_on", 0, 1, 0);
+  err_stb_freq = getParam(DEC, "err_stb_freq", 0, 100, 20);
+  
+  err_sca_on = getParam(FLAG, "err_sca_on", 0, 1, 0);
+  err_sca_freq = getParam(DEC, "err_sca_freq", 0, 100, 20);
+  
+  err_tcc_on = getParam(FLAG, "err_tcc_on", 0, 1, 0);
+  err_tcc_freq = getParam(DEC, "err_tcc_freq", 0, 100, 20);
+  
+  err_tsa_on = getParam(FLAG, "err_tsa_on", 0, 1, 0);
+  err_tsa_freq = getParam(DEC, "err_tsa_freq", 0, 100, 4);
+  
+  err_mra_on = getParam(FLAG, "err_mra_on", 0, 1, 0);
+  err_mra_freq = getParam(DEC, "err_mra_freq", 0, 100, 20);
+  
+  err_l2c_on = getParam(FLAG, "err_l2c_on", 0, 1, 0);
+  err_l2c_freq = getParam(DEC, "err_l2c_freq", 0, 100, 20);
+  
+  err_mamem_on = getParam(FLAG, "err_mamem_on", 0, 1, 0);
+  err_mamem_freq = getParam(DEC, "err_mamem_freq", 0, 100, 20);
+#endif
+
+
+
+
+  
+  // add more here...
+
+
+
+
+  
+  closeFile(fileName);
+  check4conflict();
+}
+
+// things that are ONLY gotten from +args, not in config/paramaters file.
+// strings mostly.
+// Put all "knobs" in getCfg task above!!!
+task Params::getPlus() {
+
+  // +dv_root is passed in by sims. Everything lives below that.
+  // +dv_root=path
+  if (mChkPlusarg(dv_root=)) {
+    mGetPlusargStr(dv_root=,getstr);
+    tempstr.bittostr (getstr);
+    dv_root = tempstr;
+    //printf("\n%7d paramsClass::getPlus dv_root = %s\n",get_cycle(),dv_root);
+  }
+
+  // If all param files are in one dir or are along one path, why not
+  // get that partial path and then go from there? If you set it, you
+  // should use it.
+  // Put in bench.config as vcs_run_arg=+paramPath=verif/diag/bench.
+  // Will prepend dv_root.  +paramPath=path
+  if (mChkPlusarg(paramPath=)) {
+    mGetPlusargStr(paramPath=,getstr);
+    tempstr.bittostr (getstr);
+    paramPath = tempstr;
+  }
+
+  // You could pass in the default location (in bench.config) for a
+  // default paramFile that will be used when none other is given, either
+  // on the command line or in the testlist (which becomes the command line).
+  // +defaultParam
+
+  // Look for +paramFile= to append to +paramPath=path
+  // +paramFile=file.cfg
+  if (mChkPlusarg(paramFile=)) {
+    mGetPlusargStr(paramFile=,getstr);
+    tempstr.bittostr (getstr);
+    paramFile = tempstr;
+    //printf("%7d paramsClass::getPlus paramFile = %s\n",get_cycle(),paramFile);
+  }
+
+  // Look for +forceParamFile= so user can force a param/config/knobs file.
+  // Will ignore +paramPath= and +paramFile= and +dv_root=
+  // +forceParamFile=FULLPATH/slowMem.cfg
+  if (mChkPlusarg(forceParamFile=)) {
+    mGetPlusargStr(forceParamFile=,getstr);
+    tempstr.bittostr (getstr);
+    forceParamFile = tempstr;
+    printf("\n%7d paramsClass::getPlus forceParamFile = %s\n",get_cycle(),forceParamFile);
+  }
+
+  // OK make sense of it...
+  if (forceParamFile !== null) {
+    printf("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+    printf("using forceParamFile: %s\n",forceParamFile);
+    printf("You probably need to repeat this to reproduce failures!\n");
+    printf("Use -vcs_run_args=+forceParamFile=%s to do that!\n",forceParamFile);
+    printf("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+  }
+  else if (paramFile !== null) {
+    printf("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+    printf("using paramFile: %s\n",paramFile);
+    printf("You may need to repeat this to reproduce failures!\n");
+    printf("Use -vcs_run_args=+paramFile=%s (or +forceParamFile=) to do that!\n",paramFile);
+    printf("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+  }
+
+  // now use paramFile. May be null and if so, default params will be used.
+  if (paramFile !== null) {
+    paramFile = {paramPath,paramFile};
+  }
+  if (forceParamFile !== null) {
+    paramFile = forceParamFile;
+  }
+
+  // what kind of diags are running?
+  if (mChkPlusarg(vera_diag_name=)) {
+    mGetPlusargStr(vera_diag_name=,getstr);
+    tempstr.bittostr (getstr);
+    veraDiagName = tempstr;
+  }
+
+  if (mChkPlusarg(asm_diag_name=)) {
+    mGetPlusargStr(asm_diag_name=,getstr);
+    tempstr.bittostr (getstr);
+    asmDiagName = tempstr;
+  }
+
+  // only Verilog knows what this is because it can be randomized in verilog.
+  // Use gUtil.getThreadEnables or sparcBenchUtils_if.th_check_enable
+//   if (mChkPlusarg(thread=)) {
+//     mGetPlusargStr(thread=,getstr);
+//     tempstr.bittostr(getstr);
+//     if (tempstr == "all") getstr = 64'hffffffffffffffff; // special case
+//     else getstr = tempstr.atohex();
+//     thread_enables = getstr;
+//   }
+
+  // CCX packet print
+  if (mChkPlusarg(ccxPktPrint=)) {
+    mGetPlusargStr(ccxPktPrint=,getstr);
+    tempstr.bittostr (getstr);
+    if (tempstr == "all") {
+      ccxPktPrint[PP_PCX] = 1;
+      ccxPktPrint[PP_CPX] = 1;
+    }
+    else if (tempstr == "pcx") ccxPktPrint[PP_PCX] = 1;
+    else if (tempstr == "cpx") ccxPktPrint[PP_CPX] = 1;
+    else if (tempstr == "mem") ccxPktPrint[PP_MEM] = 1;
+    else if (tempstr == "spc") ccxPktPrint[PP_SPC] = 1;
+    else if (tempstr == "targets") ccxPktPrint[PP_TRG] = 1;
+    else if (tempstr == "target") ccxPktPrint[PP_TRG] = 1;
+    else ccxPktPrintMask = tempstr.atohex();
+    ccxPktPrintOn = 1;
+  }
+
+  // MCU mem print
+  if (mChkPlusarg(mcuMemPrint=)) {
+    mGetPlusargStr(mcuMemPrint=,getstr);
+    tempstr.bittostr (getstr);
+    if (tempstr == "all") {
+      mcuMemPrint[READ] = 1;
+      mcuMemPrint[WRITE] = 1;
+    }
+    else if (tempstr == "rd" || tempstr == "read") mcuMemPrint[READ] = 1;
+    else if (tempstr == "wr" || tempstr == "write") mcuMemPrint[WRITE] = 1;
+    mcuMemPrintOn = 1;
+  }
+
+  if (mChkPlusarg(finish_mask=)) {
+    mGetPlusargStr(finish_mask=,getstr);
+    tempstr.bittostr (getstr);
+    if (tempstr == "all") tmp = 64'hffffffffffffffff; // special case
+    else tmp = tempstr.atohex();
+    finishMask = tmp;
+  } else if (mChkPlusarg(threads=)) {
+    mGetPlusargStr(threads=,getstr);
+    tempstr.bittostr (getstr);
+    if (tempstr == "all") tmp = 64'hffffffffffffffff; // special case
+    else tmp = tempstr.atohex();
+    finishMask = tmp;
+  } else finishMask = 1;
+    
+
+  // you probably don't want to add here, see task getCfg above.
+
+
+}
+
+
+
+// This task will try to resolve conflicts in paramaters
+// PROVIDED that someone has thought of them.
+task Params::check4conflict() {
+
+  integer i;
+
+  intr_en = intr_en & coreEnableReg;
+  finishMask = finishMask & coreEnableReg & coreAvilableReg;
+
+}
+

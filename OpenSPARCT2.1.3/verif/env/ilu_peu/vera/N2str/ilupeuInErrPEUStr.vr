@@ -1,0 +1,116 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuInErrPEUStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class InErrPEUStr extends PEUStrBase 
+  {
+  integer f_errQueue;				// A mailbox for bad pkt headers
+  integer f_offs;				// The offset for the pty error
+
+  task new( PEUTestEnv a_env )
+    {
+    super.new( a_env );
+    f_errQueue = 0;
+    f_offs = 0;
+    }
+
+  task SetErrQueue( integer a_queue )
+    {
+    f_errQueue = a_queue;
+    } /* end SetErrQueue */
+
+  task SetOffset( integer a_offs )
+    {
+    f_offs = a_offs;
+    } /* end SetErrOffs */
+
+  task Execute()
+    {
+    bit [7:0]   tlpTag;
+    bit [127:0] tlpHdr;
+    integer     tlpData;
+
+					// Generate a DMA request, big enough
+					// for the given offset.
+    if ( f_offs == 0 ) f_offs = 17 + urandom()%32;
+    f_env.allocDmaTag( tlpTag );
+    if ( f_offs > 15 )
+      f_env.genEgressWrReq( tlpTag, tlpHdr, tlpData, f_offs/4 - 2 );
+    else
+      f_env.genEgressWrReq( tlpTag, tlpHdr, tlpData );
+
+					// Present the bad TLP to the TLU.
+					// Since the TLU presents the TLP to the
+					// ILU (with bad parity), we have to get
+					// some posted credits.
+    f_env.reserveIngressCredits( tlpHdr );
+    f_env.drivePCIE( tlpHdr, tlpData, 0, f_offs );
+    f_env.consumeIngressCredits( tlpHdr );
+
+					// An error in the header means we're
+					// going into the 'drain state'.
+					// Otherwise, expect the TLP (with bad
+					// parity) from the ILU.
+    if ( f_offs <= 16 )
+      {
+      f_env.enterDrainState();
+//    f_env.waitIngressLatency( tlpHdr );
+//N2 review      while( !IHB.err ) @(posedge IHB.clk);
+      f_env.wait(100);
+      }
+    else
+      {
+      f_env.errorPayload( tlpData );
+      f_env.expectILU( tlpHdr, tlpData );
+      f_env.freeDmaTag( tlpTag );
+      }
+
+					// Tell the error-checker about this
+					// bad-boy.
+    if ( f_errQueue != 0 )
+      {
+					// A parity error within the first 16
+					// bytes will yield an IHB error!
+      if ( f_offs <= 16 )
+        {
+        mailbox_put( f_errQueue, e_ERR_none );
+        mailbox_put( f_errQueue, 2 );
+        mailbox_put( f_errQueue, e_ERR_ilu_ihb );
+        mailbox_put( f_errQueue, 128'bx );
+        }
+      mailbox_put( f_errQueue, e_ERR_oe_iip );
+      mailbox_put( f_errQueue, 128'bx );
+      }
+
+    } /* end Execute */
+  } /* end InErrPEUStr */

@@ -1,0 +1,438 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: MCUStub_class.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+#include <std_display_defines.vri>
+
+// L2/MCU interface
+#include <MCUStub.if.vrh>
+#include <MCUStub.bind.vrh>
+// all externs, etc
+#include <globals.vri>
+// std disp
+#include <std_display_class.vrh>
+// global memory array gMem
+#include <memArray.vrh>
+// bench paramaters/knobs
+#include <baseParamsClass.vrh>
+#include <sparcParams.vrh>
+
+
+
+// print stuff
+//#define DEBUGMCU
+
+//#define IDLE_DATA {urandom(),urandom(),urandom(),urandom()}
+#define IDLE_DATA 128'hDEAD_BEEF_DEAD_BEEF_DEAD_BEEF_DEAD_BEEF
+#define IDLE_ECC  28'hBCD_ABCD
+#define READ 0
+#define WRITE 1
+
+/////////////////////////////////////////////////////////////////////////////////
+// MCU Stub class
+/////////////////////////////////////////////////////////////////////////////////
+
+
+class ReadPacket {
+
+  reg [511:0] cacheline;
+  reg [39:0]  address;   // holds address [39:7] and [5], others = 0;
+  integer req_id;
+  reg dummy;
+  
+  rand integer req_to_ack_delay;
+  rand integer ack_to_data_delay;
+  rand integer intra_data_delay;
+  
+  constraint delays {
+    req_to_ack_delay >= gParam.mcuReq2ackDelayMin;
+    req_to_ack_delay <= gParam.mcuReq2ackDelayMax;
+    ack_to_data_delay >= gParam.mcuAck2dataDelayMin;
+    ack_to_data_delay <= gParam.mcuAck2dataDelayMax;
+    intra_data_delay >= gParam.mcuIntraDataDelayMin;
+    intra_data_delay <= gParam.mcuIntraDataDelayMax;
+  }
+
+  task new() {
+    void = this.randomize();
+    address = 0;
+    dummy = 0;
+  }
+
+}
+
+// If I have a rd and wr to the same block at the same time, the wr must always
+// go first. If a write is active, delay the read until it is done. Always do
+// mem array writes in zero time and always do mem array reads when driving the wires.
+class MCUStub_class {
+
+  local mcu_port               L2port;
+  local mcu_data_port          L2dataPort;
+  static local integer interface_lock [4];
+  local reg [2:0] instance;
+  local reg [1:0] pair; // what pair of L2 banks we are talking to
+  local integer readRespBox;
+  local integer outstandingReads;
+  local integer outstandingDummy;
+  //local reg [63:0] rdReqId [8]; // track the (up to) 8 read addresses that are active
+  local reg [31:0] activeWrBlk; // this address is being written NOW. Do not read it.
+  task new(mcu_port portvar,
+           mcu_data_port dataportvar,
+           integer instance);
+  local task CollectReadReq();
+  local task CollectWriteReq();
+  local task InjectReadData(ReadPacket read_pkt, integer dummy=0);
+  local function reg [6:0] DECC(reg [31:0] d);
+
+}
+
+
+task MCUStub_class::new(mcu_port portvar,
+                        mcu_data_port dataportvar,
+                        integer instance)
+{
+
+  integer i;
+  bit [31:0] tmp;
+
+  
+  // lock for the 4 shared data buses
+  for (i=0;i<4;i++) interface_lock[i] = alloc(SEMAPHORE,0,1,1);
+
+  activeWrBlk = 32'hffffffff;
+  
+  readRespBox = alloc (MAILBOX,0,1);
+  outstandingReads = 0;
+  outstandingDummy = 0;
+  L2port = portvar;
+  L2dataPort = dataportvar;
+
+  this.instance = instance;
+  // what pair of L2 banks we are talking to on a common bus
+  this.pair = this.instance >> 1; 
+
+  L2port.$mcu_l2t_rd_ack= 0;
+  L2port.$mcu_l2t_rd_req_id_r0 = 0;
+  L2port.$mcu_l2t_data_vld_r0 = 0;
+  L2dataPort.$mcu_l2b_data_r2 = 0;
+  L2port.$mcu_l2t_qword_id_r0 = 0;
+  L2dataPort.$mcu_l2b_ecc_r2 = 0;
+
+  L2port.$mcu_l2t_secc_err_r2 = 0;
+  L2port.$mcu_l2t_mecc_err_r2 = 0;
+  L2port.$mcu_l2t_scb_secc_err = 0;
+  L2port.$mcu_l2t_scb_mecc_err = 0;
+
+  L2port.$mcu_l2t_wr_ack = 0;
+
+
+  fork
+  {
+    CollectReadReq();
+  }
+
+  {
+    CollectWriteReq();
+  }
+  join none
+
+}  //end MCUStub_class::new
+
+
+task MCUStub_class::CollectReadReq() {
+
+  ReadPacket     read_pkt;
+  integer        qword_id, dummy=0;
+
+  while (1) {
+    
+    @(posedge L2port.$l2t_mcu_rd_req);
+    if (L2port.$l2t_mcu_rd_dummy_req) dummy = 1;
+    
+    read_pkt = new();
+    read_pkt.address[39:7] = L2port.$l2t_mcu_addr;
+    read_pkt.address[6] = instance[0];
+    read_pkt.address[5]    = L2port.$l2t_mcu_addr_5;
+    read_pkt.req_id  = L2port.$l2t_mcu_rd_req_id;
+    
+    if (gParam.mcuMemPrint[READ]) printf("%0d MCUStub_class::CollectReadReq (MCU#%0d) ID%0d read req addr [39:0]=%h (%h) dummy=%0d\n", get_cycle(),instance,read_pkt.req_id,read_pkt.address[39:0],L2port.$l2t_mcu_addr,dummy);
+
+    // do not respond if we have 8 requests in flight
+    // or 1 dummy.
+    if (outstandingReads >= 8) wait_var(outstandingReads);
+    if (outstandingDummy && dummy) wait_var(outstandingDummy);
+    
+    repeat(read_pkt.req_to_ack_delay) @(posedge L2port.$clk);
+    
+    L2port.$mcu_l2t_rd_ack = 1;
+    
+#ifdef DEBUGMCU      
+    printf("%0d MCUStub_class::CollectReadReq (MCU#%0d) ID%0d %0h asserting mcu_l2t_rd_ack after delay of %0d. dummy=%0d\n",get_cycle(),instance,read_pkt.req_id,read_pkt.address[39:0],read_pkt.req_to_ack_delay,dummy);
+#endif      
+
+    @(posedge L2port.$clk);
+    L2port.$mcu_l2t_rd_ack = 0;
+
+    if (dummy == 0) {
+      outstandingReads++;
+      InjectReadData(read_pkt); // not blocking
+    }
+    else {
+      read_pkt.dummy = 1;
+      read_pkt.cacheline = 0;
+      // one outstanding dummy read permitted
+      outstandingReads++;
+      outstandingDummy = 1;
+      InjectReadData(read_pkt, dummy); // not blocking
+      dummy = 0;
+    }
+    
+  }
+}
+
+
+
+task MCUStub_class::InjectReadData(ReadPacket read_pkt, integer dummy=0) {
+
+  reg [63:0]  temp_data[8];
+  reg [27:0]  temp_ecc;
+  integer     i;
+  reg [511:0] temp_line;
+  integer     qword_id, qword_idi;
+  reg [31:0]  tmp32;
+
+  // fork off a delayed response for this request
+  fork {
+
+#ifdef DEBUGMCU
+    printf("%0d MCUStub_class::InjectReadData (MCU#%0d) ID%0d %0h delaying %0d before data drive\n", get_cycle(),instance,read_pkt.req_id,read_pkt.address[39:0],read_pkt.ack_to_data_delay);
+#endif    
+    
+    repeat (read_pkt.ack_to_data_delay) @(posedge L2port.$clk);
+
+#ifdef DEBUGMCU
+    printf("%0d MCUStub_class::InjectReadData (MCU#%0d) ID%0d %0h waiting for bus lock\n", get_cycle(),instance,read_pkt.req_id,read_pkt.address[39:0]);
+#endif    
+    // lock the shared data/ecc bus
+    semaphore_get(WAIT, interface_lock[pair], 1);    
+
+    
+    // If a write is in progress to this block, wait before reading it!
+    while (activeWrBlk[30:0] == read_pkt.address[39:9]) {
+#ifdef DEBUGMCU
+      printf("%0d MCUStub_class::InjectReadData (MCU#%0d) ID%0d %0h waiting to avoid RAW hazard\n", get_cycle(),instance,read_pkt.req_id,read_pkt.address[39:0]);
+#endif    
+      wait_var(activeWrBlk);
+    }
+
+    
+    // read mem array now that we know a write is not in progress to this address.
+    if (! read_pkt.dummy) read_pkt.cacheline = gMem.read512({read_pkt.address[39:6],6'b0});
+    
+    // make 8 8 byte words
+    for (i=0; i<8; i++) {
+      temp_data[i] = read_pkt.cacheline[(i*64)+63:i*64];
+#ifdef DEBUGMCU
+      printf("%0d MCUStub_class::InjectReadData (MCU#%0d) ID%0d %0h temp_data[%0d]=%h\n", get_cycle(),instance,read_pkt.req_id,read_pkt.address[39:0],i,temp_data[i]);
+#endif      
+    }
+
+    //always 0 or 2
+    qword_id = read_pkt.address[5:4];
+    qword_idi = read_pkt.address[5:4];
+    
+    // drive 4 16 byte words in pairs w/ delay between pairs
+    for (i=0; i<2; i++) {
+      
+      L2port.$mcu_l2t_rd_req_id_r0 = read_pkt.req_id;
+      L2port.$mcu_l2t_data_vld_r0 = 1;
+      repeat (2) {
+        L2port.$mcu_l2t_qword_id_r0 = qword_idi;
+        @(posedge L2port.$clk);
+        qword_idi = (qword_idi+1)%4;
+      }
+      L2port.$mcu_l2t_data_vld_r0 = 0;
+      
+      // leave interface random
+      tmp32 = urandom();
+      L2port.$mcu_l2t_qword_id_r0 = tmp32[5:3];
+      L2port.$mcu_l2t_rd_req_id_r0 = tmp32[2:0];
+      @(posedge L2port.$clk);
+
+      repeat (2) {
+        // drive 128 bits
+        // 127:64 has low chunk, [63:0] has high chunk.
+        L2dataPort.$mcu_l2b_data_r2 = {temp_data[(qword_id*2)], temp_data[(qword_id*2)+1]};
+        L2dataPort.$mcu_l2b_ecc_r2  = {
+          DECC(temp_data[(qword_id*2)][63:32]),
+            DECC(temp_data[(qword_id*2)][31:0]),
+            DECC(temp_data[(qword_id*2)+1][63:32]),
+            DECC(temp_data[(qword_id*2)+1][31:0]) };
+
+        if (gParam.mcuMemPrint[READ]) printf("%0d MCUStub_class::InjectReadData (MCU#%0d) ID%0d %0h pair %0d drive %h_%h\n",get_cycle(),instance,read_pkt.req_id,read_pkt.address[39:0],i,temp_data[(qword_id*2)], temp_data[(qword_id*2)+1]);
+
+        @(posedge L2port.$clk);
+        qword_id = (qword_id+1)%4;
+      }
+      
+      // leave bus randomized when idle
+      tmp32 = urandom();
+      // @1 L2dataPort.$mcu_l2b_data_r2 <= IDLE_DATA;
+      // @1 L2dataPort.$mcu_l2b_ecc_r2  <= tmp32[27:0];
+      L2dataPort.$mcu_l2b_data_r2 = IDLE_DATA;
+      L2dataPort.$mcu_l2b_ecc_r2  = tmp32[27:0];
+
+      // delay before next data
+      if (i == 0 && read_pkt.intra_data_delay) {
+#ifdef DEBUGMCU
+        printf("%0d MCUStub_class::InjectReadData (MCU#%0d) ID%0d %0h delaying %0d before next data pkt pair (%0d).\n",get_cycle(),instance,read_pkt.req_id,read_pkt.address[39:0],read_pkt.intra_data_delay,i);
+#endif        
+        repeat (read_pkt.intra_data_delay) @(posedge L2port.$clk);
+      }
+      
+   } // for
+
+    semaphore_put(interface_lock[pair], 1);
+    outstandingReads--;
+    if (dummy) outstandingDummy = 0;
+    
+    if (gParam.mcuMemPrint[READ]) {
+      printf("%0d MCUStub_class::InjectReadData (MCU#%0d) ID%0d %0h done injecting read %h %h_%h_%h_%h\n",get_cycle(),instance,read_pkt.req_id,read_pkt.address[39:0],read_pkt.address[39:0], read_pkt.cacheline[511:384], read_pkt.cacheline[383:256], read_pkt.cacheline[255:128], read_pkt.cacheline[127:0]);
+      gMem.dumpMem(read_pkt.address[39:0] & 40'hFFFFFFFFC0, 8);
+    }
+
+  } join none
+
+}
+
+
+// The L2 cache has the potential to exceed
+// the Write Request Queue limit of eight. If all eight entries in the
+// Write Request Queue are full when the ninth request comes in, the MCU
+// will hold the request and not send an acknowledge until an entry frees
+// up.
+//
+// Task has periodic ack holdoffs to emulate the previous blurb.
+// We don't have a queue since it would be pointless (the RTL wouldn't
+// know we had it, it only knows fast/slow ack delays so we will do that).
+task MCUStub_class::CollectWriteReq() {
+
+  reg [511:0]   cacheline;
+  reg [39:0]    address;
+  integer       i;
+  reg [5:0]     writes = 0;
+
+  while (1) {
+    
+    @(posedge L2port.$l2t_mcu_wr_req);
+
+    writes++;
+    
+    address = 0;
+    address[39:7] = L2port.$l2t_mcu_addr;
+    address[6] = instance[0];
+    address[5]    = L2port.$l2t_mcu_addr_5;
+
+    activeWrBlk = address[39:9];
+    
+    if (gParam.mcuMemPrint[WRITE]) printf("%0d MCUStub_class::CollectWriteReq (MCU#%0d) write req addr [39:0]=%h (%h)\n",get_cycle(),instance,address[39:0],L2port.$l2t_mcu_addr);
+
+    // ack delay
+    repeat (urandom_range(gParam.mcuWrReq2ackDelayMax,gParam.mcuWrReq2ackDelayMin))
+      @(posedge L2port.$clk);
+
+    // every 64 writes, really extend the ack delay as if the 8 write buffers
+    // are full. This should be good enough to test L2 back pressuring.
+    if (writes == 6'h3f)
+      repeat (gParam.mcuWrReq2ackFullDelay)
+        @(posedge L2port.$clk);
+    
+    L2port.$mcu_l2t_wr_ack = 1;
+    @0 L2port.$l2b_mcu_data_vld_r5 == 0;
+    @(posedge L2port.$clk);
+    L2port.$mcu_l2t_wr_ack = 0;
+
+    @(posedge L2port.$l2b_mcu_data_vld_r5);
+
+    for (i=0; i<8;i++) {
+      cacheline[(i*64)+63:i*64] = L2port.$l2b_mcu_wr_data_r5;
+
+      if (gParam.mcuMemPrint[WRITE]) printf("%0d MCUStub_class::CollectWriteReq (MCU#%0d) %0h collecting write data[%0d] = %h\n",get_cycle(),instance,address[39:0], i, L2port.$l2b_mcu_wr_data_r5);
+
+      @(posedge L2port.$clk);
+    }
+    @0 L2port.$l2b_mcu_data_vld_r5 == 0;
+    
+    gMem.write512({address[39:6],6'b0}, cacheline);
+    if (gParam.mcuMemPrint[WRITE]) gMem.dumpMem(address[39:0] & 40'hFFFFFFFFC0, 8);
+
+    activeWrBlk = 32'hffffffff;
+    
+#ifdef DEBUGMCU
+    printf("MCUStub_class::CollectWriteReq (MCU#%0d) finished write %h %h\n",instance,address[39:0],cacheline);
+#endif    
+
+  } //end while (1)
+
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////
+// This task generates the 7b ECC for a 32b data segment.
+// The input is a 32b data segment.
+// The output is {1b_parity, 6b_ecc}.
+/////////////////////////////////////////////////////////////////////////////////
+/* function reg [6:0] DECC(reg [31:0] d) {{{1*/
+function reg [6:0] MCUStub_class::DECC(reg [31:0] d) {
+
+  // parity bit
+  DECC[6] = d[0]  ^ d[1]  ^ d[2]  ^ d[4]  ^ d[5]  ^ d[7]  ^ d[10] ^ d[11] ^ d[12] ^
+    d[14] ^ d[17] ^ d[18] ^ d[21] ^ d[23] ^ d[24] ^ d[26] ^ d[27] ^ d[29];
+
+  // ecc bits
+  DECC[5] = ^d[31:26];
+
+  DECC[4] = ^d[25:11];
+
+  DECC[3] = (^d[25:18]) ^ (^d[10:4]);
+
+  DECC[2] = (^d[31:29]) ^ (^d[25:22]) ^ (^d[17:14]) ^ (^d[10:7]) ^ (^d[3:1]);
+
+  DECC[1] = d[0]  ^ d[2]  ^ d[3]  ^ d[5]  ^ d[6]  ^ d[9]  ^ d[10] ^ d[12] ^ d[13] ^
+    d[16] ^ d[17] ^ d[20] ^ d[21] ^ d[24] ^ d[25] ^ d[27] ^ d[28] ^ d[31];
+
+  DECC[0] = d[0]  ^ d[1]  ^ d[3]  ^ d[4]  ^ d[6]  ^ d[8]  ^ d[10] ^ d[11] ^ d[13] ^
+    d[15] ^ d[17] ^ d[19] ^ d[21] ^ d[23] ^ d[25] ^ d[26] ^ d[28] ^ d[30];
+}

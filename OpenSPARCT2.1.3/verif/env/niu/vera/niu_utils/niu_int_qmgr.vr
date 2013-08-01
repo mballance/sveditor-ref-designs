@@ -1,0 +1,97 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_int_qmgr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+
+class CniuGenIntrMsg {
+    bit [9:0]  device_id;
+    integer int_message;
+    integer no_of_intr_alloc;
+    
+    integer time;
+    integer mode;  // N2 or PCIE
+    task new() {
+      int_message = -1;
+    }
+}
+MakeVeraList(CniuGenIntrMsg) // que'd list of read requests
+
+class CNiuIntrQMgr {
+
+  local integer queSize;   
+  integer intx_enable[4],msi_enable[4], msix_enable[4];
+  VeraList_CniuGenIntrMsg IntrMsgQ;
+  task addIntrMsg(CniuGenIntrMsg M);
+  function CniuGenIntrMsg getIntrMsg( var integer status);
+  function integer isQEmpty();
+  task new();
+ 
+}
+task CNiuIntrQMgr::new() {
+        integer i;
+	IntrMsgQ = new();
+	queSize = 0;
+        for(i=0;i<4;i++) {
+	 intx_enable[i] = 1;
+	 msi_enable[i] = 0;
+	 msix_enable[i] = 0;
+        }
+
+}
+
+task CNiuIntrQMgr::addIntrMsg(CniuGenIntrMsg M){
+   IntrMsgQ.push_back(M);
+   queSize++;
+}
+
+function CniuGenIntrMsg CNiuIntrQMgr::getIntrMsg( var integer status) {
+
+  if(isQEmpty()) {
+	status = 0;
+	getIntrMsg = null;
+  } else {
+	getIntrMsg = IntrMsgQ.front();
+	IntrMsgQ.pop_front();
+	queSize--;
+  }
+}
+
+function integer CNiuIntrQMgr::isQEmpty() {
+ if(IntrMsgQ.size() ==0) {
+   isQEmpty = 1;
+ } else {
+   isQEmpty = 0;
+ }
+}

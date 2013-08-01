@@ -1,0 +1,438 @@
+
+===============================================================================
+ Installation Instructions for OpenSPARC T2 design and verification database
+===============================================================================
+
+1. Download OpenSPARCT2.tar.bz2 file to your directory.
+      e.g. you downloaded this file to "/home/johndoe/OpenSPARCT2" directory.
+
+2. Unzip downloaded file by using following command:
+
+   % bunzip2 OpenSPARCT2.tar.bz2
+
+   This step will create OpenSPARCT2.tar file.
+
+3. Extract files from tar file by using following command:
+
+   % tar xvf OpenSPARCT2.tar
+
+4. Setup environment variables by editing OpenSPARCT2.cshrc file.
+
+   Please set the following variables in OpenSPARCT2.cshrc file so you can
+   source the file for setting them up at your terminal.
+   
+   (a)     DV_ROOT          Directory  where you extracted the 
+                            OpenSPARCT2.tar file
+   (b)     MODEL_DIR        Directory  where you will run your 
+                            simulations, you need create this 
+                            directory first before starting build and run
+   (c)     CC_BIN           Directory location for C compiler binaries 
+                            (e.g. cc, gcc, etc.)
+   (d)     VCS_HOME         Directory location for Synopsys VCS installation
+                            (RTL simulator)
+   (e)     VERA_HOME        Directory location for Synopsys Vera installation 
+                            (verification suite)
+   (f)     NOVAS_HOME       Directory location for Novas Debussy/Verdi 
+                            installation (for linking waveform dumping PLI)
+   (g)     NCV_HOME         Directory location for Cadence NC-Verilog 
+                            installation (RTL simulator)
+   (h)     SYN_HOME         Directory location for Synopsys Design Compiler 
+                            installation.
+   (i)     LM_LICENSE_FILE  Specify all of the license files for the 
+                            aforementioned CAD tools.
+
+EDA Tools Requirements
+=======================
+-----------------------------------------------------------------------------
+                |     T2 w/o IO SubSystem     |      T2 w/ IO SubSystem
+                | Solaris           Linux     | Solaris              Linux 
+-----------------------------------------------------------------------------
+EDA Simulation  |
+=============== |
+     VCS        | 2006.06-SP2-1   2006.06-4   | 2006.06-SP2-1      2006.06-4
+     Vera       | X-2005.12-1     X-2005.12-11| X-2005.12-1        X-2005.12-11
+    NC Verilog  |   6.11.s3       06.20-s006  | 6.11.s3            06.20-s006
+     Debussy    | 2008.04         2008.04     | 2008.04            2008.04
+Denali PureSpec | 3.2.053           -NA-      | 3.2.053              -NA-
+
+Software Tools  |
+=============   |
+  C/C++ Compiler| gcc 3.3.2      gcc 3.3.2    | gcc 3.3.2           gcc 3.3.2
+
+EDA Synthesis   |
+=============   |
+Design Compiler |X2005.09         X2005.09    | X2005.09           X2005.09
+
+FPGA Synthesis  | 
+==============  | 
+Synplify Pro    |                 Version 9.2 | 
+Xilinx ISE      |                 10.1.03     | 
+-----------------------------------------------------------------------------
+Note:  The SOC component, PEU SystemC behaviroal model, uses SystemC 2.2
+       which is a beta feature in VCS 2006.06.   You will required to get
+       VCS beta licence key to compile this model.
+ 
+Exmple environment settings:
+============================
+
+   setenv DV_ROOT /home/johndoe/OpenSPARCT2
+   setenv MODEL_DIR /home/johndoe/OpenSPARCT2/build
+   setenv CC_BIN /import/freetools/local/gcc/3.3.2
+   setenv VCS_HOME /import/EDAtools/vcs/vcs7.1.3
+   setenv VERA_HOME /import/EDAtools/vera/vera,v6.3.10/5.x
+   setenv NOVAS_HOME /import/EDAtools/debussy/debussy,v5.4v9/5.x
+   setenv DENALI /import/EDAtools/denali/v3.2.053_32bit
+   setenv NCV_HOME /import/EDAtools/ncverilog/ncverilog,v6.11.s3/5.x
+   setenv SYN_HOME /import/EDAtools/synopsys/synopsys.vX-2005.09
+   setenv SYNP_HOME /import/EDAtools/linux/synplicity/synplify.v9.2/fpga_92
+   setenv XILINX_HOME /import/EDAtools/pkgs/xilinx/xilinx.vm10.1/ISE
+   setenv LM_LICENSE_FILE /import/EDAtools/licenses/keys/synopsys/synopsys_key:/import/EDAtools/licenses/keys/cadence/cadence_key:/import/EDAtools/licenses/keys/novas/novas_key
+
+
+   NOTE - In the 1.0 release of the OpenSPARC T2, the only supported RTL simulator
+          was Synopsys VCS version 7.1.3 or later. Also note that the Vera
+          verification platform from Synopsys was also required for simulations
+          to work. 
+
+      In the version 1.1, you can also invoke NC-Verilog as the RTL simulator, 
+          but Vera (from Synopsys) will still be required to run all of the 
+          verification, coverage and checker related aspects within the design.
+
+
+5. After you have set all of the environment variables as above, source the file at 
+   your terminal prompt by using following command :
+
+   % source OpenSPARCT2.cshrc
+
+
+6. The OpenSPARC T2 Design/Verification package now comes with following different 
+   environments:
+    -------------------------------------------------------------------------
+    Environment                    |          Platform Supported
+                                   |     Solaris              Linux
+                                   | VCS      NCVerilog     VCS   NCVerilog
+    -------------------------------------------------------------------------
+    cmp1                           |  Y          Y           Y       Y
+    cmp8                           |  Y          Y           Y       Y
+    fc1 (default no NIU and PEU)   |  Y          Y           Y       Y
+    fc8 (default no NIU and PEU)   |  Y          Y           Y       Y
+    fc1 (PEU SystemC & NIU RTL)    |  Y          N           N       N
+    fc8 (PEU SystemC & NIU RTL)    |  Y          N           N       N
+    fc1 (PEU SystemC & NIU SystemC)|  Y          N           N       N
+    fc8 (PEU SystemC & NIU SystemC)|  Y          N           N       N
+    fpga_1c8t (fpga system model)  |  Y          N           N       N
+    -------------------------------------------------------------------------
+
+   Note :  a. SystemC models are fully behavioral level models.
+           b. NIU SystemC behavioral model code is based upon the NIU SAM code.
+              The NIU SAM library is located at $DV_ROOT/verif/model/systemc/niu/n2niu.so
+           c. For more details on synthesizable system-level model for FPGA, 
+              please see README_FPGA file. 
+  
+
+   (i) The cmp1 environment consists of one SPARC CPU core, crossbar, Level 2 cache.
+   Does not include memory controller unit, or any of the on-chip I/O sub-systems.
+   It means you can run upto 8 threads in this model.
+
+   (ii) The cmp8 environment consists of 8 SPARC CPU cores, crossbar, Level 2 cache.
+   Does not include memory controller unit, or any of the on-chip I/O sub-systems.
+   It means you can run all 64 threads in this model.
+   
+   (iii) The fc1 environment consists of one SPARC CPU core, crossbar, Level 2 cache,
+   memory controller unit, and all of the on-chip I/O sub-systems, except PCI-Express.
+   You can run upto 8 threads in this model.
+
+   (iv) The fc8 environment consists of the complete OpenSPARC T2 chip including
+   8 SPARC CPU coress, crossbar, Level 2 cache, memory controller unit, and all of 
+   the on-chip I/O sub-systems except PCI-Express. You can run all 64 threads in this
+   model.
+
+
+   Each of the above environments comes with the "mini" regression and "all" 
+   regression suites. Mini regressions comprise of only a few tests for quick 
+   validation, whereas all regressions, comprise of an extensive set of tests 
+   targetted at verifying majority of the blocks making up the OpenSPARC T2 design.
+
+   To run regressions, please use the 'sims' script. 
+   'Sims' is a perl-based utility that is used to set-up and run all of the
+   required underlying utilities and tools for a complete build and regression.
+   
+
+   The 2 important sims command parameters to remember are :
+   (Note: 'sims' supports a whole bunch of commands, so please do a % sims -h
+    to get help on those options)
+
+
+   A. -sys : system environment type 
+
+      Please set this to either cmp1, cmp8, fc1 or fc8.
+
+      For example: -sys=cmp1
+
+
+   B. -group : Regression group 
+
+      There are 8 choices for regression suites: (for both VCS and NC-Verilog)
+
+      -------------------------------------
+           MINI            ALL
+      --------------------------------------
+    (i)   mp1_mini_T2    cmp1_all_T2
+    (ii)  cmp8_mini_T2   cmp8_all_T2
+    (iii) fc1_mini_T2    fc1_all_T2
+    (iv)  fc8_mini_T2    fc8_all_T2
+      --------------------------------------
+
+      For example : -group=cmp1_mini_T2
+
+
+    ---------------------------------------
+
+
+    Below are some examples for running regressions, note that the diags 
+    (or functional tests) comprising a diaglist will by default be run sequentially,
+    1-by-1.
+
+    You will need to craft a mechanism at your end that allows you to distribute 
+    the simulation runs across several CPUs so as to complete the regressions 
+    faster by parallelly launching the simulation runs.
+
+    If the script/wrapper that you have devised for sending a job to an available 
+    CPU is called 'job_submit' (for example), then you only need to append the 
+    following argument to 'sims' (in addition to all the ones mentioned above)
+
+        -sim_q_command="job_submit ... ... ..."     
+
+     where "... ... ..." implies whatever arguments are needed to be supplied to your
+     script/wrapper for launching the job to a free avaliable CPU.
+
+    
+
+   Here are all of the 8 regression suites that are supported. By default, commands
+   are meant for running with VCS (Synopsys RTL simulator). If however, you wish to
+   run the OpenSparc T2 models using NC-Verilog (Cadence RTL simulator), then you just
+   need to append
+
+        -sim=ncv
+
+   to the rest of the arguments and that is it.
+
+
+   Note: when using NC-Verilog, you will also require Synopsys Vera to run most 
+   of the verification related aspects within ncsim. It will not work otherwise.
+
+
+
+   (1) To run mini regression for cmp1 environment, type
+
+   % sims -sys=cmp1 -group=cmp1_mini_T2
+    OR
+   % sims -sys=cmp1 -group=cmp1_mini_T2 -sim_q_command="job_submit ... ... ..."
+    (which is to be used only if you have devised the scheme for 
+         parallelizing your runs)
+
+
+
+   For NC-Verilog, the arguments would be
+   % sims -sys=cmp1 -group=cmp1_mini_T2 -sim=ncv 
+    OR
+   % sims -sys=cmp1 -group=cmp1_mini_T2 -sim=ncv -sim_q_command="job_submit ... ..."
+
+
+ 
+   (2) To run mini regression for cmp8 environment, type
+
+   % sims -sys=cmp8 -group=cmp8_mini_T2
+    OR
+   % sims -sys=cmp8 -group=cmp8_mini_T2 -sim=ncv    (for NC-Verilog)
+
+    
+   (3) To run mini regression for fc1 environment, type
+
+   % sims -sys=fc1 -group=fc1_mini_T2
+    OR
+   % sims -sys=fc1 -group=fc1_mini_T2 -sim=ncv  (for NC-Verilog)
+
+
+   (4) To run mini regression for fc8 environment, type
+
+
+   % sims -sys=fc8 -group=fc8_mini_T2
+    OR
+   % sims -sys=fc8 -group=fc8_mini_T2 -sim=ncv  (for NC-Verilog)
+
+
+
+   (5) To run full regression for cmp1 environment, type
+
+   % sims -sys=cmp1 -group=cmp1_all_T2
+    OR
+   % sims -sys=cmp1 -group=cmp1_all_T2 -sim=ncv  (for NC-Verilog)
+
+
+   (6) To run full regression for cmp8 environment, type
+
+   % sims -sys=cmp8 -group=cmp8_all_T2
+        OR
+   % sims -sys=cmp8 -group=cmp8_all_T2 -sim=ncv  (for NC-Verilog)
+
+
+
+   (7) To run full regression for fc1 environment, type
+
+   % sims -sys=fc1 -group=fc1_all_T2
+    OR
+   % sims -sys=fc1 -group=fc1_all_T2 -sim=ncv  (for NC-Verilog)
+
+
+
+   (8) To run full regression for fc8 environment, type
+
+   % sims -sys=fc8 -group=fc8_all_T2 
+    OR
+   % sims -sys=fc8 -group=fc8_all_T2 -sim=ncv  (for NC-Verilog)
+
+
+   (9) To run full regression for fc1 environment, with NIU RTL and PIU SystemC model
+
+   % sims -sys=fc1 -group=fc1_all_T2 -config_cpp_args=-DPEU_SYSC_NIU_RTL 
+
+
+   (10) To run full regression for fc8 environment, with NIU RTL and PIU SystemC model 
+
+   % sims -sys=fc8 -group=fc8_all_T2 -config_cpp_args=-DPEU_SYSC_NIU_RTL 
+
+   (11) To run full regression for fc1 environment, with NIU and PIU SystemC model
+
+   % sims -sys=fc1 -group=fc1_all_T2 -config_cpp_args=-DPEU_SYSC_NIU_SYSC 
+
+
+   (12) To run full regression for fc8 environment, with NIU and PIU SystemC model 
+
+   % sims -sys=fc8 -group=fc8_all_T2 -config_cpp_args=-DPEU_SYSC_NIU_SYSC 
+
+
+   ----------------------------------------
+
+   
+   *** If you already have a VCS or NC-Verilog model built and you want to 
+       use that to run your regression, you can do the following, which can be
+       useful since you may not want to rebuild your simulation binaries or 
+       snapshots all the time (from scratch).
+
+
+
+   (i) using a VCS -built model
+
+   % sims -sys=cmp1 -group=cmp1_mini_T2 -nobuild \
+     -model_rel_name=vcs_build_2008_02_16_0
+
+    (to get the -model_rel_name=<...>, you simply look into the original 
+         sims.log file under your $MODEL_DIR, search for the string 
+         "-model_rel_name", and then parse it exactly as it appears)
+
+
+   (ii) using a NC-Verilog built model
+ 
+   % sims -sys=cmp1 -group=cmp1_mini_T2 -sim=ncv -nobuild \
+     -model_rel_name=ncv_build_2008_02_16_0
+
+
+   If you wish to rerun a particular test using a simulation binary of your choice, 
+   here is what you need to do.
+
+   since you are rerunning, you obviously have the old 'sims.log' file for the 
+   particular diag that you are trying to run. Once you go inside that run directory,
+   type the following command:
+
+   % sims -rerun -model_rel_name=vcs_build_2008_02_16_0     (for VCS)
+
+   OR
+
+   % sims -rerun -sim=ncv -model_rel_name=ncv_build_2008_02_16_0  (for NC-Verilog)
+
+
+   This will then rerun the diag for you using the simulation binary that is 
+   located inside the "-model_rel_name=<...>" directory that you have entered.
+
+
+   
+   To get help on "sims", simply type
+
+   % sims -h
+
+
+7. Block level model building
+
+   Every block of the OpenSPARC T2 comes with a relevant filelist that allows
+   users to compile the model for that particular block. You can execute a
+   simple simulator command to achieve that. For example, to build simulation
+   model for the "ccx" block, execute following command:
+
+   cd $DV_ROOT/design/sys/iop/ccx
+   vcs -f ccx.flist -timescale=1ps/1ps +v2k
+
+   Or to build full OpenSPARC T2 CPU model, type
+
+   cd $DV_ROOT/design/sys/iop/cpu
+   vcs -f cpu.flist -timescale=1ps/1ps +v2k
+
+   One can build verification test benches in addition to the ones provided
+   by this distribution at the block level. 
+
+   
+8. Synthesis
+
+   Before attempting to run synthesis, please make sure you have SYN_HOME
+   environment variable pointing to Synopsys Design Compiler installation.
+
+   Use "rsyn" script to run synthesis on control and datapath blocks of the 
+   OpenSPARC T2 design. For example, to run synthesis on ccu block of the 
+   OpenSPARC T2 design, type following command:
+
+      rsyn ccu
+
+   To run synthesis on all the control and datapath blocks of the chip, run
+
+      rsyn -all
+
+   For the usage of this command, simply type
+
+      rsyn -h
+
+9. FPGA Synthesis and Simulation 
+     
+   A fully synthesizable, reduced footprint, System-level model has been 
+   developed, suitable for FPGA and Emulation Platforms. 
+   This model has CORE, CCX and WISHBONE Memory Controller (OpenCores). 
+   This environment supports RTL Simulation, FPGA Synthesis and Gate-
+   level simulation with a one-to-one correspondence (i.e a given test
+   runs unchanged in the RTL & Gate environmentS. 
+
+   Please see more details in README_FPGA file in this dir. 
+
+
+
+10. Platforms
+
+   With the release 1.1 of the OpenSPARC T2, both synthesis and simulation 
+   environments are supported for following platforms
+
+   - Solaris 9 running on SPARC
+   - Solaris 10 running on SPARC
+   - Red Hat Linux 2.6 and above running on x64
+
+   IMPORTANT - Full chip environment with PEU and NIU is currently unsupported on 
+   Linux/x64 platform.  It is only supported on the Solaris 9, and Solaris 10 running
+   on SPARC.
+
+
+11. Documents
+
+   Following documents (.pdf format) are available under 'doc' directory :
+
+   OpenSPARC T2 Core Micro-Architecture Specification
+   OpenSPARC T2 SoC Micro-Architecture Specification
+
+
+

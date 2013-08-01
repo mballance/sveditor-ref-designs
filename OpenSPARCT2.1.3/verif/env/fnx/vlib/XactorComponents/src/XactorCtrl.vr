@@ -1,0 +1,118 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: XactorCtrl.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "XactorUtilities.vrh"
+#include "XactorDefines.vri"
+#include "XactorBaseBuilder.vrh"
+
+class XactorCtrl {
+
+  // Transactor name
+  string XactorName;
+  // Report
+  ReportClass MyReport;
+  // Event that is triggered when the transactor is enabled
+  event EnableEvent;
+  // Event triggered when the transactor is reset
+  event ResetEvent;
+  // Flag set when the transactor is disabled
+  protected bit DisableFlag;
+  // Flag set when the transactor is reset
+  protected bit ResetFlag;
+  // Semaphore to control access to the Expect Data Structure of 
+  // the transactor's manager
+  integer ExpectDataStructSemaphore;
+  // Semphore to control access to the Expect Data Structure (with
+  // "wildcard" values) of the transactor's manager
+  integer XExpectDataStructSemaphore;
+  // Semaphore to control access to the drive fifo.
+  integer DriveFifoSemaphore;
+
+  task new(XactorBaseBuilder Builder) {
+    // Get transactor name
+    XactorName = Builder.CreateName();    
+    MyReport   = Builder.CreateReport();
+    // By default the transactor is disabled.
+    DisableFlag = 1'b1;
+    // By default the transactor is not reset.
+    ResetFlag = 1'b0;
+    // Allocate only one Key for each semaphore.
+    ExpectDataStructSemaphore = alloc(SEMAPHORE, 0, 1, 1);
+    if(ExpectDataStructSemaphore == 0) {
+      MyReport.report(RTYP_XACTOR_FMWORK_MEM_ALLOCATION_ERROR, 
+		      "$0s: Failed to allocate ExpectDataStructSemaphore semaphore!!",
+		      XactorName);    
+    }
+    XExpectDataStructSemaphore = alloc(SEMAPHORE, 0, 1, 1);
+    if(XExpectDataStructSemaphore == 0) {
+      MyReport.report(RTYP_XACTOR_FMWORK_MEM_ALLOCATION_ERROR, 
+		      "$0s: Failed to allocate XExpectDataStructSemaphore semaphore!!",
+		      XactorName);    
+    }
+    DriveFifoSemaphore = alloc(SEMAPHORE, 0, 1, 1);    
+    if(DriveFifoSemaphore == 0) {
+      MyReport.report(RTYP_XACTOR_FMWORK_MEM_ALLOCATION_ERROR, 
+		      "$0s: Failed to allocate DriveFifoSemaphore semaphore!!",
+		      XactorName);    
+    }
+  }
+
+  // Accessors
+
+  task SetDisableFlag(bit Value) {
+    DisableFlag = Value;
+  }
+
+  task SetResetFlag(bit Value) {
+    ResetFlag = Value;
+  }
+  
+  function bit GetDisableFlag() {
+    GetDisableFlag = DisableFlag;
+  }
+
+  function bit GetResetFlag() {
+    GetResetFlag = ResetFlag;
+  }
+
+  function event GetResetEvent() {
+    GetResetEvent = ResetEvent;
+  }
+
+  function event GetEnableEvent() {
+    GetEnableEvent = EnableEvent;
+  }
+}
+

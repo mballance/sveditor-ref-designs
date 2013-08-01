@@ -1,0 +1,185 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ccx.vri
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+`ifdef INC__TMP_CCX_VRI
+
+`else
+`define INC__TMP_CCX_VRI
+
+//----------------------------------------------------------
+// CCX Req/Resp Pkt Types Defines
+
+`define CCX_REQ_LD        5'b00000
+`define CCX_REQ_PREF      5'b00000
+`define CCX_REQ_DIAG_LD   5'b00000
+`define CCX_REQ_D_INVAL   5'b00000
+`define CCX_REQ_IFILL     5'b10000
+`define CCX_REQ_I_INVAL   5'b10000
+`define CCX_REQ_ST        5'b00001
+`define CCX_REQ_BLK_ST    5'b00001
+`define CCX_REQ_DIAG_ST   5'b00001
+`define CCX_REQ_CAS1      5'b00010
+`define CCX_REQ_CAS2      5'b00011
+`define CCX_REQ_SWAP      5'b00111
+`define CCX_REQ_STR_LD    5'b00100
+`define CCX_REQ_STR_ST    5'b00101
+`define CCX_REQ_INTR      5'b01001
+`define CCX_REQ_FLUSH     5'b01001
+`define CCX_REQ_MMU_LD    5'b01000
+
+`define CCX_RESP_LD        4'b0000
+`define CCX_RESP_PREF      4'b0000
+`define CCX_RESP_DIAG_LD   4'b0000
+`define CCX_RESP_NCU_LD    4'b1000
+`define CCX_RESP_D_INVAL   4'b0100
+`define CCX_RESP_IFILL     4'b0001
+`define CCX_RESP_NCU_IFILL 4'b1001
+`define CCX_RESP_I_INVAL   4'b0100
+`define CCX_RESP_ST        4'b0100
+`define CCX_RESP_BLK_ST    4'b0100
+`define CCX_RESP_DIAG_ST   4'b0100
+`define CCX_RESP_CAS_RTN   4'b0000
+`define CCX_RESP_CAS_ACK   4'b0100
+`define CCX_RESP_SWAP_RTN  4'b0000
+`define CCX_RESP_SWAP_ACK  4'b0100
+`define CCX_RESP_STR_LD    4'b0010
+`define CCX_RESP_STR_ST    4'b0110
+`define CCX_RESP_MMU_RTN   4'b0101
+`define CCX_RESP_INTR      4'b0111
+`define CCX_RESP_EVICT     4'b0011
+`define CCX_RESP_ERROR_L2  4'b1100
+`define CCX_RESP_ERROR_SOC 4'b1101
+
+//----------------------------------------------------------
+// PCX packet bit indexes
+`define  PCX_VALID            129
+`define  PCX_RQTYP            128:124
+`define  PCX_NC               123
+`define  PCX_CID              122:120
+`define  PCX_TID              119:117
+`define  PCX_INV              116
+`define  PCX_PF               115
+`define  PCX_WAY              114:112
+`define  PCX_SIZE             111:104
+`define  PCX_ADDR             103:64
+`define  PCX_DATA              63:0
+
+//----------------------------------------------------------
+// CPX packet bit indexes
+`define  CPX_VALID            145
+`define  CPX_RTNTYP           144:141
+`define  CPX_L2MISS           140
+`define  CPX_ERR              139:138
+`define  CPX_NC               137
+`define  CPX_TID              136:134
+`define  CPX_WV               133
+`define  CPX_WAY              132:131
+`define  CPX_F4B              130
+`define  CPX_ATOMIC           129
+`define  CPX_PF               128
+`define  CPX_DATA             127:0
+
+`define  CPX_VACK_INVAL       124:123
+`define  CPX_VACK_CID         120:118
+`define  CPX_VACK_BMASK       103:96
+`define  CPX_VACK_VECT         95:64
+`define  CPX_VACK_DATA         63:0
+
+// Bit fields in Vack Inval Vector
+`define  CPX_VINV_VECT        111:0
+
+`define  CPX_D_INV7            29:28
+`define  CPX_D_INV6            25:24
+`define  CPX_D_INV5            21:20
+`define  CPX_D_INV4            17:16
+`define  CPX_D_INV3            13:12
+`define  CPX_D_INV2             9:8
+`define  CPX_D_INV1             5:4
+`define  CPX_D_INV0             1:0
+
+// Bit fields in Vack Inval Vector 
+// (inval.vector addr[5:4]=3|1 from eviction invalidation pkt)
+`define  CPX_D_INV7_ALT        21 
+`define  CPX_D_INV6_ALT        18 
+`define  CPX_D_INV5_ALT        15 
+`define  CPX_D_INV4_ALT        12 
+`define  CPX_D_INV3_ALT         9
+`define  CPX_D_INV2_ALT         6
+`define  CPX_D_INV1_ALT         3
+`define  CPX_D_INV0_ALT         0
+
+//----------------------------------------------------------
+// CCX Tag Table defines
+`define DATA_TAG       1
+`define INSTR_TAG      0
+`define WAY_3BIT       1
+`define WAY_4BIT       0
+`define TAG_VAL        1'b1
+`define TAG_INVAL      1'b0
+`define EVICT_D        2'b00
+`define EVICT_I        2'b01
+`define EVICT_DI       2'b10
+`define EVICT_ID       2'b11
+`define D_INVAL        2'b01
+`define I_INVAL        2'b10
+
+// Interrupt types
+`define INTR_HW        2'b00
+`define INTR_RESET     2'b01
+`define INTR_IDLE      2'b10
+`define INTR_RESUME    2'b11
+// Interrupt vectors
+`define INTR_POR       6'b000001
+`define INTR_XIR       6'b000011
+
+
+// for packet printing
+`define PP_CPX 0
+`define PP_PCX 1
+`define PP_MEM 2
+`define PP_SPC 3
+`define PP_TRG 4
+
+// misc
+`define READ 0
+`define WRITE 1
+`define PASSIVE 1
+`define ACTIVE  0
+
+  
+`endif
+
+//----------------------------------------------------------
+//  END OF FILE
+//----------------------------------------------------------

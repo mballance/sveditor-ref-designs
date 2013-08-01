@@ -1,0 +1,455 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: XactorList.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "XactorUtilities.vrh"
+#include "XactorBasePacket.vrh"
+#include "XactorBaseExpectDataStruct.vrh"
+#include "XactorDefines.vri"
+#include "XactorComponentsDefines.vri"
+
+typedef class ListNode;
+
+// This class declares and implements the node used by the linked list data structure.
+class ListNode {
+
+  XactorBasePacket Item; // Xactor Packet
+  event RemoveEvents[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]; // Removed is an event flag that will 
+                                                      // be triggered when the node is removed
+  ListNode Next; // Next node in the linked list
+  ListNode NextNext; // Next Next node in the linked list
+
+  task new (XactorBasePacket i,
+	    var event e[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]);
+
+  // Copies an array of events
+  virtual task AssignEvent(var event Dest[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS], 
+		   var event Src[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]
+		   );
+
+  // Returns the next element 
+  virtual function ListNode NextElement();
+  
+  // Inserts a new element with the specified values at the end of the list
+  virtual task Insert (XactorBasePacket i,
+		       var event e[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]
+		       );
+  
+  // Will keep walking through the link list checking for duplicated nodes
+  virtual task CheckDuplicatedExpect(XactorBasePacket i);
+
+  // Deletes a node with the specified values and returns 
+  // Success = 1 if the node was found and deleted and Success = 0 otherwise.
+  virtual task Delete (XactorBasePacket i,
+		       var ListNode NodePtr,
+		       var bit success
+		       );
+
+  // Deletes a node with the specified reference i
+  // Success = 1 if the node was found and deleted and Success = 0 otherwise.
+  virtual task RefDelete (XactorBasePacket i,
+			  var ListNode NodePtr,
+			  var bit success
+			  );
+  
+  // Will keep walking through the link list checking for duplicated nodes
+  virtual task CheckWCDuplicatedExpect(XactorBasePacket i);
+ 
+  // Deletes the first node with the specified values and returns 
+  // Success = 1 if the node was found and deleted and Success = 0 otherwise.
+  // NOTE: This task accepts wildcards.
+  virtual task WCDelete1 (XactorBasePacket i,
+			  var ListNode NodePtr,
+			  var bit success
+			  );
+
+  // Prints a specific node
+  virtual task PrintNode ();
+
+  // Returns 1 if i is in the linked list and 0 otherwise. 
+  // This function accepts "wildcards"
+  virtual function bit InList (XactorBasePacket i);
+
+  // Triggers the remove event on each node. This will cause all
+  // the pending expect threads to finish.
+  virtual task ResetNode ();
+
+}
+
+  ////////////////
+ // Definitions
+////////////////
+
+task ListNode::new (XactorBasePacket i,
+		    var event e[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]) {
+
+  AssignEvent(RemoveEvents, e);
+  Item = i;
+  Next = null;
+  NextNext = null;
+}
+
+task ListNode::AssignEvent(var event Dest[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS], 
+			   var event Src[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]
+			   ) {
+  integer EventCnt;
+
+  for(EventCnt = 0; EventCnt <= XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS - 1; EventCnt++) {
+    Dest[EventCnt] = Src[EventCnt];
+  }
+}
+
+// Returns the next element 
+function ListNode ListNode::NextElement() {    
+  NextElement = Next;
+}
+
+// Inserts a new element with the specified values at the end of the list
+task ListNode::Insert (XactorBasePacket i,
+		       var event e[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]
+		       ) {   
+  
+  if(Item.PktCompare("=?=", i)) {
+    Item.PktDisplay(RTYP_XACTOR_FMWORK_DUP_EXPECT_ERR, "Posting a duplicated Expect");
+  }
+  
+  if (Next == null) {
+    Next = new(i, e);
+  }
+  else {
+    Next.Insert(i, e);      
+  }
+}
+
+// Will keep walking through the link list checking for duplicated nodes
+task ListNode::CheckDuplicatedExpect(XactorBasePacket i) {
+  if(Item.PktCompare("===", i)) {
+    Item.PktDisplay(RTYP_XACTOR_FMWORK_SAMPLED_DUP_XACTION_ERR, 
+		    "Sampled Transaction satisfies duplicated Expect"
+		    );
+  }
+  if (Next !== null) {
+    Next.CheckDuplicatedExpect(i);      
+  }
+}
+
+// Deletes a node with the specified values and returns 
+// Success = 1 if the node was found and deleted and Success = 0 otherwise.
+task ListNode::Delete (XactorBasePacket i,
+		       var ListNode NodePtr,
+		       var bit success
+		       ) {
+  
+  if (i.PktCompare("===", Item)) {
+    i.SetID(Item.GetID());
+
+    trigger(ON, RemoveEvents[XACT_COMP_EXPECT_REMOVED_EVENT]); // Remove event
+    trigger(ON, RemoveEvents[XACT_COMP_EXPECT_REMOVED_BY_XACTOR_EVENT]); // Removed by xactor
+    
+    NodePtr = Next;
+    if(NodePtr !== null)
+      NodePtr.CheckDuplicatedExpect(i);
+    success = 1'b1;
+  }
+  else {
+    if (Next == null)
+      success = 1'b0;
+    else
+      Next.Delete(i, Next, success);
+  }
+}
+
+// Deletes a node with the specified reference i
+// Success = 1 if the node was found and deleted and Success = 0 otherwise.
+task ListNode::RefDelete (XactorBasePacket i,
+			  var ListNode NodePtr,
+			  var bit success
+			  ) {  
+  if (i === Item) {
+    i.SetID(Item.GetID());
+
+    trigger(ON, RemoveEvents[XACT_COMP_EXPECT_REMOVED_EVENT]); // Remove event
+    trigger(ON, RemoveEvents[XACT_COMP_EXPECT_REMOVED_BY_USER_EVENT]); // Removed by xactor
+
+    NodePtr = Next;
+    success = 1'b1;
+  }
+  else {
+    if (Next == null)
+      success = 1'b0;
+    else
+      Next.RefDelete(i, Next, success);
+  }
+}
+
+// Will keep walking through the link list checking for duplicated nodes
+task ListNode::CheckWCDuplicatedExpect(XactorBasePacket i) {
+  if(Item.PktCompare("=?=", i)) {
+    Item.PktDisplay(RTYP_XACTOR_FMWORK_SAMPLED_DUP_XACTION_ERR, 
+		    "Sampled Transaction satisfies duplicated Expect"
+		    );
+  }
+  if (Next !== null) {
+    Next.CheckWCDuplicatedExpect(i);      
+  }
+}
+
+// Deletes the first node with the specified values and returns 
+// Success = 1 if the node was found and deleted and Success = 0 otherwise.
+// NOTE: This task accepts wildcards.
+task ListNode::WCDelete1 (XactorBasePacket i,
+			  var ListNode NodePtr,
+			  var bit success
+			  ) {
+
+  if (i.PktCompare("=?=", Item)) {
+    i.SetID(Item.GetID());
+    Item.PktCopy(i); // Copy contents of Sampled packet to expected packet
+
+    trigger(ON, RemoveEvents[XACT_COMP_EXPECT_REMOVED_EVENT]); // Remove event
+    trigger(ON, RemoveEvents[XACT_COMP_EXPECT_REMOVED_BY_XACTOR_EVENT]); // Removed by xactor
+
+    NodePtr = Next;
+    if(NodePtr !== null)
+      NodePtr.CheckWCDuplicatedExpect(i);
+    success = 1'b1;
+  }
+  else {
+    if (Next == null)
+      success = 1'b0;
+    else {
+      Next.WCDelete1(i, 
+		     Next, 
+		     success
+		     );
+    }
+  }
+}
+
+// Prints a specific node
+task ListNode::PrintNode () {
+  
+  Item.PktDisplay(RTYP_INFO, "Dump Expect List");    
+  
+  if (Next != null)
+    Next.PrintNode();
+}
+
+// Returns 1 if i is in the linked list and 0 otherwise. 
+// This function accepts "wildcards"
+function bit ListNode::InList (XactorBasePacket i) {
+  
+  if (i.PktCompare("===", Item))
+    InList = 1'b1;
+  else {
+    if (Next == null)
+      InList = 1'b0;
+    else
+      InList = Next.InList(i);
+  }
+}
+
+// Triggers the remove event on each node. This will cause all
+// the pending expect threads to finish.
+task ListNode::ResetNode () {  
+
+  trigger(ON, RemoveEvents[XACT_COMP_EXPECT_REMOVED_EVENT]); // Remove event
+  trigger(ON, RemoveEvents[XACT_COMP_EXPECT_REMOVED_BY_USER_EVENT]); // Removed by user event
+    
+  if (Next != null)
+    Next.ResetNode();
+}
+
+
+//########################
+// XactorList class
+//########################
+
+// This is the Link List data structure class. This is not an ordered list
+// since its main purpose is to be used to store packets with wildcards.
+class XactorList extends XactorBaseExpectDataStruct {
+
+  protected ListNode Head; // head pointer of this data structure
+
+  task new ();
+
+  // Will return the number of nodes in the linked list.
+  virtual function integer CountNodes();
+
+  // Inserts a new node with the specified values at the end of the list
+  virtual task Insert (XactorBasePacket i,
+		       var event e[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]
+		       );
+  
+  // Deletes the first node with the specified values and returns:
+  // Success = 1 if the node was found and deleted and Success = 0 otherwise.
+  // No wildcards
+  virtual task Delete (XactorBasePacket i,
+		       var bit success
+		       );
+
+  // Deletes the node that matches the reference value i
+  // Success = 1 if the node was found and deleted and Success = 0 otherwise.
+  virtual task RefDelete (XactorBasePacket i,
+			  var bit success
+			  );
+
+  // Deletes the first node with the specified values and returns:
+  // Success = 1 if the node was found and deleted and Success = 0 otherwise.
+  // Use of wildcards
+  virtual task WildCardDelete1 (XactorBasePacket i,
+				var bit success
+				);
+  
+  // Prints all the nodes of the link list.
+  virtual task PrintNodes ();
+
+  // Returns 1 if Item is within the link list and 0 otherwise.
+  // Accepts wildcards
+  virtual function bit InStructure (XactorBasePacket i);
+
+  // Returns 1 if the link list is empty and 0 otherwise.
+  virtual function bit Empty();
+
+  // Triggers every node's remove event and then deletes the 
+  // complete link list
+  virtual task Reset();
+
+}
+
+  ////////////////
+ // Definitions
+////////////////
+
+task XactorList::new () {}  
+
+// Will return the number of nodes in the linked list.
+function integer XactorList::CountNodes() {
+  
+  integer Counter = 0;
+  ListNode NodeElement = Head;
+  
+  while(NodeElement != null) {
+    Counter++;
+    NodeElement = NodeElement.NextElement();
+  }
+  
+  CountNodes = Counter;
+}
+
+// Inserts a new node with the specified values at the end of the list
+task XactorList::Insert (XactorBasePacket i,
+			 var event e[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]
+			 ) {
+
+  if (Head == null) 
+    Head = new(i, e);
+  else
+    Head.Insert(i, e);
+}
+
+// Deletes the first node with the specified values and returns:
+// Success = 1 if the node was found and deleted and Success = 0 otherwise.
+// No wildcards
+task XactorList::Delete (XactorBasePacket i,
+			 var bit success
+			 ) {
+  if (Head == null)
+    success = 1'b0;
+  else
+    Head.Delete(i, Head, success);
+}
+
+// Deletes the node that matches the reference value i
+// Success = 1 if the node was found and deleted and Success = 0 otherwise.
+task XactorList::RefDelete (XactorBasePacket i,
+			    var bit success
+			    ) {
+  if (Head == null)
+    success = 1'b0;
+  else
+    Head.RefDelete(i, Head, success);
+}
+
+// Deletes the first node with the specified values and returns:
+// Success = 1 if the node was found and deleted and Success = 0 otherwise.
+// Use of wildcards
+task XactorList::WildCardDelete1 (XactorBasePacket i,
+				  var bit success
+				  ) {
+  
+  if (Head == null)
+    success = 1'b0;
+  else {
+    Head.WCDelete1(i, Head, success);    
+  }
+}
+
+// Prints all the nodes of the link list.
+task XactorList::PrintNodes () {
+  
+  if (Head != null)
+    Head.PrintNode();
+}
+
+// Returns 1 if Item is within the link list and 0 otherwise.
+// Accepts wildcards
+function bit XactorList::InStructure (XactorBasePacket i) {
+  
+  if (Head == null)
+    InStructure = 1'b0;
+  else
+    InStructure = Head.InList(i);
+}
+
+// Returns 1 if the link list is empty and 0 otherwise.
+function bit XactorList::Empty () {
+  if (Head == null)
+    Empty = 1'b1;
+  else
+    Empty = 1'b0;
+}
+
+// Triggers every node's remove event and then deletes the 
+// complete link list
+task XactorList::Reset () {
+  
+  if (Head != null)
+    Head.ResetNode();
+  
+  Head = null;
+}
+
+
+

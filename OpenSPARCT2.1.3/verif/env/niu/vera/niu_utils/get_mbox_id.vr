@@ -1,0 +1,134 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: get_mbox_id.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "mbox_defines.vri"
+#include "mbox_class.vrh"
+
+extern mbox_class     mbox_id;
+
+extern integer mac_config1[4], mac_config0[4];
+extern integer ipp_config1[4], ipp_config0[4]; 
+// extern integer ntx_config1,    ntx_config0;
+
+task get_mbox_id(
+		 // driver/chkr that needs to know which mailbox to read from 
+		 // in order to execute the desired functionality
+		 bit [ 7:0] 	who_ami,	
+
+		 // port_num of the driver/chkr.  In case of multiple 
+		 // mailboxes to be read from multiple accesses must be 
+		 // made to this task.
+		 integer    	port_num,
+
+		 var integer	use_mbox_id
+	   ) {
+
+	integer		n;
+	bit	[1:0]	mac_instan[4];
+	bit	[1:0]	ipp_instan[4];
+	bit	[1:0]	ntx_instan;
+
+	//
+	// The following determines if a driver module is required by the 
+	// environment.
+	for(n=0;n<4;n++) {
+		ipp_instan[n] = {ipp_config1[n], ipp_config0[n]};
+		mac_instan[n] = {mac_config1[n], mac_config0[n]};
+	}
+
+	// ntx_instan    = {ntx_config1,  ntx_config0};
+        ntx_instan = 2'b01;
+
+	use_mbox_id  = -1;
+
+	//
+	// The case statement will determine which mailbox a driver or 
+        // checker should read from in order to execute the appropriate 
+ 	// functionality.
+	case(who_ami) {
+
+	  IAM_MAC_IPP_CHKR   :	use_mbox_id = mbox_id.pg_mb[port_num];
+	  IAM_IPP_DMC_CHKR   :	use_mbox_id = mbox_id.mac_ipp[port_num];
+	  IAM_RDMC_WR_CHKR   :	use_mbox_id = mbox_id.rx_dma_mb[port_num];
+
+          #ifdef VEGA_CHIP_LEVEL
+          IAM_NTX_MAC_CHKR   :  use_mbox_id = mbox_id.chk_ntx_mac[port_num];
+          #else
+          IAM_NTX_MAC_CHKR   :  use_mbox_id = mbox_id.chk_opp_mac[port_num];
+          #endif
+			
+
+          // neptune and niu related tx path mailboxes
+          IAM_TXC_DMA0_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[0];
+          IAM_TXC_DMA1_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[1];
+          IAM_TXC_DMA2_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[2];
+          IAM_TXC_DMA3_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[3];
+          IAM_TXC_DMA4_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[4];
+          IAM_TXC_DMA5_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[5];
+          IAM_TXC_DMA6_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[6];
+          IAM_TXC_DMA7_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[7];
+          IAM_TXC_DMA8_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[8];
+          IAM_TXC_DMA9_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[9];
+          IAM_TXC_DMA10_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[10];
+          IAM_TXC_DMA11_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[11];
+          IAM_TXC_DMA12_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[12];
+          IAM_TXC_DMA13_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[13];
+          IAM_TXC_DMA14_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[14];
+          IAM_TXC_DMA15_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[15];
+          IAM_TXC_DMA16_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[16];
+          IAM_TXC_DMA17_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[17];
+          IAM_TXC_DMA18_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[18];
+          IAM_TXC_DMA19_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[19];
+          IAM_TXC_DMA20_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[20];
+          IAM_TXC_DMA21_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[21];
+          IAM_TXC_DMA22_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[22];
+          IAM_TXC_DMA23_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[23];
+          IAM_TXC_DMA24_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[24];
+          IAM_TXC_DMA25_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[25];
+          IAM_TXC_DMA26_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[26];
+          IAM_TXC_DMA27_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[27];
+          IAM_TXC_DMA28_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[28];
+          IAM_TXC_DMA29_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[29];
+          IAM_TXC_DMA30_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[30];
+          IAM_TXC_DMA31_MBOX     : use_mbox_id = mbox_id.tx_dma_mb[31];
+
+
+
+	default			:	{ use_mbox_id  = -1; }
+
+
+	} // end of case
+} // end of task get_mbox_id
+
+

@@ -1,0 +1,3336 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: cluster_hdrs_mon.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "std_display_class.vrh"
+#include "cluster_hdr_top.vri"
+#include "ccu_top.vri"
+
+#ifndef FC_BENCH  // ie. TCU SAT
+
+  class CLUSTER_hdrs_mon { // for TCU SAT, it is empty class
+    integer dummy;   // dummy variable to avoid compilation error
+  }
+   
+#else  // this section is for fullchip bench
+
+class CLUSTER_hdrs_mon {
+  StandardDisplay dbg;
+  local string dispScope = "cluster_hdrs_mon";  // standard display: display scope
+  CCU_clk_port ccu_clk_port = ccu_clk_bind;
+  integer sysclk_per;  // period of sys clk
+  integer verbose;        // 0: disable verbose mode; otherwise, enable
+
+  //--- vars indicate if spc<n> is present ------
+  integer is_no_spc0, is_no_spc1, is_no_spc2, is_no_spc3, is_no_spc4, is_no_spc5, is_no_spc6, is_no_spc7; // 0: present, else: not present
+  //--- vars for ports of all cluster headers (listed in alphabetical order)---
+  CLKGEN_port  clkgen_ccu_cmp_port	= clkgen_ccu_cmp_bind;
+  CLKGEN_port  clkgen_ccu_io_port	= clkgen_ccu_io_bind;
+  CLKGEN_port  clkgen_ccx_cmp_port	= clkgen_ccx_cmp_bind;
+  CLKGEN_port  clkgen_db0_cmp_port	= clkgen_db0_cmp_bind;
+  CLKGEN_port  clkgen_db0_io_port	= clkgen_db0_io_bind;
+  CLKGEN_port  clkgen_db1_cmp_port	= clkgen_db1_cmp_bind;
+  CLKGEN_port  clkgen_db1_io_port	= clkgen_db1_io_bind;
+  CLKGEN_port  clkgen_dmu_io_port	= clkgen_dmu_io_bind;
+  CLKGEN_port  clkgen_efu_cmp_port	= clkgen_efu_cmp_bind;
+  CLKGEN_port  clkgen_efu_io_port	= clkgen_efu_io_bind;
+  CLKGEN_port  clkgen_l2b0_cmp_port	= clkgen_l2b0_cmp_bind;
+  CLKGEN_port  clkgen_l2b1_cmp_port	= clkgen_l2b1_cmp_bind;
+  CLKGEN_port  clkgen_l2b2_cmp_port	= clkgen_l2b2_cmp_bind;
+  CLKGEN_port  clkgen_l2b3_cmp_port	= clkgen_l2b3_cmp_bind;
+  CLKGEN_port  clkgen_l2b4_cmp_port	= clkgen_l2b4_cmp_bind;
+  CLKGEN_port  clkgen_l2b5_cmp_port	= clkgen_l2b5_cmp_bind;
+  CLKGEN_port  clkgen_l2b6_cmp_port	= clkgen_l2b6_cmp_bind;
+  CLKGEN_port  clkgen_l2b7_cmp_port	= clkgen_l2b7_cmp_bind;
+  CLKGEN_port  clkgen_l2d0_cmp_port	= clkgen_l2d0_cmp_bind;
+  CLKGEN_port  clkgen_l2d1_cmp_port	= clkgen_l2d1_cmp_bind;
+  CLKGEN_port  clkgen_l2d2_cmp_port	= clkgen_l2d2_cmp_bind;
+  CLKGEN_port  clkgen_l2d3_cmp_port	= clkgen_l2d3_cmp_bind;
+  CLKGEN_port  clkgen_l2d4_cmp_port	= clkgen_l2d4_cmp_bind;
+  CLKGEN_port  clkgen_l2d5_cmp_port	= clkgen_l2d5_cmp_bind;
+  CLKGEN_port  clkgen_l2d6_cmp_port	= clkgen_l2d6_cmp_bind;
+  CLKGEN_port  clkgen_l2d7_cmp_port	= clkgen_l2d7_cmp_bind;
+  CLKGEN_port  clkgen_l2t0_cmp_port	= clkgen_l2t0_cmp_bind;
+  CLKGEN_port  clkgen_l2t1_cmp_port	= clkgen_l2t1_cmp_bind;
+  CLKGEN_port  clkgen_l2t2_cmp_port	= clkgen_l2t2_cmp_bind;
+  CLKGEN_port  clkgen_l2t3_cmp_port	= clkgen_l2t3_cmp_bind;
+  CLKGEN_port  clkgen_l2t4_cmp_port	= clkgen_l2t4_cmp_bind;
+  CLKGEN_port  clkgen_l2t5_cmp_port	= clkgen_l2t5_cmp_bind;
+  CLKGEN_port  clkgen_l2t6_cmp_port	= clkgen_l2t6_cmp_bind;
+  CLKGEN_port  clkgen_l2t7_cmp_port	= clkgen_l2t7_cmp_bind;
+//added to remove NIU
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  CLKGEN_port  clkgen_mac_io_port	= clkgen_mac_io_bind;
+#endif
+#endif
+  CLKGEN_port  clkgen_mcu0_cmp_port	= clkgen_mcu0_cmp_bind;
+  CLKGEN_port  clkgen_mcu0_dr_port	= clkgen_mcu0_dr_bind;
+  CLKGEN_port  clkgen_mcu0_io_port	= clkgen_mcu0_io_bind;
+  CLKGEN_port  clkgen_mcu1_cmp_port	= clkgen_mcu1_cmp_bind;
+  CLKGEN_port  clkgen_mcu1_dr_port	= clkgen_mcu1_dr_bind;
+  CLKGEN_port  clkgen_mcu1_io_port	= clkgen_mcu1_io_bind;
+  CLKGEN_port  clkgen_mcu2_cmp_port	= clkgen_mcu2_cmp_bind;
+  CLKGEN_port  clkgen_mcu2_dr_port	= clkgen_mcu2_dr_bind;
+  CLKGEN_port  clkgen_mcu2_io_port	= clkgen_mcu2_io_bind;
+  CLKGEN_port  clkgen_mcu3_cmp_port	= clkgen_mcu3_cmp_bind;
+  CLKGEN_port  clkgen_mcu3_dr_port	= clkgen_mcu3_dr_bind;
+  CLKGEN_port  clkgen_mcu3_io_port	= clkgen_mcu3_io_bind;
+  CLKGEN_port  clkgen_mio_0_cmp_port	= clkgen_mio_0_cmp_bind;
+  CLKGEN_port  clkgen_mio_1_cmp_port	= clkgen_mio_1_cmp_bind;
+  CLKGEN_port  clkgen_mio_2_cmp_port	= clkgen_mio_2_cmp_bind;
+  CLKGEN_port  clkgen_mio_3_cmp_port	= clkgen_mio_3_cmp_bind;
+  CLKGEN_port  clkgen_mio_io_port	= clkgen_mio_io_bind;
+  CLKGEN_port  clkgen_ncu_cmp_port	= clkgen_ncu_cmp_bind;
+  CLKGEN_port  clkgen_ncu_io_port	= clkgen_ncu_io_bind;
+#ifndef FC_NO_PEU_VERA
+#ifndef PEU_SYSTEMC_T2
+  CLKGEN_port  clkgen_peu_io_port	= clkgen_peu_io_bind;
+  CLKGEN_port  clkgen_peu_pc_port	= clkgen_peu_pc_bind;
+#endif
+#endif
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  CLKGEN_port  clkgen_rdp_io2x_port	= clkgen_rdp_io2x_bind;
+  CLKGEN_port  clkgen_rdp_io_port	= clkgen_rdp_io_bind;
+  CLKGEN_port  clkgen_rtx_io2x_port	= clkgen_rtx_io2x_bind;
+  CLKGEN_port  clkgen_rtx_io_port	= clkgen_rtx_io_bind;
+#endif
+#endif
+  CLKGEN_port  clkgen_rst_cmp_port	= clkgen_rst_cmp_bind;
+  CLKGEN_port  clkgen_rst_io_port	= clkgen_rst_io_bind;
+  CLKGEN_port  clkgen_sii_cmp_port	= clkgen_sii_cmp_bind;
+  CLKGEN_port  clkgen_sii_io_port	= clkgen_sii_io_bind;
+  CLKGEN_port  clkgen_sio_cmp_port	= clkgen_sio_cmp_bind;
+  CLKGEN_port  clkgen_sio_io_port	= clkgen_sio_io_bind;
+#ifndef RTL_NO_SPC0
+  CLKGEN_port  clkgen_spc0_cmp_port	= clkgen_spc0_cmp_bind;
+#endif
+#ifndef RTL_NO_SPC1
+  CLKGEN_port  clkgen_spc1_cmp_port	= clkgen_spc1_cmp_bind;
+#endif
+#ifndef RTL_NO_SPC2
+  CLKGEN_port  clkgen_spc2_cmp_port	= clkgen_spc2_cmp_bind;
+#endif
+#ifndef RTL_NO_SPC3
+  CLKGEN_port  clkgen_spc3_cmp_port	= clkgen_spc3_cmp_bind;
+#endif
+#ifndef RTL_NO_SPC4
+  CLKGEN_port  clkgen_spc4_cmp_port	= clkgen_spc4_cmp_bind;
+#endif
+#ifndef RTL_NO_SPC5
+  CLKGEN_port  clkgen_spc5_cmp_port	= clkgen_spc5_cmp_bind;
+#endif
+#ifndef RTL_NO_SPC6
+  CLKGEN_port  clkgen_spc6_cmp_port	= clkgen_spc6_cmp_bind;
+#endif
+#ifndef RTL_NO_SPC7
+  CLKGEN_port  clkgen_spc7_cmp_port	= clkgen_spc7_cmp_bind;
+#endif
+  CLKGEN_port  clkgen_tcu_cmp_port	= clkgen_tcu_cmp_bind;
+  CLKGEN_port  clkgen_tcu_io_port	= clkgen_tcu_io_bind;
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  CLKGEN_port  clkgen_tds_io2x_port	= clkgen_tds_io2x_bind;
+  CLKGEN_port  clkgen_tds_io_port	= clkgen_tds_io_bind;
+#endif
+#endif
+  //---- vars keep track of edges of l2clk and tcu_clk_stop. t: time, c: cycle ----
+  integer ccu_cmp_clkstp_pedge_t, ccu_cmp_clkstp_pedge_c, ccu_cmp_clkstp_pedge_cnt, ccu_cmp_clkstp_nedge_t, ccu_cmp_clkstp_nedge_c, ccu_cmp_clkstp_nedge_cnt, ccu_cmp_l2clk_pedge, ccu_cmp_l2clk_nedge;
+  integer ccu_io_clkstp_pedge_t, ccu_io_clkstp_pedge_c, ccu_io_clkstp_pedge_cnt, ccu_io_clkstp_nedge_t, ccu_io_clkstp_nedge_c, ccu_io_clkstp_nedge_cnt, ccu_io_l2clk_pedge, ccu_io_l2clk_nedge;
+  integer ccx_cmp_clkstp_pedge_t, ccx_cmp_clkstp_pedge_c, ccx_cmp_clkstp_pedge_cnt, ccx_cmp_clkstp_nedge_t, ccx_cmp_clkstp_nedge_c, ccx_cmp_clkstp_nedge_cnt, ccx_cmp_l2clk_pedge, ccx_cmp_l2clk_nedge;
+  integer db0_cmp_clkstp_pedge_t, db0_cmp_clkstp_pedge_c, db0_cmp_clkstp_pedge_cnt, db0_cmp_clkstp_nedge_t, db0_cmp_clkstp_nedge_c, db0_cmp_clkstp_nedge_cnt, db0_cmp_l2clk_pedge, db0_cmp_l2clk_nedge;
+  integer db0_io_clkstp_pedge_t, db0_io_clkstp_pedge_c, db0_io_clkstp_pedge_cnt, db0_io_clkstp_nedge_t, db0_io_clkstp_nedge_c, db0_io_clkstp_nedge_cnt, db0_io_l2clk_pedge, db0_io_l2clk_nedge;
+  integer db1_cmp_clkstp_pedge_t, db1_cmp_clkstp_pedge_c, db1_cmp_clkstp_pedge_cnt, db1_cmp_clkstp_nedge_t, db1_cmp_clkstp_nedge_c, db1_cmp_clkstp_nedge_cnt, db1_cmp_l2clk_pedge, db1_cmp_l2clk_nedge;
+  integer db1_io_clkstp_pedge_t, db1_io_clkstp_pedge_c, db1_io_clkstp_pedge_cnt, db1_io_clkstp_nedge_t, db1_io_clkstp_nedge_c, db1_io_clkstp_nedge_cnt, db1_io_l2clk_pedge, db1_io_l2clk_nedge;
+  integer dmu_io_clkstp_pedge_t, dmu_io_clkstp_pedge_c, dmu_io_clkstp_pedge_cnt, dmu_io_clkstp_nedge_t, dmu_io_clkstp_nedge_c, dmu_io_clkstp_nedge_cnt, dmu_io_l2clk_pedge, dmu_io_l2clk_nedge;
+  integer efu_cmp_clkstp_pedge_t, efu_cmp_clkstp_pedge_c, efu_cmp_clkstp_pedge_cnt, efu_cmp_clkstp_nedge_t, efu_cmp_clkstp_nedge_c, efu_cmp_clkstp_nedge_cnt, efu_cmp_l2clk_pedge, efu_cmp_l2clk_nedge;
+  integer efu_io_clkstp_pedge_t, efu_io_clkstp_pedge_c, efu_io_clkstp_pedge_cnt, efu_io_clkstp_nedge_t, efu_io_clkstp_nedge_c, efu_io_clkstp_nedge_cnt, efu_io_l2clk_pedge, efu_io_l2clk_nedge;
+  integer l2b0_cmp_clkstp_pedge_t, l2b0_cmp_clkstp_pedge_c, l2b0_cmp_clkstp_pedge_cnt, l2b0_cmp_clkstp_nedge_t, l2b0_cmp_clkstp_nedge_c, l2b0_cmp_clkstp_nedge_cnt, l2b0_cmp_l2clk_pedge, l2b0_cmp_l2clk_nedge;
+  integer l2b1_cmp_clkstp_pedge_t, l2b1_cmp_clkstp_pedge_c, l2b1_cmp_clkstp_pedge_cnt, l2b1_cmp_clkstp_nedge_t, l2b1_cmp_clkstp_nedge_c, l2b1_cmp_clkstp_nedge_cnt, l2b1_cmp_l2clk_pedge, l2b1_cmp_l2clk_nedge;
+  integer l2b2_cmp_clkstp_pedge_t, l2b2_cmp_clkstp_pedge_c, l2b2_cmp_clkstp_pedge_cnt, l2b2_cmp_clkstp_nedge_t, l2b2_cmp_clkstp_nedge_c, l2b2_cmp_clkstp_nedge_cnt, l2b2_cmp_l2clk_pedge, l2b2_cmp_l2clk_nedge;
+  integer l2b3_cmp_clkstp_pedge_t, l2b3_cmp_clkstp_pedge_c, l2b3_cmp_clkstp_pedge_cnt, l2b3_cmp_clkstp_nedge_t, l2b3_cmp_clkstp_nedge_c, l2b3_cmp_clkstp_nedge_cnt, l2b3_cmp_l2clk_pedge, l2b3_cmp_l2clk_nedge;
+  integer l2b4_cmp_clkstp_pedge_t, l2b4_cmp_clkstp_pedge_c, l2b4_cmp_clkstp_pedge_cnt, l2b4_cmp_clkstp_nedge_t, l2b4_cmp_clkstp_nedge_c, l2b4_cmp_clkstp_nedge_cnt, l2b4_cmp_l2clk_pedge, l2b4_cmp_l2clk_nedge;
+  integer l2b5_cmp_clkstp_pedge_t, l2b5_cmp_clkstp_pedge_c, l2b5_cmp_clkstp_pedge_cnt, l2b5_cmp_clkstp_nedge_t, l2b5_cmp_clkstp_nedge_c, l2b5_cmp_clkstp_nedge_cnt, l2b5_cmp_l2clk_pedge, l2b5_cmp_l2clk_nedge;
+  integer l2b6_cmp_clkstp_pedge_t, l2b6_cmp_clkstp_pedge_c, l2b6_cmp_clkstp_pedge_cnt, l2b6_cmp_clkstp_nedge_t, l2b6_cmp_clkstp_nedge_c, l2b6_cmp_clkstp_nedge_cnt, l2b6_cmp_l2clk_pedge, l2b6_cmp_l2clk_nedge;
+  integer l2b7_cmp_clkstp_pedge_t, l2b7_cmp_clkstp_pedge_c, l2b7_cmp_clkstp_pedge_cnt, l2b7_cmp_clkstp_nedge_t, l2b7_cmp_clkstp_nedge_c, l2b7_cmp_clkstp_nedge_cnt, l2b7_cmp_l2clk_pedge, l2b7_cmp_l2clk_nedge;
+  integer l2d0_cmp_clkstp_pedge_t, l2d0_cmp_clkstp_pedge_c, l2d0_cmp_clkstp_pedge_cnt, l2d0_cmp_clkstp_nedge_t, l2d0_cmp_clkstp_nedge_c, l2d0_cmp_clkstp_nedge_cnt, l2d0_cmp_l2clk_pedge, l2d0_cmp_l2clk_nedge;
+  integer l2d1_cmp_clkstp_pedge_t, l2d1_cmp_clkstp_pedge_c, l2d1_cmp_clkstp_pedge_cnt, l2d1_cmp_clkstp_nedge_t, l2d1_cmp_clkstp_nedge_c, l2d1_cmp_clkstp_nedge_cnt, l2d1_cmp_l2clk_pedge, l2d1_cmp_l2clk_nedge;
+  integer l2d2_cmp_clkstp_pedge_t, l2d2_cmp_clkstp_pedge_c, l2d2_cmp_clkstp_pedge_cnt, l2d2_cmp_clkstp_nedge_t, l2d2_cmp_clkstp_nedge_c, l2d2_cmp_clkstp_nedge_cnt, l2d2_cmp_l2clk_pedge, l2d2_cmp_l2clk_nedge;
+  integer l2d3_cmp_clkstp_pedge_t, l2d3_cmp_clkstp_pedge_c, l2d3_cmp_clkstp_pedge_cnt, l2d3_cmp_clkstp_nedge_t, l2d3_cmp_clkstp_nedge_c, l2d3_cmp_clkstp_nedge_cnt, l2d3_cmp_l2clk_pedge, l2d3_cmp_l2clk_nedge;
+  integer l2d4_cmp_clkstp_pedge_t, l2d4_cmp_clkstp_pedge_c, l2d4_cmp_clkstp_pedge_cnt, l2d4_cmp_clkstp_nedge_t, l2d4_cmp_clkstp_nedge_c, l2d4_cmp_clkstp_nedge_cnt, l2d4_cmp_l2clk_pedge, l2d4_cmp_l2clk_nedge;
+  integer l2d5_cmp_clkstp_pedge_t, l2d5_cmp_clkstp_pedge_c, l2d5_cmp_clkstp_pedge_cnt, l2d5_cmp_clkstp_nedge_t, l2d5_cmp_clkstp_nedge_c, l2d5_cmp_clkstp_nedge_cnt, l2d5_cmp_l2clk_pedge, l2d5_cmp_l2clk_nedge;
+  integer l2d6_cmp_clkstp_pedge_t, l2d6_cmp_clkstp_pedge_c, l2d6_cmp_clkstp_pedge_cnt, l2d6_cmp_clkstp_nedge_t, l2d6_cmp_clkstp_nedge_c, l2d6_cmp_clkstp_nedge_cnt, l2d6_cmp_l2clk_pedge, l2d6_cmp_l2clk_nedge;
+  integer l2d7_cmp_clkstp_pedge_t, l2d7_cmp_clkstp_pedge_c, l2d7_cmp_clkstp_pedge_cnt, l2d7_cmp_clkstp_nedge_t, l2d7_cmp_clkstp_nedge_c, l2d7_cmp_clkstp_nedge_cnt, l2d7_cmp_l2clk_pedge, l2d7_cmp_l2clk_nedge;
+  integer l2t0_cmp_clkstp_pedge_t, l2t0_cmp_clkstp_pedge_c, l2t0_cmp_clkstp_pedge_cnt, l2t0_cmp_clkstp_nedge_t, l2t0_cmp_clkstp_nedge_c, l2t0_cmp_clkstp_nedge_cnt, l2t0_cmp_l2clk_pedge, l2t0_cmp_l2clk_nedge;
+  integer l2t1_cmp_clkstp_pedge_t, l2t1_cmp_clkstp_pedge_c, l2t1_cmp_clkstp_pedge_cnt, l2t1_cmp_clkstp_nedge_t, l2t1_cmp_clkstp_nedge_c, l2t1_cmp_clkstp_nedge_cnt, l2t1_cmp_l2clk_pedge, l2t1_cmp_l2clk_nedge;
+  integer l2t2_cmp_clkstp_pedge_t, l2t2_cmp_clkstp_pedge_c, l2t2_cmp_clkstp_pedge_cnt, l2t2_cmp_clkstp_nedge_t, l2t2_cmp_clkstp_nedge_c, l2t2_cmp_clkstp_nedge_cnt, l2t2_cmp_l2clk_pedge, l2t2_cmp_l2clk_nedge;
+  integer l2t3_cmp_clkstp_pedge_t, l2t3_cmp_clkstp_pedge_c, l2t3_cmp_clkstp_pedge_cnt, l2t3_cmp_clkstp_nedge_t, l2t3_cmp_clkstp_nedge_c, l2t3_cmp_clkstp_nedge_cnt, l2t3_cmp_l2clk_pedge, l2t3_cmp_l2clk_nedge;
+  integer l2t4_cmp_clkstp_pedge_t, l2t4_cmp_clkstp_pedge_c, l2t4_cmp_clkstp_pedge_cnt, l2t4_cmp_clkstp_nedge_t, l2t4_cmp_clkstp_nedge_c, l2t4_cmp_clkstp_nedge_cnt, l2t4_cmp_l2clk_pedge, l2t4_cmp_l2clk_nedge;
+  integer l2t5_cmp_clkstp_pedge_t, l2t5_cmp_clkstp_pedge_c, l2t5_cmp_clkstp_pedge_cnt, l2t5_cmp_clkstp_nedge_t, l2t5_cmp_clkstp_nedge_c, l2t5_cmp_clkstp_nedge_cnt, l2t5_cmp_l2clk_pedge, l2t5_cmp_l2clk_nedge;
+  integer l2t6_cmp_clkstp_pedge_t, l2t6_cmp_clkstp_pedge_c, l2t6_cmp_clkstp_pedge_cnt, l2t6_cmp_clkstp_nedge_t, l2t6_cmp_clkstp_nedge_c, l2t6_cmp_clkstp_nedge_cnt, l2t6_cmp_l2clk_pedge, l2t6_cmp_l2clk_nedge;
+  integer l2t7_cmp_clkstp_pedge_t, l2t7_cmp_clkstp_pedge_c, l2t7_cmp_clkstp_pedge_cnt, l2t7_cmp_clkstp_nedge_t, l2t7_cmp_clkstp_nedge_c, l2t7_cmp_clkstp_nedge_cnt, l2t7_cmp_l2clk_pedge, l2t7_cmp_l2clk_nedge;
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  integer mac_io_clkstp_pedge_t, mac_io_clkstp_pedge_c, mac_io_clkstp_pedge_cnt, mac_io_clkstp_nedge_t, mac_io_clkstp_nedge_c, mac_io_clkstp_nedge_cnt, mac_io_l2clk_pedge, mac_io_l2clk_nedge;
+#endif
+#endif
+  integer mcu0_cmp_clkstp_pedge_t, mcu0_cmp_clkstp_pedge_c, mcu0_cmp_clkstp_pedge_cnt, mcu0_cmp_clkstp_nedge_t, mcu0_cmp_clkstp_nedge_c, mcu0_cmp_clkstp_nedge_cnt, mcu0_cmp_l2clk_pedge, mcu0_cmp_l2clk_nedge;
+  integer mcu0_dr_clkstp_pedge_t, mcu0_dr_clkstp_pedge_c, mcu0_dr_clkstp_pedge_cnt, mcu0_dr_clkstp_nedge_t, mcu0_dr_clkstp_nedge_c, mcu0_dr_clkstp_nedge_cnt, mcu0_dr_l2clk_pedge, mcu0_dr_l2clk_nedge;
+  integer mcu0_io_clkstp_pedge_t, mcu0_io_clkstp_pedge_c, mcu0_io_clkstp_pedge_cnt, mcu0_io_clkstp_nedge_t, mcu0_io_clkstp_nedge_c, mcu0_io_clkstp_nedge_cnt, mcu0_io_l2clk_pedge, mcu0_io_l2clk_nedge;
+  integer mcu1_cmp_clkstp_pedge_t, mcu1_cmp_clkstp_pedge_c, mcu1_cmp_clkstp_pedge_cnt, mcu1_cmp_clkstp_nedge_t, mcu1_cmp_clkstp_nedge_c, mcu1_cmp_clkstp_nedge_cnt, mcu1_cmp_l2clk_pedge, mcu1_cmp_l2clk_nedge;
+  integer mcu1_dr_clkstp_pedge_t, mcu1_dr_clkstp_pedge_c, mcu1_dr_clkstp_pedge_cnt, mcu1_dr_clkstp_nedge_t, mcu1_dr_clkstp_nedge_c, mcu1_dr_clkstp_nedge_cnt, mcu1_dr_l2clk_pedge, mcu1_dr_l2clk_nedge;
+  integer mcu1_io_clkstp_pedge_t, mcu1_io_clkstp_pedge_c, mcu1_io_clkstp_pedge_cnt, mcu1_io_clkstp_nedge_t, mcu1_io_clkstp_nedge_c, mcu1_io_clkstp_nedge_cnt, mcu1_io_l2clk_pedge, mcu1_io_l2clk_nedge;
+  integer mcu2_cmp_clkstp_pedge_t, mcu2_cmp_clkstp_pedge_c, mcu2_cmp_clkstp_pedge_cnt, mcu2_cmp_clkstp_nedge_t, mcu2_cmp_clkstp_nedge_c, mcu2_cmp_clkstp_nedge_cnt, mcu2_cmp_l2clk_pedge, mcu2_cmp_l2clk_nedge;
+  integer mcu2_dr_clkstp_pedge_t, mcu2_dr_clkstp_pedge_c, mcu2_dr_clkstp_pedge_cnt, mcu2_dr_clkstp_nedge_t, mcu2_dr_clkstp_nedge_c, mcu2_dr_clkstp_nedge_cnt, mcu2_dr_l2clk_pedge, mcu2_dr_l2clk_nedge;
+  integer mcu2_io_clkstp_pedge_t, mcu2_io_clkstp_pedge_c, mcu2_io_clkstp_pedge_cnt, mcu2_io_clkstp_nedge_t, mcu2_io_clkstp_nedge_c, mcu2_io_clkstp_nedge_cnt, mcu2_io_l2clk_pedge, mcu2_io_l2clk_nedge;
+  integer mcu3_cmp_clkstp_pedge_t, mcu3_cmp_clkstp_pedge_c, mcu3_cmp_clkstp_pedge_cnt, mcu3_cmp_clkstp_nedge_t, mcu3_cmp_clkstp_nedge_c, mcu3_cmp_clkstp_nedge_cnt, mcu3_cmp_l2clk_pedge, mcu3_cmp_l2clk_nedge;
+  integer mcu3_dr_clkstp_pedge_t, mcu3_dr_clkstp_pedge_c, mcu3_dr_clkstp_pedge_cnt, mcu3_dr_clkstp_nedge_t, mcu3_dr_clkstp_nedge_c, mcu3_dr_clkstp_nedge_cnt, mcu3_dr_l2clk_pedge, mcu3_dr_l2clk_nedge;
+  integer mcu3_io_clkstp_pedge_t, mcu3_io_clkstp_pedge_c, mcu3_io_clkstp_pedge_cnt, mcu3_io_clkstp_nedge_t, mcu3_io_clkstp_nedge_c, mcu3_io_clkstp_nedge_cnt, mcu3_io_l2clk_pedge, mcu3_io_l2clk_nedge;
+  integer mio_0_cmp_clkstp_pedge_t, mio_0_cmp_clkstp_pedge_c, mio_0_cmp_clkstp_pedge_cnt, mio_0_cmp_clkstp_nedge_t, mio_0_cmp_clkstp_nedge_c, mio_0_cmp_clkstp_nedge_cnt, mio_0_cmp_l2clk_pedge, mio_0_cmp_l2clk_nedge;
+  integer mio_1_cmp_clkstp_pedge_t, mio_1_cmp_clkstp_pedge_c, mio_1_cmp_clkstp_pedge_cnt, mio_1_cmp_clkstp_nedge_t, mio_1_cmp_clkstp_nedge_c, mio_1_cmp_clkstp_nedge_cnt, mio_1_cmp_l2clk_pedge, mio_1_cmp_l2clk_nedge;
+  integer mio_2_cmp_clkstp_pedge_t, mio_2_cmp_clkstp_pedge_c, mio_2_cmp_clkstp_pedge_cnt, mio_2_cmp_clkstp_nedge_t, mio_2_cmp_clkstp_nedge_c, mio_2_cmp_clkstp_nedge_cnt, mio_2_cmp_l2clk_pedge, mio_2_cmp_l2clk_nedge;
+  integer mio_3_cmp_clkstp_pedge_t, mio_3_cmp_clkstp_pedge_c, mio_3_cmp_clkstp_pedge_cnt, mio_3_cmp_clkstp_nedge_t, mio_3_cmp_clkstp_nedge_c, mio_3_cmp_clkstp_nedge_cnt, mio_3_cmp_l2clk_pedge, mio_3_cmp_l2clk_nedge;
+  integer mio_io_clkstp_pedge_t, mio_io_clkstp_pedge_c, mio_io_clkstp_pedge_cnt, mio_io_clkstp_nedge_t, mio_io_clkstp_nedge_c, mio_io_clkstp_nedge_cnt, mio_io_l2clk_pedge, mio_io_l2clk_nedge;
+  integer ncu_cmp_clkstp_pedge_t, ncu_cmp_clkstp_pedge_c, ncu_cmp_clkstp_pedge_cnt, ncu_cmp_clkstp_nedge_t, ncu_cmp_clkstp_nedge_c, ncu_cmp_clkstp_nedge_cnt, ncu_cmp_l2clk_pedge, ncu_cmp_l2clk_nedge;
+  integer ncu_io_clkstp_pedge_t, ncu_io_clkstp_pedge_c, ncu_io_clkstp_pedge_cnt, ncu_io_clkstp_nedge_t, ncu_io_clkstp_nedge_c, ncu_io_clkstp_nedge_cnt, ncu_io_l2clk_pedge, ncu_io_l2clk_nedge;
+#ifndef FC_NO_PEU_VERA
+#ifndef PEU_SYSTEMC_T2
+  integer peu_io_clkstp_pedge_t, peu_io_clkstp_pedge_c, peu_io_clkstp_pedge_cnt, peu_io_clkstp_nedge_t, peu_io_clkstp_nedge_c, peu_io_clkstp_nedge_cnt, peu_io_l2clk_pedge, peu_io_l2clk_nedge;
+  integer peu_pc_clkstp_pedge_t, peu_pc_clkstp_pedge_c, peu_pc_clkstp_pedge_cnt, peu_pc_clkstp_nedge_t, peu_pc_clkstp_nedge_c, peu_pc_clkstp_nedge_cnt, peu_pc_l2clk_pedge, peu_pc_l2clk_nedge;
+#endif
+#endif
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  integer rdp_io2x_clkstp_pedge_t, rdp_io2x_clkstp_pedge_c, rdp_io2x_clkstp_pedge_cnt, rdp_io2x_clkstp_nedge_t, rdp_io2x_clkstp_nedge_c, rdp_io2x_clkstp_nedge_cnt, rdp_io2x_l2clk_pedge, rdp_io2x_l2clk_nedge;
+  integer rdp_io_clkstp_pedge_t, rdp_io_clkstp_pedge_c, rdp_io_clkstp_pedge_cnt, rdp_io_clkstp_nedge_t, rdp_io_clkstp_nedge_c, rdp_io_clkstp_nedge_cnt, rdp_io_l2clk_pedge, rdp_io_l2clk_nedge;
+  integer rtx_io2x_clkstp_pedge_t, rtx_io2x_clkstp_pedge_c, rtx_io2x_clkstp_pedge_cnt, rtx_io2x_clkstp_nedge_t, rtx_io2x_clkstp_nedge_c, rtx_io2x_clkstp_nedge_cnt, rtx_io2x_l2clk_pedge, rtx_io2x_l2clk_nedge;
+  integer rtx_io_clkstp_pedge_t, rtx_io_clkstp_pedge_c, rtx_io_clkstp_pedge_cnt, rtx_io_clkstp_nedge_t, rtx_io_clkstp_nedge_c, rtx_io_clkstp_nedge_cnt, rtx_io_l2clk_pedge, rtx_io_l2clk_nedge;
+#endif
+#endif
+  integer rst_cmp_clkstp_pedge_t, rst_cmp_clkstp_pedge_c, rst_cmp_clkstp_pedge_cnt, rst_cmp_clkstp_nedge_t, rst_cmp_clkstp_nedge_c, rst_cmp_clkstp_nedge_cnt, rst_cmp_l2clk_pedge, rst_cmp_l2clk_nedge;
+  integer rst_io_clkstp_pedge_t, rst_io_clkstp_pedge_c, rst_io_clkstp_pedge_cnt, rst_io_clkstp_nedge_t, rst_io_clkstp_nedge_c, rst_io_clkstp_nedge_cnt, rst_io_l2clk_pedge, rst_io_l2clk_nedge;
+  integer sii_cmp_clkstp_pedge_t, sii_cmp_clkstp_pedge_c, sii_cmp_clkstp_pedge_cnt, sii_cmp_clkstp_nedge_t, sii_cmp_clkstp_nedge_c, sii_cmp_clkstp_nedge_cnt, sii_cmp_l2clk_pedge, sii_cmp_l2clk_nedge;
+  integer sii_io_clkstp_pedge_t, sii_io_clkstp_pedge_c, sii_io_clkstp_pedge_cnt, sii_io_clkstp_nedge_t, sii_io_clkstp_nedge_c, sii_io_clkstp_nedge_cnt, sii_io_l2clk_pedge, sii_io_l2clk_nedge;
+  integer sio_cmp_clkstp_pedge_t, sio_cmp_clkstp_pedge_c, sio_cmp_clkstp_pedge_cnt, sio_cmp_clkstp_nedge_t, sio_cmp_clkstp_nedge_c, sio_cmp_clkstp_nedge_cnt, sio_cmp_l2clk_pedge, sio_cmp_l2clk_nedge;
+  integer sio_io_clkstp_pedge_t, sio_io_clkstp_pedge_c, sio_io_clkstp_pedge_cnt, sio_io_clkstp_nedge_t, sio_io_clkstp_nedge_c, sio_io_clkstp_nedge_cnt, sio_io_l2clk_pedge, sio_io_l2clk_nedge;
+  integer spc0_cmp_clkstp_pedge_t, spc0_cmp_clkstp_pedge_c, spc0_cmp_clkstp_pedge_cnt, spc0_cmp_clkstp_nedge_t, spc0_cmp_clkstp_nedge_c, spc0_cmp_clkstp_nedge_cnt, spc0_cmp_l2clk_pedge, spc0_cmp_l2clk_nedge;
+  integer spc1_cmp_clkstp_pedge_t, spc1_cmp_clkstp_pedge_c, spc1_cmp_clkstp_pedge_cnt, spc1_cmp_clkstp_nedge_t, spc1_cmp_clkstp_nedge_c, spc1_cmp_clkstp_nedge_cnt, spc1_cmp_l2clk_pedge, spc1_cmp_l2clk_nedge;
+  integer spc2_cmp_clkstp_pedge_t, spc2_cmp_clkstp_pedge_c, spc2_cmp_clkstp_pedge_cnt, spc2_cmp_clkstp_nedge_t, spc2_cmp_clkstp_nedge_c, spc2_cmp_clkstp_nedge_cnt, spc2_cmp_l2clk_pedge, spc2_cmp_l2clk_nedge;
+  integer spc3_cmp_clkstp_pedge_t, spc3_cmp_clkstp_pedge_c, spc3_cmp_clkstp_pedge_cnt, spc3_cmp_clkstp_nedge_t, spc3_cmp_clkstp_nedge_c, spc3_cmp_clkstp_nedge_cnt, spc3_cmp_l2clk_pedge, spc3_cmp_l2clk_nedge;
+  integer spc4_cmp_clkstp_pedge_t, spc4_cmp_clkstp_pedge_c, spc4_cmp_clkstp_pedge_cnt, spc4_cmp_clkstp_nedge_t, spc4_cmp_clkstp_nedge_c, spc4_cmp_clkstp_nedge_cnt, spc4_cmp_l2clk_pedge, spc4_cmp_l2clk_nedge;
+  integer spc5_cmp_clkstp_pedge_t, spc5_cmp_clkstp_pedge_c, spc5_cmp_clkstp_pedge_cnt, spc5_cmp_clkstp_nedge_t, spc5_cmp_clkstp_nedge_c, spc5_cmp_clkstp_nedge_cnt, spc5_cmp_l2clk_pedge, spc5_cmp_l2clk_nedge;
+  integer spc6_cmp_clkstp_pedge_t, spc6_cmp_clkstp_pedge_c, spc6_cmp_clkstp_pedge_cnt, spc6_cmp_clkstp_nedge_t, spc6_cmp_clkstp_nedge_c, spc6_cmp_clkstp_nedge_cnt, spc6_cmp_l2clk_pedge, spc6_cmp_l2clk_nedge;
+  integer spc7_cmp_clkstp_pedge_t, spc7_cmp_clkstp_pedge_c, spc7_cmp_clkstp_pedge_cnt, spc7_cmp_clkstp_nedge_t, spc7_cmp_clkstp_nedge_c, spc7_cmp_clkstp_nedge_cnt, spc7_cmp_l2clk_pedge, spc7_cmp_l2clk_nedge;
+  integer tcu_cmp_clkstp_pedge_t, tcu_cmp_clkstp_pedge_c, tcu_cmp_clkstp_pedge_cnt, tcu_cmp_clkstp_nedge_t, tcu_cmp_clkstp_nedge_c, tcu_cmp_clkstp_nedge_cnt, tcu_cmp_l2clk_pedge, tcu_cmp_l2clk_nedge;
+  integer tcu_io_clkstp_pedge_t, tcu_io_clkstp_pedge_c, tcu_io_clkstp_pedge_cnt, tcu_io_clkstp_nedge_t, tcu_io_clkstp_nedge_c, tcu_io_clkstp_nedge_cnt, tcu_io_l2clk_pedge, tcu_io_l2clk_nedge;
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  integer tds_io2x_clkstp_pedge_t, tds_io2x_clkstp_pedge_c, tds_io2x_clkstp_pedge_cnt, tds_io2x_clkstp_nedge_t, tds_io2x_clkstp_nedge_c, tds_io2x_clkstp_nedge_cnt, tds_io2x_l2clk_pedge, tds_io2x_l2clk_nedge;
+  integer tds_io_clkstp_pedge_t, tds_io_clkstp_pedge_c, tds_io_clkstp_pedge_cnt, tds_io_clkstp_nedge_t, tds_io_clkstp_nedge_c, tds_io_clkstp_nedge_cnt, tds_io_l2clk_pedge, tds_io_l2clk_nedge;
+#endif
+#endif
+  //----tasks -----
+  task new(StandardDisplay dbg);
+  task start_l2clk_n_clkstop_mon();  // run in background
+  task reset_l2clk_n_clkstop_vars(); // set all vars to 0
+  function integer is_any_hdr_clkstp_pedge_occur();     // occured
+  function integer is_any_hdr_clkstp_nedge_occur();     // occured
+  function integer is_any_hdr_clkstp_pedge_more_once(); // occured more than once
+  function integer is_any_hdr_clkstp_nedge_more_once(); // occured more than once
+  function integer is_all_l2clk_running();     // including ccu, rst and tcu headers
+  function integer is_all_l2clk_stopped();     // except ccu, rst and tcu headers
+
+  function integer is_all_clkstp_sigs_asserted();   // except ccu, rst and tcu headers
+  function integer is_all_clkstp_sigs_deasserted(); // include ccu, rst and tcu headers
+
+}
+
+//========================================================================
+//
+//========================================================================
+task CLUSTER_hdrs_mon::new(StandardDisplay dbg) {
+  this.dbg = dbg;
+  this.verbose = (get_plus_arg(CHECK, "clstrHdrMon_verbose"))? 1 : 0;
+  //---- set var indicating if the  spc<n> core is present---
+  is_no_spc0 = 0;
+  is_no_spc1 = 0;
+  is_no_spc2 = 0;
+  is_no_spc3 = 0;
+  is_no_spc4 = 0;
+  is_no_spc5 = 0;
+  is_no_spc6 = 0; 
+  is_no_spc7 = 0;
+#ifdef RTL_NO_SPC0
+  is_no_spc0 = 1;
+#endif
+#ifdef RTL_NO_SPC1
+  is_no_spc1 = 1;
+#endif
+#ifdef RTL_NO_SPC2
+  is_no_spc2 = 1;
+#endif
+#ifdef RTL_NO_SPC3
+  is_no_spc3 = 1;
+#endif
+#ifdef RTL_NO_SPC4
+  is_no_spc4 = 1;
+#endif
+#ifdef RTL_NO_SPC5
+  is_no_spc5 = 1;
+#endif
+#ifdef RTL_NO_SPC6
+  is_no_spc6 = 1; 
+#endif
+#ifdef RTL_NO_SPC7
+  is_no_spc7 = 1;
+#endif
+  //---task calls ---
+  this.reset_l2clk_n_clkstop_vars();  // 
+  fork {  // get period of sys clk
+    repeat (5) @(posedge ccu_clk_port.$sys_clk);
+    sysclk_per = get_time(LO);
+    @(posedge ccu_clk_port.$sys_clk);
+    sysclk_per = get_time(LO) - sysclk_per;
+  } join none
+
+}
+
+//========================================================================
+// WHAT: reset all variables to 0
+//========================================================================
+task CLUSTER_hdrs_mon::reset_l2clk_n_clkstop_vars() {
+  if (this.verbose) dbg.dispmon(this.dispScope, MON_ALWAYS, "reset variables for l2clk and clk_stop");
+  ccu_cmp_clkstp_pedge_t=0; ccu_cmp_clkstp_pedge_c=0; ccu_cmp_clkstp_pedge_cnt=0; ccu_cmp_clkstp_nedge_t=0; ccu_cmp_clkstp_nedge_c=0; ccu_cmp_clkstp_nedge_cnt=0; ccu_cmp_l2clk_pedge=0; ccu_cmp_l2clk_nedge=0;
+  ccu_io_clkstp_pedge_t=0; ccu_io_clkstp_pedge_c=0; ccu_io_clkstp_pedge_cnt=0; ccu_io_clkstp_nedge_t=0; ccu_io_clkstp_nedge_c=0; ccu_io_clkstp_nedge_cnt=0; ccu_io_l2clk_pedge=0; ccu_io_l2clk_nedge=0;
+  ccx_cmp_clkstp_pedge_t=0; ccx_cmp_clkstp_pedge_c=0; ccx_cmp_clkstp_pedge_cnt=0; ccx_cmp_clkstp_nedge_t=0; ccx_cmp_clkstp_nedge_c=0; ccx_cmp_clkstp_nedge_cnt=0; ccx_cmp_l2clk_pedge=0; ccx_cmp_l2clk_nedge=0;
+  db0_cmp_clkstp_pedge_t=0; db0_cmp_clkstp_pedge_c=0; db0_cmp_clkstp_pedge_cnt=0; db0_cmp_clkstp_nedge_t=0; db0_cmp_clkstp_nedge_c=0; db0_cmp_clkstp_nedge_cnt=0; db0_cmp_l2clk_pedge=0; db0_cmp_l2clk_nedge=0;
+  db0_io_clkstp_pedge_t=0; db0_io_clkstp_pedge_c=0; db0_io_clkstp_pedge_cnt=0; db0_io_clkstp_nedge_t=0; db0_io_clkstp_nedge_c=0; db0_io_clkstp_nedge_cnt=0; db0_io_l2clk_pedge=0; db0_io_l2clk_nedge=0;
+  db1_cmp_clkstp_pedge_t=0; db1_cmp_clkstp_pedge_c=0; db1_cmp_clkstp_pedge_cnt=0; db1_cmp_clkstp_nedge_t=0; db1_cmp_clkstp_nedge_c=0; db1_cmp_clkstp_nedge_cnt=0; db1_cmp_l2clk_pedge=0; db1_cmp_l2clk_nedge=0;
+  db1_io_clkstp_pedge_t=0; db1_io_clkstp_pedge_c=0; db1_io_clkstp_pedge_cnt=0; db1_io_clkstp_nedge_t=0; db1_io_clkstp_nedge_c=0; db1_io_clkstp_nedge_cnt=0; db1_io_l2clk_pedge=0; db1_io_l2clk_nedge=0;
+  dmu_io_clkstp_pedge_t=0; dmu_io_clkstp_pedge_c=0; dmu_io_clkstp_pedge_cnt=0; dmu_io_clkstp_nedge_t=0; dmu_io_clkstp_nedge_c=0; dmu_io_clkstp_nedge_cnt=0; dmu_io_l2clk_pedge=0; dmu_io_l2clk_nedge=0;
+  efu_cmp_clkstp_pedge_t=0; efu_cmp_clkstp_pedge_c=0; efu_cmp_clkstp_pedge_cnt=0; efu_cmp_clkstp_nedge_t=0; efu_cmp_clkstp_nedge_c=0; efu_cmp_clkstp_nedge_cnt=0; efu_cmp_l2clk_pedge=0; efu_cmp_l2clk_nedge=0;
+  efu_io_clkstp_pedge_t=0; efu_io_clkstp_pedge_c=0; efu_io_clkstp_pedge_cnt=0; efu_io_clkstp_nedge_t=0; efu_io_clkstp_nedge_c=0; efu_io_clkstp_nedge_cnt=0; efu_io_l2clk_pedge=0; efu_io_l2clk_nedge=0;
+  l2b0_cmp_clkstp_pedge_t=0; l2b0_cmp_clkstp_pedge_c=0; l2b0_cmp_clkstp_pedge_cnt=0; l2b0_cmp_clkstp_nedge_t=0; l2b0_cmp_clkstp_nedge_c=0; l2b0_cmp_clkstp_nedge_cnt=0; l2b0_cmp_l2clk_pedge=0; l2b0_cmp_l2clk_nedge=0;
+  l2b1_cmp_clkstp_pedge_t=0; l2b1_cmp_clkstp_pedge_c=0; l2b1_cmp_clkstp_pedge_cnt=0; l2b1_cmp_clkstp_nedge_t=0; l2b1_cmp_clkstp_nedge_c=0; l2b1_cmp_clkstp_nedge_cnt=0; l2b1_cmp_l2clk_pedge=0; l2b1_cmp_l2clk_nedge=0;
+  l2b2_cmp_clkstp_pedge_t=0; l2b2_cmp_clkstp_pedge_c=0; l2b2_cmp_clkstp_pedge_cnt=0; l2b2_cmp_clkstp_nedge_t=0; l2b2_cmp_clkstp_nedge_c=0; l2b2_cmp_clkstp_nedge_cnt=0; l2b2_cmp_l2clk_pedge=0; l2b2_cmp_l2clk_nedge=0;
+  l2b3_cmp_clkstp_pedge_t=0; l2b3_cmp_clkstp_pedge_c=0; l2b3_cmp_clkstp_pedge_cnt=0; l2b3_cmp_clkstp_nedge_t=0; l2b3_cmp_clkstp_nedge_c=0; l2b3_cmp_clkstp_nedge_cnt=0; l2b3_cmp_l2clk_pedge=0; l2b3_cmp_l2clk_nedge=0;
+  l2b4_cmp_clkstp_pedge_t=0; l2b4_cmp_clkstp_pedge_c=0; l2b4_cmp_clkstp_pedge_cnt=0; l2b4_cmp_clkstp_nedge_t=0; l2b4_cmp_clkstp_nedge_c=0; l2b4_cmp_clkstp_nedge_cnt=0; l2b4_cmp_l2clk_pedge=0; l2b4_cmp_l2clk_nedge=0;
+  l2b5_cmp_clkstp_pedge_t=0; l2b5_cmp_clkstp_pedge_c=0; l2b5_cmp_clkstp_pedge_cnt=0; l2b5_cmp_clkstp_nedge_t=0; l2b5_cmp_clkstp_nedge_c=0; l2b5_cmp_clkstp_nedge_cnt=0; l2b5_cmp_l2clk_pedge=0; l2b5_cmp_l2clk_nedge=0;
+  l2b6_cmp_clkstp_pedge_t=0; l2b6_cmp_clkstp_pedge_c=0; l2b6_cmp_clkstp_pedge_cnt=0; l2b6_cmp_clkstp_nedge_t=0; l2b6_cmp_clkstp_nedge_c=0; l2b6_cmp_clkstp_nedge_cnt=0; l2b6_cmp_l2clk_pedge=0; l2b6_cmp_l2clk_nedge=0;
+  l2b7_cmp_clkstp_pedge_t=0; l2b7_cmp_clkstp_pedge_c=0; l2b7_cmp_clkstp_pedge_cnt=0; l2b7_cmp_clkstp_nedge_t=0; l2b7_cmp_clkstp_nedge_c=0; l2b7_cmp_clkstp_nedge_cnt=0; l2b7_cmp_l2clk_pedge=0; l2b7_cmp_l2clk_nedge=0;
+  l2d0_cmp_clkstp_pedge_t=0; l2d0_cmp_clkstp_pedge_c=0; l2d0_cmp_clkstp_pedge_cnt=0; l2d0_cmp_clkstp_nedge_t=0; l2d0_cmp_clkstp_nedge_c=0; l2d0_cmp_clkstp_nedge_cnt=0; l2d0_cmp_l2clk_pedge=0; l2d0_cmp_l2clk_nedge=0;
+  l2d1_cmp_clkstp_pedge_t=0; l2d1_cmp_clkstp_pedge_c=0; l2d1_cmp_clkstp_pedge_cnt=0; l2d1_cmp_clkstp_nedge_t=0; l2d1_cmp_clkstp_nedge_c=0; l2d1_cmp_clkstp_nedge_cnt=0; l2d1_cmp_l2clk_pedge=0; l2d1_cmp_l2clk_nedge=0;
+  l2d2_cmp_clkstp_pedge_t=0; l2d2_cmp_clkstp_pedge_c=0; l2d2_cmp_clkstp_pedge_cnt=0; l2d2_cmp_clkstp_nedge_t=0; l2d2_cmp_clkstp_nedge_c=0; l2d2_cmp_clkstp_nedge_cnt=0; l2d2_cmp_l2clk_pedge=0; l2d2_cmp_l2clk_nedge=0;
+  l2d3_cmp_clkstp_pedge_t=0; l2d3_cmp_clkstp_pedge_c=0; l2d3_cmp_clkstp_pedge_cnt=0; l2d3_cmp_clkstp_nedge_t=0; l2d3_cmp_clkstp_nedge_c=0; l2d3_cmp_clkstp_nedge_cnt=0; l2d3_cmp_l2clk_pedge=0; l2d3_cmp_l2clk_nedge=0;
+  l2d4_cmp_clkstp_pedge_t=0; l2d4_cmp_clkstp_pedge_c=0; l2d4_cmp_clkstp_pedge_cnt=0; l2d4_cmp_clkstp_nedge_t=0; l2d4_cmp_clkstp_nedge_c=0; l2d4_cmp_clkstp_nedge_cnt=0; l2d4_cmp_l2clk_pedge=0; l2d4_cmp_l2clk_nedge=0;
+  l2d5_cmp_clkstp_pedge_t=0; l2d5_cmp_clkstp_pedge_c=0; l2d5_cmp_clkstp_pedge_cnt=0; l2d5_cmp_clkstp_nedge_t=0; l2d5_cmp_clkstp_nedge_c=0; l2d5_cmp_clkstp_nedge_cnt=0; l2d5_cmp_l2clk_pedge=0; l2d5_cmp_l2clk_nedge=0;
+  l2d6_cmp_clkstp_pedge_t=0; l2d6_cmp_clkstp_pedge_c=0; l2d6_cmp_clkstp_pedge_cnt=0; l2d6_cmp_clkstp_nedge_t=0; l2d6_cmp_clkstp_nedge_c=0; l2d6_cmp_clkstp_nedge_cnt=0; l2d6_cmp_l2clk_pedge=0; l2d6_cmp_l2clk_nedge=0;
+  l2d7_cmp_clkstp_pedge_t=0; l2d7_cmp_clkstp_pedge_c=0; l2d7_cmp_clkstp_pedge_cnt=0; l2d7_cmp_clkstp_nedge_t=0; l2d7_cmp_clkstp_nedge_c=0; l2d7_cmp_clkstp_nedge_cnt=0; l2d7_cmp_l2clk_pedge=0; l2d7_cmp_l2clk_nedge=0;
+  l2t0_cmp_clkstp_pedge_t=0; l2t0_cmp_clkstp_pedge_c=0; l2t0_cmp_clkstp_pedge_cnt=0; l2t0_cmp_clkstp_nedge_t=0; l2t0_cmp_clkstp_nedge_c=0; l2t0_cmp_clkstp_nedge_cnt=0; l2t0_cmp_l2clk_pedge=0; l2t0_cmp_l2clk_nedge=0;
+  l2t1_cmp_clkstp_pedge_t=0; l2t1_cmp_clkstp_pedge_c=0; l2t1_cmp_clkstp_pedge_cnt=0; l2t1_cmp_clkstp_nedge_t=0; l2t1_cmp_clkstp_nedge_c=0; l2t1_cmp_clkstp_nedge_cnt=0; l2t1_cmp_l2clk_pedge=0; l2t1_cmp_l2clk_nedge=0;
+  l2t2_cmp_clkstp_pedge_t=0; l2t2_cmp_clkstp_pedge_c=0; l2t2_cmp_clkstp_pedge_cnt=0; l2t2_cmp_clkstp_nedge_t=0; l2t2_cmp_clkstp_nedge_c=0; l2t2_cmp_clkstp_nedge_cnt=0; l2t2_cmp_l2clk_pedge=0; l2t2_cmp_l2clk_nedge=0;
+  l2t3_cmp_clkstp_pedge_t=0; l2t3_cmp_clkstp_pedge_c=0; l2t3_cmp_clkstp_pedge_cnt=0; l2t3_cmp_clkstp_nedge_t=0; l2t3_cmp_clkstp_nedge_c=0; l2t3_cmp_clkstp_nedge_cnt=0; l2t3_cmp_l2clk_pedge=0; l2t3_cmp_l2clk_nedge=0;
+  l2t4_cmp_clkstp_pedge_t=0; l2t4_cmp_clkstp_pedge_c=0; l2t4_cmp_clkstp_pedge_cnt=0; l2t4_cmp_clkstp_nedge_t=0; l2t4_cmp_clkstp_nedge_c=0; l2t4_cmp_clkstp_nedge_cnt=0; l2t4_cmp_l2clk_pedge=0; l2t4_cmp_l2clk_nedge=0;
+  l2t5_cmp_clkstp_pedge_t=0; l2t5_cmp_clkstp_pedge_c=0; l2t5_cmp_clkstp_pedge_cnt=0; l2t5_cmp_clkstp_nedge_t=0; l2t5_cmp_clkstp_nedge_c=0; l2t5_cmp_clkstp_nedge_cnt=0; l2t5_cmp_l2clk_pedge=0; l2t5_cmp_l2clk_nedge=0;
+  l2t6_cmp_clkstp_pedge_t=0; l2t6_cmp_clkstp_pedge_c=0; l2t6_cmp_clkstp_pedge_cnt=0; l2t6_cmp_clkstp_nedge_t=0; l2t6_cmp_clkstp_nedge_c=0; l2t6_cmp_clkstp_nedge_cnt=0; l2t6_cmp_l2clk_pedge=0; l2t6_cmp_l2clk_nedge=0;
+  l2t7_cmp_clkstp_pedge_t=0; l2t7_cmp_clkstp_pedge_c=0; l2t7_cmp_clkstp_pedge_cnt=0; l2t7_cmp_clkstp_nedge_t=0; l2t7_cmp_clkstp_nedge_c=0; l2t7_cmp_clkstp_nedge_cnt=0; l2t7_cmp_l2clk_pedge=0; l2t7_cmp_l2clk_nedge=0;
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  mac_io_clkstp_pedge_t=0; mac_io_clkstp_pedge_c=0; mac_io_clkstp_pedge_cnt=0; mac_io_clkstp_nedge_t=0; mac_io_clkstp_nedge_c=0; mac_io_clkstp_nedge_cnt=0; mac_io_l2clk_pedge=0; mac_io_l2clk_nedge=0;
+#endif
+#endif
+  mcu0_cmp_clkstp_pedge_t=0; mcu0_cmp_clkstp_pedge_c=0; mcu0_cmp_clkstp_pedge_cnt=0; mcu0_cmp_clkstp_nedge_t=0; mcu0_cmp_clkstp_nedge_c=0; mcu0_cmp_clkstp_nedge_cnt=0; mcu0_cmp_l2clk_pedge=0; mcu0_cmp_l2clk_nedge=0;
+  mcu0_dr_clkstp_pedge_t=0; mcu0_dr_clkstp_pedge_c=0; mcu0_dr_clkstp_pedge_cnt=0; mcu0_dr_clkstp_nedge_t=0; mcu0_dr_clkstp_nedge_c=0; mcu0_dr_clkstp_nedge_cnt=0; mcu0_dr_l2clk_pedge=0; mcu0_dr_l2clk_nedge=0;
+  mcu0_io_clkstp_pedge_t=0; mcu0_io_clkstp_pedge_c=0; mcu0_io_clkstp_pedge_cnt=0; mcu0_io_clkstp_nedge_t=0; mcu0_io_clkstp_nedge_c=0; mcu0_io_clkstp_nedge_cnt=0; mcu0_io_l2clk_pedge=0; mcu0_io_l2clk_nedge=0;
+  mcu1_cmp_clkstp_pedge_t=0; mcu1_cmp_clkstp_pedge_c=0; mcu1_cmp_clkstp_pedge_cnt=0; mcu1_cmp_clkstp_nedge_t=0; mcu1_cmp_clkstp_nedge_c=0; mcu1_cmp_clkstp_nedge_cnt=0; mcu1_cmp_l2clk_pedge=0; mcu1_cmp_l2clk_nedge=0;
+  mcu1_dr_clkstp_pedge_t=0; mcu1_dr_clkstp_pedge_c=0; mcu1_dr_clkstp_pedge_cnt=0; mcu1_dr_clkstp_nedge_t=0; mcu1_dr_clkstp_nedge_c=0; mcu1_dr_clkstp_nedge_cnt=0; mcu1_dr_l2clk_pedge=0; mcu1_dr_l2clk_nedge=0;
+  mcu1_io_clkstp_pedge_t=0; mcu1_io_clkstp_pedge_c=0; mcu1_io_clkstp_pedge_cnt=0; mcu1_io_clkstp_nedge_t=0; mcu1_io_clkstp_nedge_c=0; mcu1_io_clkstp_nedge_cnt=0; mcu1_io_l2clk_pedge=0; mcu1_io_l2clk_nedge=0;
+  mcu2_cmp_clkstp_pedge_t=0; mcu2_cmp_clkstp_pedge_c=0; mcu2_cmp_clkstp_pedge_cnt=0; mcu2_cmp_clkstp_nedge_t=0; mcu2_cmp_clkstp_nedge_c=0; mcu2_cmp_clkstp_nedge_cnt=0; mcu2_cmp_l2clk_pedge=0; mcu2_cmp_l2clk_nedge=0;
+  mcu2_dr_clkstp_pedge_t=0; mcu2_dr_clkstp_pedge_c=0; mcu2_dr_clkstp_pedge_cnt=0; mcu2_dr_clkstp_nedge_t=0; mcu2_dr_clkstp_nedge_c=0; mcu2_dr_clkstp_nedge_cnt=0; mcu2_dr_l2clk_pedge=0; mcu2_dr_l2clk_nedge=0;
+  mcu2_io_clkstp_pedge_t=0; mcu2_io_clkstp_pedge_c=0; mcu2_io_clkstp_pedge_cnt=0; mcu2_io_clkstp_nedge_t=0; mcu2_io_clkstp_nedge_c=0; mcu2_io_clkstp_nedge_cnt=0; mcu2_io_l2clk_pedge=0; mcu2_io_l2clk_nedge=0;
+  mcu3_cmp_clkstp_pedge_t=0; mcu3_cmp_clkstp_pedge_c=0; mcu3_cmp_clkstp_pedge_cnt=0; mcu3_cmp_clkstp_nedge_t=0; mcu3_cmp_clkstp_nedge_c=0; mcu3_cmp_clkstp_nedge_cnt=0; mcu3_cmp_l2clk_pedge=0; mcu3_cmp_l2clk_nedge=0;
+  mcu3_dr_clkstp_pedge_t=0; mcu3_dr_clkstp_pedge_c=0; mcu3_dr_clkstp_pedge_cnt=0; mcu3_dr_clkstp_nedge_t=0; mcu3_dr_clkstp_nedge_c=0; mcu3_dr_clkstp_nedge_cnt=0; mcu3_dr_l2clk_pedge=0; mcu3_dr_l2clk_nedge=0;
+  mcu3_io_clkstp_pedge_t=0; mcu3_io_clkstp_pedge_c=0; mcu3_io_clkstp_pedge_cnt=0; mcu3_io_clkstp_nedge_t=0; mcu3_io_clkstp_nedge_c=0; mcu3_io_clkstp_nedge_cnt=0; mcu3_io_l2clk_pedge=0; mcu3_io_l2clk_nedge=0;
+  mio_0_cmp_clkstp_pedge_t=0; mio_0_cmp_clkstp_pedge_c=0; mio_0_cmp_clkstp_pedge_cnt=0; mio_0_cmp_clkstp_nedge_t=0; mio_0_cmp_clkstp_nedge_c=0; mio_0_cmp_clkstp_nedge_cnt=0; mio_0_cmp_l2clk_pedge=0; mio_0_cmp_l2clk_nedge=0;
+  mio_1_cmp_clkstp_pedge_t=0; mio_1_cmp_clkstp_pedge_c=0; mio_1_cmp_clkstp_pedge_cnt=0; mio_1_cmp_clkstp_nedge_t=0; mio_1_cmp_clkstp_nedge_c=0; mio_1_cmp_clkstp_nedge_cnt=0; mio_1_cmp_l2clk_pedge=0; mio_1_cmp_l2clk_nedge=0;
+  mio_2_cmp_clkstp_pedge_t=0; mio_2_cmp_clkstp_pedge_c=0; mio_2_cmp_clkstp_pedge_cnt=0; mio_2_cmp_clkstp_nedge_t=0; mio_2_cmp_clkstp_nedge_c=0; mio_2_cmp_clkstp_nedge_cnt=0; mio_2_cmp_l2clk_pedge=0; mio_2_cmp_l2clk_nedge=0;
+  mio_3_cmp_clkstp_pedge_t=0; mio_3_cmp_clkstp_pedge_c=0; mio_3_cmp_clkstp_pedge_cnt=0; mio_3_cmp_clkstp_nedge_t=0; mio_3_cmp_clkstp_nedge_c=0; mio_3_cmp_clkstp_nedge_cnt=0; mio_3_cmp_l2clk_pedge=0; mio_3_cmp_l2clk_nedge=0;
+  mio_io_clkstp_pedge_t=0; mio_io_clkstp_pedge_c=0; mio_io_clkstp_pedge_cnt=0; mio_io_clkstp_nedge_t=0; mio_io_clkstp_nedge_c=0; mio_io_clkstp_nedge_cnt=0; mio_io_l2clk_pedge=0; mio_io_l2clk_nedge=0;
+  ncu_cmp_clkstp_pedge_t=0; ncu_cmp_clkstp_pedge_c=0; ncu_cmp_clkstp_pedge_cnt=0; ncu_cmp_clkstp_nedge_t=0; ncu_cmp_clkstp_nedge_c=0; ncu_cmp_clkstp_nedge_cnt=0; ncu_cmp_l2clk_pedge=0; ncu_cmp_l2clk_nedge=0;
+  ncu_io_clkstp_pedge_t=0; ncu_io_clkstp_pedge_c=0; ncu_io_clkstp_pedge_cnt=0; ncu_io_clkstp_nedge_t=0; ncu_io_clkstp_nedge_c=0; ncu_io_clkstp_nedge_cnt=0; ncu_io_l2clk_pedge=0; ncu_io_l2clk_nedge=0;
+#ifndef FC_NO_PEU_VERA
+#ifndef PEU_SYSTEMC_T2
+  peu_io_clkstp_pedge_t=0; peu_io_clkstp_pedge_c=0; peu_io_clkstp_pedge_cnt=0; peu_io_clkstp_nedge_t=0; peu_io_clkstp_nedge_c=0; peu_io_clkstp_nedge_cnt=0; peu_io_l2clk_pedge=0; peu_io_l2clk_nedge=0;
+  peu_pc_clkstp_pedge_t=0; peu_pc_clkstp_pedge_c=0; peu_pc_clkstp_pedge_cnt=0; peu_pc_clkstp_nedge_t=0; peu_pc_clkstp_nedge_c=0; peu_pc_clkstp_nedge_cnt=0; peu_pc_l2clk_pedge=0; peu_pc_l2clk_nedge=0;
+#endif
+#endif
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  rdp_io2x_clkstp_pedge_t=0; rdp_io2x_clkstp_pedge_c=0; rdp_io2x_clkstp_pedge_cnt=0; rdp_io2x_clkstp_nedge_t=0; rdp_io2x_clkstp_nedge_c=0; rdp_io2x_clkstp_nedge_cnt=0; rdp_io2x_l2clk_pedge=0; rdp_io2x_l2clk_nedge=0;
+  rdp_io_clkstp_pedge_t=0; rdp_io_clkstp_pedge_c=0; rdp_io_clkstp_pedge_cnt=0; rdp_io_clkstp_nedge_t=0; rdp_io_clkstp_nedge_c=0; rdp_io_clkstp_nedge_cnt=0; rdp_io_l2clk_pedge=0; rdp_io_l2clk_nedge=0;
+  rtx_io2x_clkstp_pedge_t=0; rtx_io2x_clkstp_pedge_c=0; rtx_io2x_clkstp_pedge_cnt=0; rtx_io2x_clkstp_nedge_t=0; rtx_io2x_clkstp_nedge_c=0; rtx_io2x_clkstp_nedge_cnt=0; rtx_io2x_l2clk_pedge=0; rtx_io2x_l2clk_nedge=0;
+  rtx_io_clkstp_pedge_t=0; rtx_io_clkstp_pedge_c=0; rtx_io_clkstp_pedge_cnt=0; rtx_io_clkstp_nedge_t=0; rtx_io_clkstp_nedge_c=0; rtx_io_clkstp_nedge_cnt=0; rtx_io_l2clk_pedge=0; rtx_io_l2clk_nedge=0;
+#endif
+#endif
+  rst_cmp_clkstp_pedge_t=0; rst_cmp_clkstp_pedge_c=0; rst_cmp_clkstp_pedge_cnt=0; rst_cmp_clkstp_nedge_t=0; rst_cmp_clkstp_nedge_c=0; rst_cmp_clkstp_nedge_cnt=0; rst_cmp_l2clk_pedge=0; rst_cmp_l2clk_nedge=0;
+  rst_io_clkstp_pedge_t=0; rst_io_clkstp_pedge_c=0; rst_io_clkstp_pedge_cnt=0; rst_io_clkstp_nedge_t=0; rst_io_clkstp_nedge_c=0; rst_io_clkstp_nedge_cnt=0; rst_io_l2clk_pedge=0; rst_io_l2clk_nedge=0;
+  sii_cmp_clkstp_pedge_t=0; sii_cmp_clkstp_pedge_c=0; sii_cmp_clkstp_pedge_cnt=0; sii_cmp_clkstp_nedge_t=0; sii_cmp_clkstp_nedge_c=0; sii_cmp_clkstp_nedge_cnt=0; sii_cmp_l2clk_pedge=0; sii_cmp_l2clk_nedge=0;
+  sii_io_clkstp_pedge_t=0; sii_io_clkstp_pedge_c=0; sii_io_clkstp_pedge_cnt=0; sii_io_clkstp_nedge_t=0; sii_io_clkstp_nedge_c=0; sii_io_clkstp_nedge_cnt=0; sii_io_l2clk_pedge=0; sii_io_l2clk_nedge=0;
+  sio_cmp_clkstp_pedge_t=0; sio_cmp_clkstp_pedge_c=0; sio_cmp_clkstp_pedge_cnt=0; sio_cmp_clkstp_nedge_t=0; sio_cmp_clkstp_nedge_c=0; sio_cmp_clkstp_nedge_cnt=0; sio_cmp_l2clk_pedge=0; sio_cmp_l2clk_nedge=0;
+  sio_io_clkstp_pedge_t=0; sio_io_clkstp_pedge_c=0; sio_io_clkstp_pedge_cnt=0; sio_io_clkstp_nedge_t=0; sio_io_clkstp_nedge_c=0; sio_io_clkstp_nedge_cnt=0; sio_io_l2clk_pedge=0; sio_io_l2clk_nedge=0;
+  spc0_cmp_clkstp_pedge_t=0; spc0_cmp_clkstp_pedge_c=0; spc0_cmp_clkstp_pedge_cnt=0; spc0_cmp_clkstp_nedge_t=0; spc0_cmp_clkstp_nedge_c=0; spc0_cmp_clkstp_nedge_cnt=0; spc0_cmp_l2clk_pedge=0; spc0_cmp_l2clk_nedge=0;
+  spc1_cmp_clkstp_pedge_t=0; spc1_cmp_clkstp_pedge_c=0; spc1_cmp_clkstp_pedge_cnt=0; spc1_cmp_clkstp_nedge_t=0; spc1_cmp_clkstp_nedge_c=0; spc1_cmp_clkstp_nedge_cnt=0; spc1_cmp_l2clk_pedge=0; spc1_cmp_l2clk_nedge=0;
+  spc2_cmp_clkstp_pedge_t=0; spc2_cmp_clkstp_pedge_c=0; spc2_cmp_clkstp_pedge_cnt=0; spc2_cmp_clkstp_nedge_t=0; spc2_cmp_clkstp_nedge_c=0; spc2_cmp_clkstp_nedge_cnt=0; spc2_cmp_l2clk_pedge=0; spc2_cmp_l2clk_nedge=0;
+  spc3_cmp_clkstp_pedge_t=0; spc3_cmp_clkstp_pedge_c=0; spc3_cmp_clkstp_pedge_cnt=0; spc3_cmp_clkstp_nedge_t=0; spc3_cmp_clkstp_nedge_c=0; spc3_cmp_clkstp_nedge_cnt=0; spc3_cmp_l2clk_pedge=0; spc3_cmp_l2clk_nedge=0;
+  spc4_cmp_clkstp_pedge_t=0; spc4_cmp_clkstp_pedge_c=0; spc4_cmp_clkstp_pedge_cnt=0; spc4_cmp_clkstp_nedge_t=0; spc4_cmp_clkstp_nedge_c=0; spc4_cmp_clkstp_nedge_cnt=0; spc4_cmp_l2clk_pedge=0; spc4_cmp_l2clk_nedge=0;
+  spc5_cmp_clkstp_pedge_t=0; spc5_cmp_clkstp_pedge_c=0; spc5_cmp_clkstp_pedge_cnt=0; spc5_cmp_clkstp_nedge_t=0; spc5_cmp_clkstp_nedge_c=0; spc5_cmp_clkstp_nedge_cnt=0; spc5_cmp_l2clk_pedge=0; spc5_cmp_l2clk_nedge=0;
+  spc6_cmp_clkstp_pedge_t=0; spc6_cmp_clkstp_pedge_c=0; spc6_cmp_clkstp_pedge_cnt=0; spc6_cmp_clkstp_nedge_t=0; spc6_cmp_clkstp_nedge_c=0; spc6_cmp_clkstp_nedge_cnt=0; spc6_cmp_l2clk_pedge=0; spc6_cmp_l2clk_nedge=0;
+  spc7_cmp_clkstp_pedge_t=0; spc7_cmp_clkstp_pedge_c=0; spc7_cmp_clkstp_pedge_cnt=0; spc7_cmp_clkstp_nedge_t=0; spc7_cmp_clkstp_nedge_c=0; spc7_cmp_clkstp_nedge_cnt=0; spc7_cmp_l2clk_pedge=0; spc7_cmp_l2clk_nedge=0;
+  tcu_cmp_clkstp_pedge_t=0; tcu_cmp_clkstp_pedge_c=0; tcu_cmp_clkstp_pedge_cnt=0; tcu_cmp_clkstp_nedge_t=0; tcu_cmp_clkstp_nedge_c=0; tcu_cmp_clkstp_nedge_cnt=0; tcu_cmp_l2clk_pedge=0; tcu_cmp_l2clk_nedge=0;
+  tcu_io_clkstp_pedge_t=0; tcu_io_clkstp_pedge_c=0; tcu_io_clkstp_pedge_cnt=0; tcu_io_clkstp_nedge_t=0; tcu_io_clkstp_nedge_c=0; tcu_io_clkstp_nedge_cnt=0; tcu_io_l2clk_pedge=0; tcu_io_l2clk_nedge=0;
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  tds_io2x_clkstp_pedge_t=0; tds_io2x_clkstp_pedge_c=0; tds_io2x_clkstp_pedge_cnt=0; tds_io2x_clkstp_nedge_t=0; tds_io2x_clkstp_nedge_c=0; tds_io2x_clkstp_nedge_cnt=0; tds_io2x_l2clk_pedge=0; tds_io2x_l2clk_nedge=0;
+  tds_io_clkstp_pedge_t=0; tds_io_clkstp_pedge_c=0; tds_io_clkstp_pedge_cnt=0; tds_io_clkstp_nedge_t=0; tds_io_clkstp_nedge_c=0; tds_io_clkstp_nedge_cnt=0; tds_io_l2clk_pedge=0; tds_io_l2clk_nedge=0;
+#endif
+#endif
+}
+
+//========================================================================
+// WHAT: start to monitor l2clk and tcu_clk_stop
+//========================================================================
+task CLUSTER_hdrs_mon::start_l2clk_n_clkstop_mon() {
+  dbg.dispmon(this.dispScope, MON_ALWAYS, "start monitoring l2clk and tcu_clk_stop ...");
+  fork
+  {
+    while (1) {
+      @(posedge clkgen_ccu_cmp_port.$tcu_clk_stop__gclk);
+      ccu_cmp_clkstp_pedge_t = get_time(LO);
+      ccu_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      ccu_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_ccu_cmp_port.$tcu_clk_stop__gclk);
+      ccu_cmp_clkstp_nedge_t = get_time(LO);
+      ccu_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      ccu_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_ccu_cmp_port.$l2clk);
+      if (clkgen_ccu_cmp_port.$l2clk)
+        ccu_cmp_l2clk_pedge = get_time(LO);
+      else
+        ccu_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_ccu_io_port.$tcu_clk_stop__gclk);
+      ccu_io_clkstp_pedge_t = get_time(LO);
+      ccu_io_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      ccu_io_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_ccu_io_port.$tcu_clk_stop__gclk);
+      ccu_io_clkstp_nedge_t = get_time(LO);
+      ccu_io_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      ccu_io_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_ccu_io_port.$l2clk);
+      if (clkgen_ccu_io_port.$l2clk)
+        ccu_io_l2clk_pedge = get_time(LO);
+      else
+        ccu_io_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_ccx_cmp_port.$tcu_clk_stop__gclk);
+      ccx_cmp_clkstp_pedge_t = get_time(LO);
+      ccx_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      ccx_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_ccx_cmp_port.$tcu_clk_stop__gclk);
+      ccx_cmp_clkstp_nedge_t = get_time(LO);
+      ccx_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      ccx_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_ccx_cmp_port.$l2clk);
+      if (clkgen_ccx_cmp_port.$l2clk)
+        ccx_cmp_l2clk_pedge = get_time(LO);
+      else
+        ccx_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_db0_cmp_port.$tcu_clk_stop__gclk);
+      db0_cmp_clkstp_pedge_t = get_time(LO);
+      db0_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      db0_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_db0_cmp_port.$tcu_clk_stop__gclk);
+      db0_cmp_clkstp_nedge_t = get_time(LO);
+      db0_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      db0_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_db0_cmp_port.$l2clk);
+      if (clkgen_db0_cmp_port.$l2clk)
+        db0_cmp_l2clk_pedge = get_time(LO);
+      else
+        db0_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_db0_io_port.$tcu_clk_stop__gclk);
+      db0_io_clkstp_pedge_t = get_time(LO);
+      db0_io_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      db0_io_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_db0_io_port.$tcu_clk_stop__gclk);
+      db0_io_clkstp_nedge_t = get_time(LO);
+      db0_io_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      db0_io_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_db0_io_port.$l2clk);
+      if (clkgen_db0_io_port.$l2clk)
+        db0_io_l2clk_pedge = get_time(LO);
+      else
+        db0_io_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_db1_cmp_port.$tcu_clk_stop__gclk);
+      db1_cmp_clkstp_pedge_t = get_time(LO);
+      db1_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      db1_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_db1_cmp_port.$tcu_clk_stop__gclk);
+      db1_cmp_clkstp_nedge_t = get_time(LO);
+      db1_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      db1_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_db1_cmp_port.$l2clk);
+      if (clkgen_db1_cmp_port.$l2clk)
+        db1_cmp_l2clk_pedge = get_time(LO);
+      else
+        db1_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_db1_io_port.$tcu_clk_stop__gclk);
+      db1_io_clkstp_pedge_t = get_time(LO);
+      db1_io_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      db1_io_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_db1_io_port.$tcu_clk_stop__gclk);
+      db1_io_clkstp_nedge_t = get_time(LO);
+      db1_io_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      db1_io_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_db1_io_port.$l2clk);
+      if (clkgen_db1_io_port.$l2clk)
+        db1_io_l2clk_pedge = get_time(LO);
+      else
+        db1_io_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_dmu_io_port.$tcu_clk_stop__gclk);
+      dmu_io_clkstp_pedge_t = get_time(LO);
+      dmu_io_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      dmu_io_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_dmu_io_port.$tcu_clk_stop__gclk);
+      dmu_io_clkstp_nedge_t = get_time(LO);
+      dmu_io_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      dmu_io_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_dmu_io_port.$l2clk);
+      if (clkgen_dmu_io_port.$l2clk)
+        dmu_io_l2clk_pedge = get_time(LO);
+      else
+        dmu_io_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_efu_cmp_port.$tcu_clk_stop__gclk);
+      efu_cmp_clkstp_pedge_t = get_time(LO);
+      efu_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      efu_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_efu_cmp_port.$tcu_clk_stop__gclk);
+      efu_cmp_clkstp_nedge_t = get_time(LO);
+      efu_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      efu_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_efu_cmp_port.$l2clk);
+      if (clkgen_efu_cmp_port.$l2clk)
+        efu_cmp_l2clk_pedge = get_time(LO);
+      else
+        efu_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_efu_io_port.$tcu_clk_stop__gclk);
+      efu_io_clkstp_pedge_t = get_time(LO);
+      efu_io_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      efu_io_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_efu_io_port.$tcu_clk_stop__gclk);
+      efu_io_clkstp_nedge_t = get_time(LO);
+      efu_io_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      efu_io_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_efu_io_port.$l2clk);
+      if (clkgen_efu_io_port.$l2clk)
+        efu_io_l2clk_pedge = get_time(LO);
+      else
+        efu_io_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2b0_cmp_port.$tcu_clk_stop__gclk);
+      l2b0_cmp_clkstp_pedge_t = get_time(LO);
+      l2b0_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2b0_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2b0_cmp_port.$tcu_clk_stop__gclk);
+      l2b0_cmp_clkstp_nedge_t = get_time(LO);
+      l2b0_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2b0_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2b0_cmp_port.$l2clk);
+      if (clkgen_l2b0_cmp_port.$l2clk)
+        l2b0_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2b0_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2b1_cmp_port.$tcu_clk_stop__gclk);
+      l2b1_cmp_clkstp_pedge_t = get_time(LO);
+      l2b1_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2b1_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2b1_cmp_port.$tcu_clk_stop__gclk);
+      l2b1_cmp_clkstp_nedge_t = get_time(LO);
+      l2b1_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2b1_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2b1_cmp_port.$l2clk);
+      if (clkgen_l2b1_cmp_port.$l2clk)
+        l2b1_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2b1_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2b2_cmp_port.$tcu_clk_stop__gclk);
+      l2b2_cmp_clkstp_pedge_t = get_time(LO);
+      l2b2_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2b2_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2b2_cmp_port.$tcu_clk_stop__gclk);
+      l2b2_cmp_clkstp_nedge_t = get_time(LO);
+      l2b2_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2b2_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2b2_cmp_port.$l2clk);
+      if (clkgen_l2b2_cmp_port.$l2clk)
+        l2b2_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2b2_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2b3_cmp_port.$tcu_clk_stop__gclk);
+      l2b3_cmp_clkstp_pedge_t = get_time(LO);
+      l2b3_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2b3_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2b3_cmp_port.$tcu_clk_stop__gclk);
+      l2b3_cmp_clkstp_nedge_t = get_time(LO);
+      l2b3_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2b3_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2b3_cmp_port.$l2clk);
+      if (clkgen_l2b3_cmp_port.$l2clk)
+        l2b3_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2b3_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2b4_cmp_port.$tcu_clk_stop__gclk);
+      l2b4_cmp_clkstp_pedge_t = get_time(LO);
+      l2b4_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2b4_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2b4_cmp_port.$tcu_clk_stop__gclk);
+      l2b4_cmp_clkstp_nedge_t = get_time(LO);
+      l2b4_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2b4_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2b4_cmp_port.$l2clk);
+      if (clkgen_l2b4_cmp_port.$l2clk)
+        l2b4_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2b4_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2b5_cmp_port.$tcu_clk_stop__gclk);
+      l2b5_cmp_clkstp_pedge_t = get_time(LO);
+      l2b5_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2b5_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2b5_cmp_port.$tcu_clk_stop__gclk);
+      l2b5_cmp_clkstp_nedge_t = get_time(LO);
+      l2b5_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2b5_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2b5_cmp_port.$l2clk);
+      if (clkgen_l2b5_cmp_port.$l2clk)
+        l2b5_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2b5_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2b6_cmp_port.$tcu_clk_stop__gclk);
+      l2b6_cmp_clkstp_pedge_t = get_time(LO);
+      l2b6_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2b6_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2b6_cmp_port.$tcu_clk_stop__gclk);
+      l2b6_cmp_clkstp_nedge_t = get_time(LO);
+      l2b6_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2b6_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2b6_cmp_port.$l2clk);
+      if (clkgen_l2b6_cmp_port.$l2clk)
+        l2b6_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2b6_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2b7_cmp_port.$tcu_clk_stop__gclk);
+      l2b7_cmp_clkstp_pedge_t = get_time(LO);
+      l2b7_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2b7_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2b7_cmp_port.$tcu_clk_stop__gclk);
+      l2b7_cmp_clkstp_nedge_t = get_time(LO);
+      l2b7_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2b7_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2b7_cmp_port.$l2clk);
+      if (clkgen_l2b7_cmp_port.$l2clk)
+        l2b7_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2b7_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2d0_cmp_port.$tcu_clk_stop__gclk);
+      l2d0_cmp_clkstp_pedge_t = get_time(LO);
+      l2d0_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2d0_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2d0_cmp_port.$tcu_clk_stop__gclk);
+      l2d0_cmp_clkstp_nedge_t = get_time(LO);
+      l2d0_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2d0_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2d0_cmp_port.$l2clk);
+      if (clkgen_l2d0_cmp_port.$l2clk)
+        l2d0_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2d0_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2d1_cmp_port.$tcu_clk_stop__gclk);
+      l2d1_cmp_clkstp_pedge_t = get_time(LO);
+      l2d1_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2d1_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2d1_cmp_port.$tcu_clk_stop__gclk);
+      l2d1_cmp_clkstp_nedge_t = get_time(LO);
+      l2d1_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2d1_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2d1_cmp_port.$l2clk);
+      if (clkgen_l2d1_cmp_port.$l2clk)
+        l2d1_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2d1_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2d2_cmp_port.$tcu_clk_stop__gclk);
+      l2d2_cmp_clkstp_pedge_t = get_time(LO);
+      l2d2_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2d2_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2d2_cmp_port.$tcu_clk_stop__gclk);
+      l2d2_cmp_clkstp_nedge_t = get_time(LO);
+      l2d2_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2d2_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2d2_cmp_port.$l2clk);
+      if (clkgen_l2d2_cmp_port.$l2clk)
+        l2d2_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2d2_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2d3_cmp_port.$tcu_clk_stop__gclk);
+      l2d3_cmp_clkstp_pedge_t = get_time(LO);
+      l2d3_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2d3_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2d3_cmp_port.$tcu_clk_stop__gclk);
+      l2d3_cmp_clkstp_nedge_t = get_time(LO);
+      l2d3_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2d3_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2d3_cmp_port.$l2clk);
+      if (clkgen_l2d3_cmp_port.$l2clk)
+        l2d3_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2d3_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2d4_cmp_port.$tcu_clk_stop__gclk);
+      l2d4_cmp_clkstp_pedge_t = get_time(LO);
+      l2d4_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2d4_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2d4_cmp_port.$tcu_clk_stop__gclk);
+      l2d4_cmp_clkstp_nedge_t = get_time(LO);
+      l2d4_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2d4_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2d4_cmp_port.$l2clk);
+      if (clkgen_l2d4_cmp_port.$l2clk)
+        l2d4_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2d4_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2d5_cmp_port.$tcu_clk_stop__gclk);
+      l2d5_cmp_clkstp_pedge_t = get_time(LO);
+      l2d5_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2d5_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2d5_cmp_port.$tcu_clk_stop__gclk);
+      l2d5_cmp_clkstp_nedge_t = get_time(LO);
+      l2d5_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2d5_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2d5_cmp_port.$l2clk);
+      if (clkgen_l2d5_cmp_port.$l2clk)
+        l2d5_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2d5_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2d6_cmp_port.$tcu_clk_stop__gclk);
+      l2d6_cmp_clkstp_pedge_t = get_time(LO);
+      l2d6_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2d6_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2d6_cmp_port.$tcu_clk_stop__gclk);
+      l2d6_cmp_clkstp_nedge_t = get_time(LO);
+      l2d6_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2d6_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2d6_cmp_port.$l2clk);
+      if (clkgen_l2d6_cmp_port.$l2clk)
+        l2d6_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2d6_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2d7_cmp_port.$tcu_clk_stop__gclk);
+      l2d7_cmp_clkstp_pedge_t = get_time(LO);
+      l2d7_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2d7_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2d7_cmp_port.$tcu_clk_stop__gclk);
+      l2d7_cmp_clkstp_nedge_t = get_time(LO);
+      l2d7_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2d7_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2d7_cmp_port.$l2clk);
+      if (clkgen_l2d7_cmp_port.$l2clk)
+        l2d7_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2d7_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2t0_cmp_port.$tcu_clk_stop__gclk);
+      l2t0_cmp_clkstp_pedge_t = get_time(LO);
+      l2t0_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2t0_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2t0_cmp_port.$tcu_clk_stop__gclk);
+      l2t0_cmp_clkstp_nedge_t = get_time(LO);
+      l2t0_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2t0_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2t0_cmp_port.$l2clk);
+      if (clkgen_l2t0_cmp_port.$l2clk)
+        l2t0_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2t0_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2t1_cmp_port.$tcu_clk_stop__gclk);
+      l2t1_cmp_clkstp_pedge_t = get_time(LO);
+      l2t1_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2t1_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2t1_cmp_port.$tcu_clk_stop__gclk);
+      l2t1_cmp_clkstp_nedge_t = get_time(LO);
+      l2t1_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2t1_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2t1_cmp_port.$l2clk);
+      if (clkgen_l2t1_cmp_port.$l2clk)
+        l2t1_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2t1_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2t2_cmp_port.$tcu_clk_stop__gclk);
+      l2t2_cmp_clkstp_pedge_t = get_time(LO);
+      l2t2_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2t2_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2t2_cmp_port.$tcu_clk_stop__gclk);
+      l2t2_cmp_clkstp_nedge_t = get_time(LO);
+      l2t2_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2t2_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2t2_cmp_port.$l2clk);
+      if (clkgen_l2t2_cmp_port.$l2clk)
+        l2t2_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2t2_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2t3_cmp_port.$tcu_clk_stop__gclk);
+      l2t3_cmp_clkstp_pedge_t = get_time(LO);
+      l2t3_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2t3_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2t3_cmp_port.$tcu_clk_stop__gclk);
+      l2t3_cmp_clkstp_nedge_t = get_time(LO);
+      l2t3_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2t3_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2t3_cmp_port.$l2clk);
+      if (clkgen_l2t3_cmp_port.$l2clk)
+        l2t3_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2t3_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2t4_cmp_port.$tcu_clk_stop__gclk);
+      l2t4_cmp_clkstp_pedge_t = get_time(LO);
+      l2t4_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2t4_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2t4_cmp_port.$tcu_clk_stop__gclk);
+      l2t4_cmp_clkstp_nedge_t = get_time(LO);
+      l2t4_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2t4_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2t4_cmp_port.$l2clk);
+      if (clkgen_l2t4_cmp_port.$l2clk)
+        l2t4_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2t4_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2t5_cmp_port.$tcu_clk_stop__gclk);
+      l2t5_cmp_clkstp_pedge_t = get_time(LO);
+      l2t5_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2t5_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2t5_cmp_port.$tcu_clk_stop__gclk);
+      l2t5_cmp_clkstp_nedge_t = get_time(LO);
+      l2t5_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2t5_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2t5_cmp_port.$l2clk);
+      if (clkgen_l2t5_cmp_port.$l2clk)
+        l2t5_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2t5_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2t6_cmp_port.$tcu_clk_stop__gclk);
+      l2t6_cmp_clkstp_pedge_t = get_time(LO);
+      l2t6_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2t6_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2t6_cmp_port.$tcu_clk_stop__gclk);
+      l2t6_cmp_clkstp_nedge_t = get_time(LO);
+      l2t6_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2t6_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2t6_cmp_port.$l2clk);
+      if (clkgen_l2t6_cmp_port.$l2clk)
+        l2t6_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2t6_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_l2t7_cmp_port.$tcu_clk_stop__gclk);
+      l2t7_cmp_clkstp_pedge_t = get_time(LO);
+      l2t7_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2t7_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_l2t7_cmp_port.$tcu_clk_stop__gclk);
+      l2t7_cmp_clkstp_nedge_t = get_time(LO);
+      l2t7_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      l2t7_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_l2t7_cmp_port.$l2clk);
+      if (clkgen_l2t7_cmp_port.$l2clk)
+        l2t7_cmp_l2clk_pedge = get_time(LO);
+      else
+        l2t7_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  {
+    while (1) {
+      @(posedge clkgen_mac_io_port.$tcu_clk_stop__gclk);
+      mac_io_clkstp_pedge_t = get_time(LO);
+      mac_io_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mac_io_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_mac_io_port.$tcu_clk_stop__gclk);
+      mac_io_clkstp_nedge_t = get_time(LO);
+      mac_io_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mac_io_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_mac_io_port.$l2clk);
+      if (clkgen_mac_io_port.$l2clk)
+        mac_io_l2clk_pedge = get_time(LO);
+      else
+        mac_io_l2clk_nedge = get_time(LO);
+    }
+  }
+#endif
+#endif
+  {
+    while (1) {
+      @(posedge clkgen_mcu0_cmp_port.$tcu_clk_stop__gclk);
+      mcu0_cmp_clkstp_pedge_t = get_time(LO);
+      mcu0_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu0_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_mcu0_cmp_port.$tcu_clk_stop__gclk);
+      mcu0_cmp_clkstp_nedge_t = get_time(LO);
+      mcu0_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu0_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_mcu0_cmp_port.$l2clk);
+      if (clkgen_mcu0_cmp_port.$l2clk)
+        mcu0_cmp_l2clk_pedge = get_time(LO);
+      else
+        mcu0_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_mcu0_dr_port.$tcu_clk_stop__gclk);
+      mcu0_dr_clkstp_pedge_t = get_time(LO);
+      mcu0_dr_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu0_dr_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_mcu0_dr_port.$tcu_clk_stop__gclk);
+      mcu0_dr_clkstp_nedge_t = get_time(LO);
+      mcu0_dr_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu0_dr_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_mcu0_dr_port.$l2clk);
+      if (clkgen_mcu0_dr_port.$l2clk)
+        mcu0_dr_l2clk_pedge = get_time(LO);
+      else
+        mcu0_dr_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_mcu0_io_port.$tcu_clk_stop__gclk);
+      mcu0_io_clkstp_pedge_t = get_time(LO);
+      mcu0_io_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu0_io_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_mcu0_io_port.$tcu_clk_stop__gclk);
+      mcu0_io_clkstp_nedge_t = get_time(LO);
+      mcu0_io_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu0_io_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_mcu0_io_port.$l2clk);
+      if (clkgen_mcu0_io_port.$l2clk)
+        mcu0_io_l2clk_pedge = get_time(LO);
+      else
+        mcu0_io_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_mcu1_cmp_port.$tcu_clk_stop__gclk);
+      mcu1_cmp_clkstp_pedge_t = get_time(LO);
+      mcu1_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu1_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_mcu1_cmp_port.$tcu_clk_stop__gclk);
+      mcu1_cmp_clkstp_nedge_t = get_time(LO);
+      mcu1_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu1_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_mcu1_cmp_port.$l2clk);
+      if (clkgen_mcu1_cmp_port.$l2clk)
+        mcu1_cmp_l2clk_pedge = get_time(LO);
+      else
+        mcu1_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_mcu1_dr_port.$tcu_clk_stop__gclk);
+      mcu1_dr_clkstp_pedge_t = get_time(LO);
+      mcu1_dr_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu1_dr_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_mcu1_dr_port.$tcu_clk_stop__gclk);
+      mcu1_dr_clkstp_nedge_t = get_time(LO);
+      mcu1_dr_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu1_dr_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_mcu1_dr_port.$l2clk);
+      if (clkgen_mcu1_dr_port.$l2clk)
+        mcu1_dr_l2clk_pedge = get_time(LO);
+      else
+        mcu1_dr_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_mcu1_io_port.$tcu_clk_stop__gclk);
+      mcu1_io_clkstp_pedge_t = get_time(LO);
+      mcu1_io_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu1_io_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_mcu1_io_port.$tcu_clk_stop__gclk);
+      mcu1_io_clkstp_nedge_t = get_time(LO);
+      mcu1_io_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu1_io_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_mcu1_io_port.$l2clk);
+      if (clkgen_mcu1_io_port.$l2clk)
+        mcu1_io_l2clk_pedge = get_time(LO);
+      else
+        mcu1_io_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_mcu2_cmp_port.$tcu_clk_stop__gclk);
+      mcu2_cmp_clkstp_pedge_t = get_time(LO);
+      mcu2_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu2_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_mcu2_cmp_port.$tcu_clk_stop__gclk);
+      mcu2_cmp_clkstp_nedge_t = get_time(LO);
+      mcu2_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu2_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_mcu2_cmp_port.$l2clk);
+      if (clkgen_mcu2_cmp_port.$l2clk)
+        mcu2_cmp_l2clk_pedge = get_time(LO);
+      else
+        mcu2_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_mcu2_dr_port.$tcu_clk_stop__gclk);
+      mcu2_dr_clkstp_pedge_t = get_time(LO);
+      mcu2_dr_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu2_dr_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_mcu2_dr_port.$tcu_clk_stop__gclk);
+      mcu2_dr_clkstp_nedge_t = get_time(LO);
+      mcu2_dr_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu2_dr_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_mcu2_dr_port.$l2clk);
+      if (clkgen_mcu2_dr_port.$l2clk)
+        mcu2_dr_l2clk_pedge = get_time(LO);
+      else
+        mcu2_dr_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_mcu2_io_port.$tcu_clk_stop__gclk);
+      mcu2_io_clkstp_pedge_t = get_time(LO);
+      mcu2_io_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu2_io_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_mcu2_io_port.$tcu_clk_stop__gclk);
+      mcu2_io_clkstp_nedge_t = get_time(LO);
+      mcu2_io_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu2_io_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_mcu2_io_port.$l2clk);
+      if (clkgen_mcu2_io_port.$l2clk)
+        mcu2_io_l2clk_pedge = get_time(LO);
+      else
+        mcu2_io_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_mcu3_cmp_port.$tcu_clk_stop__gclk);
+      mcu3_cmp_clkstp_pedge_t = get_time(LO);
+      mcu3_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu3_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_mcu3_cmp_port.$tcu_clk_stop__gclk);
+      mcu3_cmp_clkstp_nedge_t = get_time(LO);
+      mcu3_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu3_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_mcu3_cmp_port.$l2clk);
+      if (clkgen_mcu3_cmp_port.$l2clk)
+        mcu3_cmp_l2clk_pedge = get_time(LO);
+      else
+        mcu3_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_mcu3_dr_port.$tcu_clk_stop__gclk);
+      mcu3_dr_clkstp_pedge_t = get_time(LO);
+      mcu3_dr_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu3_dr_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_mcu3_dr_port.$tcu_clk_stop__gclk);
+      mcu3_dr_clkstp_nedge_t = get_time(LO);
+      mcu3_dr_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu3_dr_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_mcu3_dr_port.$l2clk);
+      if (clkgen_mcu3_dr_port.$l2clk)
+        mcu3_dr_l2clk_pedge = get_time(LO);
+      else
+        mcu3_dr_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_mcu3_io_port.$tcu_clk_stop__gclk);
+      mcu3_io_clkstp_pedge_t = get_time(LO);
+      mcu3_io_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu3_io_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_mcu3_io_port.$tcu_clk_stop__gclk);
+      mcu3_io_clkstp_nedge_t = get_time(LO);
+      mcu3_io_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mcu3_io_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_mcu3_io_port.$l2clk);
+      if (clkgen_mcu3_io_port.$l2clk)
+        mcu3_io_l2clk_pedge = get_time(LO);
+      else
+        mcu3_io_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_mio_0_cmp_port.$tcu_clk_stop__gclk);
+      mio_0_cmp_clkstp_pedge_t = get_time(LO);
+      mio_0_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mio_0_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_mio_0_cmp_port.$tcu_clk_stop__gclk);
+      mio_0_cmp_clkstp_nedge_t = get_time(LO);
+      mio_0_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mio_0_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_mio_0_cmp_port.$l2clk);
+      if (clkgen_mio_0_cmp_port.$l2clk)
+        mio_0_cmp_l2clk_pedge = get_time(LO);
+      else
+        mio_0_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_mio_1_cmp_port.$tcu_clk_stop__gclk);
+      mio_1_cmp_clkstp_pedge_t = get_time(LO);
+      mio_1_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mio_1_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_mio_1_cmp_port.$tcu_clk_stop__gclk);
+      mio_1_cmp_clkstp_nedge_t = get_time(LO);
+      mio_1_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mio_1_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_mio_1_cmp_port.$l2clk);
+      if (clkgen_mio_1_cmp_port.$l2clk)
+        mio_1_cmp_l2clk_pedge = get_time(LO);
+      else
+        mio_1_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_mio_2_cmp_port.$tcu_clk_stop__gclk);
+      mio_2_cmp_clkstp_pedge_t = get_time(LO);
+      mio_2_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mio_2_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_mio_2_cmp_port.$tcu_clk_stop__gclk);
+      mio_2_cmp_clkstp_nedge_t = get_time(LO);
+      mio_2_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mio_2_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_mio_2_cmp_port.$l2clk);
+      if (clkgen_mio_2_cmp_port.$l2clk)
+        mio_2_cmp_l2clk_pedge = get_time(LO);
+      else
+        mio_2_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_mio_3_cmp_port.$tcu_clk_stop__gclk);
+      mio_3_cmp_clkstp_pedge_t = get_time(LO);
+      mio_3_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mio_3_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_mio_3_cmp_port.$tcu_clk_stop__gclk);
+      mio_3_cmp_clkstp_nedge_t = get_time(LO);
+      mio_3_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mio_3_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_mio_3_cmp_port.$l2clk);
+      if (clkgen_mio_3_cmp_port.$l2clk)
+        mio_3_cmp_l2clk_pedge = get_time(LO);
+      else
+        mio_3_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_mio_io_port.$tcu_clk_stop__gclk);
+      mio_io_clkstp_pedge_t = get_time(LO);
+      mio_io_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mio_io_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_mio_io_port.$tcu_clk_stop__gclk);
+      mio_io_clkstp_nedge_t = get_time(LO);
+      mio_io_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      mio_io_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_mio_io_port.$l2clk);
+      if (clkgen_mio_io_port.$l2clk)
+        mio_io_l2clk_pedge = get_time(LO);
+      else
+        mio_io_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_ncu_cmp_port.$tcu_clk_stop__gclk);
+      ncu_cmp_clkstp_pedge_t = get_time(LO);
+      ncu_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      ncu_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_ncu_cmp_port.$tcu_clk_stop__gclk);
+      ncu_cmp_clkstp_nedge_t = get_time(LO);
+      ncu_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      ncu_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_ncu_cmp_port.$l2clk);
+      if (clkgen_ncu_cmp_port.$l2clk)
+        ncu_cmp_l2clk_pedge = get_time(LO);
+      else
+        ncu_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_ncu_io_port.$tcu_clk_stop__gclk);
+      ncu_io_clkstp_pedge_t = get_time(LO);
+      ncu_io_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      ncu_io_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_ncu_io_port.$tcu_clk_stop__gclk);
+      ncu_io_clkstp_nedge_t = get_time(LO);
+      ncu_io_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      ncu_io_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_ncu_io_port.$l2clk);
+      if (clkgen_ncu_io_port.$l2clk)
+        ncu_io_l2clk_pedge = get_time(LO);
+      else
+        ncu_io_l2clk_nedge = get_time(LO);
+    }
+  }
+#ifndef FC_NO_PEU_VERA
+#ifndef PEU_SYSTEMC_T2
+  {
+    while (1) {
+      @(posedge clkgen_peu_io_port.$tcu_clk_stop__gclk);
+      peu_io_clkstp_pedge_t = get_time(LO);
+      peu_io_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      peu_io_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_peu_io_port.$tcu_clk_stop__gclk);
+      peu_io_clkstp_nedge_t = get_time(LO);
+      peu_io_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      peu_io_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_peu_io_port.$l2clk);
+      if (clkgen_peu_io_port.$l2clk)
+        peu_io_l2clk_pedge = get_time(LO);
+      else
+        peu_io_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_peu_pc_port.$tcu_clk_stop__gclk);
+      peu_pc_clkstp_pedge_t = get_time(LO);
+      peu_pc_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      peu_pc_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_peu_pc_port.$tcu_clk_stop__gclk);
+      peu_pc_clkstp_nedge_t = get_time(LO);
+      peu_pc_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      peu_pc_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_peu_pc_port.$l2clk);
+      if (clkgen_peu_pc_port.$l2clk)
+        peu_pc_l2clk_pedge = get_time(LO);
+      else
+        peu_pc_l2clk_nedge = get_time(LO);
+    }
+  }
+#endif
+#endif
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  {
+    while (1) {
+      @(posedge clkgen_rdp_io2x_port.$tcu_clk_stop__gclk);
+      rdp_io2x_clkstp_pedge_t = get_time(LO);
+      rdp_io2x_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      rdp_io2x_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_rdp_io2x_port.$tcu_clk_stop__gclk);
+      rdp_io2x_clkstp_nedge_t = get_time(LO);
+      rdp_io2x_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      rdp_io2x_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_rdp_io2x_port.$l2clk);
+      if (clkgen_rdp_io2x_port.$l2clk)
+        rdp_io2x_l2clk_pedge = get_time(LO);
+      else
+        rdp_io2x_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_rdp_io_port.$tcu_clk_stop__gclk);
+      rdp_io_clkstp_pedge_t = get_time(LO);
+      rdp_io_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      rdp_io_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_rdp_io_port.$tcu_clk_stop__gclk);
+      rdp_io_clkstp_nedge_t = get_time(LO);
+      rdp_io_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      rdp_io_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_rdp_io_port.$l2clk);
+      if (clkgen_rdp_io_port.$l2clk)
+        rdp_io_l2clk_pedge = get_time(LO);
+      else
+        rdp_io_l2clk_nedge = get_time(LO);
+    }
+  }
+#endif
+#endif
+  {
+    while (1) {
+      @(posedge clkgen_rst_cmp_port.$tcu_clk_stop__gclk);
+      rst_cmp_clkstp_pedge_t = get_time(LO);
+      rst_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      rst_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_rst_cmp_port.$tcu_clk_stop__gclk);
+      rst_cmp_clkstp_nedge_t = get_time(LO);
+      rst_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      rst_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_rst_cmp_port.$l2clk);
+      if (clkgen_rst_cmp_port.$l2clk)
+        rst_cmp_l2clk_pedge = get_time(LO);
+      else
+        rst_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_rst_io_port.$tcu_clk_stop__gclk);
+      rst_io_clkstp_pedge_t = get_time(LO);
+      rst_io_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      rst_io_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_rst_io_port.$tcu_clk_stop__gclk);
+      rst_io_clkstp_nedge_t = get_time(LO);
+      rst_io_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      rst_io_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_rst_io_port.$l2clk);
+      if (clkgen_rst_io_port.$l2clk)
+        rst_io_l2clk_pedge = get_time(LO);
+      else
+        rst_io_l2clk_nedge = get_time(LO);
+    }
+  }
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  {
+    while (1) {
+      @(posedge clkgen_rtx_io2x_port.$tcu_clk_stop__gclk);
+      rtx_io2x_clkstp_pedge_t = get_time(LO);
+      rtx_io2x_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      rtx_io2x_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_rtx_io2x_port.$tcu_clk_stop__gclk);
+      rtx_io2x_clkstp_nedge_t = get_time(LO);
+      rtx_io2x_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      rtx_io2x_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_rtx_io2x_port.$l2clk);
+      if (clkgen_rtx_io2x_port.$l2clk)
+        rtx_io2x_l2clk_pedge = get_time(LO);
+      else
+        rtx_io2x_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_rtx_io_port.$tcu_clk_stop__gclk);
+      rtx_io_clkstp_pedge_t = get_time(LO);
+      rtx_io_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      rtx_io_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_rtx_io_port.$tcu_clk_stop__gclk);
+      rtx_io_clkstp_nedge_t = get_time(LO);
+      rtx_io_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      rtx_io_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_rtx_io_port.$l2clk);
+      if (clkgen_rtx_io_port.$l2clk)
+        rtx_io_l2clk_pedge = get_time(LO);
+      else
+        rtx_io_l2clk_nedge = get_time(LO);
+    }
+  }
+#endif
+#endif
+  {
+    while (1) {
+      @(posedge clkgen_sii_cmp_port.$tcu_clk_stop__gclk);
+      sii_cmp_clkstp_pedge_t = get_time(LO);
+      sii_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      sii_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_sii_cmp_port.$tcu_clk_stop__gclk);
+      sii_cmp_clkstp_nedge_t = get_time(LO);
+      sii_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      sii_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_sii_cmp_port.$l2clk);
+      if (clkgen_sii_cmp_port.$l2clk)
+        sii_cmp_l2clk_pedge = get_time(LO);
+      else
+        sii_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_sii_io_port.$tcu_clk_stop__gclk);
+      sii_io_clkstp_pedge_t = get_time(LO);
+      sii_io_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      sii_io_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_sii_io_port.$tcu_clk_stop__gclk);
+      sii_io_clkstp_nedge_t = get_time(LO);
+      sii_io_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      sii_io_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_sii_io_port.$l2clk);
+      if (clkgen_sii_io_port.$l2clk)
+        sii_io_l2clk_pedge = get_time(LO);
+      else
+        sii_io_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_sio_cmp_port.$tcu_clk_stop__gclk);
+      sio_cmp_clkstp_pedge_t = get_time(LO);
+      sio_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      sio_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_sio_cmp_port.$tcu_clk_stop__gclk);
+      sio_cmp_clkstp_nedge_t = get_time(LO);
+      sio_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      sio_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_sio_cmp_port.$l2clk);
+      if (clkgen_sio_cmp_port.$l2clk)
+        sio_cmp_l2clk_pedge = get_time(LO);
+      else
+        sio_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_sio_io_port.$tcu_clk_stop__gclk);
+      sio_io_clkstp_pedge_t = get_time(LO);
+      sio_io_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      sio_io_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_sio_io_port.$tcu_clk_stop__gclk);
+      sio_io_clkstp_nedge_t = get_time(LO);
+      sio_io_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      sio_io_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_sio_io_port.$l2clk);
+      if (clkgen_sio_io_port.$l2clk)
+        sio_io_l2clk_pedge = get_time(LO);
+      else
+        sio_io_l2clk_nedge = get_time(LO);
+    }
+  }
+#ifndef RTL_NO_SPC0
+  {
+    while (1) {
+      @(posedge clkgen_spc0_cmp_port.$tcu_clk_stop__gclk);
+      spc0_cmp_clkstp_pedge_t = get_time(LO);
+      spc0_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      spc0_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_spc0_cmp_port.$tcu_clk_stop__gclk);
+      spc0_cmp_clkstp_nedge_t = get_time(LO);
+      spc0_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      spc0_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_spc0_cmp_port.$l2clk);
+      if (clkgen_spc0_cmp_port.$l2clk)
+        spc0_cmp_l2clk_pedge = get_time(LO);
+      else
+        spc0_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+#endif
+#ifndef RTL_NO_SPC1
+  {
+    while (1) {
+      @(posedge clkgen_spc1_cmp_port.$tcu_clk_stop__gclk);
+      spc1_cmp_clkstp_pedge_t = get_time(LO);
+      spc1_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      spc1_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_spc1_cmp_port.$tcu_clk_stop__gclk);
+      spc1_cmp_clkstp_nedge_t = get_time(LO);
+      spc1_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      spc1_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_spc1_cmp_port.$l2clk);
+      if (clkgen_spc1_cmp_port.$l2clk)
+        spc1_cmp_l2clk_pedge = get_time(LO);
+      else
+        spc1_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+#endif
+#ifndef RTL_NO_SPC2
+  {
+    while (1) {
+      @(posedge clkgen_spc2_cmp_port.$tcu_clk_stop__gclk);
+      spc2_cmp_clkstp_pedge_t = get_time(LO);
+      spc2_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      spc2_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_spc2_cmp_port.$tcu_clk_stop__gclk);
+      spc2_cmp_clkstp_nedge_t = get_time(LO);
+      spc2_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      spc2_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_spc2_cmp_port.$l2clk);
+      if (clkgen_spc2_cmp_port.$l2clk)
+        spc2_cmp_l2clk_pedge = get_time(LO);
+      else
+        spc2_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+#endif
+#ifndef RTL_NO_SPC3
+  {
+    while (1) {
+      @(posedge clkgen_spc3_cmp_port.$tcu_clk_stop__gclk);
+      spc3_cmp_clkstp_pedge_t = get_time(LO);
+      spc3_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      spc3_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_spc3_cmp_port.$tcu_clk_stop__gclk);
+      spc3_cmp_clkstp_nedge_t = get_time(LO);
+      spc3_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      spc3_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_spc3_cmp_port.$l2clk);
+      if (clkgen_spc3_cmp_port.$l2clk)
+        spc3_cmp_l2clk_pedge = get_time(LO);
+      else
+        spc3_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+#endif
+#ifndef RTL_NO_SPC4
+  {
+    while (1) {
+      @(posedge clkgen_spc4_cmp_port.$tcu_clk_stop__gclk);
+      spc4_cmp_clkstp_pedge_t = get_time(LO);
+      spc4_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      spc4_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_spc4_cmp_port.$tcu_clk_stop__gclk);
+      spc4_cmp_clkstp_nedge_t = get_time(LO);
+      spc4_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      spc4_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_spc4_cmp_port.$l2clk);
+      if (clkgen_spc4_cmp_port.$l2clk)
+        spc4_cmp_l2clk_pedge = get_time(LO);
+      else
+        spc4_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+#endif
+#ifndef RTL_NO_SPC5
+  {
+    while (1) {
+      @(posedge clkgen_spc5_cmp_port.$tcu_clk_stop__gclk);
+      spc5_cmp_clkstp_pedge_t = get_time(LO);
+      spc5_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      spc5_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_spc5_cmp_port.$tcu_clk_stop__gclk);
+      spc5_cmp_clkstp_nedge_t = get_time(LO);
+      spc5_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      spc5_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_spc5_cmp_port.$l2clk);
+      if (clkgen_spc5_cmp_port.$l2clk)
+        spc5_cmp_l2clk_pedge = get_time(LO);
+      else
+        spc5_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+#endif
+#ifndef RTL_NO_SPC6
+  {
+    while (1) {
+      @(posedge clkgen_spc6_cmp_port.$tcu_clk_stop__gclk);
+      spc6_cmp_clkstp_pedge_t = get_time(LO);
+      spc6_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      spc6_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_spc6_cmp_port.$tcu_clk_stop__gclk);
+      spc6_cmp_clkstp_nedge_t = get_time(LO);
+      spc6_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      spc6_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_spc6_cmp_port.$l2clk);
+      if (clkgen_spc6_cmp_port.$l2clk)
+        spc6_cmp_l2clk_pedge = get_time(LO);
+      else
+        spc6_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+#endif
+#ifndef RTL_NO_SPC7
+  {
+    while (1) {
+      @(posedge clkgen_spc7_cmp_port.$tcu_clk_stop__gclk);
+      spc7_cmp_clkstp_pedge_t = get_time(LO);
+      spc7_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      spc7_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_spc7_cmp_port.$tcu_clk_stop__gclk);
+      spc7_cmp_clkstp_nedge_t = get_time(LO);
+      spc7_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      spc7_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_spc7_cmp_port.$l2clk);
+      if (clkgen_spc7_cmp_port.$l2clk)
+        spc7_cmp_l2clk_pedge = get_time(LO);
+      else
+        spc7_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+#endif
+  {
+    while (1) {
+      @(posedge clkgen_tcu_cmp_port.$tcu_clk_stop__gclk);
+      tcu_cmp_clkstp_pedge_t = get_time(LO);
+      tcu_cmp_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      tcu_cmp_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_tcu_cmp_port.$tcu_clk_stop__gclk);
+      tcu_cmp_clkstp_nedge_t = get_time(LO);
+      tcu_cmp_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      tcu_cmp_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_tcu_cmp_port.$l2clk);
+      if (clkgen_tcu_cmp_port.$l2clk)
+        tcu_cmp_l2clk_pedge = get_time(LO);
+      else
+        tcu_cmp_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_tcu_io_port.$tcu_clk_stop__gclk);
+      tcu_io_clkstp_pedge_t = get_time(LO);
+      tcu_io_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      tcu_io_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_tcu_io_port.$tcu_clk_stop__gclk);
+      tcu_io_clkstp_nedge_t = get_time(LO);
+      tcu_io_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      tcu_io_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_tcu_io_port.$l2clk);
+      if (clkgen_tcu_io_port.$l2clk)
+        tcu_io_l2clk_pedge = get_time(LO);
+      else
+        tcu_io_l2clk_nedge = get_time(LO);
+    }
+  }
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  {
+    while (1) {
+      @(posedge clkgen_tds_io2x_port.$tcu_clk_stop__gclk);
+      tds_io2x_clkstp_pedge_t = get_time(LO);
+      tds_io2x_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      tds_io2x_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_tds_io2x_port.$tcu_clk_stop__gclk);
+      tds_io2x_clkstp_nedge_t = get_time(LO);
+      tds_io2x_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      tds_io2x_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_tds_io2x_port.$l2clk);
+      if (clkgen_tds_io2x_port.$l2clk)
+        tds_io2x_l2clk_pedge = get_time(LO);
+      else
+        tds_io2x_l2clk_nedge = get_time(LO);
+    }
+  }
+  {
+    while (1) {
+      @(posedge clkgen_tds_io_port.$tcu_clk_stop__gclk);
+      tds_io_clkstp_pedge_t = get_time(LO);
+      tds_io_clkstp_pedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      tds_io_clkstp_pedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(negedge clkgen_tds_io_port.$tcu_clk_stop__gclk);
+      tds_io_clkstp_nedge_t = get_time(LO);
+      tds_io_clkstp_nedge_c = get_cycle(ccu_clk_port.$cmp_pll_clk);
+      tds_io_clkstp_nedge_cnt++;
+    }
+  }
+  {
+    while (1) {
+      @(clkgen_tds_io_port.$l2clk);
+      if (clkgen_tds_io_port.$l2clk)
+        tds_io_l2clk_pedge = get_time(LO);
+      else
+        tds_io_l2clk_nedge = get_time(LO);
+    }
+  } 
+#endif
+#endif
+  join none
+}
+
+//#################################################################
+//#################################################################
+//####### tasks that check/use variables (ie. not DUT signals) ####
+//#################################################################
+//#################################################################
+
+//========================================================================
+//
+//========================================================================
+function integer CLUSTER_hdrs_mon::is_any_hdr_clkstp_pedge_occur() {
+  integer count = 0;
+
+  count += (ccu_cmp_clkstp_pedge_cnt > 0);
+  count += (ccu_io_clkstp_pedge_cnt > 0);
+  count += (ccx_cmp_clkstp_pedge_cnt > 0);
+  count += (db0_cmp_clkstp_pedge_cnt > 0);
+  count += (db0_io_clkstp_pedge_cnt > 0);
+  count += (db1_cmp_clkstp_pedge_cnt > 0);
+  count += (db1_io_clkstp_pedge_cnt > 0);
+  count += (dmu_io_clkstp_pedge_cnt > 0);
+  count += (efu_cmp_clkstp_pedge_cnt > 0);
+  count += (efu_io_clkstp_pedge_cnt > 0);
+  count += (l2b0_cmp_clkstp_pedge_cnt > 0);
+  count += (l2b1_cmp_clkstp_pedge_cnt > 0);
+  count += (l2b2_cmp_clkstp_pedge_cnt > 0);
+  count += (l2b3_cmp_clkstp_pedge_cnt > 0);
+  count += (l2b4_cmp_clkstp_pedge_cnt > 0);
+  count += (l2b5_cmp_clkstp_pedge_cnt > 0);
+  count += (l2b6_cmp_clkstp_pedge_cnt > 0);
+  count += (l2b7_cmp_clkstp_pedge_cnt > 0);
+  count += (l2d0_cmp_clkstp_pedge_cnt > 0);
+  count += (l2d1_cmp_clkstp_pedge_cnt > 0);
+  count += (l2d2_cmp_clkstp_pedge_cnt > 0);
+  count += (l2d3_cmp_clkstp_pedge_cnt > 0);
+  count += (l2d4_cmp_clkstp_pedge_cnt > 0);
+  count += (l2d5_cmp_clkstp_pedge_cnt > 0);
+  count += (l2d6_cmp_clkstp_pedge_cnt > 0);
+  count += (l2d7_cmp_clkstp_pedge_cnt > 0);
+  count += (l2t0_cmp_clkstp_pedge_cnt > 0);
+  count += (l2t1_cmp_clkstp_pedge_cnt > 0);
+  count += (l2t2_cmp_clkstp_pedge_cnt > 0);
+  count += (l2t3_cmp_clkstp_pedge_cnt > 0);
+  count += (l2t4_cmp_clkstp_pedge_cnt > 0);
+  count += (l2t5_cmp_clkstp_pedge_cnt > 0);
+  count += (l2t6_cmp_clkstp_pedge_cnt > 0);
+  count += (l2t7_cmp_clkstp_pedge_cnt > 0);
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += (mac_io_clkstp_pedge_cnt > 0);
+#endif
+#endif
+  count += (mcu0_cmp_clkstp_pedge_cnt > 0);
+  count += (mcu0_dr_clkstp_pedge_cnt > 0);
+  count += (mcu0_io_clkstp_pedge_cnt > 0);
+  count += (mcu1_cmp_clkstp_pedge_cnt > 0);
+  count += (mcu1_dr_clkstp_pedge_cnt > 0);
+  count += (mcu1_io_clkstp_pedge_cnt > 0);
+  count += (mcu2_cmp_clkstp_pedge_cnt > 0);
+  count += (mcu2_dr_clkstp_pedge_cnt > 0);
+  count += (mcu2_io_clkstp_pedge_cnt > 0);
+  count += (mcu3_cmp_clkstp_pedge_cnt > 0);
+  count += (mcu3_dr_clkstp_pedge_cnt > 0);
+  count += (mcu3_io_clkstp_pedge_cnt > 0);
+  count += (mio_0_cmp_clkstp_pedge_cnt > 0);
+  count += (mio_1_cmp_clkstp_pedge_cnt > 0);
+  count += (mio_2_cmp_clkstp_pedge_cnt > 0);
+  count += (mio_3_cmp_clkstp_pedge_cnt > 0);
+  count += (mio_io_clkstp_pedge_cnt > 0);
+  count += (ncu_cmp_clkstp_pedge_cnt > 0);
+  count += (ncu_io_clkstp_pedge_cnt > 0);
+#ifndef FC_NO_PEU_VERA
+#ifndef PEU_SYSTEMC_T2
+  count += (peu_io_clkstp_pedge_cnt > 0);
+  count += (peu_pc_clkstp_pedge_cnt > 0);
+#endif
+#endif
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += (rdp_io2x_clkstp_pedge_cnt > 0);
+  count += (rdp_io_clkstp_pedge_cnt > 0);
+  count += (rtx_io2x_clkstp_pedge_cnt > 0);
+  count += (rtx_io_clkstp_pedge_cnt > 0);
+#endif
+#endif
+  count += (rst_cmp_clkstp_pedge_cnt > 0);
+  count += (rst_io_clkstp_pedge_cnt > 0);
+  count += (sii_cmp_clkstp_pedge_cnt > 0);
+  count += (sii_io_clkstp_pedge_cnt > 0);
+  count += (sio_cmp_clkstp_pedge_cnt > 0);
+  count += (sio_io_clkstp_pedge_cnt > 0);
+  count += (spc0_cmp_clkstp_pedge_cnt > 0);
+  count += (spc1_cmp_clkstp_pedge_cnt > 0);
+  count += (spc2_cmp_clkstp_pedge_cnt > 0);
+  count += (spc3_cmp_clkstp_pedge_cnt > 0);
+  count += (spc4_cmp_clkstp_pedge_cnt > 0);
+  count += (spc5_cmp_clkstp_pedge_cnt > 0);
+  count += (spc6_cmp_clkstp_pedge_cnt > 0);
+  count += (spc7_cmp_clkstp_pedge_cnt > 0);
+  count += (tcu_cmp_clkstp_pedge_cnt > 0);
+  count += (tcu_io_clkstp_pedge_cnt > 0);
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += (tds_io2x_clkstp_pedge_cnt > 0);
+  count += (tds_io_clkstp_pedge_cnt > 0);
+#endif
+#endif
+  is_any_hdr_clkstp_pedge_occur = (count)?  1 : 0;
+}
+
+//========================================================================
+//
+//========================================================================
+function integer CLUSTER_hdrs_mon::is_any_hdr_clkstp_nedge_occur() {
+  integer count = 0;
+
+  count += (ccu_cmp_clkstp_nedge_cnt > 0);
+  count += (ccu_io_clkstp_nedge_cnt > 0);
+  count += (ccx_cmp_clkstp_nedge_cnt > 0);
+  count += (db0_cmp_clkstp_nedge_cnt > 0);
+  count += (db0_io_clkstp_nedge_cnt > 0);
+  count += (db1_cmp_clkstp_nedge_cnt > 0);
+  count += (db1_io_clkstp_nedge_cnt > 0);
+  count += (dmu_io_clkstp_nedge_cnt > 0);
+  count += (efu_cmp_clkstp_nedge_cnt > 0);
+  count += (efu_io_clkstp_nedge_cnt > 0);
+  count += (l2b0_cmp_clkstp_nedge_cnt > 0);
+  count += (l2b1_cmp_clkstp_nedge_cnt > 0);
+  count += (l2b2_cmp_clkstp_nedge_cnt > 0);
+  count += (l2b3_cmp_clkstp_nedge_cnt > 0);
+  count += (l2b4_cmp_clkstp_nedge_cnt > 0);
+  count += (l2b5_cmp_clkstp_nedge_cnt > 0);
+  count += (l2b6_cmp_clkstp_nedge_cnt > 0);
+  count += (l2b7_cmp_clkstp_nedge_cnt > 0);
+  count += (l2d0_cmp_clkstp_nedge_cnt > 0);
+  count += (l2d1_cmp_clkstp_nedge_cnt > 0);
+  count += (l2d2_cmp_clkstp_nedge_cnt > 0);
+  count += (l2d3_cmp_clkstp_nedge_cnt > 0);
+  count += (l2d4_cmp_clkstp_nedge_cnt > 0);
+  count += (l2d5_cmp_clkstp_nedge_cnt > 0);
+  count += (l2d6_cmp_clkstp_nedge_cnt > 0);
+  count += (l2d7_cmp_clkstp_nedge_cnt > 0);
+  count += (l2t0_cmp_clkstp_nedge_cnt > 0);
+  count += (l2t1_cmp_clkstp_nedge_cnt > 0);
+  count += (l2t2_cmp_clkstp_nedge_cnt > 0);
+  count += (l2t3_cmp_clkstp_nedge_cnt > 0);
+  count += (l2t4_cmp_clkstp_nedge_cnt > 0);
+  count += (l2t5_cmp_clkstp_nedge_cnt > 0);
+  count += (l2t6_cmp_clkstp_nedge_cnt > 0);
+  count += (l2t7_cmp_clkstp_nedge_cnt > 0);
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += (mac_io_clkstp_nedge_cnt > 0);
+#endif
+#endif
+  count += (mcu0_cmp_clkstp_nedge_cnt > 0);
+  count += (mcu0_dr_clkstp_nedge_cnt > 0);
+  count += (mcu0_io_clkstp_nedge_cnt > 0);
+  count += (mcu1_cmp_clkstp_nedge_cnt > 0);
+  count += (mcu1_dr_clkstp_nedge_cnt > 0);
+  count += (mcu1_io_clkstp_nedge_cnt > 0);
+  count += (mcu2_cmp_clkstp_nedge_cnt > 0);
+  count += (mcu2_dr_clkstp_nedge_cnt > 0);
+  count += (mcu2_io_clkstp_nedge_cnt > 0);
+  count += (mcu3_cmp_clkstp_nedge_cnt > 0);
+  count += (mcu3_dr_clkstp_nedge_cnt > 0);
+  count += (mcu3_io_clkstp_nedge_cnt > 0);
+  count += (mio_0_cmp_clkstp_nedge_cnt > 0);
+  count += (mio_1_cmp_clkstp_nedge_cnt > 0);
+  count += (mio_2_cmp_clkstp_nedge_cnt > 0);
+  count += (mio_3_cmp_clkstp_nedge_cnt > 0);
+  count += (mio_io_clkstp_nedge_cnt > 0);
+  count += (ncu_cmp_clkstp_nedge_cnt > 0);
+  count += (ncu_io_clkstp_nedge_cnt > 0);
+#ifndef FC_NO_PEU_VERA
+#ifndef PEU_SYSTEMC_T2
+  count += (peu_io_clkstp_nedge_cnt > 0);
+  count += (peu_pc_clkstp_nedge_cnt > 0);
+#endif
+#endif
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += (rdp_io2x_clkstp_nedge_cnt > 0);
+  count += (rdp_io_clkstp_nedge_cnt > 0);
+  count += (rtx_io2x_clkstp_nedge_cnt > 0);
+  count += (rtx_io_clkstp_nedge_cnt > 0);
+#endif
+#endif
+  count += (rst_cmp_clkstp_nedge_cnt > 0);
+  count += (rst_io_clkstp_nedge_cnt > 0);
+  count += (sii_cmp_clkstp_nedge_cnt > 0);
+  count += (sii_io_clkstp_nedge_cnt > 0);
+  count += (sio_cmp_clkstp_nedge_cnt > 0);
+  count += (sio_io_clkstp_nedge_cnt > 0);
+  count += (spc0_cmp_clkstp_nedge_cnt > 0);
+  count += (spc1_cmp_clkstp_nedge_cnt > 0);
+  count += (spc2_cmp_clkstp_nedge_cnt > 0);
+  count += (spc3_cmp_clkstp_nedge_cnt > 0);
+  count += (spc4_cmp_clkstp_nedge_cnt > 0);
+  count += (spc5_cmp_clkstp_nedge_cnt > 0);
+  count += (spc6_cmp_clkstp_nedge_cnt > 0);
+  count += (spc7_cmp_clkstp_nedge_cnt > 0);
+  count += (tcu_cmp_clkstp_nedge_cnt > 0);
+  count += (tcu_io_clkstp_nedge_cnt > 0);
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += (tds_io2x_clkstp_nedge_cnt > 0);
+  count += (tds_io_clkstp_nedge_cnt > 0);
+#endif
+#endif
+  is_any_hdr_clkstp_nedge_occur = (count)?  1 : 0;
+}
+
+//========================================================================
+//
+//========================================================================
+function integer CLUSTER_hdrs_mon::is_any_hdr_clkstp_pedge_more_once() {
+  integer count = 0;
+
+  count += (ccu_cmp_clkstp_pedge_cnt > 1);
+  count += (ccu_io_clkstp_pedge_cnt > 1);
+  count += (ccx_cmp_clkstp_pedge_cnt > 1);
+  count += (db0_cmp_clkstp_pedge_cnt > 1);
+  count += (db0_io_clkstp_pedge_cnt > 1);
+  count += (db1_cmp_clkstp_pedge_cnt > 1);
+  count += (db1_io_clkstp_pedge_cnt > 1);
+  count += (dmu_io_clkstp_pedge_cnt > 1);
+  count += (efu_cmp_clkstp_pedge_cnt > 1);
+  count += (efu_io_clkstp_pedge_cnt > 1);
+  count += (l2b0_cmp_clkstp_pedge_cnt > 1);
+  count += (l2b1_cmp_clkstp_pedge_cnt > 1);
+  count += (l2b2_cmp_clkstp_pedge_cnt > 1);
+  count += (l2b3_cmp_clkstp_pedge_cnt > 1);
+  count += (l2b4_cmp_clkstp_pedge_cnt > 1);
+  count += (l2b5_cmp_clkstp_pedge_cnt > 1);
+  count += (l2b6_cmp_clkstp_pedge_cnt > 1);
+  count += (l2b7_cmp_clkstp_pedge_cnt > 1);
+  count += (l2d0_cmp_clkstp_pedge_cnt > 1);
+  count += (l2d1_cmp_clkstp_pedge_cnt > 1);
+  count += (l2d2_cmp_clkstp_pedge_cnt > 1);
+  count += (l2d3_cmp_clkstp_pedge_cnt > 1);
+  count += (l2d4_cmp_clkstp_pedge_cnt > 1);
+  count += (l2d5_cmp_clkstp_pedge_cnt > 1);
+  count += (l2d6_cmp_clkstp_pedge_cnt > 1);
+  count += (l2d7_cmp_clkstp_pedge_cnt > 1);
+  count += (l2t0_cmp_clkstp_pedge_cnt > 1);
+  count += (l2t1_cmp_clkstp_pedge_cnt > 1);
+  count += (l2t2_cmp_clkstp_pedge_cnt > 1);
+  count += (l2t3_cmp_clkstp_pedge_cnt > 1);
+  count += (l2t4_cmp_clkstp_pedge_cnt > 1);
+  count += (l2t5_cmp_clkstp_pedge_cnt > 1);
+  count += (l2t6_cmp_clkstp_pedge_cnt > 1);
+  count += (l2t7_cmp_clkstp_pedge_cnt > 1);
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += (mac_io_clkstp_pedge_cnt > 1);
+#endif
+#endif
+  count += (mcu0_cmp_clkstp_pedge_cnt > 1);
+  count += (mcu0_dr_clkstp_pedge_cnt > 1);
+  count += (mcu0_io_clkstp_pedge_cnt > 1);
+  count += (mcu1_cmp_clkstp_pedge_cnt > 1);
+  count += (mcu1_dr_clkstp_pedge_cnt > 1);
+  count += (mcu1_io_clkstp_pedge_cnt > 1);
+  count += (mcu2_cmp_clkstp_pedge_cnt > 1);
+  count += (mcu2_dr_clkstp_pedge_cnt > 1);
+  count += (mcu2_io_clkstp_pedge_cnt > 1);
+  count += (mcu3_cmp_clkstp_pedge_cnt > 1);
+  count += (mcu3_dr_clkstp_pedge_cnt > 1);
+  count += (mcu3_io_clkstp_pedge_cnt > 1);
+  count += (mio_0_cmp_clkstp_pedge_cnt > 1);
+  count += (mio_1_cmp_clkstp_pedge_cnt > 1);
+  count += (mio_2_cmp_clkstp_pedge_cnt > 1);
+  count += (mio_3_cmp_clkstp_pedge_cnt > 1);
+  count += (mio_io_clkstp_pedge_cnt > 1);
+  count += (ncu_cmp_clkstp_pedge_cnt > 1);
+  count += (ncu_io_clkstp_pedge_cnt > 1);
+#ifndef FC_NO_PEU_VERA
+#ifndef PEU_SYSTEMC_T2
+  count += (peu_io_clkstp_pedge_cnt > 1);
+  count += (peu_pc_clkstp_pedge_cnt > 1);
+#endif
+#endif
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += (rdp_io2x_clkstp_pedge_cnt > 1);
+  count += (rdp_io_clkstp_pedge_cnt > 1);
+  count += (rtx_io2x_clkstp_pedge_cnt > 1);
+  count += (rtx_io_clkstp_pedge_cnt > 1);
+#endif
+#endif
+  count += (rst_cmp_clkstp_pedge_cnt > 1);
+  count += (rst_io_clkstp_pedge_cnt > 1);
+  count += (sii_cmp_clkstp_pedge_cnt > 1);
+  count += (sii_io_clkstp_pedge_cnt > 1);
+  count += (sio_cmp_clkstp_pedge_cnt > 1);
+  count += (sio_io_clkstp_pedge_cnt > 1);
+  count += (spc0_cmp_clkstp_pedge_cnt > 1);
+  count += (spc1_cmp_clkstp_pedge_cnt > 1);
+  count += (spc2_cmp_clkstp_pedge_cnt > 1);
+  count += (spc3_cmp_clkstp_pedge_cnt > 1);
+  count += (spc4_cmp_clkstp_pedge_cnt > 1);
+  count += (spc5_cmp_clkstp_pedge_cnt > 1);
+  count += (spc6_cmp_clkstp_pedge_cnt > 1);
+  count += (spc7_cmp_clkstp_pedge_cnt > 1);
+  count += (tcu_cmp_clkstp_pedge_cnt > 1);
+  count += (tcu_io_clkstp_pedge_cnt > 1);
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += (tds_io2x_clkstp_pedge_cnt > 1);
+  count += (tds_io_clkstp_pedge_cnt > 1);
+#endif
+#endif
+  is_any_hdr_clkstp_pedge_more_once = (count)? 1 : 0;
+}
+
+//========================================================================
+//
+//========================================================================
+function integer CLUSTER_hdrs_mon::is_any_hdr_clkstp_nedge_more_once() {
+  integer count = 0;
+
+  count += (ccu_cmp_clkstp_nedge_cnt > 1);
+  count += (ccu_io_clkstp_nedge_cnt > 1);
+  count += (ccx_cmp_clkstp_nedge_cnt > 1);
+  count += (db0_cmp_clkstp_nedge_cnt > 1);
+  count += (db0_io_clkstp_nedge_cnt > 1);
+  count += (db1_cmp_clkstp_nedge_cnt > 1);
+  count += (db1_io_clkstp_nedge_cnt > 1);
+  count += (dmu_io_clkstp_nedge_cnt > 1);
+  count += (efu_cmp_clkstp_nedge_cnt > 1);
+  count += (efu_io_clkstp_nedge_cnt > 1);
+  count += (l2b0_cmp_clkstp_nedge_cnt > 1);
+  count += (l2b1_cmp_clkstp_nedge_cnt > 1);
+  count += (l2b2_cmp_clkstp_nedge_cnt > 1);
+  count += (l2b3_cmp_clkstp_nedge_cnt > 1);
+  count += (l2b4_cmp_clkstp_nedge_cnt > 1);
+  count += (l2b5_cmp_clkstp_nedge_cnt > 1);
+  count += (l2b6_cmp_clkstp_nedge_cnt > 1);
+  count += (l2b7_cmp_clkstp_nedge_cnt > 1);
+  count += (l2d0_cmp_clkstp_nedge_cnt > 1);
+  count += (l2d1_cmp_clkstp_nedge_cnt > 1);
+  count += (l2d2_cmp_clkstp_nedge_cnt > 1);
+  count += (l2d3_cmp_clkstp_nedge_cnt > 1);
+  count += (l2d4_cmp_clkstp_nedge_cnt > 1);
+  count += (l2d5_cmp_clkstp_nedge_cnt > 1);
+  count += (l2d6_cmp_clkstp_nedge_cnt > 1);
+  count += (l2d7_cmp_clkstp_nedge_cnt > 1);
+  count += (l2t0_cmp_clkstp_nedge_cnt > 1);
+  count += (l2t1_cmp_clkstp_nedge_cnt > 1);
+  count += (l2t2_cmp_clkstp_nedge_cnt > 1);
+  count += (l2t3_cmp_clkstp_nedge_cnt > 1);
+  count += (l2t4_cmp_clkstp_nedge_cnt > 1);
+  count += (l2t5_cmp_clkstp_nedge_cnt > 1);
+  count += (l2t6_cmp_clkstp_nedge_cnt > 1);
+  count += (l2t7_cmp_clkstp_nedge_cnt > 1);
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += (mac_io_clkstp_nedge_cnt > 1);
+#endif
+#endif
+  count += (mcu0_cmp_clkstp_nedge_cnt > 1);
+  count += (mcu0_dr_clkstp_nedge_cnt > 1);
+  count += (mcu0_io_clkstp_nedge_cnt > 1);
+  count += (mcu1_cmp_clkstp_nedge_cnt > 1);
+  count += (mcu1_dr_clkstp_nedge_cnt > 1);
+  count += (mcu1_io_clkstp_nedge_cnt > 1);
+  count += (mcu2_cmp_clkstp_nedge_cnt > 1);
+  count += (mcu2_dr_clkstp_nedge_cnt > 1);
+  count += (mcu2_io_clkstp_nedge_cnt > 1);
+  count += (mcu3_cmp_clkstp_nedge_cnt > 1);
+  count += (mcu3_dr_clkstp_nedge_cnt > 1);
+  count += (mcu3_io_clkstp_nedge_cnt > 1);
+  count += (mio_0_cmp_clkstp_nedge_cnt > 1);
+  count += (mio_1_cmp_clkstp_nedge_cnt > 1);
+  count += (mio_2_cmp_clkstp_nedge_cnt > 1);
+  count += (mio_3_cmp_clkstp_nedge_cnt > 1);
+  count += (mio_io_clkstp_nedge_cnt > 1);
+  count += (ncu_cmp_clkstp_nedge_cnt > 1);
+  count += (ncu_io_clkstp_nedge_cnt > 1);
+#ifndef FC_NO_PEU_VERA
+#ifndef PEU_SYSTEMC_T2
+  count += (peu_io_clkstp_nedge_cnt > 1);
+  count += (peu_pc_clkstp_nedge_cnt > 1);
+#endif
+#endif
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += (rdp_io2x_clkstp_nedge_cnt > 1);
+  count += (rdp_io_clkstp_nedge_cnt > 1);
+  count += (rtx_io2x_clkstp_nedge_cnt > 1);
+  count += (rtx_io_clkstp_nedge_cnt > 1);
+#endif
+#endif
+  count += (rst_cmp_clkstp_nedge_cnt > 1);
+  count += (rst_io_clkstp_nedge_cnt > 1);
+  count += (sii_cmp_clkstp_nedge_cnt > 1);
+  count += (sii_io_clkstp_nedge_cnt > 1);
+  count += (sio_cmp_clkstp_nedge_cnt > 1);
+  count += (sio_io_clkstp_nedge_cnt > 1);
+  count += (spc0_cmp_clkstp_nedge_cnt > 1);
+  count += (spc1_cmp_clkstp_nedge_cnt > 1);
+  count += (spc2_cmp_clkstp_nedge_cnt > 1);
+  count += (spc3_cmp_clkstp_nedge_cnt > 1);
+  count += (spc4_cmp_clkstp_nedge_cnt > 1);
+  count += (spc5_cmp_clkstp_nedge_cnt > 1);
+  count += (spc6_cmp_clkstp_nedge_cnt > 1);
+  count += (spc7_cmp_clkstp_nedge_cnt > 1);
+  count += (tcu_cmp_clkstp_nedge_cnt > 1);
+  count += (tcu_io_clkstp_nedge_cnt > 1);
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += (tds_io2x_clkstp_nedge_cnt > 1);
+  count += (tds_io_clkstp_nedge_cnt > 1);
+#endif
+#endif
+  is_any_hdr_clkstp_nedge_more_once = (count)? 1 : 0;
+}
+
+//========================================================================
+// WHAT: return 1 if all l2clk are running, else return 0.
+//   l2lck is NOT running if the timestamp *_l2clk_pedge is OLDER than 1 sys clk period.
+//========================================================================
+function integer CLUSTER_hdrs_mon::is_all_l2clk_running() {
+  integer count = 0; // counter for l2clk is NOT running
+  integer curr_time = get_time(LO);
+
+  count += ((curr_time - ccu_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - ccu_io_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - ccx_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - db0_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - db0_io_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - db1_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - db1_io_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - dmu_io_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - efu_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - efu_io_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2b0_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2b1_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2b2_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2b3_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2b4_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2b5_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2b6_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2b7_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2d0_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2d1_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2d2_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2d3_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2d4_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2d5_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2d6_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2d7_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2t0_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2t1_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2t2_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2t3_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2t4_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2t5_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2t6_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - l2t7_cmp_l2clk_pedge) > sysclk_per);
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += ((curr_time - mac_io_l2clk_pedge) > sysclk_per);
+#endif
+#endif
+  count += ((curr_time - mcu0_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - mcu0_dr_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - mcu0_io_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - mcu1_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - mcu1_dr_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - mcu1_io_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - mcu2_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - mcu2_dr_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - mcu2_io_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - mcu3_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - mcu3_dr_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - mcu3_io_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - mio_0_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - mio_1_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - mio_2_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - mio_3_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - mio_io_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - ncu_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - ncu_io_l2clk_pedge) > sysclk_per);
+#ifndef FC_NO_PEU_VERA
+#ifndef PEU_SYSTEMC_T2
+  count += ((curr_time - peu_io_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - peu_pc_l2clk_pedge) > sysclk_per);
+#endif
+#endif
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += ((curr_time - rdp_io2x_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - rdp_io_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - rtx_io2x_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - rtx_io_l2clk_pedge) > sysclk_per);
+#endif
+#endif
+  count += ((curr_time - rst_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - rst_io_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - sii_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - sii_io_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - sio_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - sio_io_l2clk_pedge) > sysclk_per);
+#ifndef RTL_NO_SPC0
+  count += ((curr_time - spc0_cmp_l2clk_pedge) > sysclk_per);
+#endif
+#ifndef RTL_NO_SPC1
+  count += ((curr_time - spc1_cmp_l2clk_pedge) > sysclk_per);
+#endif
+#ifndef RTL_NO_SPC2
+  count += ((curr_time - spc2_cmp_l2clk_pedge) > sysclk_per);
+#endif
+#ifndef RTL_NO_SPC3
+  count += ((curr_time - spc3_cmp_l2clk_pedge) > sysclk_per);
+#endif
+#ifndef RTL_NO_SPC4
+  count += ((curr_time - spc4_cmp_l2clk_pedge) > sysclk_per);
+#endif
+#ifndef RTL_NO_SPC5
+  count += ((curr_time - spc5_cmp_l2clk_pedge) > sysclk_per);
+#endif
+#ifndef RTL_NO_SPC6
+  count += ((curr_time - spc6_cmp_l2clk_pedge) > sysclk_per);
+#endif
+#ifndef RTL_NO_SPC7
+  count += ((curr_time - spc7_cmp_l2clk_pedge) > sysclk_per);
+#endif
+  count += ((curr_time - tcu_cmp_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - tcu_io_l2clk_pedge) > sysclk_per);
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += ((curr_time - tds_io2x_l2clk_pedge) > sysclk_per);
+  count += ((curr_time - tds_io_l2clk_pedge) > sysclk_per);
+#endif
+#endif
+  is_all_l2clk_running = (count)? 0 : 1;  // function return value
+}
+
+//========================================================================
+// WHAT: return 1 if l2clk of all headers, except ccu/rst/tcu headers, are stopped.
+//   l2lck is running if the timestamp *_l2clk_pedge is NEWER than one sys clk per.
+//========================================================================
+function integer CLUSTER_hdrs_mon::is_all_l2clk_stopped() {
+  integer count = 0; // counter for l2clk is NOT stopped (ie. running)
+  integer curr_time = get_time(LO);
+
+//count += ((curr_time - ccu_cmp_l2clk_pedge) < sysclk_per); // always running
+//count += ((curr_time - ccu_io_l2clk_pedge) < sysclk_per);  // always running
+  count += ((curr_time - ccx_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - db0_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - db0_io_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - db1_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - db1_io_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - dmu_io_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - efu_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - efu_io_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2b0_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2b1_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2b2_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2b3_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2b4_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2b5_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2b6_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2b7_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2d0_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2d1_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2d2_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2d3_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2d4_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2d5_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2d6_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2d7_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2t0_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2t1_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2t2_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2t3_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2t4_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2t5_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2t6_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - l2t7_cmp_l2clk_pedge) < sysclk_per);
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += ((curr_time - mac_io_l2clk_pedge) < sysclk_per);
+#endif
+#endif
+  count += ((curr_time - mcu0_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - mcu0_dr_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - mcu0_io_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - mcu1_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - mcu1_dr_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - mcu1_io_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - mcu2_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - mcu2_dr_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - mcu2_io_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - mcu3_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - mcu3_dr_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - mcu3_io_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - mio_0_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - mio_1_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - mio_2_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - mio_3_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - mio_io_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - ncu_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - ncu_io_l2clk_pedge) < sysclk_per);
+#ifndef FC_NO_PEU_VERA
+#ifndef PEU_SYSTEMC_T2
+  count += ((curr_time - peu_io_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - peu_pc_l2clk_pedge) < sysclk_per);
+#endif
+#endif
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += ((curr_time - rdp_io2x_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - rdp_io_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - rtx_io2x_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - rtx_io_l2clk_pedge) < sysclk_per);
+#endif
+#endif
+//count += ((curr_time - rst_cmp_l2clk_pedge) < sysclk_per); // always running
+//count += ((curr_time - rst_io_l2clk_pedge) < sysclk_per);  // always running
+  count += ((curr_time - sii_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - sii_io_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - sio_cmp_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - sio_io_l2clk_pedge) < sysclk_per);
+#ifndef RTL_NO_SPC0
+  count += ((curr_time - spc0_cmp_l2clk_pedge) < sysclk_per);
+#endif
+#ifndef RTL_NO_SPC1
+  count += ((curr_time - spc1_cmp_l2clk_pedge) < sysclk_per);
+#endif
+#ifndef RTL_NO_SPC2
+  count += ((curr_time - spc2_cmp_l2clk_pedge) < sysclk_per);
+#endif
+#ifndef RTL_NO_SPC3
+  count += ((curr_time - spc3_cmp_l2clk_pedge) < sysclk_per);
+#endif
+#ifndef RTL_NO_SPC4
+  count += ((curr_time - spc4_cmp_l2clk_pedge) < sysclk_per);
+#endif
+#ifndef RTL_NO_SPC5
+  count += ((curr_time - spc5_cmp_l2clk_pedge) < sysclk_per);
+#endif
+#ifndef RTL_NO_SPC6
+  count += ((curr_time - spc6_cmp_l2clk_pedge) < sysclk_per);
+#endif
+#ifndef RTL_NO_SPC7
+  count += ((curr_time - spc7_cmp_l2clk_pedge) < sysclk_per);
+#endif
+//count += ((curr_time - tcu_cmp_l2clk_pedge) < sysclk_per); // always running
+//count += ((curr_time - tcu_io_l2clk_pedge) < sysclk_per);  // always running
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += ((curr_time - tds_io2x_l2clk_pedge) < sysclk_per);
+  count += ((curr_time - tds_io_l2clk_pedge) < sysclk_per);
+#endif
+#endif
+  is_all_l2clk_stopped = (count)? 0 : 1;  // function return value
+}
+
+//#################################################################
+//#################################################################
+//####### tasks that check/use the rtl signals           ##########
+//#################################################################
+//#################################################################
+
+//========================================================================
+// WHAT: return 1 if tcu_clk_stop of all headers are asserted, except hdrs
+//       in ccu, rst and tcu.
+//========================================================================
+function integer CLUSTER_hdrs_mon::is_all_clkstp_sigs_asserted() {
+  integer count = 0; // counter for hdr that clk_stop is NOT asserted
+
+//count += (clkgen_ccu_cmp_port.$tcu_clk_stop__gclk != 1); // never stop
+//count += (clkgen_ccu_io_port.$tcu_clk_stop__gclk != 1);  // never stop
+  count += (clkgen_ccx_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_db0_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_db0_io_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_db1_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_db1_io_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_dmu_io_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_efu_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_efu_io_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2b0_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2b1_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2b2_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2b3_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2b4_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2b5_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2b6_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2b7_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2d0_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2d1_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2d2_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2d3_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2d4_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2d5_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2d6_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2d7_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2t0_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2t1_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2t2_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2t3_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2t4_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2t5_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2t6_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_l2t7_cmp_port.$tcu_clk_stop__gclk != 1);
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += (clkgen_mac_io_port.$tcu_clk_stop__gclk != 1);
+#endif
+#endif
+  count += (clkgen_mcu0_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_mcu0_dr_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_mcu0_io_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_mcu1_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_mcu1_dr_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_mcu1_io_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_mcu2_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_mcu2_dr_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_mcu2_io_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_mcu3_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_mcu3_dr_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_mcu3_io_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_mio_0_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_mio_1_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_mio_2_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_mio_3_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_mio_io_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_ncu_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_ncu_io_port.$tcu_clk_stop__gclk != 1);
+#ifndef FC_NO_PEU_VERA
+#ifndef PEU_SYSTEMC_T2
+  count += (clkgen_peu_io_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_peu_pc_port.$tcu_clk_stop__gclk != 1);
+#endif
+#endif
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += (clkgen_rdp_io2x_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_rdp_io_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_rtx_io2x_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_rtx_io_port.$tcu_clk_stop__gclk != 1);
+#endif
+#endif
+//count += (clkgen_rst_cmp_port.$tcu_clk_stop__gclk != 1); // not stopped
+//count += (clkgen_rst_io_port.$tcu_clk_stop__gclk != 1);  // not stopped
+  count += (clkgen_sii_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_sii_io_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_sio_cmp_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_sio_io_port.$tcu_clk_stop__gclk != 1);
+#ifndef RTL_NO_SPC0
+  count += (clkgen_spc0_cmp_port.$tcu_clk_stop__gclk != 1);
+#endif
+#ifndef RTL_NO_SPC1
+  count += (clkgen_spc1_cmp_port.$tcu_clk_stop__gclk != 1);
+#endif
+#ifndef RTL_NO_SPC2
+  count += (clkgen_spc2_cmp_port.$tcu_clk_stop__gclk != 1);
+#endif
+#ifndef RTL_NO_SPC3
+  count += (clkgen_spc3_cmp_port.$tcu_clk_stop__gclk != 1);
+#endif
+#ifndef RTL_NO_SPC4
+  count += (clkgen_spc4_cmp_port.$tcu_clk_stop__gclk != 1);
+#endif
+#ifndef RTL_NO_SPC5
+  count += (clkgen_spc5_cmp_port.$tcu_clk_stop__gclk != 1);
+#endif
+#ifndef RTL_NO_SPC6
+  count += (clkgen_spc6_cmp_port.$tcu_clk_stop__gclk != 1);
+#endif
+#ifndef RTL_NO_SPC7
+  count += (clkgen_spc7_cmp_port.$tcu_clk_stop__gclk != 1);
+#endif
+//count += (clkgen_tcu_cmp_port.$tcu_clk_stop__gclk != 1);  // not stopped
+//count += (clkgen_tcu_io_port.$tcu_clk_stop__gclk != 1);   // not stopped
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += (clkgen_tds_io2x_port.$tcu_clk_stop__gclk != 1);
+  count += (clkgen_tds_io_port.$tcu_clk_stop__gclk != 1);
+#endif  
+#endif
+  is_all_clkstp_sigs_asserted = (count)? 0 : 1;  // function return value
+}
+
+//========================================================================
+// WHAT: return 1 if tcu_clk_stop of all headers are de-asserted, including
+//       ccu, rst and tcu headers.
+//========================================================================
+function integer CLUSTER_hdrs_mon::is_all_clkstp_sigs_deasserted() {
+  integer count = 0; // counter for hdr that clk_stop is asserted
+
+  count += (clkgen_ccu_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_ccu_io_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_ccx_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_db0_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_db0_io_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_db1_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_db1_io_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_dmu_io_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_efu_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_efu_io_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2b0_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2b1_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2b2_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2b3_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2b4_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2b5_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2b6_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2b7_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2d0_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2d1_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2d2_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2d3_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2d4_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2d5_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2d6_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2d7_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2t0_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2t1_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2t2_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2t3_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2t4_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2t5_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2t6_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_l2t7_cmp_port.$tcu_clk_stop__gclk != 0);
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += (clkgen_mac_io_port.$tcu_clk_stop__gclk != 0);
+#endif
+#endif
+  count += (clkgen_mcu0_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_mcu0_dr_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_mcu0_io_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_mcu1_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_mcu1_dr_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_mcu1_io_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_mcu2_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_mcu2_dr_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_mcu2_io_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_mcu3_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_mcu3_dr_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_mcu3_io_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_mio_0_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_mio_1_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_mio_2_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_mio_3_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_mio_io_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_ncu_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_ncu_io_port.$tcu_clk_stop__gclk != 0);
+#ifndef FC_NO_PEU_VERA
+#ifndef PEU_SYSTEMC_T2
+  count += (clkgen_peu_io_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_peu_pc_port.$tcu_clk_stop__gclk != 0);
+#endif
+#endif
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += (clkgen_rdp_io2x_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_rdp_io_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_rtx_io2x_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_rtx_io_port.$tcu_clk_stop__gclk != 0);
+#endif
+#endif
+  count += (clkgen_rst_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_rst_io_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_sii_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_sii_io_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_sio_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_sio_io_port.$tcu_clk_stop__gclk != 0);
+#ifndef RTL_NO_SPC0
+  count += (clkgen_spc0_cmp_port.$tcu_clk_stop__gclk != 0);
+#endif
+#ifndef RTL_NO_SPC1
+  count += (clkgen_spc1_cmp_port.$tcu_clk_stop__gclk != 0);
+#endif
+#ifndef RTL_NO_SPC2
+  count += (clkgen_spc2_cmp_port.$tcu_clk_stop__gclk != 0);
+#endif
+#ifndef RTL_NO_SPC3
+  count += (clkgen_spc3_cmp_port.$tcu_clk_stop__gclk != 0);
+#endif
+#ifndef RTL_NO_SPC4
+  count += (clkgen_spc4_cmp_port.$tcu_clk_stop__gclk != 0);
+#endif
+#ifndef RTL_NO_SPC5
+  count += (clkgen_spc5_cmp_port.$tcu_clk_stop__gclk != 0);
+#endif
+#ifndef RTL_NO_SPC6
+  count += (clkgen_spc6_cmp_port.$tcu_clk_stop__gclk != 0);
+#endif
+#ifndef RTL_NO_SPC7
+  count += (clkgen_spc7_cmp_port.$tcu_clk_stop__gclk != 0);
+#endif
+  count += (clkgen_tcu_cmp_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_tcu_io_port.$tcu_clk_stop__gclk != 0);
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  count += (clkgen_tds_io2x_port.$tcu_clk_stop__gclk != 0);
+  count += (clkgen_tds_io_port.$tcu_clk_stop__gclk != 0);
+#endif  
+#endif
+  is_all_clkstp_sigs_deasserted = (count)? 0 : 1;  // function return value
+}
+
+//============== end ================
+
+#endif  // end of else part of #ifndef TCU_SAT
+
+

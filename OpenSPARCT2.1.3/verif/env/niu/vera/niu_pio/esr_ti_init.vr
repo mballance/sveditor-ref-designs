@@ -1,0 +1,1353 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: esr_ti_init.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "cMesg.vrh"
+#include "mif_memory_map.vri"
+#include "niu_gen_pio.vrh"
+
+extern Mesg be_msg;
+extern niu_gen_pio gen_pio_drv;
+
+class esr_tiinit_util {
+  
+      bit [31:0] get_port; 
+      string str_port, temp_port;
+      integer port_num; 
+      integer port_no[4];
+      integer port0_enb = 0;
+      integer port1_enb = 0;
+      integer mac_speed0,mac_speed1;
+
+
+      task new();
+      task serdes_init();
+      task wait_for_instr_comp();
+
+}
+
+task esr_tiinit_util :: new()
+{
+
+  integer i = 0;
+  if ( get_plus_arg(CHECK, "MAC_SPEED0=") )
+  {
+    mac_speed0 = get_plus_arg(NUM, "MAC_SPEED0") ;
+    printf("mac_init:INFO:MAC0 port is set  %0d Speed\n" ,mac_speed0);
+  }
+  if ( get_plus_arg(CHECK, "MAC_SPEED1=") )
+  {
+    mac_speed1 = get_plus_arg(NUM, "MAC_SPEED1") ;
+    printf("mac_init:INFO:MAC1 port is set  %0d Speed\n" ,mac_speed1);
+  }
+  
+   if( get_plus_arg(CHECK,"GET_MAC_PORTS=")) {
+      get_port = get_plus_arg(STR,"GET_MAC_PORTS=");
+      printf("esr_ti_init_util : val of get_port is %h\n",get_port);
+
+      str_port.bittostr(get_port);
+      printf("esr_ti_init_util : val of LEN %0d\n",str_port.len());
+
+      for(i=0;i<str_port.len();i++) {
+         temp_port =str_port.substr(i,i);
+         port_no[i] = temp_port.atoi();
+         printf("esr_ti_init_util : val of Temp_port %d\n",temp_port.atoi());
+      }
+
+
+      for(i=0;i<str_port.len();i++) {
+	  case(port_no[i]) {
+            0 : port0_enb = 1;
+            1 : port1_enb = 1;
+	 }
+        }
+
+   }
+
+}
+
+
+task esr_tiinit_util :: serdes_init()
+{
+
+  bit v_bit = 1'b0;
+  bit[63:0]  read_data;
+
+  if(port0_enb == 1) {
+    if (mac_speed0 == 10000)
+    {
+      
+      @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_CONFIG,64'h0000_0000_0000_8008);
+      printf("write to mif_config Done\n");
+
+      // sel address 8000h Port0 
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8000); //cfgpll0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8000h Done for port 0\n");
+
+      // write to address 8000h Port0 enable PLL for port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0003);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8000h Done\n");
+
+      // sel address 8000h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8000h Done\n");
+
+      // read to address 8000h PLL reg for port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_207a_0003);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("read to 8000h Done\n");
+
+      // sel address 8001h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8001); //cfgpll1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8001h Done\n");
+
+      // write to address 8001h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8001h Done\n");
+
+      // sel address 8004h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8004); //testcfg0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8004h Done\n");
+
+      // write to address 8004h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8004h Done\n");
+
+      // sel address 8005h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8005); //testcfg1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8005h Done\n");
+
+      // write to address 8005h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8005h Done\n");
+
+
+      // sel address 8100h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8100); //cfgtx0_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8100h Done\n");
+
+      // write to address 8100h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0001);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8100h Done\n");
+
+      // sel address 8101h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8101); //cfgtx0_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8101h Done\n");
+
+      // write to address 8101h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8101h Done\n");
+
+
+      // sel address 8104h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8104); //cfgtx1_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8104h Done\n");
+
+      // write to address 8104h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0001);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8104h Done\n");
+
+      // sel address 8105h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8105); //cfgtx1_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8105h Done\n");
+
+      // write to address 8105h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8105h Done\n");
+
+
+      // sel address 8108h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8108); //cfgtx2_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8108h Done\n");
+
+      // write to address 8108h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0001);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8108h Done\n");
+
+
+      // sel address 8109h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8109); //cfgtx2_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8109h Done\n");
+
+      // write to address 8109h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8109h Done\n");
+
+      // sel address 810ch Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_810c); //cfgtx3_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 810ch Done\n");
+
+      // write to address 810ch Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0001);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 810ch Done\n");
+
+      // sel address 810dh Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_810d); //cfgtx3_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 810dh Done\n");
+
+      // write to address 810dh Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 810dh Done\n");
+
+
+      // sel address 8120h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8120); //cfgrx0_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8120h Done\n");
+
+      // write to address 8120h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_5001);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8120h Done\n");
+
+      // sel address 8121h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8121);//cfgrx0_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8121h Done\n");
+
+      // write to address 8121h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0008);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8121h Done\n");
+
+      // sel address 8124h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8124);//cfgrx1_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8124h Done\n");
+
+      // write to address 8124h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_5001);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8124h Done\n");
+
+      // sel address 8125h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8125);//cfgrx1_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8125h Done\n");
+
+      // write to address 8125h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0008);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8125h Done\n");
+
+
+      // sel address 8128h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8128);//cfgrx2_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8128h Done\n");
+
+      // write to address 8128h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_5001);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8128h Done\n");
+
+
+      // sel address 8129h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8129);//cfgrx2_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8129h Done\n");
+
+      // write to address 8129h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0008);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8129h Done\n");
+
+      // sel address 812ch Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_812c);//cfgrx3_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 812ch Done\n");
+
+      // write to address 812ch Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_5001);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 812ch Done\n");
+
+      // sel address 812dh Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_812d);//cfgrx3_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 812dh Done\n");
+
+      // write to address 812dh Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0008);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 812dh Done\n");
+
+    }
+    if (mac_speed0 == 1000)
+    {
+      
+      gen_pio_drv.pio_wr(MIF_CONFIG,64'h0000_0000_0000_8008);
+      printf("write to mif_config Done\n");
+
+      // sel address 8000h Port0 
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8000); //cfgpll0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8000h Done for port 0\n");
+
+      // write to address 8000h Port0 enable PLL for port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_000b);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8000h Done\n");
+
+      // sel address 8000h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8000h Done\n");
+
+      // read to address 8000h PLL reg for port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_207a_0003);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("read to 8000h Done\n");
+
+      // sel address 8001h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8001); //cfgpll1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8001h Done\n");
+
+      // write to address 8001h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_000b);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8001h Done\n");
+
+      // sel address 8004h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8004); //testcfg0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8004h Done\n");
+
+      // write to address 8004h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8004h Done\n");
+
+      // sel address 8005h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8005); //testcfg1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8005h Done\n");
+
+      // write to address 8005h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8005h Done\n");
+
+
+      // sel address 8100h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8100); //cfgtx0_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8100h Done\n");
+
+      // write to address 8100h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0021);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8100h Done\n");
+
+      // sel address 8101h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8101); //cfgtx0_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8101h Done\n");
+
+      // write to address 8101h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0021);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8101h Done\n");
+
+
+      // sel address 8104h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8104); //cfgtx1_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8104h Done\n");
+
+      // write to address 8104h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8104h Done\n");
+
+      // sel address 8105h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8105); //cfgtx1_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8105h Done\n");
+
+      // write to address 8105h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8105h Done\n");
+
+
+      // sel address 8108h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8108); //cfgtx2_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8108h Done\n");
+
+      // write to address 8108h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8108h Done\n");
+
+
+      // sel address 8109h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8109); //cfgtx2_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8109h Done\n");
+
+      // write to address 8109h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8109h Done\n");
+
+      // sel address 810ch Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_810c); //cfgtx3_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 810ch Done\n");
+
+      // write to address 810ch Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 810ch Done\n");
+
+      // sel address 810dh Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_810d); //cfgtx3_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 810dh Done\n");
+
+      // write to address 810dh Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 810dh Done\n");
+
+
+      // sel address 8120h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8120); //cfgrx0_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8120h Done\n");
+
+      // write to address 8120h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_5021);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8120h Done\n");
+
+      // sel address 8121h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8121);//cfgrx0_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8121h Done\n");
+
+      // write to address 8121h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_5021);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8121h Done\n");
+
+      // sel address 8124h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8124);//cfgrx1_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8124h Done\n");
+
+      // write to address 8124h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8124h Done\n");
+
+      // sel address 8125h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8125);//cfgrx1_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8125h Done\n");
+
+      // write to address 8125h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8125h Done\n");
+
+
+      // sel address 8128h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8128);//cfgrx2_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8128h Done\n");
+
+      // write to address 8128h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8128h Done\n");
+
+
+      // sel address 8129h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_8129);//cfgrx2_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8129h Done\n");
+
+      // write to address 8129h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8129h Done\n");
+
+      // sel address 812ch Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_812c);//cfgrx3_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 812ch Done\n");
+
+      // write to address 812ch Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 812ch Done\n");
+
+      // sel address 812dh Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_007a_812d);//cfgrx3_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 812dh Done\n");
+
+      // write to address 812dh Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_107a_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 812dh Done\n");
+    }
+  }
+  
+
+  
+  if(port1_enb == 1) {
+    if (mac_speed1 == 10000)
+    {
+      @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_CONFIG,64'h0000_0000_0000_8008);
+      printf("write to mif_config Done\n");
+
+
+      // enable the pll for port1
+      // sel address 8000h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8000h Done for port 1\n");
+
+      // write to address 8000h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0003);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8000h Done\n");
+
+      // sel address 8001h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8001);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8001h Done\n");
+
+      // write to address 8001h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8001h Done\n");
+
+      // sel address 8004h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8004);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8004h Done\n");
+
+      // write to address 8004h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8004h Done\n");
+
+      // sel address 8005h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8005);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8005h Done\n");
+
+      // write to address 8005h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8005h Done\n");
+
+
+      // sel address 8100h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8100);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8100h Done\n");
+
+      // write to address 8100h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0001);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8100h Done\n");
+
+      // sel address 8101h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8101);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8101h Done\n");
+
+      // write to address 8101h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8101h Done\n");
+
+
+      // sel address 8104h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8104);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8104h Done\n");
+
+      // write to address 8104h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0001);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8104h Done\n");
+
+      // sel address 8105h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8105);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8105h Done\n");
+
+      // write to address 8105h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8105h Done\n");
+
+
+      // sel address 8108h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8108);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8108h Done\n");
+
+      // write to address 8108h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0001);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8108h Done\n");
+
+
+      // sel address 8109h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8109);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8109h Done\n");
+
+      // write to address 8109h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8109h Done\n");
+
+      // sel address 810ch Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_810c);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 810ch Done\n");
+
+      // write to address 810ch Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0001);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 810ch Done\n");
+
+      // sel address 810dh Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_810d);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 810dh Done\n");
+
+      // write to address 811dh Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 810dh Done\n");
+
+
+      // sel address 8120h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8120);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8120h Done\n");
+
+      // write to address 8120h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_5001);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8120h Done\n");
+
+      // sel address 8121h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8121);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8121h Done\n");
+
+      // write to address 8121h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0008);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8121h Done\n");
+
+      // sel address 8124h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8124);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8124h Done\n");
+
+      // write to address 8124h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_5001);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8124h Done\n");
+
+      // sel address 8125h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8125);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8125h Done\n");
+
+      // write to address 8125h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0008);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8125h Done\n");
+
+
+      // sel address 8128h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8128);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8128h Done\n");
+
+      // write to address 8128h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_5001);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8128h Done\n");
+
+
+      // sel address 8129h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8129);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8129h Done\n");
+
+      // write to address 8129h Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0008);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8129h Done\n");
+
+      // sel address 812ch Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_812c);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 812ch Done\n");
+
+      // write to address 812ch Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_5001);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 812ch Done\n");
+
+      // sel address 812dh Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_812d);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 812dh Done\n");
+
+      // write to address 812dh Port1
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0008);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 812dh Done\n");
+
+    }
+
+    if (mac_speed1 == 1000)
+    {
+      gen_pio_drv.pio_wr(MIF_CONFIG,64'h0000_0000_0000_8008);
+      printf("write to mif_config Done\n");
+
+      // sel address 8000h Port0 
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8000); //cfgpll0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8000h Done for port 0\n");
+
+      // write to address 8000h Port0 enable PLL for port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_000b);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8000h Done\n");
+
+      // sel address 8000h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8000h Done\n");
+
+      // read to address 8000h PLL reg for port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_20fa_0003);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("read to 8000h Done\n");
+
+      // sel address 8001h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8001); //cfgpll1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8001h Done\n");
+
+      // write to address 8001h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_000b);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8001h Done\n");
+
+      // sel address 8004h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8004); //testcfg0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8004h Done\n");
+
+      // write to address 8004h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8004h Done\n");
+
+      // sel address 8005h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8005); //testcfg1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8005h Done\n");
+
+      // write to address 8005h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8005h Done\n");
+
+
+      // sel address 8100h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8100); //cfgtx0_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8100h Done\n");
+
+      // write to address 8100h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0021);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8100h Done\n");
+
+      // sel address 8101h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8101); //cfgtx0_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8101h Done\n");
+
+      // write to address 8101h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0021);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8101h Done\n");
+
+
+      // sel address 8104h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8104); //cfgtx1_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8104h Done\n");
+
+      // write to address 8104h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8104h Done\n");
+
+      // sel address 8105h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8105); //cfgtx1_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8105h Done\n");
+
+      // write to address 8105h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8105h Done\n");
+
+
+      // sel address 8108h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8108); //cfgtx2_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8108h Done\n");
+
+      // write to address 8108h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8108h Done\n");
+
+
+      // sel address 8109h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8109); //cfgtx2_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8109h Done\n");
+
+      // write to address 8109h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8109h Done\n");
+
+      // sel address 810ch Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_810c); //cfgtx3_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 810ch Done\n");
+
+      // write to address 810ch Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 810ch Done\n");
+
+      // sel address 810dh Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_810d); //cfgtx3_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 810dh Done\n");
+
+      // write to address 810dh Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 810dh Done\n");
+
+
+      // sel address 8120h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8120); //cfgrx0_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8120h Done\n");
+
+      // write to address 8120h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_5021);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8120h Done\n");
+
+      // sel address 8121h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8121);//cfgrx0_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8121h Done\n");
+
+      // write to address 8121h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_5021);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8121h Done\n");
+
+      // sel address 8124h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8124);//cfgrx1_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8124h Done\n");
+
+      // write to address 8124h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8124h Done\n");
+
+      // sel address 8125h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8125);//cfgrx1_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8125h Done\n");
+
+      // write to address 8125h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8125h Done\n");
+
+
+      // sel address 8128h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8128);//cfgrx2_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8128h Done\n");
+
+      // write to address 8128h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8128h Done\n");
+
+
+      // sel address 8129h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_8129);//cfgrx2_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 8129h Done\n");
+
+      // write to address 8129h Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 8129h Done\n");
+
+      // sel address 812ch Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_812c);//cfgrx3_0
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 812ch Done\n");
+
+      // write to address 812ch Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 812ch Done\n");
+
+      // sel address 812dh Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_00fa_812d);//cfgrx3_1
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("sel addr 812dh Done\n");
+
+      // write to address 812dh Port0
+      repeat (10) @(posedge CLOCK);
+      gen_pio_drv.pio_wr(MIF_FRAMEOUT_REG,64'h0000_0000_10fa_0000);
+      repeat (10) @(posedge CLOCK);
+      wait_for_instr_comp();
+      printf("write to 812dh Done\n");
+
+    }
+  }
+}
+
+
+  task esr_tiinit_util :: wait_for_instr_comp()
+  {
+
+    bit v_bit = 1'b0;
+    bit[63:0]  read_data; 
+
+    while(~v_bit) {
+      repeat (5000) @(posedge CLOCK);
+      printf("Reading FRAME_REG to see if instr_wr completed\n");
+      gen_pio_drv.pio_rd(MIF_FRAMEOUT_REG,read_data);
+      if(read_data[16])
+        v_bit = 1'b1;
+      else
+        v_bit = 1'b0;
+    }
+
+  }

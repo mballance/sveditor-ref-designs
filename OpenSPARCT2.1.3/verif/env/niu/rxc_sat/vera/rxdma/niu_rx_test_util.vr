@@ -1,0 +1,404 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_rx_test_util.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "niu_gen_pio.vrh"
+#include "niu_rx_descp.vrh"
+#include "niu_rxdmc.vrh"
+#include "cMesg.vrh"
+#include "mac_pio_class.vrh"
+#include "xpcs_memory_map.vri"
+#include "dmc_memory_map.vri"
+#include "ipp_memory_map.vri"
+#include "xmac_util.vrh"
+#include "bmac_util.vrh"
+#include "dmc_memory_map.vri"
+//#include "niu_rxdma_wr_chk.vrh"
+
+extern niu_gen_pio gen_pio_drv;
+extern  Mesg be_msg;
+extern mac_util_class mac_util;
+extern bmac_util_class bmac_util;
+extern mac_pio_cl mac_pio_class;
+extern CRDMC rdmc;
+//extern  Cniu_rxdma_wr_chkr     niu_rxdma_wrchk;
+
+
+class niu_rx_test_util {
+
+ bit [31:0] xmac_hist7_cntr[2]; // shadow to remember this clear-on-read cntr
+
+ task new() {
+  printf ("class niu_rx_test_util newed.\n");
+  xmac_hist7_cntr[0] = 0;
+  xmac_hist7_cntr[1] = 0;
+ }
+
+ function integer getXPCSPktCnt (integer port_id, integer sent_pkt_cnt);
+ function integer getXMACPktCnt (integer port_id);
+ task flush_rcr (integer dma_num);
+ function integer getRdmcDropCnt (integer dma_num);
+ function integer getIppDropCnt (integer port_num);
+ function integer getMacDropCnt (integer port_num, integer sent_pkt_cnt);
+ task RX_MISC_START_pio_rd(bit [63:0] address, var bit [63:0] data, integer dma);
+ task RED_DIS_CNT_START_pio_rd(bit [63:0] address, var bit [63:0] data, integer dma);
+ task RCR_CFIG_B_pio_wr(bit [63:0] address, var bit [63:0] data, integer dma);
+ task RCR_CFIG_B_pio_rd(bit [63:0] address, var bit [63:0] data, integer dma);
+ task RCR_QLEN_pio_rd(bit [63:0] address, var bit [63:0] data, integer dma);
+ task XMAC_STATUS_pio_rd(integer port_id, var bit [63:0] data);
+ task BMAC_STATUS_pio_rd(integer port_id, var bit [63:0] data);
+ function integer get_rcr_qlen(integer dma);
+ task enable_rcr_timer(integer dma);
+ task cleanup_dma_interrupts(bit [31:0] dma_list);
+ function integer isTherePendingInterrupt(integer dma);
+ task wait_to_send_last_pkt(integer mac_id);
+
+}
+
+task niu_rx_test_util::wait_to_send_last_pkt(integer mac_id) {
+integer fifo_empty = 0;
+bit [63:0] rd_ptr, wr_ptr;
+
+  while (!fifo_empty) {
+   // read the IPP fifo read/write pointers for this port
+   case(mac_id){
+    0: gen_pio_drv.pio_rd(IPP0_BASE+20'h0_0110, rd_ptr);
+    1: gen_pio_drv.pio_rd(IPP1_BASE+20'h0_0110, rd_ptr);
+    2: gen_pio_drv.pio_rd(IPP2_BASE+20'h0_0110, rd_ptr);
+    3: gen_pio_drv.pio_rd(IPP3_BASE+20'h0_0110, rd_ptr);
+   }
+   case(mac_id){
+    0: gen_pio_drv.pio_rd(IPP0_BASE+20'h0_0118, wr_ptr);
+    1: gen_pio_drv.pio_rd(IPP1_BASE+20'h0_0118, wr_ptr);
+    2: gen_pio_drv.pio_rd(IPP2_BASE+20'h0_0118, wr_ptr);
+    3: gen_pio_drv.pio_rd(IPP3_BASE+20'h0_0118, wr_ptr);
+   }
+
+   // if read and write pointers are equal, the fifo is empty. Then release semaphore to send last_pkt
+   if (rd_ptr === wr_ptr) {
+     fifo_empty = 1;
+     printf("[%0d] IPP fifo pointers are equal, DFIFO is empty for port %0d. Now send last_pkt.\n",get_time(LO),mac_id);
+   }
+   else {
+     printf("[%0d] waiting for DFIFO to be empty for port %0d\n", get_time(LO), mac_id);
+     repeat(500) @(posedge CLOCK);
+   }
+  }
+}
+
+
+// This register supports read-to-clear 
+function integer niu_rx_test_util::getIppDropCnt (integer port_num)
+{
+ bit [63:0] addr,data;
+ static integer ipp_drop_count[];
+
+ getIppDropCnt = 99999; // dummy value
+
+ if(ipp_drop_count[port_num] === 'hX) { ipp_drop_count[port_num] = 0; }
+
+ if((port_num==0)||(port_num==1)) {
+  
+  // case (port_num) {
+  // 0 : addr = FZC_IPP_BASE_ADDRESS + IPP_PORT_STEP*0 + IPP_DISCARD_PKT_COUNTER;
+  // 1 : addr = FZC_IPP_BASE_ADDRESS + IPP_PORT_STEP*2 + IPP_DISCARD_PKT_COUNTER;
+  // }
+  addr = FZC_IPP_BASE_ADDRESS + IPP_PORT_STEP*port_num + IPP_DISCARD_PKT_COUNTER;
+  gen_pio_drv.pio_rd(addr, data, 1'b0);
+  printf ("niu_rx_test_util::getIppDropCnt() IPP Drop Packet Count = %0d for Port - %0d\n", data, port_num);
+  ipp_drop_count[port_num] += data;  
+ }
+ else {
+  printf("ERROR niu_rx_test_util.getIppDropCnt() Port number %0d INVALID\n", port_num);
+  return;
+ }
+
+ getIppDropCnt = ipp_drop_count[port_num];
+}
+
+// The difference between pkt in and pkt out will result in Mac Drop count
+function integer niu_rx_test_util::getMacDropCnt (integer port_num, integer sent_pkt_cnt)
+{
+	getMacDropCnt = getXPCSPktCnt(port_num, sent_pkt_cnt) - getXMACPktCnt(port_num);
+}
+
+// This register does not support read-to-clear
+function integer niu_rx_test_util::getRdmcDropCnt (integer dma_num)
+{
+ bit [63:0] addr,data1,data2;
+
+ addr = RX_MISC_START + RXDMA_STEP*dma_num;
+ //gen_pio_drv.pio_rd(addr, data1, 1'b0);
+ RX_MISC_START_pio_rd(addr, data1, dma_num);
+ 
+
+ addr = RED_DIS_CNT_START + RED_DIS_CNT_STEP*dma_num;
+ //gen_pio_drv.pio_rd(addr, data2, 1'b0);
+ RED_DIS_CNT_START_pio_rd(addr, data2, dma_num);
+
+ // Take care of rtl issue which increments both red and misc counters for same pkts if crc error pkts are sent.
+  if(get_plus_arg(CHECK,"IGNORE_RED_DIS_CNT_START"))
+     data2 = 0;
+
+ printf ("niu_rx_test_util::getRdmcDropCnt()  Drop Packet Count = %0d for DMA - %0d\n", data1+data2, dma_num);
+ getRdmcDropCnt = data1+data2;
+}
+
+
+// This register supports read-to-clear
+function integer niu_rx_test_util::getXPCSPktCnt (integer port_id, integer sent_pkt_cnt)
+{
+  bit [31:0] cfg_rd_data;
+  bit [31:0] rd_data;
+  integer base_addr;
+  static integer pcs_pkt_cnt[];
+
+  getXPCSPktCnt = 99999; // dummy value
+
+  if(pcs_pkt_cnt[port_id] === 'hX) { pcs_pkt_cnt[port_id] = 0; }
+
+  if (port_id ==0){
+    base_addr = bmac_util.get_mac_reg_base(0);
+    mac_pio_class.xmac_pio_rd( base_addr + XMAC_CONFIG,
+                              cfg_rd_data,1'b0 );
+    if (cfg_rd_data[28:27] == 2'b01) {    // checking for 1G or 10G
+      //mac_pio_class.bmac_pio_rd(PCS0_BASE +
+      //                          PCS_PACKET_COUNTER,rd_data, 1'b0);
+      //pcs_pkt_cnt[port_id] += rd_data[26:16];
+      pcs_pkt_cnt[port_id] = sent_pkt_cnt;
+    }
+    else if (cfg_rd_data[28:27] == 2'b00) {
+      mac_pio_class.xmac_pio_rd(XPCS0_BASE +
+                                XPCS_PACKET_COUNTER,rd_data, 1'b0);
+      pcs_pkt_cnt[port_id] = rd_data[15:0];
+    }
+  }
+  else if (port_id ==1){
+    base_addr = bmac_util.get_mac_reg_base(1);
+    mac_pio_class.xmac_pio_rd( base_addr + XMAC_CONFIG,
+                              cfg_rd_data,1'b0 );
+    if (cfg_rd_data[28:27] == 2'b01) {    // checking for 1G or 10G
+      //mac_pio_class.bmac_pio_rd(PCS1_BASE +
+      //                          PCS_PACKET_COUNTER,rd_data, 1'b0);
+      //pcs_pkt_cnt[port_id] += rd_data[26:16];
+      pcs_pkt_cnt[port_id] = sent_pkt_cnt;
+    }
+    else if (cfg_rd_data[28:27] == 2'b00) {
+      mac_pio_class.xmac_pio_rd(XPCS1_BASE +
+                                XPCS_PACKET_COUNTER,rd_data, 1'b0);
+      pcs_pkt_cnt[port_id] = rd_data[15:0];
+    }
+  }
+  else if (port_id ==2){
+    //base_addr = bmac_util.get_mac_reg_base(2);
+    //  mac_pio_class.bmac_pio_rd(PCS2_BASE +
+    //                            PCS_PACKET_COUNTER,rd_data, 1'b0);
+    //  pcs_pkt_cnt[port_id] += rd_data[26:16];
+    pcs_pkt_cnt[port_id] = sent_pkt_cnt;
+  }
+  else if (port_id ==3){
+    //base_addr = bmac_util.get_mac_reg_base(3);
+    //  mac_pio_class.bmac_pio_rd(PCS3_BASE +
+    //                            PCS_PACKET_COUNTER,rd_data, 1'b0);
+    //  pcs_pkt_cnt[port_id] += rd_data[26:16];
+    pcs_pkt_cnt[port_id] = sent_pkt_cnt;
+  }
+
+  
+  getXPCSPktCnt = pcs_pkt_cnt[port_id];
+  printf("niu_rx_test_util::getXPCSPktCnt port_id %0d, getXPCSPktCnt %0d\n", port_id, getXPCSPktCnt);
+}
+
+
+// This register supports read-to-clear
+function integer niu_rx_test_util ::getXMACPktCnt  (integer port_id)
+{
+  bit [31:0] rd_data;
+  bit [31:0] hist1=0;
+  bit [31:0] hist2=0;
+  bit [31:0] hist3=0;
+  bit [31:0] hist4=0;
+  bit [31:0] hist5=0;
+  bit [31:0] hist6=0;
+  bit [31:0] hist7=0;
+  static integer mac_pkt_cnt[];
+
+
+  integer base_addr;
+
+  getXMACPktCnt = 99999; // dummy value
+  if(mac_pkt_cnt[port_id] === 'hX) { mac_pkt_cnt[port_id] = 0; } // reset
+
+  if (port_id ==0){ // clear on read registers
+    base_addr = bmac_util.get_mac_reg_base(0);
+    //mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT1, hist1,1'b0);
+    //mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT2, hist2,1'b0);
+    //mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT3, hist3,1'b0);
+    //mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT4, hist4,1'b0);
+    //mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT5, hist5,1'b0);
+    //mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT6, hist6,1'b0);
+    mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT7, hist7,1'b0);
+    xmac_hist7_cntr[port_id] = hist7;
+    printf("niu_rx_test_util::port0 :getXMACPktCnt() hist1, hist2, hist3, hist4, hist5, hist6, hist7 = %0d, %0d, %0d, %0d, %0d %0d and %0d\n", hist1, hist2, hist3, hist4, hist5, hist6, hist7);
+   mac_pkt_cnt[port_id]  += hist1 + hist2 + hist3 + hist4 + hist5 +hist6 +hist7;
+  }
+  else if (port_id ==1){ // clear on read registers
+    base_addr = bmac_util.get_mac_reg_base(1);
+    //mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT1, hist1,1'b0);
+    //mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT2, hist2,1'b0);
+    //mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT3, hist3,1'b0);
+    //mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT4, hist4,1'b0);
+    //mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT5, hist5,1'b0);
+    //mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT6, hist6,1'b0);
+    mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT7, hist7,1'b0);
+    xmac_hist7_cntr[port_id] = hist7;
+    printf("niu_rx_test_util::port1: getXMACPktCnt() hist1, hist2, hist3, hist4, hist5, hist6, hist7 = %0d, %0d, %0d, %0d, %0d, %0d and %0d\n", hist1, hist2, hist3, hist4, hist5, hist6, hist7);
+    mac_pkt_cnt[port_id] += hist1 + hist2 + hist3 + hist4 + hist5 +hist6 +hist7;
+  }
+  else if (port_id ==2){ // not clear on read register
+    bmac_util.rd_ipp_mac_reg(port_id, BRxMAC_FRM_CNT, rd_data, 1'b0);
+    mac_pkt_cnt[port_id] = rd_data;
+  }
+  else if (port_id ==3){ // not clear on read register
+    bmac_util.rd_ipp_mac_reg(port_id, BRxMAC_FRM_CNT, rd_data, 1'b0);
+    mac_pkt_cnt[port_id] = rd_data;
+  }
+
+  getXMACPktCnt = mac_pkt_cnt[port_id];
+
+  printf("niu_rx_test_util::getXMACPktCnt port_id %0d, getXMACPktCnt %0d\n", port_id, getXMACPktCnt);
+
+}
+
+task niu_rx_test_util::flush_rcr (integer dma_num)
+{
+  // RCR flush
+  //1gen_pio_drv.pio_wr(RCR_FLUSH_START + 12'h200*dma_num, 64'h1);
+  gen_pio_drv.pio_wr(rdmc.rx_dma[dma_num].getPIOAddress(RCR_FLUSH_START + 12'h200*dma_num, 
+                                          rdmc.rx_dma[dma_num].dis_pio_virt), 64'h1);
+  printf ("niu_rx_test_util::flush_rcr()  Flushed the RCR Entry for DMA - %0d\n", dma_num);
+
+}
+
+task niu_rx_test_util::RX_MISC_START_pio_rd(bit [63:0] address, var bit [63:0] data, integer dma) {
+     gen_pio_drv.pio_rd(rdmc.rx_dma[dma].getPIOAddress(address, rdmc.rx_dma[dma].dis_pio_virt), data, 1'b0);
+}
+
+task niu_rx_test_util::RED_DIS_CNT_START_pio_rd(bit [63:0] address, var bit [63:0] data, integer dma) {
+     gen_pio_drv.pio_rd(rdmc.rx_dma[dma].getPIOAddress(address, rdmc.rx_dma[dma].dis_pio_virt), data, 1'b0);
+}
+
+task niu_rx_test_util::RCR_CFIG_B_pio_rd(bit [63:0] address, var bit [63:0] data, integer dma){
+     gen_pio_drv.pio_rd(rdmc.rx_dma[dma].getPIOAddress(address, rdmc.rx_dma[dma].dis_pio_virt), data);
+}
+
+task niu_rx_test_util::RCR_CFIG_B_pio_wr(bit [63:0] address, var bit [63:0] data, integer dma){
+     gen_pio_drv.pio_wr(rdmc.rx_dma[dma].getPIOAddress(address, rdmc.rx_dma[dma].dis_pio_virt), data);
+}
+
+task niu_rx_test_util::RCR_QLEN_pio_rd(bit [63:0] address, var bit [63:0] data, integer dma){
+     gen_pio_drv.pio_rd(rdmc.rx_dma[dma].getPIOAddress(address, rdmc.rx_dma[dma].dis_pio_virt), data, 1'b0);
+}
+
+function integer niu_rx_test_util::get_rcr_qlen(integer dma){
+bit [63:0] addr,data;
+     addr = RCR_STAT_A_START + RXDMA_STEP * dma;
+     RCR_QLEN_pio_rd(addr, data, dma);
+get_rcr_qlen = data;
+}
+
+task niu_rx_test_util::enable_rcr_timer(integer dma){
+bit [63:0] addr,data;
+   // program TIMEOUT_EN=1
+     addr = RCR_CFIG_B_START + RXDMA_STEP * dma;
+     RCR_CFIG_B_pio_rd(addr, data, dma);
+     data[15] = 1;
+     RCR_CFIG_B_pio_wr(addr, data, dma);
+}
+
+task niu_rx_test_util::cleanup_dma_interrupts(bit [31:0] dma_list) {
+integer i;
+
+   for(i=0;i<16;i++){
+    if(dma_list[i]) {
+     if (get_rcr_qlen(i))
+      enable_rcr_timer(i);
+    }
+   }
+}
+
+function integer niu_rx_test_util::isTherePendingInterrupt(integer dma) {
+bit [63:0] rd_data, mask, interrupts;
+
+   // read the status register from this dma
+   rdmc.rx_dma[dma].pio_rd_RX_DMA_CTL_STAT_START(rd_data);
+ 
+   // mask off the non-interrupt bits from the status register  
+   mask = 64'hffff_ffff_ffff_ffff;
+   mask[RX_DMA_CTL_STAT_PKTREAD] = 0;
+   mask[RX_DMA_CTL_STAT_PTRREAD] = 0;
+   mask[RX_DMA_CTL_STAT_MEX] = 0;
+   
+   interrupts = rd_data & mask;
+
+   if (|interrupts)
+    isTherePendingInterrupt = 1;
+   else
+    isTherePendingInterrupt = 0;
+ 
+   printf ("niu_rx_test_util::isTherePendingInterrupt interrupts=0x%h, isTherePendingInterrupt=%b\n",
+							interrupts, isTherePendingInterrupt);
+}
+
+task niu_rx_test_util::XMAC_STATUS_pio_rd(integer port_id, var bit [63:0] data) {
+  integer base_addr;
+  base_addr = bmac_util.get_mac_reg_base(port_id);
+
+  case(port_id) {
+    0: gen_pio_drv.pio_rd(base_addr+XRxMAC_STATUS, data, 1'b0);
+    1: gen_pio_drv.pio_rd(base_addr+XRxMAC_STATUS, data, 1'b0);
+    default: printf ("ERROR port_id should be only 0 or 1 for xmac\n");
+  }
+}
+
+task niu_rx_test_util::BMAC_STATUS_pio_rd(integer port_id, var bit [63:0] data) {
+  integer base_addr;
+  base_addr = bmac_util.get_mac_reg_base(port_id);
+
+  case(port_id) {
+    2: gen_pio_drv.pio_rd(base_addr+BRxMAC_STATUS, data, 1'b0);
+    3: gen_pio_drv.pio_rd(base_addr+BRxMAC_STATUS, data, 1'b0);
+    default: printf ("ERROR port_id should be only 2 or 3 for bmac\n");
+  }
+}

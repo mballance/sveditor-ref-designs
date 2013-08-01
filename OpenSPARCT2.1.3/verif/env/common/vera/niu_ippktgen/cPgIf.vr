@@ -1,0 +1,348 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: cPgIf.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "pcg_token.vrh"
+#include "flow_db.vrh"
+#include "flow_vars_defines.vri"
+
+
+extern "C" task genCPacket(integer t, var bit [7:0] flow_vars[*], var bit [7:0] payload[*], var bit[31:0] pkt_fields[*] );
+
+
+class CPgIf {
+
+   integer port_id;
+   static event pkt_sync;
+   task genPacket(integer index,integer data_length,  flow_desc flow, var bit [7:0] payload[*], var bit[31:0] pkt_fields[*]  );
+   function integer ConstructFlowVars(var bit [7:0] flow_vars[*], flow_desc flow, integer data_length);
+   function integer getLength(flow_desc flow);
+   task new() {
+	trigger(ON,pkt_sync);
+   }
+
+}
+function integer CPgIf::getLength(flow_desc flow) {
+
+   // getLength = flow.frame.data_length;
+}
+
+function integer CPgIf::ConstructFlowVars(var bit [7:0] flow_vars[*], flow_desc flow, integer data_length) {
+
+  bit[47:0] l2_da,l2_sa;
+  bit   [4:0]  frame_type;
+  bit[15:0]    tpid; 
+  bit   [15:0]  tci;
+  integer    frame_class;
+  integer    class_funct;
+  integer frame_class_mask;
+  integer    header_length;
+  integer               ttl;
+  bit [31:0]  spi;
+  bit [7:0]   nxthdr;
+  bit [7:0]   tos;
+  integer type;
+  bit   [128:0] src_ipv6_addr,dst_ipv6_addr;
+  bit [31:0] src_ip_addr,dst_ip_addr;
+  bit   [15:0] src_port,dst_port;
+  bit [7:0] tcp_flags;
+  bit [31:0] tcp_seq_no;
+  bit [31:0] rcv_isn;
+  bit [31:0] last_seqno;
+  integer    data_type;
+  integer    data_seed;
+  integer    error_code=0;
+  bit[15:0]  error_chksum;
+  bit[7:0]  l4_proto_field;
+  bit[15:0]  error_type_len=0;
+  bit [31:0] esp_ah_seq_no;
+
+  /*sctp*/
+  bit[15:0]  src_sctp_port;
+  bit[15:0]  dst_sctp_port;
+  bit [31:0] sctp_vtag;
+
+ /*arp*/
+ bit[15:0] arp_hw_type;
+ bit[15:0] arp_proto_type;
+ bit[7:0] arp_hw_len;
+ bit[7:0] arp_proto_len;
+ bit[15:0] arp_op_code;
+ bit[47:0] arp_src_ha;
+ bit[47:0] arp_tgt_ha;
+ bit[31:0] arp_src_ip;
+ bit[31:0] arp_tgt_ip;
+
+  integer gId;
+  bit   [63:0]  options;
+  integer i;
+  integer l2_pad_length;
+  bit [15:0] frame_length;
+  bit [15:0] ip_frag;
+
+  flow_vars = new[200/*??*/];
+
+  frame_type = flow.frame.frame_type;
+  frame_class = flow.frame.frame_class;
+  l2_pad_length = flow.frame.l2_pad_length;
+
+  l2_da = flow.dst_node.l2_addr;
+  l2_sa = flow.src_node.l2_addr;
+
+  tpid = flow.frame.tpid;
+  tci = flow.src_node.tci;
+
+  //?? class_funct = flow.frame.class_funct;
+  //?? frame_class_mask = flow.frame.class_mask;
+
+  header_length = flow.frame.header_length ;
+
+  src_ip_addr = flow.src_node.ip_addr;
+  dst_ip_addr = flow.dst_node.ip_addr;
+  src_port  = flow.tup.src_tcp_udp_port;
+  dst_port = flow.tup.dst_tcp_udp_port;
+  tcp_seq_no = flow.tup.tcp_seq_no;
+  tcp_flags = flow.fl_state.tcp_flags;
+  tos = flow.src_node.tos;
+
+  ip_frag = flow.frame.ip_frag;
+
+  // ttl = flow.ttl;
+  spi = flow.src_node.spi;
+
+  esp_ah_seq_no =flow.src_node.esp_ah_seq_no;
+  src_ipv6_addr = flow.src_node.ipv6_addr;
+  dst_ipv6_addr = flow.dst_node.ipv6_addr;
+  nxthdr = flow.src_node.nxthdr;
+  rcv_isn = flow.rx_param.rcv_isn;
+  
+/*sctp*/
+ src_sctp_port= flow.sctp.src_sctp_port;
+ dst_sctp_port= flow.sctp.dst_sctp_port;
+ sctp_vtag=flow.sctp.sctp_vtag ;
+
+
+/*arp*/
+ arp_hw_type = flow.arp.hw_type;
+ arp_proto_type = flow.arp.proto_type;
+ arp_hw_len = flow.arp.hlen;
+ arp_proto_len = flow.arp.plen;
+ arp_op_code = flow.arp.operation;
+ arp_src_ha = flow.arp.src_hw_addr;
+ arp_tgt_ha = flow.arp.dst_hw_addr;
+ arp_src_ip = flow.arp.src_proto_addr;
+ arp_tgt_ip = flow.arp.dst_proto_addr;
+
+
+  data_type  = flow.frame.data_type;
+  data_seed = flow.frame.data_seed;
+  // flow_id = flow.flow_no;
+  // gId = flow.gId;
+  // options = flow.options;
+
+  if(data_type===DAT_FC_PAUSE) {
+    error_code = PG_TYPE_LEN_USER_MODE;
+    error_type_len = 16'h8808;
+  }
+  error_code = error_code | flow.frame.error_code;
+  error_chksum = flow.frame.error_chksum;
+  error_type_len = error_type_len | flow.frame.error_type_len;
+  l4_proto_field = flow.frame.l4_proto_field;
+
+  flow_vars[FRAME_TYPE_INDEX] = frame_type;
+  flow_vars[FRAME_CLASS_INDEX] = frame_class;
+
+  for(i = 0;i< L2_DA_SIZE ;i++) {
+   flow_vars[L2_DA_INDEX + i] = l2_da[7+ 8*i: 8*i];
+   // printf(" VERA Index - %d value - %x \n",L2_DA_INDEX + i,flow_vars[L2_DA_INDEX + i]);
+   // printf(" l2_da - %x \n",l2_da);
+  }
+
+  for(i = 0;i<  L2_SA_SIZE;i++) {
+   flow_vars[L2_SA_INDEX + i] = l2_sa[7+ 8*i: 8*i];
+   // printf(" VERA Index - %d value - %x \n",L2_SA_INDEX + i,flow_vars[L2_SA_INDEX + i]);
+}
+
+  for(i = 0;i<  TPID_SIZE;i++) 
+   flow_vars[TPID_INDEX + i] = tpid[7+ 8*i: 8*i];
+   
+  for(i = 0;i<  TCI_SIZE;i++) 
+   flow_vars[TCI_INDEX + i] = tci[7+ 8*i: 8*i];
+
+  flow_vars[IP_OPTION_INDEX] = (header_length -5 )*4; // no of bytes of options
+  
+
+  for(i = 0;i<  IPV4_SRC_ADDR_SIZE;i++) 
+   flow_vars[IPV4_SRC_ADDR_INDEX + i] = src_ip_addr[7+ 8*i: 8*i];
+
+  for(i = 0;i<  IPV4_DST_ADDR_SIZE;i++) 
+   flow_vars[IPV4_DST_ADDR_INDEX + i] = dst_ip_addr[7+ 8*i: 8*i];
+
+  for(i = 0;i<  IPV4_SRC_PRT_SIZE;i++) 
+   flow_vars[IPV4_SRC_PRT_INDEX + i] = src_port[7+ 8*i: 8*i];
+
+  for(i = 0;i<  IPV4_DST_PRT_SIZE;i++) 
+   flow_vars[IPV4_DST_PRT_INDEX + i] = dst_port[7+ 8*i: 8*i];
+
+  for(i = 0;i<  TCP_FLAGS_SIZE;i++) 
+   flow_vars[TCP_FLAGS_INDEX + i] = tcp_flags[7+ 8*i: 8*i];
+
+  for(i = 0;i<  TCP_SEQ_NO_SIZE;i++) 
+   flow_vars[TCP_SEQ_NO_INDEX + i] = tcp_seq_no[7+ 8*i: 8*i];
+
+  for(i = 0;i<  SPI_SIZE;i++) 
+   flow_vars[SPI_INDEX + i] = spi[7+ 8*i: 8*i];
+
+  for(i = 0;i<  ESP_AH_SEQ_NO_SIZE;i++) 
+   flow_vars[ESP_AH_SEQ_NO_INDEX + i] = esp_ah_seq_no[7+ 8*i: 8*i];
+
+  for(i = 0;i<  IPV6_SRC_ADDR_SIZE;i++) 
+   flow_vars[IPV6_SRC_ADDR_INDEX + i] = src_ipv6_addr[7+ 8*i: 8*i];
+
+  for(i = 0;i<  IPV6_DST_ADDR_SIZE;i++)  {
+   flow_vars[IPV6_DST_ADDR_INDEX + i] = dst_ipv6_addr[7+ 8*i: 8*i];
+   // printf(" Index - %d Value - %x \n",IPV6_DST_ADDR_INDEX + i,dst_ipv6_addr[7+ 8*i: 8*i]);
+  }
+
+   flow_vars[IPV6_NXT_HDR ] = nxthdr[7: 0];
+
+   flow_vars[TOS_INDEX]    = tos;
+   // printf("Index - %d Tos - %x \n",TOS_INDEX,tos);
+
+  for(i = 0;i< IP_FRAG_SIZE;i++) 
+   flow_vars[IP_FRAG_INDEX + i] = ip_frag[7+ 8*i: 8*i];
+
+  for(i = 0;i<  SCTP_SRC_PRT_SIZE;i++) 
+   flow_vars[SCTP_SRC_PRT_INDEX + i] = src_sctp_port[7+ 8*i: 8*i];
+
+  for(i = 0;i<  SCTP_DST_PRT_SIZE;i++) 
+   flow_vars[SCTP_DST_PRT_INDEX + i] = dst_sctp_port[7+ 8*i: 8*i];
+
+  for(i = 0;i<  SCTP_VTAG_SIZE;i++) 
+   flow_vars[SCTP_VTAG_INDEX + i] = sctp_vtag[7+ 8*i: 8*i];
+
+
+ for(i = 0;i<  ARP_HW_TYPE_SIZE ;i++)
+    flow_vars[ARP_HW_TYPE_INDEX + i] = arp_hw_type[7+ 8*i: 8*i];
+
+  for(i = 0;i<  ARP_PROTO_TYPE_SIZE ;i++)
+   flow_vars[ARP_PROTO_TYPE_INDEX +i] =  arp_proto_type[7+ 8*i: 8*i]; 
+
+  flow_vars[ARP_HW_LEN_INDEX] = arp_hw_len;
+  flow_vars[ARP_PROTO_LEN_INDEX] = arp_proto_len;
+
+  for(i = 0;i<  ARP_PROTO_TYPE_SIZE ;i++)
+   flow_vars[ ARP_OPCODE_INDEX+ i] = arp_op_code[7+ 8*i: 8*i]; 
+
+  /* Various Address fields in the Arp Packet */
+  for(i=0;i<ARP_SRC_ADDR_SIZE;i++)  {
+   flow_vars[ARP_SRC_ADDR_INDEX + i] = arp_src_ha[7+ 8*i: 8*i];
+   flow_vars[ARP_TGT_ADDR_INDEX + i] = arp_tgt_ha[7+ 8*i: 8*i];
+  }
+  for(i=0;i<ARP_SRCIP_ADDR_SIZE;i++) {
+   flow_vars[ARP_SRCIP_ADDR_INDEX + i] =arp_src_ip[7+ 8*i: 8*i];
+   flow_vars[ARP_TGTIP_ADDR_INDEX + i] = arp_tgt_ip[7+ 8*i: 8*i];
+  }
+
+
+   frame_length = data_length;
+   
+
+   flow_vars[DATA_LENGTH_INDEX + 0] = ((data_length)  & 16'hff) ;
+   flow_vars[DATA_LENGTH_INDEX + 1] = ((data_length)  & 16'hff00) >>8;
+
+   flow_vars[DATA_TYPE_INDEX ] = ((data_type)  & 32'hff) ;
+   
+   flow_vars[DATA_SEED_INDEX + 0] = ((data_seed)  & 32'hff) ;
+   flow_vars[DATA_SEED_INDEX + 1] = ((data_seed)  & 32'hff00) >>8;
+   flow_vars[DATA_SEED_INDEX + 2] = ((data_seed)  & 32'hff0000)>>16 ;
+   flow_vars[DATA_SEED_INDEX + 3] = ((data_seed)  & 32'hff000000) >>24;
+
+   flow_vars[DATA_ERR_CODE_INDEX + 0] = ((error_code)  & 32'hff) ;
+   flow_vars[DATA_ERR_CODE_INDEX + 1] = ((error_code)  & 32'hff00) >>8;
+   flow_vars[DATA_ERR_CODE_INDEX + 2] = ((error_code)  & 32'hff0000)>>16 ;
+   flow_vars[DATA_ERR_CODE_INDEX + 3] = ((error_code)  & 32'hff000000) >>24;
+   
+   flow_vars[DATA_ERR_DATA_INDEX + 0] = ((error_chksum[7:0]) ) ;
+   flow_vars[DATA_ERR_DATA_INDEX + 1] = (error_chksum[15:8]) ;
+   flow_vars[DATA_ERR_DATA_INDEX + 2] = error_type_len[7:0];
+   flow_vars[DATA_ERR_DATA_INDEX + 3] = error_type_len[15:8];
+
+   flow_vars[L4_PROTO_ERR_INDEX]      = l4_proto_field;
+
+   flow_vars[L2_PAD_LENGTH_INDEX + 0] = ((l2_pad_length)  & 16'hff) ;
+   flow_vars[L2_PAD_LENGTH_INDEX + 1] = ((l2_pad_length)  & 16'hff00) >>8;
+
+
+  // printf(" Vera ErroCode - %x \n",error_code);
+  printf(" Data Length Set to %x \n",data_length+l2_pad_length );
+  
+  // printf(" Index - %d %d, Value - %x %x\n",DATA_LENGTH_INDEX,DATA_LENGTH_INDEX + 1,flow_vars[DATA_LENGTH_INDEX + 0],flow_vars[DATA_LENGTH_INDEX + 1]);
+  // printf(" Index - %d %d, Value - %x %x\n",L2_PAD_LENGTH_INDEX,L2_PAD_LENGTH_INDEX + 1,flow_vars[L2_PAD_LENGTH_INDEX + 0],flow_vars[L2_PAD_LENGTH_INDEX + 1]);
+
+///
+
+ ConstructFlowVars = 1;
+}
+
+task CPgIf::genPacket(integer index, integer data_length, flow_desc flow, var bit [7:0] payload[*], var bit[31:0] pkt_fields[*]  ) {
+
+ bit [7:0] flow_vars[*];
+ integer status;
+ integer i;
+ integer TotalLength;
+
+ /* Look at various fields of flow and fill it into an array*/
+  sync(ALL, pkt_sync);
+  trigger(OFF,pkt_sync);
+  
+  status = ConstructFlowVars(flow_vars,flow,data_length);
+  if(status== -1) {
+	printf(" TestBench ERROR\n");
+  }
+  /* determine the total packet length*/
+  // TotalLength = getLength(flow);
+  TotalLength = data_length + flow.frame.l2_pad_length ;
+  payload = new[TotalLength];
+  pkt_fields = new[SIZE_OF_PKT_FIELDS];
+
+ /* pass this array along with the index, payload etc to the C function  which returns 
+    the generated packet*/
+
+    genCPacket(index,flow_vars,payload,pkt_fields);
+
+  trigger(ON,pkt_sync);
+
+}

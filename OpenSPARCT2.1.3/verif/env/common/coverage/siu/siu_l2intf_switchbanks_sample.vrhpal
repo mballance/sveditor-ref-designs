@@ -1,0 +1,83 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: siu_l2intf_switchbanks_sample.vrhpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#inc "siu_cov_inc.pal"
+
+#define BANK0  (8'b00000001)
+#define BANK1  (8'b00000010)
+#define BANK2  (8'b00000100)
+#define BANK3  (8'b00001000)
+#define BANK4  (8'b00010000)
+#define BANK5  (8'b00100000)
+#define BANK6  (8'b01000000)
+#define BANK7  (8'b10000000)
+#define NOP    (8'b00000000)
+
+
+sample switchbanks (switch_banks)
+{
+. for ($bank1=0; $bank1<8; $bank1++)
+. {
+.   for ($bank2=0; $bank2<8; $bank2++)
+.   {
+      trans t_BANK${bank1}_BANK${bank2} (BANK${bank1} -> NOP -> BANK${bank2} );
+
+.   }
+. }
+}
+
+#ifndef SIU_INTF_COV
+// Not for FC
+sample siu_l2_cmd_sample_this (this_l2_cmd)
+
+{
+  state DMU_RDD_ord_npt         ( 6'b101001 );
+  state DMU_WR8_ord_pst         ( 6'b111010 );
+  state DMU_WRI_pst_ord         ( 6'b111100 );
+
+  state NIU_RDD_ord_npt         ( 6'b100001 );
+  state NIU_RDD_byp_npt         ( 6'b000001 );
+
+  state NIU_WRI_ord_npt         ( 6'b100100 );
+  state NIU_WRI_byp_npt         ( 6'b000100 );
+
+  state NIU_WRI_ord_pst         ( 6'b110100 );
+  state NIU_WRI_byp_pst         ( 6'b010100 );
+
+}
+
+
+cross siu_switch_bank_each_cmd_cross (switchbanks, siu_l2_cmd_sample_this);
+#endif
+ 

@@ -1,0 +1,336 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuScenario.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "ilupeuScenarioDefines.vri"
+
+class ilupeuScenario {
+
+   protected ReportClass   Report;
+
+   // there can only be one instance of class ilupeuScenario
+   protected static integer scenarioCnt = 0;
+   
+   //Reset Parameters
+   integer minResetDuration = 10;
+   integer maxResetDuration = 20;
+
+   //Parameter used to determine if fast training is to occur
+   bit FastLinkTraining = 1'b1;
+   //Parameters used to configure ilu_peu link capability register
+   bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CAP_SPEED_WIDTH-1:0] ilupeuLinkCapMaxSpeed = FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CAP_SPEED_WIDTH'b0001;//Only Valid Value
+   bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CAP_WIDTH_WIDTH-1:0] ilupeuLinkCapMaxLinkWdth = FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CAP_WIDTH_WIDTH'b001000;//Default x8
+   bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CAP_ASPM_WIDTH-1:0] ilupeuLinkCapASPM = FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CAP_ASPM_WIDTH'b11;//Default 3=L0s & L1 Supported
+   bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CAP_L0S_WIDTH-1:0] ilupeuLinkCapLosExitLat = FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CAP_L0S_WIDTH'b101;//Default 5=1-2uS 
+   bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CAP_L1_WIDTH-1:0] ilupeuLinkCapL1ExitLat = FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CAP_L1_WIDTH'b010;//Default 2=2-4uS 
+   bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CAP_PORT_WIDTH-1:0] ilupeuLinkCapPortNumber = FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CAP_PORT_WIDTH'b00000000;//Default 0 
+
+
+   //Parameters used to configure Denali PCI Express Link Capability 
+   bit [FNX_PCIE_XTR_REG_DEN_EXP_LINK_CAP_MAX_LINK_WIDTH_WIDTH-1:0] denaliLinkCapMaxLinkWdth = FNX_PCIE_XTR_REG_DEN_EXP_LINK_CAP_MAX_LINK_WIDTH_WIDTH'b001000;//Default x8
+   bit [FNX_PCIE_XTR_REG_DEN_EXP_LINK_CAP_PORT_NUM_WIDTH-1:0] denaliLinkCapPortNumber = FNX_PCIE_XTR_REG_DEN_EXP_LINK_CAP_PORT_NUM_WIDTH'b00000000;//Default 0 
+   bit [FNX_PCIE_XTR_REG_DEN_EXP_LINK_CAP_ASPM_SUPPORT_WIDTH-1:0] denaliLinkCapASPM = FNX_PCIE_XTR_REG_DEN_EXP_LINK_CAP_ASPM_SUPPORT_WIDTH'b11;//Default 3 
+
+
+   //Parameters used to configure ILU-PEU link control register
+   bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CTL_ASPM_WIDTH-1:0] ilupeuLinkCtrlASPM = FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CTL_ASPM_WIDTH'b00;//Default 0=Disabled
+   bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CTL_RCB_WIDTH-1:0] ilupeuLinkCtrlRCB = FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CTL_RCB_WIDTH'b0;//Default 0=64 byte read completion boundary
+   //Link Disable may not do anything PCI spec 7.8.7 says its reserved for Endpoint and switches
+   bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CTL_DISABLE_WIDTH-1:0] ilupeuLinkCtrlLinkDisable = FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CTL_DISABLE_WIDTH'b0;//Default 0
+   //Retrain Link may not do anything PCI spec 7.8.7 says its reserved for Endpoint and switches
+   bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CTL_RETRAIN_WIDTH-1:0] ilupeuLinkCtrlRetrainLink = FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CTL_RETRAIN_WIDTH'b0;//Default 0
+   bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CTL_CLOCK_WIDTH-1:0] ilupeuLinkCtrlCommonClkConfig = FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CTL_CLOCK_WIDTH'b0;//Default 0
+   bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CTL_EXTSYNC_WIDTH-1:0] ilupeuLinkCtrlExtendedSync = FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CTL_EXTSYNC_WIDTH'b0;//Default 0
+
+   //Parameters used to configure ilupeu PTL Control register
+   bit ilupeuSlotClkConfig = 1'b0;//Default 0
+   bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_CTL_CTO_SEL_WIDTH-1:0] ilupeuCmplTimeOut = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_CTL_CTO_SEL_WIDTH'b110;//default 0=infinite 7=4uS(Simulation Value)
+   bit ilupeuNPWrtEnSnglThrd = 0;//default 0=NonPosted Writes at will, 1=Stall all other requests until complete
+   bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_CTL_L0S_TIM_WIDTH-1:0] ilupeuL0S_TIM = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_CTL_L0S_TIM_WIDTH'b11011010;//default DA=7uS(Simulation Value), 0h=0ns, 1h=32ns, 2h=64ns,DA=7us, FF=8.2us
+
+   //Parameters used to configure ilupeu Device Control register
+   bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_DEV_CTL_MPS_WIDTH-1:0] ilupeuMaxPayload = FIRE_PLC_TLU_CTB_TLR_CSR_A_DEV_CTL_MPS_WIDTH'b000;//default 0=128Bytes max value 5=4096Bytes
+
+   //Parameters used to configure denali device control register 
+   bit [FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LL_CONFIG_MAX_PAYLOAD_WIDTH-1:0] denaliMaxPayload = FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LL_CONFIG_MAX_PAYLOAD_WIDTH'b011;//default 5=4096Bytes, 2=512Bytes
+
+
+  //Parameters used to configure ilupeu Slot Capabilities register
+  bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_SLT_CAP_SPLV_WIDTH-1:0] ilupeuSetPowerLimitValue = FIRE_PLC_TLU_CTB_TLR_CSR_A_SLT_CAP_SPLV_WIDTH'b00000000;
+  bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_SLT_CAP_SPLS_WIDTH-1:0] ilupeuSetPowerLimitScale = FIRE_PLC_TLU_CTB_TLR_CSR_A_SLT_CAP_SPLS_WIDTH'b00;//00=1x  11=.001x ilupeuSetPowerLimitValue
+
+
+   //Parameters used to configure lpusd ltssm control register
+   bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_LINK_CTL_SCRAMBLE_DISABLE_WIDTH-1:0] ilupeuLtssmDisableScrambling = FIRE_PLC_TLU_CTB_TLR_CSR_A_LINK_CTL_SCRAMBLE_DISABLE_WIDTH'b0;//default 0
+//N2 removed in .81 PRM   bit [FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LTSSM_CNTL_LINK_LOOPBK_REQ_WIDTH-1:0] ilupeuLtssmLinkLoopback = FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LTSSM_CNTL_LINK_LOOPBK_REQ_WIDTH'b0;//default 0
+/*
+   bit [FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LTSSM_CNTL_LINK_DISABLE_REQ_WIDTH-1:0] lpusdLtssmLinkDisable = FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LTSSM_CNTL_LINK_DISABLE_REQ_WIDTH'b0;//default 0
+   bit [FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LTSSM_CNTL_HOT_RESET_WIDTH-1:0] lpusdLtssmHotReset = FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LTSSM_CNTL_HOT_RESET_WIDTH'b0;//default 0
+ */ 
+
+   //Parameters used to configure Denali PCI Express Link Control 
+   bit denaliLtssmDisableScrambling = 0;
+   bit denaliLtssmHotReset = 0;
+   bit denaliLtssmLinkDisable = 0;
+   bit denaliLtssmLinkLoopback = 0;
+
+   //Parameters used to configure lpusd ltssm configuration4 register
+   //Link number transmitted for TS1/TS2
+   bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_LINK_CTL_LINK_NUM_WIDTH-1:0] ilupeuLtssmLinkNumber = FIRE_PLC_TLU_CTB_TLR_CSR_A_LINK_CTL_LINK_NUM_WIDTH'b00000100;//default 1
+   //Number fast training sequences transmitted for TS1/TS2
+   bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_LINK_CTL_N_FTS_WIDTH-1:0] ilupeuLtssmNFTS = FIRE_PLC_TLU_CTB_TLR_CSR_A_LINK_CTL_N_FTS_WIDTH'b00011011;//default 1b
+
+   //Initial Link number transmitted by Denali for TS1/TS2
+   bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_LINK_CTL_LINK_NUM_WIDTH-1:0] denaliLtssmLinkNumber = FIRE_PLC_TLU_CTB_TLR_CSR_A_LINK_CTL_LINK_NUM_WIDTH'b00000000;//default 0
+   //Parameters used for setting NFTS transmitted by Denali
+   bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_LINK_CTL_N_FTS_WIDTH-1:0] denaliLtssmNFTS = FIRE_PLC_TLU_CTB_TLR_CSR_A_LINK_CTL_N_FTS_WIDTH'b10101010;//default 170
+   
+
+  //Parameters used for replay timers threshold
+  bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_REPLAY_TIM_THRESH_RPLAY_TMR_THR_WIDTH-1:0] ilupeuReplayTimerThresholdDflt = FIRE_PLC_TLU_CTB_TLR_CSR_A_REPLAY_TIM_THRESH_RPLAY_TMR_THR_POR_VALUE;  //16'hfc;
+  bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_REPLAY_TIM_THRESH_RPLAY_TMR_THR_WIDTH-1:0] ilupeuReplayTimerThreshold = ilupeuReplayTimerThresholdDflt;
+
+
+ //Make default for x8 mps=512  PCIE spec pg. 140 table 3-4
+ bit[ FNX_PCIE_XTR_REG_DEN_WIDTH-1:0 ] denaliReplayTimerThreshold = 258;
+
+ //Set the Denali retry buffer size
+ bit [31:0] denaliRetryBufferSize = 32'h8000;  //32k replay buffer
+  
+ //# of ACKS peu accumulates before sending one out
+ bit[7:0] ilupeuAckFreq = 1;
+/*
+  //Parameters used for ACK/NAK Latency Timer threshold
+  bit [FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_ACKNAK_LATENCY_ACK_NAK_THR_WIDTH-1:0] lpusdAckNakLatencyTimerThresholdDflt = FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_ACKNAK_LATENCY_ACK_NAK_THR_POR_VALUE; //16'h30
+
+  bit [FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_RPLAY_TMR_THHOLD_RPLAY_TMR_THR_WIDTH-1:0] lpusdAckNakLatencyTimerThreshold = lpusdAckNakLatencyTimerThresholdDflt;
+*/
+
+ bit[ FNX_PCIE_XTR_REG_DEN_WIDTH-1:0 ] denaliAckNakLatencyTimerThreshold = 16'h30;
+
+/*
+  //Parameter used for Flow Control Update Timeout
+  bit [FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_FC_UP_TO_VAL_FC_UPDATE_TO_WIDTH-1:0] lpusdFCUpdateTimerThresholdDflt = FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_FC_UP_TO_VAL_FC_UPDATE_TO_POR_VALUE;//15'h1d4c
+  bit [FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_FC_UP_TO_VAL_FC_UPDATE_TO_WIDTH-1:0] lpusdFCUpdateTimerThreshold = lpusdFCUpdateTimerThresholdDflt;
+  bit lpusdFCUpdatePostedTimerEnable = 1;
+  bit lpusdFCUpdateNonPostedTimerEnable = 1;
+  bit lpusdFCUpdateCompletionTimerEnable = 0;
+
+  //Parameters used for lpusd timers - default to fast timeout values
+  bit [FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LTSSM_CONFIG2_LTSSM_12_TO_WIDTH-1:0] lpusd12mSTO = 32'hc0; 
+  bit [FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LTSSM_CONFIG3_LTSSM_2_TO_WIDTH-1:0] lpusd2mSTO = 32'h200; 
+*/
+
+
+  //Parameters used for Inverting the TX lanes
+  bit [ 7:0 ] denaliLanePolarityInvert = 8'h00;	//Don't invert any lanes
+  bit [ 7:0 ] peuLanePolarityInvert = 8'h00;	//Don't invert any lanes
+  
+  //Parameters used for Reversing the Denali TX lanes
+  bit denaliLaneReverse = 1'b0;	//Don't Reverse the lanes
+  
+  //Parameters used for forcing the denali flow control credits to FFFFFFFF to get written into PCIE_REG_DEN_FCd_x for infinite
+  bit denali_FC_PH_infinite = 1'b0;  
+  bit denali_FC_PD_infinite	= 1'b0; 
+  bit denali_FC_NPH_infinite	= 1'b0; 
+  bit denali_FC_NPD_infinite	= 1'b0; 
+  bit denali_FC_CPLH_infinite	= 1'b0; 
+  bit denali_FC_CPLD_infinite	= 1'b0; 
+
+  //Parameters used for Flow Control Initial values
+  bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_PHC_WIDTH-1:0] denaliInitialPostedHeaderCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_PHC_WIDTH'h73;
+  bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_PDC_WIDTH-1:0]   denaliInitialPostedDataCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_PDC_WIDTH'h7ff;
+  bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_NHC_WIDTH-1:0] denaliInitialNonPostedHeaderCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_NHC_WIDTH'h73;
+  bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_NDC_WIDTH-1:0]   denaliInitialNonPostedDataCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_NDC_WIDTH'h7ff;
+  bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_CHC_WIDTH-1:0] denaliInitialCompletionHeaderCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_CHC_WIDTH'h0;
+  bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_CDC_WIDTH-1:0]   denaliInitialCompletionDataCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_CDC_WIDTH'h0;
+
+#ifdef	N2_FC
+  bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_PHC_WIDTH-1:0] ilupeuInitialPostedHeaderCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_PHC_WIDTH'h20;
+  bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_PDC_WIDTH-1:0]   ilupeuInitialPostedDataCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_PDC_WIDTH'h0c0;
+  bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_NHC_WIDTH-1:0] ilupeuInitialNonPostedHeaderCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_NHC_WIDTH'h10;
+#else
+  bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_PHC_WIDTH-1:0] ilupeuInitialPostedHeaderCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_PHC_WIDTH'h20;
+  bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_PDC_WIDTH-1:0]   ilupeuInitialPostedDataCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_PDC_WIDTH'h0c0;
+  bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_NHC_WIDTH-1:0] ilupeuInitialNonPostedHeaderCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_NHC_WIDTH'h10;
+#endif
+  //These 3 values should be 0(infinite) because they are hardwired in the PTL
+  bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_CHC_WIDTH-1:0] ilupeuInitialCompletionHeaderCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_CHC_WIDTH'hff;
+  bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_CDC_WIDTH-1:0]   ilupeuInitialCompletionDataCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_CDC_WIDTH'hfff;
+  bit [FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_NDC_WIDTH-1:0]   ilupeuInitialNonPostedDataCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_NDC_WIDTH'hfff;
+
+  bit [15:0] denaliVendorDefinedVendorID1 = 16'haaaa;
+  bit [15:0] denaliVendorDefinedVendorID2 = 16'h5555;
+
+  integer ilupeuDetectQuietDelay = 10;
+
+  //Context Parameters
+  integer EgrTlpWt = 100;
+  integer EgrDllpFCWt = 10;
+  integer EgrDllpPMWt = 10;
+  integer EgrTlpMinStrats = 10;
+  integer EgrTlpMaxStrats = 100;
+  integer EgrTlpMinActiveStrats = 5;
+  integer EgrTlpMaxActiveStrats = 10;
+  integer EgrTlpMinIssueDly = 1;
+  integer EgrTlpMaxIssueDly = 10;
+  integer EgrDllpMinStrats = 1;
+  integer EgrDllpMaxStrats = 10;
+  integer EgrDllpMinActiveStrats = 1;
+  integer EgrDllpMaxActiveStrats = 5;
+  integer EgrDllpMinIssueDly = 1;
+  integer EgrDllpMaxIssueDly = 100;
+
+  integer IngrTlpWt = 100;
+  integer IngrDllpFCWt = 10;
+  integer IngrDllpPMWt = 10;
+  integer IngrTlpMinStrats = 10;
+  integer IngrTlpMaxStrats = 100;
+  integer IngrTlpMinActiveStrats = 5;
+  integer IngrTlpMaxActiveStrats = 10;
+  integer IngrTlpMinIssueDly = 1;
+  integer IngrTlpMaxIssueDly = 10;
+  integer IngrDllpMinStrats = 1;
+  integer IngrDllpMaxStrats = 10;
+  integer IngrDllpMinActiveStrats = 1;
+  integer IngrDllpMaxActiveStrats = 5;
+  integer IngrDllpMinIssueDly = 1;
+  integer IngrDllpMaxIssueDly = 100;
+
+  //Strategy Parameters
+  integer EgrMinTlpPayloadLngth4Byt = 1;
+  integer EgrMaxTlpPayloadLngth4Byt = 128;	//Max 512 bytes 
+  integer EgrTlpMRd32Wt = 10;
+  integer EgrTlpMRd64Wt = 10;
+  integer EgrTlpMRd32LkdWt = 10;
+  integer EgrTlpMRd64LkdWt = 10;
+  integer EgrTlpMWr32Wt = 10;
+  integer EgrTlpMWr64Wt = 10;
+  integer EgrTlpIORdWt = 10;
+  integer EgrTlpIOWrWt = 10;
+  integer EgrTlpCfgRd0Wt = 10;
+  integer EgrTlpCfgWr0Wt = 10;
+  integer EgrTlpCfgRd1Wt = 10;
+  integer EgrTlpCfgWr1Wt = 10;
+  integer EgrTlpMsgINTxWt = 10;
+  integer EgrTlpMsgPMWt = 10;
+  integer EgrTlpMsgErrSigWt = 10;
+  integer EgrTlpMsgUnLkWt = 10;
+  integer EgrTlpMsgHtPlgWt = 10;
+  integer EgrTlpMsgDSltPwrLmtWt = 10;
+  integer EgrTlpMsgVendorDefWt = 10;
+  //Completions will be generated in the strategies
+  integer EgrTlpCplWt = 0;
+  integer EgrTlpCplDWt = 0;
+  integer EgrTlpCplLkdWt = 0;
+  integer EgrTlpCplDLkdWt = 0;
+  integer EgrDllpFCUpdatePostedWt = 0;
+  integer EgrDllpFCUpdateNonPostedWt = 0;
+  integer EgrDllpFCUpdateCompletionWt = 0;
+  integer EgrDllpFCUpdateHiPriorityWt = 0;
+
+  integer IngrMinTlpPayloadLngth4Byt = 1;
+  integer IngrMaxTlpPayloadLngth4Byt = 128;	//Max 512 bytes
+  integer IngrTlpMRd32Wt = 10;
+  integer IngrTlpMRd64Wt = 10;
+  integer IngrTlpMWr32Wt = 10;
+  integer IngrTlpMWr64Wt = 10;
+  integer IngrTlpMsgINTxWt = 0;
+  integer IngrTlpMsgPMWt = 0;
+  integer IngrTlpMsgErrSigWt = 0;
+  integer IngrTlpMsgUnLkWt = 0;
+  integer IngrTlpMsgHtPlgWt = 0;
+  integer IngrTlpMsgDSltPwrLmtWt = 0;
+  integer IngrTlpMsgVendorDefWt = 0;
+  integer IngrTlpMRd32LkdWt = 0;
+  integer IngrTlpMRd64LkdWt = 0;
+  //These are unsupported for Ingress
+  integer IngrTlpIORdWt = 0;
+  integer IngrTlpIOWrWt = 0;
+  integer IngrTlpCfgRd0Wt = 0;
+  integer IngrTlpCfgWr0Wt = 0;
+  integer IngrTlpCfgRd1Wt = 0;
+  integer IngrTlpCfgWr1Wt = 0;
+  //Completions will be generated in the strategies
+  integer IngrTlpCplWt = 0;
+  integer IngrTlpCplDWt = 0;
+  integer IngrTlpCplLkdWt = 0;
+  integer IngrTlpCplDLkdWt = 0;
+  integer IngrDllpFCUpdatePostedWt = 0;
+  integer IngrDllpFCUpdateNonPostedWt = 0;
+  integer IngrDllpFCUpdateCompletionWt = 0;
+
+
+  //Lane-2-Lane skew parameters is in symbol times 
+  //If any lane is = 0 then the max is 4  because Denali adds an extra cycle
+  //If none of the lanes are 0 then skew can be from 1-6
+  integer Lane0Skew = 0;
+  integer Lane1Skew = 0;
+  integer Lane2Skew = 0;
+  integer Lane3Skew = 0;
+  integer Lane4Skew = 0;
+  integer Lane5Skew = 0;
+  integer Lane6Skew = 0;
+  integer Lane7Skew = 0;
+
+  //Used to delay Pio completions in strategy
+  integer ilupeuPioMRdCplDelayMax = 1;
+  integer ilupeuPioMRdCplDelayMin = 1;
+  integer ilupeuPioCfgIORdCplDelayMax = 1;
+  integer ilupeuPioCfgIORdCplDelayMin = 1;
+  integer ilupeuPioCfgIOWrCplDelayMax = 1;
+  integer ilupeuPioCfgIOWrCplDelayMin = 1;
+
+  //Used to delay DMA completions in strategy
+  integer ilupeuDmaMRdCplDelayMax = 1;
+  integer ilupeuDmaMRdCplDelayMin = 1;
+
+
+   task new ( ReportClass _Report );
+}
+
+task ilupeuScenario::new ( ReportClass _Report ){
+
+   Report = _Report;
+
+   scenarioCnt++;
+   if(scenarioCnt>1) {
+     error("ilupeuScenario::new there is more than one instance of class ilupeuScenario\n");
+   }
+   else {
+     //printf("ilupeuScenario::new called\n");
+   }
+}
+
+

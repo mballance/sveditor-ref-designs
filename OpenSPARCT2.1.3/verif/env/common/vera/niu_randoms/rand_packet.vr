@@ -1,0 +1,237 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: rand_packet.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "pcg_defines.vri"
+#include "rand_defines.vri"
+
+class rx_rand_dma_parameters {
+  integer  blk_size_max = 4;
+  rand integer  blk_size = 4;
+  rand integer  buf_siz0 = 256;
+  rand integer  buf_siz1 = 1024;
+  rand integer  buf_siz2 = 2048;
+  rand bit[15:0] desc_ring_length = 16'hfff;
+  rand bit[15:0] comp_ring_length = 16'hfff;
+  rand bit[15:0] initial_kick;
+  bit[15:0] cring_min, cring_max;
+  bit[15:0] dring_min, dring_max;
+  integer initial_kick_min, initial_kick_max;
+
+  default constraint DEF {
+     blk_size == 4;
+     buf_siz0 == 256;
+     buf_siz1 == 1024;
+     buf_siz2 == 2048;
+  }
+  constraint comp_ring_length_limit {
+     comp_ring_length <= cring_max;
+     comp_ring_length >= cring_min;
+     comp_ring_length == (comp_ring_length/64)*64;   //multiple of 64 for now - cache line length
+  }
+  constraint desc_ring_length_limit {
+     desc_ring_length <= dring_max;
+     desc_ring_length >= dring_min;
+     desc_ring_length == (desc_ring_length/64)*64;   //multiple of 64 for now - cache line length
+  }
+  constraint initial_kick_limit {
+     initial_kick >= initial_kick_min;
+     initial_kick < initial_kick_max;
+     initial_kick < desc_ring_length;
+     initial_kick == (initial_kick/16)*16;
+     //initial_kick == (initial_kick/64)*64;   //multiple of 64 for now - cache line length
+  }
+//valid block sizes: 4, 8, 16, 32
+//valid size0: 256, 512, 1024, 2048
+//valid size1: 1024, 2048, 4096, 8192
+//valis size2: 2048, 4096, 8192, 16384
+
+  constraint con{
+    buf_siz0 dist {
+      256  :/40,
+      512  :/30,
+      1024 :/20,
+      2048 :/10
+    };
+    buf_siz1 dist {
+      1024 :/25,
+      2048 :/25,
+      4096 :/25,
+      8192 :/25
+    };
+    buf_siz2 dist {
+      2048  :/25,
+      4096  :/25,
+      8192  :/25,
+      16384 :/25
+    };
+    blk_size dist {
+      4  :/25,
+      8  :/25,
+      16 :/25,
+      32 :/25
+    };
+    blk_size <= blk_size_max;
+    buf_siz1 > buf_siz0;
+    buf_siz2 > buf_siz1;
+    blk_size >= buf_siz2/1024;
+  }
+
+   task new() {
+    if(get_plus_arg (CHECK, "CRING_MAX")) {
+      cring_max=get_plus_arg (NUM, "CRING_MAX");
+      if(cring_max>12'hfff) cring_max='hfff;
+    }
+    else cring_max=16'hfff;
+    if(get_plus_arg (CHECK, "CRING_MIN")) cring_min=get_plus_arg (NUM, "CRING_MIN");
+    else cring_min=16'h300;
+    printf("TEST Cring_min=0x%0h Cring_max=0x%0h\n", cring_min, cring_max);
+
+    if(get_plus_arg (CHECK, "DRING_MAX")) dring_max=get_plus_arg (NUM, "DRING_MAX");
+    else dring_max=16'h1fff;
+    if(get_plus_arg (CHECK, "DRING_MIN")) dring_min=get_plus_arg (NUM, "DRING_MIN");
+    else dring_min=16'h200;
+    printf("TEST Dring_min=0x%0h Dring_max=0x%0h\n", dring_min, dring_max);
+
+    if(get_plus_arg (CHECK, "INITIAL_KICK_MAX")) initial_kick_max=get_plus_arg (NUM, "INITIAL_KICK_MAX");
+    else initial_kick_max='h100;
+    if(get_plus_arg (CHECK, "INITIAL_KICK_MIN")) initial_kick_min=get_plus_arg (NUM, "INITIAL_KICK_MIN");
+    else initial_kick_min='hc0;
+    printf("TEST initial_kick_min=0x%0h initial_kick_max=0x%0h\n", initial_kick_min, initial_kick_max);
+
+    if(get_plus_arg (CHECK, "BLK_SIZE_MAX")) blk_size_max=get_plus_arg (NUM, "BLK_SIZE_MAX");
+    else blk_size_max=4;
+    printf("TEST blk_size_max=%0d\n", blk_size_max);
+  }
+}
+/////////////////////////////////////////
+class rand_packet {
+    rand   bit[47:0]     	xmac_l2_dest_addr;
+    rand   bit[47:0]     	bmac_l2_dest_addr;
+    rand   bit[47:0]     	l2_src_addr = 48'hdef0_7294_3815;
+    rand   bit[19:0]            node_src_port = 20'h00001;
+    rand   integer              rx_frame_class_funct = CLF_SRC;
+    rand   integer              rx_frame_data_type = DAT_SEQ;
+    rand   bit[31:0]            rx_param_rcv_isn = 32'hA5A5_F5F5;
+    rand   bit[5:0]             rx_tcp_flags = 6'b00_0010;
+    integer send_pause=0;
+    integer xmac_addr_weight=6;
+    integer bmac_addr_weight=12;
+
+    constraint xmac_l2_dest_addr_dist {
+          xmac_l2_dest_addr dist {
+                xmac_l2_dest_addr0 :/6, 
+                xmac_l2_dest_addr1 :/6, 
+                xmac_l2_dest_addr2 :/6, 
+                xmac_l2_dest_addr3 :/6,
+                xmac_l2_dest_addr4 :/6, 
+                xmac_l2_dest_addr5 :/6, 
+                xmac_l2_dest_addr6 :/6, 
+                xmac_l2_dest_addr7 :/6,
+                xmac_l2_dest_addr8 :/6, 
+                xmac_l2_dest_addr9 :/6, 
+                xmac_l2_dest_addr10 :/6, 
+                xmac_l2_dest_addr11 :/6,
+                xmac_l2_dest_addr12 :/6, 
+                xmac_l2_dest_addr13 :/6, 
+                xmac_l2_dest_addr14 :/6, 
+                xmac_l2_dest_addr15 :/xmac_addr_weight
+           };
+    }
+    constraint bmac_l2_dest_addr_dist {
+           bmac_l2_dest_addr dist {
+                bmac_l2_dest_addr0 :/12, 
+                bmac_l2_dest_addr1 :/12, 
+                bmac_l2_dest_addr2 :/12, 
+                bmac_l2_dest_addr3 :/12,
+                bmac_l2_dest_addr4 :/12, 
+                bmac_l2_dest_addr5 :/12, 
+                bmac_l2_dest_addr6 :/12, 
+                bmac_l2_dest_addr7 :/bmac_addr_weight
+           };
+    }
+    constraint l2_src_addr_dist {
+           l2_src_addr dist {
+                l2_src_addr0 :/12, 
+                l2_src_addr1 :/12, 
+                l2_src_addr2 :/12, 
+                l2_src_addr3 :/12, 
+                l2_src_addr4 :/12, 
+                l2_src_addr5 :/12, 
+                l2_src_addr6 :/12, 
+                l2_src_addr7 :/12
+           };
+    }
+    constraint rx_frame_class_funct_dist {
+           rx_frame_class_funct dist {
+                rx_frame_class_funct_0 :/25,
+                rx_frame_class_funct_1 :/25,
+                rx_frame_class_funct_2 :/25,
+                rx_frame_class_funct_3 :/25
+           };
+    }
+    constraint rx_frame_data_type_dist {
+           rx_frame_data_type dist {
+                DAT_SEQ  :/20,
+                DAT_RAND :/20,
+                DAT_W1   :/20,
+                DAT_W0   :/20,
+                //DAT_ALL1 :/20,
+                DAT_ALL0 :/20
+           };
+    }
+    constraint rx_tcp_flags_dist {
+           rx_tcp_flags dist {
+                rx_tcp_flags_0 :/50,
+                rx_tcp_flags_1 :/10,
+                rx_tcp_flags_2 :/10,
+                rx_tcp_flags_3 :/10,
+                rx_tcp_flags_4 :/10,
+                rx_tcp_flags_5 :/10
+           };
+    }
+
+////////////////////
+  task new() {
+    if(get_plus_arg(CHECK, "SEND_PAUSE")) send_pause=get_plus_arg (NUM, "SEND_PAUSE");
+    else send_pause=0;
+    printf("TEST send_pause=%0d\n", send_pause);
+
+    if(send_pause!==0) {
+      xmac_addr_weight=0;
+      bmac_addr_weight=0;
+    }
+    printf("TEST xmac_addr_weight=%0d bmac_addr_weight=%0d\n", xmac_addr_weight, bmac_addr_weight);
+  }
+}

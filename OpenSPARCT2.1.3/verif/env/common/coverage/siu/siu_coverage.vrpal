@@ -1,0 +1,4155 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: siu_coverage.vrpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "plusArgMacros.vri"
+#include "std_display_class.vrh"
+#include "std_display_defines.vri"
+#include "siu_defines.vrh"
+
+#include "siu_cov.if.vrh"
+  //#include "siu_cov_ports_binds.vrh"
+//extern bit siu_RDDord_pass_niuord_diffbank;
+//extern bit siu_RDDord_not_pass_niuord_samebank;
+//extern bit siu_WRIord_not_pass_niuord;
+//extern bit siu_niubyp_pass_niubyp_diffbank;
+//extern bit siu_niubyp_not_pass_niubyp_samebank;
+//extern bit siu_niubyp_pass_niuord_diffbank;
+//extern bit siu_RDDbyp_pass_RDDord_samebank;
+//extern bit siu_WRIbyp_not_pass_niuord_samebank;
+
+//#ifndef SIU_INTF_COV
+#include "siu_order_checker.vrh"
+extern siu_order_checker       order_chk;
+//#endif
+
+class siu_intf_coverage
+{	
+  // for dispmon
+  StandardDisplay dbg;
+  local string 	  myname;
+
+  event dmu_sample_evnt_trig;
+  event dmu_be_sample_evnt_trig;
+  event siu_dmu_wra_b2b_sample_evnt_trig;
+  event dmu_siu_rdd_b2b_sample_evnt_trig;
+  event dmu_siu_wri_b2b_sample_evnt_trig;
+  event dmu_siu_wrm_b2b_sample_evnt_trig;
+  event niu_sample_evnt_trig;
+  event niu_b2b_sample_evnt_trig;
+  event niu_b2b_wri_nonpost_sample_evnt_trig;
+  event niu_b2b_wri_post_sample_evnt_trig;
+  event l2_sample_evnt_trig;
+  event sio_niu_sample_evnt_trig;
+  event sio_niu_b2b_sample_evnt_trig;
+  event sio_niu_b2b_wri_sample_evnt_trig;
+  event sio_dmu_sample_evnt_trig;
+  event siu_l2_vld_sample_evnt_trig;
+  event siu_l2_iq_deq_sample_evnt_trig ;
+  event siu_l2_wib_deq_sample_evnt_trig;
+  event siu_l2_data_sio_sample_evnt_trig;
+  event siu_l2_trans_sample_evnt_trig;
+  event siu_fc_err_wri_sample_evnt_trig;
+  event siu_fc_err_wr8_sample_evnt_trig;
+  event siu_fc_err_rdd_sample_evnt_trig;
+  event l2_ob_sample_evnt_trig;
+  event niu_sw_evnt_trig;
+  bit siu_intf_cov_debug = 1'b0;
+
+  //----------DMU-------------------
+  integer	dmu_back_to_back;
+
+  bit [5:0]     dmu_cmd;
+  bit           dmubypass;
+  bit           dmudatareq;
+  bit           dmudatareq16;
+  bit [127:0]   dmudata;
+  bit [15:0]    dmc_tag;
+  bit [3:0]     last_dmu_wrack;
+
+  bit [15:0]    dmu_id_out;
+
+  bit           sio_dmu_req;
+  bit [127:0]   sio_dmu_data;
+  integer 	sio_dmu_back_to_back;
+ 
+  // concatinate {dmu_cmd,dmubypass}
+  bit [6:0]     this_dmu_cmd, last_dmu_cmd;
+  bit           last_dmu_cmd_valid = 1'b0;
+
+  bit [5:0]     sio_dmu_this_cmd, sio_dmu_last_cmd;
+  bit           sio_dmu_last_cmd_valid = 1'b0;
+  bit [15:0]    dmu_be;
+  bit [3:0]     dmuwracktag;
+  bit           sio_dmu_wra_back_to_back = 1'b0;
+  bit           last_siodmu_cmd_valid = 1'b0;
+  bit           siodmu_b2b_cnt;
+  integer       dmusiu_wra_b2b = 0;
+  integer       dmusiu_wra_b2b_state = 0;
+  integer       siudmu_wrack_b2b_cnt = 0;
+  integer       dmusiu_rdd_b2b_cnt = 0;
+  integer       dmusiu_wri_b2b_cnt = 0;
+  integer       dmusiu_wrm_b2b_cnt = 0;
+
+
+  //----------NIU-------------------
+  integer 	niu_back_to_back;
+  integer 	niu_back_to_back1;
+
+  bit [5:0]     niu_cmd;
+  bit           niubypass;
+  bit           niudatareq;
+  bit           niudatareq16;
+  bit [127:0]   niudata;
+  bit [15:0]    niu_id;
+
+  bit [15:0]    niu_id_out;
+
+  bit		sio_niu_req;
+  bit [127:0]   sio_niu_data;
+  integer 	sio_niu_back_to_back;
+  integer	sio_niu_dmu_back_to_back = 100;
+  integer	niu_dmu_back_to_back = 100;
+
+  // concatinate {niu_cmd,niubypass}
+  bit [6:0]     this_niu_cmd, last_niu_cmd;
+  bit [6:0]     this_niusiu_b2b_cnt, last_niusiu_b2b_cnt;
+  bit           last_niu_cmd_valid = 1'b0;
+
+  bit [5:0]     sio_niu_this_cmd, sio_niu_last_cmd;
+  bit [5:0]     sio_niu_last1_cmd;
+  bit           sio_niu_last_cmd_valid = 1'b0;
+  bit           niusiu_b2b_cnt;
+  integer       niusiu_b2b1_cnt;
+  integer       niusiu_b2b_wri_nonpost_cnt;
+  integer       niusiu_b2b_wri_post_cnt;
+  bit           niusiu_b2b_trans;
+  bit           siuniu_b2b_cnt;
+  integer       siuniu_b2b1_cnt;
+  integer       siuniu_b2b_wri_cnt;
+  bit           siuniu_b2b_trans;
+  integer       niusiu_b2b = 0;
+  integer       niusiu_b2b_state = 0;
+  integer       sioniu_b2b = 0;
+  integer       sioniu_b2b_state = 0;
+
+  //----------L2-------------------
+  integer       counter_vld, counter0_vld, counter1_vld, counter2_vld;
+  integer       counter3_vld, counter4_vld, counter5_vld, counter6_vld, counter7_vld;
+  bit           l2t0, l2t1, l2t2, l2t3; 
+  bit           l2t4, l2t5, l2t6, l2t7; 
+  bit           last_siu_l2_cmd_valid = 1'b0;
+  bit [2:0]     siu_l2_wib_deq_this_cmd, siu_l2_wib_deq_last_cmd;
+  integer       counter_iq, counter0_iq, counter1_iq, counter2_iq;
+  integer       counter3_iq, counter4_iq, counter5_iq, counter6_iq, counter7_iq;
+  bit           l2t0_iq_deq, l2t1_iq_deq, l2t2_iq_deq, l2t3_iq_deq; 
+  bit           l2t4_iq_deq, l2t5_iq_deq, l2t6_iq_deq, l2t7_iq_deq; 
+  integer       counter_wib, counter0_wib, counter1_wib, counter2_wib;
+  integer       counter3_wib, counter4_wib, counter5_wib, counter6_wib, counter7_wib;
+  bit           l2t0_wib_deq, l2t1_wib_deq, l2t2_wib_deq, l2t3_wib_deq; 
+  bit           l2t4_wib_deq, l2t5_wib_deq, l2t6_wib_deq, l2t7_wib_deq; 
+  integer       counter_data, counter0_data, counter1_data, counter2_data;
+  integer       counter3_data, counter4_data, counter5_data, counter6_data, counter7_data;
+  bit           l2t0_data_sio, l2t1_data_sio, l2t2_data_sio, l2t3_data_sio; 
+  bit           l2t4_data_sio, l2t5_data_sio, l2t6_data_sio, l2t7_data_sio; 
+  bit [31:0]    l2t0_data, l2t1_data, l2t2_data, l2t3_data;
+  bit [31:0]    l2t4_data, l2t5_data, l2t6_data, l2t7_data;
+  bit           last_siu_l2_data_sio_cmd_valid = 1'b0;
+  bit           sii_l2t0_trans, sii_l2t1_trans, sii_l2t2_trans, sii_l2t3_trans; 
+  bit           sii_l2t4_trans, sii_l2t5_trans, sii_l2t6_trans, sii_l2t7_trans; 
+
+. for ($bank=0; $bank<8; $bank++)
+. {
+    bit           l2t${bank}_iq_dq;
+    bit           l2t${bank}_wib_dq;
+    bit		  sii_l2t${bank};
+    bit [31:0]    sii_l2t${bank}_data;
+    bit [5:0]     this_l2${bank}_cmd, last_l2${bank}_cmd;
+    bit           last_l2${bank}_cmd_valid = 1'b0;
+    bit		  l2${bank}_back_to_back = 1'b0;
+
+    bit		  l2b${bank}_sio_ctag_vld;	
+    bit [6:0]     this_l2${bank}_ob_cmd, last_l2${bank}_ob_cmd;
+    bit           last_l2${bank}_ob_cmd_valid = 1'b0;
+    bit           l2${bank}_ob_back_to_back = 1'b0;
+    bit	[31:0] 	  l2b${bank}_sio_data;
+. }
+
+    bit [7:0] 	 switch_banks;
+    bit		 bank0, bank1, bank2, bank3, bank4, bank5, bank6, bank7; 
+
+    bit [5:0]	 this_l2_cmd;
+
+   integer       siu_l2_back_to_back;
+
+
+  // ----------- coverage_group ----------------
+  coverage_group siu_intf_coverage_group 
+  {
+    const_sample_reference = 1;	// ref. to sample vars. is constant
+    sample_event	   = sync (ANY, l2_sample_evnt_trig, l2_ob_sample_evnt_trig); 
+
+    #include "siu_l2intf_cmd_sample.vrh"
+    #include "siu_l2intf_ob_cmd_sample.vrh"
+
+  } // siu_intf_coverage_group
+
+
+  // ----------- coverage_group ----------------
+
+  coverage_group siu_niu_intf_coverage_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, niu_sample_evnt_trig ,niu_b2b_sample_evnt_trig ,niu_b2b_wri_nonpost_sample_evnt_trig, niu_b2b_wri_post_sample_evnt_trig);
+
+    #include "siu_niucmd_sample.vrh"
+    #include "siu_niucmd_intf_sample.vrh"
+    #include "siu_niu_dmu_cmd_sample.vrh"
+
+  } // siu_niu_intf_coverage_group
+
+
+  // ----------- coverage_group ----------------
+
+  coverage_group siu_niu_out_intf_coverage_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, sio_niu_sample_evnt_trig, sio_niu_b2b_sample_evnt_trig, sio_niu_b2b_wri_sample_evnt_trig );
+
+    #include "siu_niu_out_sample.vrh"
+    #include "siu_niu_out_intf_sample.vrh"
+    #include "siu_niu_dmu_out_sample.vrh"
+
+  } // siu_niu_out_intf_coverage_group
+
+
+
+  // ----------- coverage_group ----------------
+
+  coverage_group siu_dmu_intf_coverage_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, dmu_sample_evnt_trig );
+
+    #include "siu_dmucmd_sample.vrh"
+
+  } // siu_dmu_intf_coverage_group
+
+  coverage_group siu_dmu_intf_be_coverage_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, dmu_be_sample_evnt_trig );
+
+    #include "siu_dmu_intf_be_sample.vrh"
+
+  }  
+
+
+
+  // ----------- coverage_group ----------------
+
+  coverage_group siu_dmu_out_intf_coverage_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, sio_dmu_sample_evnt_trig );
+
+    #include "siu_dmu_out_sample.vrh"
+
+  } // siu_dmu_out_intf_coverage_group
+
+  
+  coverage_group siu_dmu_out_intf_wra_coverage_group
+  {
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event                = @(posedge  siu_coverage_ifc_l2.clk);
+
+    #include "siu_dmu_out_wra_sample.vrh"
+  } // siu_dmu_out_intf_wra_coverage_group
+
+  coverage_group siu_dmu_out_intf_wra_b2b_coverage_group
+  {
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event           = sync (ANY, siu_dmu_wra_b2b_sample_evnt_trig );
+
+    #include "siu_dmu_out_wra_b2b_sample.vrh"
+  } // siu_dmu_out_intf_wra_coverage_group
+
+  coverage_group dmu_siu_out_intf_hdr_b2b_coverage_group
+  {
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event           = sync (ANY, dmu_siu_rdd_b2b_sample_evnt_trig, dmu_siu_wri_b2b_sample_evnt_trig, dmu_siu_wrm_b2b_sample_evnt_trig );
+
+    #include "dmu_siu_intf_hdr_b2b_sample.vrh"
+  } // dmu_siu_out_intf_hdr_coverage_group
+
+
+
+  // ----------- coverage_group ----------------
+  coverage_group siu_l2_intf_vld_coverage_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, siu_l2_vld_sample_evnt_trig );
+
+    #include "siu_l2_intf_vld_sample.vrh"
+
+  } 
+
+  // ----------- coverage_group ----------------
+  coverage_group siu_l2_intf_iq_deq_coverage_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, siu_l2_iq_deq_sample_evnt_trig );
+
+    #include "siu_l2_intf_iq_deq_sample.vrh"
+
+  } 
+
+  // ----------- coverage_group ----------------
+  coverage_group siu_l2_intf_wib_deq_coverage_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, siu_l2_wib_deq_sample_evnt_trig );
+
+    #include "siu_l2_intf_wib_deq_sample.vrh"
+
+  }  
+
+  // ----------- coverage_group ----------------
+  coverage_group siu_l2_intf_data_sio_coverage_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, siu_l2_data_sio_sample_evnt_trig );
+
+    #include "siu_l2_intf_data_sio_sample.vrh"
+
+  }  
+
+
+  // ----------- coverage_group ----------------
+  coverage_group siu_l2_intf_trans_coverage_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, siu_l2_trans_sample_evnt_trig );
+
+    #include "siu_l2_intf_trans_sample.vrh"
+
+  }  
+
+  // ----------- coverage_group ----------------
+  coverage_group siu_fc_error_wri_coverage_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY,  siu_fc_err_wri_sample_evnt_trig );
+
+    #include "siu_fc_err_wri_sample.vrh"
+
+  } 
+
+  // ----------- coverage_group ----------------
+  coverage_group siu_fc_error_wr8_coverage_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY,  siu_fc_err_wr8_sample_evnt_trig );
+
+    #include "siu_fc_err_wr8_sample.vrh"
+
+  } 
+
+  // ----------- coverage_group ----------------
+  coverage_group siu_fc_error_rdd_coverage_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY,  siu_fc_err_rdd_sample_evnt_trig );
+
+    #include "siu_fc_err_rdd_sample.vrh"
+
+  } 
+
+  // ----------- coverage_group ----------------
+  coverage_group siu_l2intf_switchbanks_coverage_group
+  {
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event                = wait_var (switch_banks);
+
+    #include "siu_l2intf_switchbanks_sample.vrh"
+  }
+
+#ifndef IOS_COVERAGE
+  ////// SII-TCU //////
+  coverage_group siu_tcu_rdwr_coverage_group
+  {
+    const_sample_reference      = 1;
+    sample_event = @(posedge siu_coverage_tcu_pkt.clk);
+    sample siu_coverage_tcu_pkt.jtag_cov
+	{
+		state s_TCU_RD (1) if (siu_coverage_tcu_pkt.tcurdwr === 3'b001);
+		state s_TCU_WR (1) if (siu_coverage_tcu_pkt.tcurdwr === 3'b010);
+	}
+  }
+  coverage_group siu_tcu_niu_dmu_coverage_group
+  {
+    sample_event = @(posedge siu_coverage_tcu_pkt.tcureq or 
+                     posedge siu_coverage_ifc.dmureq or
+                     posedge siu_coverage_ifc.niureq);
+    sample siu_coverage_tcu_pkt.tcureq
+        {
+                state s_TCU_NIU_DMU (1) if (siu_coverage_ifc.dmureq === 1 &&
+                                            siu_coverage_tcu_pkt.tcureq === 1 &&
+                                            siu_coverage_ifc.niureq === 1);
+        }
+  } 
+#endif
+
+  task new(StandardDisplay dbg);
+  task set_cov_cond_bits ();
+
+} //class siu_intf_coverage
+
+
+/////////////////////////////////////////////////////////////////
+// Class creation 
+/////////////////////////////////////////////////////////////////
+task siu_intf_coverage::new(StandardDisplay dbg)
+{
+  bit coverage_on;
+  integer j;
+
+  // for dispmon
+  myname = "siu_intf_coverage";
+  this.dbg = dbg;
+
+  if (mChkPlusarg(siu_intf_coverage) || mChkPlusarg(coverage_on)) {
+    coverage_on = 1;
+    if (mChkPlusarg(siu_intf_cov_debug)) {
+      siu_intf_cov_debug = 1'b1;
+    }
+  } else {
+    coverage_on = 0;
+  }
+
+  if (coverage_on) {
+    siu_intf_coverage_group 			= new();
+    siu_l2intf_switchbanks_coverage_group 	= new();
+    siu_niu_intf_coverage_group                 = new();
+    siu_niu_out_intf_coverage_group		= new();
+    siu_dmu_intf_coverage_group			= new();
+    siu_dmu_intf_be_coverage_group		= new();
+    siu_dmu_out_intf_coverage_group 		= new();
+    siu_l2_intf_vld_coverage_group 		= new();
+#ifndef IOS_COVERAGE
+    siu_tcu_rdwr_coverage_group		        = new();
+#endif
+ 
+    set_cov_cond_bits ();
+
+    dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Coverage turned on for SIU objects\n\n", get_time(LO)));
+
+    fork {
+      @ (posedge siu_coverage_ifc.cmp_diag_done);
+      siu_intf_coverage_group.set_cov_weight(1);
+      coverage_save_database(1);
+      dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Coverage for SIU objects generated\n\n", get_time(LO)));
+    } join none
+  } // if coverage_on
+} // siu_intf_coverage::new()
+
+
+///////////////////////////////////////////////////////////////////////////
+// This task is a psuedo coverage object that combines a few conditions
+// so that the actual coverage objects' state space doesn't get too big
+//////////////////////////////////////////////////////////////////////////
+
+task siu_intf_coverage:: set_cov_cond_bits ()
+{
+  bit   any_sii_req;
+  bit   l20_req, l21_req, l22_req, l23_req, l24_req, l25_req, l26_req, l27_req;
+
+
+. for ($bank=0; $bank<8; $bank++)
+. {
+    integer this_l2${bank}_cycle;
+    integer last_l2${bank}_cycle;
+
+    integer this_l2${bank}_ob_cycle;
+    integer last_l2${bank}_ob_cycle;
+. }
+
+//------------------- DMU_INTERFACE and NIU_INTERFACE --------------------------
+  bit dmureq, niureq;
+  integer dmu_this_cmd_cycle, dmu_last_cmd_cycle, niu_this_cmd_cycle, niu_last_cmd_cycle;
+
+  integer sio_niu_last_cmd_cycle, sio_niu_this_cmd_cycle;
+
+  integer sio_dmu_last_cmd_cycle, sio_dmu_this_cmd_cycle;
+
+  dmu_this_cmd_cycle 		= get_cycle(siu_coverage_ifc.clk);
+  niu_this_cmd_cycle 		= get_cycle(siu_coverage_ifc.clk);
+
+  sio_niu_this_cmd_cycle 	= get_cycle(siu_coverage_ifc.clk);
+
+  sio_dmu_this_cmd_cycle        = get_cycle(siu_coverage_ifc.clk);
+
+
+  //L2
+. for ($bank=0; $bank<8; $bank++)
+. {
+    this_l2${bank}_cycle =  get_cycle(siu_coverage_ifc_l2.clk);
+    this_l2${bank}_ob_cycle =  get_cycle(siu_coverage_ifc_l2.clk);
+. }
+
+   niusiu_b2b_cnt = 0;
+   niusiu_b2b_trans = 0;
+   siuniu_b2b_cnt = 0;
+   siuniu_b2b_trans = 0;
+
+
+  fork
+  {
+
+   integer dmusiu_wra_last_cycle = 0;
+   integer dmusiu_wra_start_cycle = 0;
+   integer dmusiu_wra_value = 0;
+   integer niusiu_last_cycle = 0;
+   integer niusiu_start_cycle = 0;
+   integer niusiu_value = 0;
+   integer sioniu_last_cycle = 0;
+   integer sioniu_start_cycle = 0;
+   integer sioniu_value = 0;
+   integer dmusiu_dmareq_cycle = 5;
+
+    while (1)
+    {
+       integer dmusiu_wra_this_cycle = 0;
+       integer niusiu_this_cycle = 0;
+       integer sioniu_this_cycle = 0;
+      @ (posedge siu_coverage_ifc.clk);
+
+
+
+      //---------------DMU-SII---------------------
+      if( siu_coverage_ifc.dmureq )
+      {
+
+        dmubypass       = siu_coverage_ifc.dmubypass;
+        dmudata         = siu_coverage_ifc.dmudata;
+
+        dmu_last_cmd_cycle = dmu_this_cmd_cycle;
+        dmu_this_cmd_cycle = get_cycle(siu_coverage_ifc.clk);
+
+        dmu_back_to_back   = dmu_this_cmd_cycle - dmu_last_cmd_cycle;
+
+        dmu_cmd = dmudata[127:122];
+        dmc_tag = dmudata[79:64];
+        
+        last_dmu_cmd = this_dmu_cmd;
+        this_dmu_cmd = {dmu_cmd,dmubypass};
+
+        if(last_dmu_cmd_valid) {
+          // only sample when both "last_dmu_cmd" and "this_dmu_cmd"
+          // contain valid data, so the first command is never sampled
+          trigger (dmu_sample_evnt_trig);
+        }
+        else
+        {
+          last_dmu_cmd_valid = 1'b1;
+        }
+        dmusiu_dmareq_cycle = 0;
+      } //siu_coverage_ifc.dmureq
+
+      // dmube bits are only valid in the 4 cycles after dmareq is assertted.
+      if ( (dmusiu_dmareq_cycle>0) && (dmusiu_dmareq_cycle<5) )
+      {
+        dmu_be = siu_coverage_ifc.dmube;
+        trigger (dmu_be_sample_evnt_trig);
+      }
+      dmusiu_dmareq_cycle++;
+
+} // while (1)
+} // fork
+join none
+
+
+fork
+{
+while(1)
+{
+ @(posedge siu_coverage_ifc.clk);
+ if (siudmu_wrack_b2b_cnt === 'd4)
+ {
+
+     if (siu_coverage_ifc.dmuwrack_vld === 1'b1)
+       siudmu_wrack_b2b_cnt = 1;
+     else
+       siudmu_wrack_b2b_cnt = 0;
+  }
+ else if (siu_coverage_ifc.dmuwrack_vld === 1'b1)
+  {
+     trigger (siu_dmu_wra_b2b_sample_evnt_trig);
+     repeat (8) @(posedge siu_coverage_ifc.clk);
+     siudmu_wrack_b2b_cnt = siudmu_wrack_b2b_cnt + 1;
+   }
+  else
+     siudmu_wrack_b2b_cnt = 0;
+} // while (1)
+} // fork
+join none
+
+
+
+fork
+{
+while(1)
+{
+ @(posedge siu_coverage_ifc.clk);
+ if (dmusiu_rdd_b2b_cnt === 'd200)
+ {
+
+     if (siu_coverage_ifc.dmureq === 1'b1 && siu_coverage_ifc.dmudata[125] === 1'b1)
+       dmusiu_rdd_b2b_cnt = 1;
+     else
+       dmusiu_rdd_b2b_cnt = 0;
+  }
+ else if (siu_coverage_ifc.dmureq === 1'b1 && siu_coverage_ifc.dmudata[125] === 1'b1)
+  {
+     dmusiu_rdd_b2b_cnt = dmusiu_rdd_b2b_cnt + 1;
+     if (dmusiu_rdd_b2b_cnt === 'd200)
+     trigger (dmu_siu_rdd_b2b_sample_evnt_trig);
+   }
+  else
+     dmusiu_rdd_b2b_cnt = 0;
+} // while (1)
+} // fork
+join none
+
+
+fork
+{
+while(1)
+{
+ @(posedge siu_coverage_ifc.clk);
+ if (dmusiu_wri_b2b_cnt === 'd40)
+ {
+
+     if (siu_coverage_ifc.dmureq === 1'b1 && siu_coverage_ifc.dmudata[126] === 1'b1 && siu_coverage_ifc.dmudata[124] === 1'b0)
+       dmusiu_wri_b2b_cnt = 1;
+     else
+       dmusiu_wri_b2b_cnt = 0;
+  }
+ else if (siu_coverage_ifc.dmureq === 1'b1 && siu_coverage_ifc.dmudata[126] === 1'b0 && siu_coverage_ifc.dmudata[124] === 1'b0)
+  {
+     dmusiu_wri_b2b_cnt = dmusiu_wri_b2b_cnt + 1;
+     if (dmusiu_wri_b2b_cnt === 'd40)
+     trigger (dmu_siu_wri_b2b_sample_evnt_trig);
+     repeat (4) @(posedge siu_coverage_ifc.clk);
+   }
+  else
+     dmusiu_wri_b2b_cnt = 0;
+} // while (1)
+} // fork
+join none
+
+fork
+{
+while(1)
+{
+ @(posedge siu_coverage_ifc.clk);
+ if (dmusiu_wrm_b2b_cnt === 'd40)
+ {
+
+     if (siu_coverage_ifc.dmureq === 1'b1 && siu_coverage_ifc.dmudata[126] === 1'b1 && siu_coverage_ifc.dmudata[124] === 1'b1)
+       dmusiu_wrm_b2b_cnt = 1;
+     else
+       dmusiu_wrm_b2b_cnt = 0;
+  }
+ else if (siu_coverage_ifc.dmureq === 1'b1 && siu_coverage_ifc.dmudata[126] === 1'b0 && siu_coverage_ifc.dmudata[124] === 1'b1)
+  {
+     dmusiu_wrm_b2b_cnt = dmusiu_wrm_b2b_cnt + 1;
+     if (dmusiu_wrm_b2b_cnt === 'd40)
+     trigger (dmu_siu_wri_b2b_sample_evnt_trig);
+     repeat (4) @(posedge siu_coverage_ifc.clk);
+   }
+  else
+     dmusiu_wrm_b2b_cnt = 0;
+} // while (1)
+} // fork
+join none
+
+
+
+      /************** SIO-DMU *****************/
+fork
+{
+while(1)
+{
+      @ (posedge siu_coverage_ifc.clk);
+      if( siu_coverage_ifc.sio_dmu_req )
+      {
+        sio_dmu_data    = siu_coverage_ifc.sio_dmu_data;
+
+        dmu_id_out      = sio_dmu_data[79:64];
+
+        sio_dmu_last_cmd_cycle = sio_dmu_this_cmd_cycle;
+        sio_dmu_this_cmd_cycle = get_cycle(siu_coverage_ifc.clk);
+
+        sio_dmu_back_to_back = sio_dmu_this_cmd_cycle - sio_dmu_last_cmd_cycle;
+ 
+        sio_dmu_last_cmd = sio_dmu_this_cmd;
+        sio_dmu_this_cmd = sio_dmu_data[127:122];
+
+        if(sio_dmu_last_cmd_valid) {
+          // only sample when both "last_dmu_cmd" and "this_dmu_cmd"
+          // contain valid data, so the first command is never sampled
+          trigger (sio_dmu_sample_evnt_trig);
+        }
+        else
+        {
+          sio_dmu_last_cmd_valid = 1'b1;
+        }
+      } // siu_coverage_ifc.sio_dmu_req
+} // while (1)
+} // fork
+join none
+
+
+
+
+      //---------------------NIU-SII-----------------------------------
+fork
+{
+while(1)
+{
+      @ (posedge siu_coverage_ifc.clk);
+      if( siu_coverage_ifc.niureq ) {
+        // sample other interface signals
+        niubypass       = siu_coverage_ifc.niubypass;
+        niudatareq      = siu_coverage_ifc.niudatareq;
+        niudatareq16    = siu_coverage_ifc.niudatareq16;
+        niudata         = siu_coverage_ifc.niudata;
+
+	niu_last_cmd_cycle = niu_this_cmd_cycle;
+        niu_this_cmd_cycle = get_cycle(siu_coverage_ifc.clk);
+      
+        niu_back_to_back = niu_this_cmd_cycle - niu_last_cmd_cycle;
+  
+        niu_cmd = niudata[127:122];
+        niu_id  = niudata[79:64];
+        niusiu_b2b_cnt++;
+        niusiu_b2b_trans++;
+
+        last_niu_cmd = this_niu_cmd;
+        this_niu_cmd = {niu_cmd,niubypass};
+
+        if(last_niu_cmd_valid) {
+          // only sample when both "last_niu_cmd" and "this_niu_cmd"
+          // contain valid data, so the first command is never sampled
+          trigger (niu_sample_evnt_trig);
+        }
+        else
+        {
+          last_niu_cmd_valid = 1'b1;
+          niusiu_b2b_cnt = 0;
+        }
+
+        // for niu-dmu
+        niu_dmu_back_to_back = niu_this_cmd_cycle - dmu_this_cmd_cycle;
+
+      } //siu_coverage_ifc.niureq
+} // while (1)
+} // fork
+join none
+
+
+ 
+fork
+{
+while(1)
+{
+ @(posedge siu_coverage_ifc.clk);
+ if (niusiu_b2b1_cnt === 'd200)
+ {
+
+     if (siu_coverage_ifc.niureq === 1'b1 && siu_coverage_ifc.niudata[125] === 1'b1)
+       niusiu_b2b1_cnt = 1;
+     else
+       niusiu_b2b1_cnt = 0;
+  }
+ else if (siu_coverage_ifc.niureq === 1'b1 && siu_coverage_ifc.niudata[125] === 1'b1)
+  {
+     niusiu_b2b1_cnt = niusiu_b2b1_cnt + 1;
+     if (niusiu_b2b1_cnt === 'd200)
+     trigger (niu_b2b_sample_evnt_trig);
+   }
+  else
+     niusiu_b2b1_cnt = 0;
+} // while (1)
+} // fork
+join none
+
+fork
+{
+while(1)
+{
+ @(posedge siu_coverage_ifc.clk);
+ if (niusiu_b2b_wri_nonpost_cnt === 'd40)
+ {
+
+     if (siu_coverage_ifc.niureq === 1'b1 && siu_coverage_ifc.niudata[127] === 1'b0 && siu_coverage_ifc.niudata[126] === 1'b0 && siu_coverage_ifc.niudata[125] === 1'b0)
+       niusiu_b2b_wri_nonpost_cnt = 1;
+     else
+       niusiu_b2b_wri_nonpost_cnt = 0;
+  }
+ else if (siu_coverage_ifc.niureq === 1'b1 && siu_coverage_ifc.niudata[127] === 1'b0 && siu_coverage_ifc.niudata[126] === 1'b0 && siu_coverage_ifc.niudata[125] === 1'b0)
+  {
+     niusiu_b2b_wri_nonpost_cnt = niusiu_b2b_wri_nonpost_cnt + 1;
+     if (niusiu_b2b_wri_nonpost_cnt === 'd40)
+     trigger (niu_b2b_wri_nonpost_sample_evnt_trig);
+     repeat (4) @(posedge siu_coverage_ifc.clk);
+   }
+  else
+     niusiu_b2b_wri_nonpost_cnt = 0;
+} // while (1)
+} // fork
+join none
+
+fork
+{
+while(1)
+{
+ @(posedge siu_coverage_ifc.clk);
+ if (niusiu_b2b_wri_post_cnt === 'd40)
+ {
+
+     if (siu_coverage_ifc.niureq === 1'b1 && siu_coverage_ifc.niudata[127] === 1'b0 && siu_coverage_ifc.niudata[126] === 1'b1 && siu_coverage_ifc.niudata[125] === 1'b0)
+       niusiu_b2b_wri_post_cnt = 1;
+     else
+       niusiu_b2b_wri_post_cnt = 0;
+  }
+ else if (siu_coverage_ifc.niureq === 1'b1 && siu_coverage_ifc.niudata[127] === 1'b0 && siu_coverage_ifc.niudata[126] === 1'b1 && siu_coverage_ifc.niudata[125] === 1'b0)
+  {
+     niusiu_b2b_wri_post_cnt = niusiu_b2b_wri_post_cnt + 1;
+     if (niusiu_b2b_wri_post_cnt === 'd40)
+     trigger (niu_b2b_wri_post_sample_evnt_trig);
+     repeat (4) @(posedge siu_coverage_ifc.clk);
+   }
+  else
+     niusiu_b2b_wri_post_cnt = 0;
+} // while (1)
+} // fork
+join none
+
+
+      /************** SIO-NIU *****************/
+fork
+{
+while(1)
+{
+      @ (posedge siu_coverage_ifc.clk);
+      if( siu_coverage_ifc.sio_niu_req ) 
+      {
+        sio_niu_data	= siu_coverage_ifc.sio_niu_data;
+
+        niu_id_out	= sio_niu_data[79:64];
+
+        sio_niu_last_cmd_cycle = sio_niu_this_cmd_cycle;
+        sio_niu_this_cmd_cycle = get_cycle(siu_coverage_ifc.clk);
+
+	sio_niu_back_to_back = sio_niu_this_cmd_cycle - sio_niu_last_cmd_cycle;
+   
+        sio_niu_last_cmd = sio_niu_this_cmd;
+        sio_niu_this_cmd = sio_niu_data[127:122];
+        siuniu_b2b_cnt++;
+        siuniu_b2b_trans++;
+
+        if(sio_niu_last_cmd_valid) {
+          // only sample when both "last_niu_cmd" and "this_niu_cmd"
+          // contain valid data, so the first command is never sampled
+          trigger (sio_niu_sample_evnt_trig);
+        }
+        else
+        {
+          sio_niu_last_cmd_valid = 1'b1;
+          siuniu_b2b_cnt = 0;
+        }
+
+        // for niu-dmu 
+        sio_niu_dmu_back_to_back = sio_niu_this_cmd_cycle - sio_dmu_this_cmd_cycle;
+
+      } // siu_coverage_ifc.sio_niu_req
+} // while (1)
+} // fork
+join none
+
+
+fork
+{
+while(1)
+{
+ @(posedge siu_coverage_ifc.clk);
+ if (siuniu_b2b1_cnt === 'd40)
+ {
+
+     if (siu_coverage_ifc.sio_niu_req === 1'b1 && siu_coverage_ifc.sio_niu_data[127] === 1'b1 && siu_coverage_ifc.sio_niu_data[125] === 1'b1)
+       siuniu_b2b1_cnt = 1;
+     else
+       siuniu_b2b1_cnt = 0;
+  }
+ else if (siu_coverage_ifc.sio_niu_req === 1'b1 && siu_coverage_ifc.sio_niu_data[127] === 1'b1 && siu_coverage_ifc.sio_niu_data[125] === 1'b1)
+  {
+     siuniu_b2b1_cnt = siuniu_b2b1_cnt + 1;
+     if (siuniu_b2b1_cnt === 'd40)
+     trigger (sio_niu_b2b_sample_evnt_trig);
+     repeat (4) @(posedge siu_coverage_ifc.clk);
+   }
+  else
+     siuniu_b2b1_cnt = 0;
+} // while (1)
+} // fork
+join none
+
+fork
+{
+while(1)
+{
+ @(posedge siu_coverage_ifc.clk);
+ if (siuniu_b2b_wri_cnt === 'd200)
+ {
+
+     if (siu_coverage_ifc.sio_niu_req === 1'b1 && siu_coverage_ifc.sio_niu_data[127] === 1'b1 && siu_coverage_ifc.sio_niu_data[125] === 1'b0)
+       siuniu_b2b_wri_cnt = 1;
+     else
+       siuniu_b2b_wri_cnt = 0;
+  }
+ else if (siu_coverage_ifc.sio_niu_data === 1'b1 && siu_coverage_ifc.sio_niu_data[127] === 1'b1 && siu_coverage_ifc.sio_niu_data[125] === 1'b0)
+  {
+     siuniu_b2b_wri_cnt = siuniu_b2b_wri_cnt + 1;
+     if (siuniu_b2b_wri_cnt === 'd200)
+     trigger (sio_niu_b2b_wri_sample_evnt_trig);
+   }
+  else
+     siuniu_b2b_wri_cnt = 0;
+} // while (1)
+} // fork
+join none
+
+
+
+
+
+  //----------------- SII-L2 -----------------------
+
+  fork
+  {
+    integer i ;
+    while (1)
+    {
+      @ (posedge siu_coverage_ifc_l2.clk);
+      counter_vld = 0; 
+      counter0_vld = 0; 
+      counter1_vld = 0; 
+      counter2_vld = 0; 
+      counter3_vld = 0; 
+      counter4_vld = 0; 
+      counter5_vld = 0; 
+      counter6_vld = 0; 
+      counter7_vld = 0; 
+
+        for (i=0 ; i<5 ; i++) {
+            @ (posedge siu_coverage_ifc_l2.clk);
+        l2t0       = siu_coverage_ifc_l2.sii_l2t0;
+        l2t1       = siu_coverage_ifc_l2.sii_l2t1;
+        l2t2       = siu_coverage_ifc_l2.sii_l2t2;
+        l2t3       = siu_coverage_ifc_l2.sii_l2t3;
+        l2t4       = siu_coverage_ifc_l2.sii_l2t4;
+        l2t5       = siu_coverage_ifc_l2.sii_l2t5;
+        l2t6       = siu_coverage_ifc_l2.sii_l2t6;
+        l2t7       = siu_coverage_ifc_l2.sii_l2t7;
+            counter0_vld += (l2t0 ==1) ? 1:0 ; 
+            counter1_vld += (l2t1 ==1) ? 1:0 ; 
+            counter2_vld += (l2t2 ==1) ? 1:0 ; 
+            counter3_vld += (l2t3 ==1) ? 1:0 ; 
+            counter4_vld += (l2t4 ==1) ? 1:0 ; 
+            counter5_vld += (l2t5 ==1) ? 1:0 ; 
+            counter6_vld += (l2t6 ==1) ? 1:0 ; 
+            counter7_vld += (l2t7 ==1) ? 1:0 ; 
+ }
+         counter_vld = ((counter0_vld >= 1) + (counter1_vld >= 1) + (counter2_vld >= 1) + (counter3_vld >= 1) + (counter4_vld >= 1) + (counter5_vld >= 1) +(counter6_vld >= 1) + (counter7_vld >= 1));
+         if (counter_vld > 1) 
+         trigger (siu_l2_vld_sample_evnt_trig);  
+
+   } // while (1)
+  } // fork
+  join none
+
+  fork
+  {
+    integer i ;
+    while (1)
+    {
+      @ (posedge siu_coverage_ifc_l2.clk);
+      counter_iq = 0; 
+      counter0_iq = 0; 
+      counter1_iq = 0; 
+      counter2_iq = 0; 
+      counter3_iq = 0; 
+      counter4_iq = 0; 
+      counter5_iq = 0; 
+      counter6_iq = 0; 
+      counter7_iq = 0; 
+
+        for (i=0 ; i<5 ; i++) {
+            @ (posedge siu_coverage_ifc_l2.clk);
+
+        l2t0_iq_deq       = siu_coverage_ifc_l2.l2t0_iq_dq;
+        l2t1_iq_deq       = siu_coverage_ifc_l2.l2t1_iq_dq;
+        l2t2_iq_deq       = siu_coverage_ifc_l2.l2t2_iq_dq;
+        l2t3_iq_deq       = siu_coverage_ifc_l2.l2t3_iq_dq;
+        l2t4_iq_deq       = siu_coverage_ifc_l2.l2t4_iq_dq;
+        l2t5_iq_deq       = siu_coverage_ifc_l2.l2t5_iq_dq;
+        l2t6_iq_deq       = siu_coverage_ifc_l2.l2t6_iq_dq;
+        l2t7_iq_deq       = siu_coverage_ifc_l2.l2t7_iq_dq;
+
+            counter0_iq += (l2t0_iq_deq ==1) ? 1:0 ; 
+            counter1_iq += (l2t1_iq_deq ==1) ? 1:0 ; 
+            counter2_iq += (l2t2_iq_deq ==1) ? 1:0 ; 
+            counter3_iq += (l2t3_iq_deq ==1) ? 1:0 ; 
+            counter4_iq += (l2t4_iq_deq ==1) ? 1:0 ; 
+            counter5_iq += (l2t5_iq_deq ==1) ? 1:0 ; 
+            counter6_iq += (l2t6_iq_deq ==1) ? 1:0 ; 
+            counter7_iq += (l2t7_iq_deq ==1) ? 1:0 ; 
+
+ }
+         counter_iq = ((counter0_iq >= 1) + (counter1_iq >= 1) + (counter2_iq >= 1) + (counter3_iq >= 1) + (counter4_iq >= 1) + (counter5_iq >= 1) +(counter6_iq >= 1) + (counter7_iq >= 1));
+         if (counter_iq > 1) 
+         trigger (siu_l2_iq_deq_sample_evnt_trig);  
+   } // while (1)
+  } // fork
+  join none
+
+  fork
+  {
+    integer i ;
+    while (1)
+    {
+      @ (posedge siu_coverage_ifc_l2.clk);
+      counter_wib = 0; 
+      counter0_wib = 0; 
+      counter1_wib = 0; 
+      counter2_wib = 0; 
+      counter3_wib = 0; 
+      counter4_wib = 0; 
+      counter5_wib = 0; 
+      counter6_wib = 0; 
+      counter7_wib = 0; 
+
+        for (i=0 ; i<5 ; i++) {
+            @ (posedge siu_coverage_ifc_l2.clk);
+        l2t0_wib_deq       = siu_coverage_ifc_l2.l2t0_wib_dq;
+        l2t1_wib_deq       = siu_coverage_ifc_l2.l2t1_wib_dq;
+        l2t2_wib_deq       = siu_coverage_ifc_l2.l2t2_wib_dq;
+        l2t3_wib_deq       = siu_coverage_ifc_l2.l2t3_wib_dq;
+        l2t4_wib_deq       = siu_coverage_ifc_l2.l2t4_wib_dq;
+        l2t5_wib_deq       = siu_coverage_ifc_l2.l2t5_wib_dq;
+        l2t6_wib_deq       = siu_coverage_ifc_l2.l2t6_wib_dq;
+        l2t7_wib_deq       = siu_coverage_ifc_l2.l2t7_wib_dq;
+
+            counter0_wib += (l2t0_wib_deq ==1) ? 1:0 ; 
+            counter1_wib += (l2t1_wib_deq ==1) ? 1:0 ; 
+            counter2_wib += (l2t2_wib_deq ==1) ? 1:0 ; 
+            counter3_wib += (l2t3_wib_deq ==1) ? 1:0 ; 
+            counter4_wib += (l2t4_wib_deq ==1) ? 1:0 ; 
+            counter5_wib += (l2t5_wib_deq ==1) ? 1:0 ; 
+            counter6_wib += (l2t6_wib_deq ==1) ? 1:0 ; 
+            counter7_wib += (l2t7_wib_deq ==1) ? 1:0 ; 
+ }
+         counter_wib = ((counter0_wib >= 1) + (counter1_wib >= 1) + (counter2_wib >= 1) + (counter3_wib >= 1) + (counter4_wib >= 1) + (counter5_wib >= 1) +(counter6_wib >= 1) + (counter7_wib >= 1));
+         if (counter_wib > 1) 
+         trigger (siu_l2_wib_deq_sample_evnt_trig);  
+   } // while (1)
+  } // fork
+  join none
+
+  fork
+  {
+    integer i ;
+    while (1)
+    {
+      @ (posedge siu_coverage_ifc_l2.clk);
+      counter_data = 0; 
+      counter0_data = 0; 
+      counter1_data = 0; 
+      counter2_data = 0; 
+      counter3_data = 0; 
+      counter4_data = 0; 
+      counter5_data = 0; 
+      counter6_data = 0; 
+      counter7_data = 0; 
+
+        for (i=0 ; i<5 ; i++) {
+            @ (posedge siu_coverage_ifc_l2.clk);
+        l2t0_data_sio      = siu_coverage_ifc_l2.l2b0_sio_ctag_vld;
+        l2t1_data_sio      = siu_coverage_ifc_l2.l2b1_sio_ctag_vld;
+        l2t2_data_sio      = siu_coverage_ifc_l2.l2b2_sio_ctag_vld;
+        l2t3_data_sio      = siu_coverage_ifc_l2.l2b3_sio_ctag_vld;
+        l2t4_data_sio      = siu_coverage_ifc_l2.l2b4_sio_ctag_vld;
+        l2t5_data_sio      = siu_coverage_ifc_l2.l2b5_sio_ctag_vld;
+        l2t6_data_sio      = siu_coverage_ifc_l2.l2b6_sio_ctag_vld;
+        l2t7_data_sio      = siu_coverage_ifc_l2.l2b7_sio_ctag_vld;
+        l2t0_data          = siu_coverage_ifc_l2.l2b0_sio_data[16];
+        l2t1_data          = siu_coverage_ifc_l2.l2b1_sio_data[16];
+        l2t2_data          = siu_coverage_ifc_l2.l2b2_sio_data[16];
+        l2t3_data          = siu_coverage_ifc_l2.l2b3_sio_data[16];
+        l2t4_data          = siu_coverage_ifc_l2.l2b4_sio_data[16];
+        l2t5_data          = siu_coverage_ifc_l2.l2b5_sio_data[16];
+        l2t6_data          = siu_coverage_ifc_l2.l2b6_sio_data[16];
+        l2t7_data          = siu_coverage_ifc_l2.l2b7_sio_data[16];
+
+            counter0_data += (l2t0_data_sio ==1 && l2t0_data ==1) ? 1:0 ;
+            counter1_data += (l2t1_data_sio ==1 && l2t1_data ==1) ? 1:0 ;
+            counter2_data += (l2t2_data_sio ==1 && l2t2_data ==1) ? 1:0 ;
+            counter3_data += (l2t3_data_sio ==1 && l2t3_data ==1) ? 1:0 ;
+            counter4_data += (l2t4_data_sio ==1 && l2t4_data ==1) ? 1:0 ;
+            counter5_data += (l2t5_data_sio ==1 && l2t5_data ==1) ? 1:0 ;
+            counter6_data += (l2t6_data_sio ==1 && l2t6_data ==1) ? 1:0 ;
+            counter7_data += (l2t7_data_sio ==1 && l2t7_data ==1) ? 1:0 ;
+ }
+         counter_data = ((counter0_data >= 1) + (counter1_data >= 1) + (counter2_data >= 1) + (counter3_data >= 1) + (counter4_data >= 1) + (counter5_data >= 1) +(counter6_data >= 1) + (counter7_data >= 1));
+         if (counter_data > 1) 
+         trigger (siu_l2_data_sio_sample_evnt_trig);  
+   } // while (1)
+  } // fork
+  join none
+
+  //----------------- SII-L2 -----------------------
+
+  fork
+  {
+
+  integer siu_l2_wib_deq_last_cmd_cycle, siu_l2_wib_deq_this_cmd_cycle;
+  integer siu_l2_data_sio_last_cmd_cycle, siu_l2_data_sio_this_cmd_cycle;
+  siu_l2_wib_deq_this_cmd_cycle = get_cycle(siu_coverage_ifc_l2.clk);
+
+    while (1)
+    {
+      @ (posedge siu_coverage_ifc_l2.clk);
+
+        bank0 = siu_coverage_ifc_l2.sii_l2t0;
+        bank1 = siu_coverage_ifc_l2.sii_l2t1;
+        bank2 = siu_coverage_ifc_l2.sii_l2t2;
+        bank3 = siu_coverage_ifc_l2.sii_l2t3;
+        bank4 = siu_coverage_ifc_l2.sii_l2t4;
+        bank5 = siu_coverage_ifc_l2.sii_l2t5;
+        bank6 = siu_coverage_ifc_l2.sii_l2t6;
+        bank7 = siu_coverage_ifc_l2.sii_l2t7;
+
+        switch_banks = {bank7, bank6, bank5, bank4, bank3, bank2, bank1, bank0};
+
+        
+.     for ($bank=0; $bank<8; $bank++)
+.     {
+
+        if( siu_coverage_ifc_l2.sii_l2t${bank} )
+        {
+ 	  sii_l2t${bank}	= siu_coverage_ifc_l2.sii_l2t${bank};
+          l2t${bank}_iq_dq      = siu_coverage_ifc_l2.l2t${bank}_iq_dq;
+          l2t${bank}_wib_dq     = siu_coverage_ifc_l2.l2t${bank}_wib_dq;
+	  sii_l2t${bank}_data 	= siu_coverage_ifc_l2.sii_l2t${bank}_data;
+
+	  last_l2${bank}_cycle	= this_l2${bank}_cycle; 
+	  this_l2${bank}_cycle	= get_cycle(siu_coverage_ifc_l2.clk);
+
+          if (last_l2${bank}_cmd[2:0]==3'b100)  // WRI
+          {
+            if((this_l2${bank}_cycle - last_l2${bank}_cycle) <= SII_L2_WRI_B2B_DELAY ) //18; minimum gap=17cycle
+              l2${bank}_back_to_back = 1'b1;
+            else
+              l2${bank}_back_to_back = 1'b0;
+          }
+
+          else
+          if (last_l2${bank}_cmd[2:0]==3'b001)  // RDD
+          {
+            if((this_l2${bank}_cycle - last_l2${bank}_cycle) == SII_L2_RDD_B2B_DELAY ) // 5 cycle      
+              l2${bank}_back_to_back = 1'b1;
+            else
+              l2${bank}_back_to_back = 1'b0;
+          }
+
+          else
+          if (last_l2${bank}_cmd[2:0]==3'b010)  // WR8 
+          {  
+            if((this_l2${bank}_cycle - last_l2${bank}_cycle) == SII_L2_WR8_B2B_DELAY ) // 4 cycle
+              l2${bank}_back_to_back = 1'b1;
+            else
+              l2${bank}_back_to_back = 1'b0;
+          }
+
+          last_l2${bank}_cmd		= this_l2${bank}_cmd; 
+          this_l2${bank}_cmd		= {sii_l2t${bank}_data[30:29],
+					   sii_l2t${bank}_data[27:24]};
+					  // <30>=O, <29>P, <27>=S
+
+
+          //for switchbank
+          this_l2_cmd			= this_l2${bank}_cmd;
+ 
+          if(last_l2${bank}_cmd_valid)
+	  {
+            // only sample when both "last_l2${bank}_cmd" and "this_l2${bank}_cmd"
+            // contain valid data, so the first command is never sampled
+            trigger (l2_sample_evnt_trig);
+          }
+          else
+            last_l2${bank}_cmd_valid = 1'b1;
+        } // if( siu_coverage_ifc_l2.sii_l2t${bank} )
+
+
+      if( siu_coverage_ifc_l2.sii_l2t${bank} )
+      {
+        sii_l2t${bank}_trans     = siu_coverage_ifc_l2.sii_l2t${bank}_data[27];
+          trigger (siu_l2_trans_sample_evnt_trig);
+      } // siu_coverage_ifc
+
+      if( siu_coverage_ifc_l2.sii_l2t${bank} && sii_l2t${bank}_data[26:24] === 3'b100)
+      {
+          trigger (siu_fc_err_wri_sample_evnt_trig);
+      } // siu_coverage_ifc
+
+      if( siu_coverage_ifc_l2.sii_l2t${bank} && sii_l2t${bank}_data[26:24] === 3'b010)
+      {
+          trigger (siu_fc_err_wr8_sample_evnt_trig);
+      } // siu_coverage_ifc
+
+      if( siu_coverage_ifc_l2.sii_l2t${bank} && sii_l2t${bank}_data[26:24] === 3'b001)
+      {
+          trigger (siu_fc_err_rdd_sample_evnt_trig);
+      } // siu_coverage_ifc
+
+
+
+      /************** L2-SIO *****************/
+
+        if( siu_coverage_ifc_l2.l2b${bank}_sio_ctag_vld )
+        {
+	  l2b${bank}_sio_ctag_vld	= siu_coverage_ifc_l2.l2b${bank}_sio_ctag_vld;
+          l2b${bank}_sio_data		= siu_coverage_ifc_l2.l2b${bank}_sio_data;
+
+          last_l2${bank}_ob_cycle  	= this_l2${bank}_ob_cycle;
+          this_l2${bank}_ob_cycle  	= get_cycle(siu_coverage_ifc_l2.clk);
+
+          if (last_l2${bank}_ob_cmd[3:0]==4'b0001)  // RDD
+          {
+            if((this_l2${bank}_ob_cycle - last_l2${bank}_ob_cycle) <= L2_SIO_RDD_B2B_DELAY ) // 17 cyc min  
+            {
+              l2${bank}_ob_back_to_back = 1'b1;
+            }
+            else
+              l2${bank}_ob_back_to_back = 1'b0;
+          }
+
+          else
+          if (last_l2${bank}_ob_cmd[3:0]==4'b0000)  // WRI or WR8
+          {
+            if((this_l2${bank}_ob_cycle - last_l2${bank}_ob_cycle) <= L2_SIO_WR_B2B_DELAY) // 9 cyc min 
+              l2${bank}_ob_back_to_back = 1'b1;
+            else
+              l2${bank}_ob_back_to_back = 1'b0;
+          }
+
+
+          last_l2${bank}_ob_cmd            = this_l2${bank}_ob_cmd;
+          this_l2${bank}_ob_cmd            = {l2b${bank}_sio_data[23:22],
+                                              l2b${bank}_sio_data[20:16]} ;
+                                           
+          if(last_l2${bank}_ob_cmd_valid)
+          {
+            // only sample when both "last_l2${bank}_ob_cmd" and "this_l2${bank}_ob_cmd"
+            // contain valid data, so the first command is never sampled
+            trigger (l2_ob_sample_evnt_trig);
+          }
+          else
+            last_l2${bank}_ob_cmd_valid = 1'b1;
+
+
+        } // if( siu_coverage_ifc_l2.l2b${bank}_sio_ctag_vld)
+
+.     } 
+    } // while (1)
+  } // fork
+  join none
+} // task siu_intf_coverage
+
+
+////////////////////////////////////////////////////////////////////////
+// siu interface schmoo
+////////////////////////////////////////////////////////////////////////
+class siu_intf_schmoo_coverage
+{
+	StandardDisplay	dbg;
+	local string	myname;
+
+	bit siu_intf_schmoo_cov_debug = 1'b0;
+        bit           niu_bqdq;
+        bit           niu_oqdq;
+        bit           niu_bqdq_al;
+        bit           niu_bqdq_que;
+        bit           niusiu_oqdq_value;
+        bit           niusiu_bqdq_value;
+        bit           niusiu_bqdq_al;
+        bit           niusiu_bqdq_al_value;
+        bit [6:0]     last_niu_cmd;
+        bit [6:0]     this_niu_cmd, last2_niu_cmd;
+        bit [5:0]     niu_cmd;
+        bit           niubypass;
+        bit           niudatareq;
+        bit [127:0]   niudata;
+        bit [15:0]    niu_id;
+        bit [3:0]     partial_mode;
+        bit [3:0]     partial_mode1;
+        bit           ncu_ba01;
+        bit           ncu_ba23;
+        bit           ncu_ba45;
+        bit           ncu_ba67;
+
+        bit [2:0]     dmu_data_876;
+        bit [2:0]     dmu_data_876_2;
+        bit [2:0]     dmu_data_876_3;
+        bit [2:0]     dmu_data_876_4;
+        bit [2:0]     dmu_data_876_5;
+        bit [2:0]     dmu_data_876_6;
+        bit [2:0]     dmu_data_876_7;
+        bit [2:0]     dmu_data_876_8;
+        bit [2:0]     dmu_data_876_9;
+        bit [2:0]     dmu_data_876_10;
+        bit [2:0]     dmu_data_876_11;
+        bit           dmu_data_6;
+        bit           dmu_data_7;
+        bit           dmu_data_8;
+        bit [2:0]     niu_data_876;
+        bit [2:0]     niu_data_876_2;
+        bit [2:0]     niu_data_876_3;
+        bit [2:0]     niu_data_876_4;
+        bit [2:0]     niu_data_876_5;
+        bit [2:0]     niu_data_876_6;
+        bit [2:0]     niu_data_876_7;
+        bit [2:0]     niu_data_876_8;
+        bit [2:0]     niu_data_876_9;
+        bit [2:0]     niu_data_876_10;
+        bit [2:0]     niu_data_876_11;
+        bit           niu_data_6;
+        bit           niu_data_7;
+        bit           niu_data_8;
+
+        integer       niusiu_oqdq_b2b = 0;
+        integer       niusiu_bqdq_b2b = 0;
+        integer       niusiu_bqdq_al_b2b = 0;
+        integer       niusiu_oqdq_b2b_state = 0;
+        integer       niusiu_bqdq_b2b_state = 0;
+        integer       niusiu_bqdq_b2b_cnt = 0;
+        integer       niusiu_oqdq_b2b_cnt = 0;
+        integer       niusiu_bqdq_al_b2b_cnt = 0;
+        integer       niusiu_bqdq_que_b2b_cnt = 0;
+        integer       niusiu_bqdq_que_b2b_wri_nonpost_cnt = 0;
+        integer       niusiu_bqdq_que_b2b_wri_post_cnt = 0;
+        integer       niusiu_bqdq_al_b2b_state = 0;
+        integer       siuncu_gnt_del_cnt = 0;
+        integer       siu_ncu_gnt_req;
+
+	event dmureq_evnt_trig;
+	event niureq_evnt_trig;
+	event niureq_oqdq_evnt_trig;
+	event niureq_bqdq_evnt_trig;
+	event niureq_bqdq_al_evnt_trig;
+	event niureq_bqdq_que_evnt_trig;
+	event niureq_bqdq_wri_nonpost_que_evnt_trig;
+	event niureq_bqdq_wri_post_que_evnt_trig;
+	event ncu_gnt_req_evnt_trig;
+	event ncu_gnt_req_del_evnt_trig;
+	event ncu_gnt_req_del_10_evnt_trig;
+	event ncu_pm_1_evnt_trig;
+	event ncu_pm1_1_evnt_trig;
+	event ncu_pm1_2_evnt_trig;
+	event ncu_pm1_3_evnt_trig;
+	event ncu_pm1_4_evnt_trig;
+	event ncu_pm1_5_evnt_trig;
+	event ncu_pm1_6_evnt_trig;
+	event ncu_pm1_7_evnt_trig;
+	event ncu_pm1_8_evnt_trig;
+	event ncu_pm1_9_evnt_trig;
+	event ncu_pm1_10_evnt_trig;
+	event ncu_pm1_11_evnt_trig;
+	event ncu_pm1_niu_1_evnt_trig;
+	event ncu_pm1_niu_2_evnt_trig;
+	event ncu_pm1_niu_3_evnt_trig;
+	event ncu_pm1_niu_4_evnt_trig;
+	event ncu_pm1_niu_5_evnt_trig;
+	event ncu_pm1_niu_6_evnt_trig;
+	event ncu_pm1_niu_7_evnt_trig;
+	event ncu_pm1_niu_8_evnt_trig;
+	event ncu_pm1_niu_9_evnt_trig;
+	event ncu_pm1_niu_10_evnt_trig;
+	event ncu_pm1_niu_11_evnt_trig;
+
+  // ----------- coverage_group ----------------
+
+  coverage_group siu_niu_intf_oqdq_coverage_group
+  {
+    sample_event           = sync (ANY, niureq_oqdq_evnt_trig );
+    #include "siu_niu_oqdq_sample.vrh"
+
+  } // siu_niu_intf_coverage_group
+
+  coverage_group siu_niu_intf_bqdq_coverage_group
+  {
+    sample_event           = sync (ANY, niureq_bqdq_evnt_trig );
+    #include "siu_niu_bqdq_sample.vrh"
+
+  } // siu_niu_intf_coverage_group
+
+  coverage_group siu_niu_intf_bqdq_al_coverage_group
+  {
+    sample_event           = sync (ANY, niureq_bqdq_al_evnt_trig );
+    #include "siu_niu_bqdq_al_sample.vrh"
+
+  } // siu_niu_intf_coverage_group
+
+  coverage_group siu_niu_intf_bqdq_que_coverage_group
+  {
+    sample_event           = sync (ANY, niureq_bqdq_que_evnt_trig, niureq_bqdq_wri_nonpost_que_evnt_trig, niureq_bqdq_wri_post_que_evnt_trig );
+    #include "siu_niu_bqdq_que_sample.vrh"
+
+  } // siu_niu_intf_coverage_group
+
+  coverage_group siu_ncu_intf_gnt_min_coverage_group
+  {
+    sample_event           = sync (ANY, ncu_gnt_req_evnt_trig, ncu_gnt_req_del_evnt_trig, ncu_gnt_req_del_10_evnt_trig );
+    #include "siu_ncu_intf_gnt_min_sample.vrh"
+
+  } // siu_ncu_intf_coverage_group
+
+  coverage_group siu_ncu_intf_partial_coverage_group
+  {
+    sample_event           = sync (ANY, ncu_pm_1_evnt_trig );
+    #include "siu_ncu_intf_pm_sample.vrh"
+
+  } // siu_ncu_intf_coverage_group
+
+  coverage_group siu_ncu_intf_partial_bank_coverage_group
+  {
+    sample_event           = sync (ANY, ncu_pm1_1_evnt_trig, ncu_pm1_2_evnt_trig, ncu_pm1_3_evnt_trig, ncu_pm1_4_evnt_trig, ncu_pm1_5_evnt_trig, ncu_pm1_6_evnt_trig, ncu_pm1_7_evnt_trig, ncu_pm1_8_evnt_trig, ncu_pm1_9_evnt_trig, ncu_pm1_10_evnt_trig, ncu_pm1_11_evnt_trig );
+    #include "siu_ncu_intf_pm_bank_sample.vrh"
+
+  } // siu_ncu_intf_coverage_group
+
+  coverage_group siu_ncu_intf_partial_bank_niu_coverage_group
+  {
+    sample_event           = sync (ANY, ncu_pm1_niu_1_evnt_trig, ncu_pm1_niu_2_evnt_trig, ncu_pm1_niu_3_evnt_trig, ncu_pm1_niu_4_evnt_trig, ncu_pm1_niu_5_evnt_trig, ncu_pm1_niu_6_evnt_trig, ncu_pm1_niu_7_evnt_trig, ncu_pm1_niu_8_evnt_trig, ncu_pm1_niu_9_evnt_trig, ncu_pm1_niu_10_evnt_trig, ncu_pm1_niu_11_evnt_trig );
+    #include "siu_ncu_intf_pm_bank1_sample.vrh"
+
+  } // siu_ncu_intf_coverage_group
+
+
+. for ($bank=0; $bank<8; $bank++)
+. {
+	event l2${bank}req_evnt_trig;
+. }
+
+	////// SII-NIU //////
+	coverage_group sii_niu_req_ack_cov
+	{
+    		sample_event = sync (ANY, niureq_evnt_trig );
+		sample siu_coverage_ifc.niureq
+		{
+			state s_SIINIU_REQ_OQDQ (1) if (siu_coverage_ifc.niuoqdq === 1'b1);
+			state s_SIINIU_REQ_BQDQ (1) if (siu_coverage_ifc.niubqdq === 1'b1);
+		}
+	}
+
+	////// SII-DMU //////
+	coverage_group sii_dmu_req_wack_cov
+	{
+    		sample_event = sync (ANY, dmureq_evnt_trig );
+		sample siu_coverage_ifc.dmureq
+		{
+			state s_SIIDMU_REQ_WACK (1) if (siu_coverage_ifc.dmuwrack_vld === 1'b1);
+		}
+	}
+	////// SII-NCU //////
+        coverage_group siu_ncugnt_req_cov
+	{
+    		sample_event = @(posedge siu_coverage_ifc.ncu_gnt);
+		sample siu_coverage_ifc.ncu_gnt
+		{
+			state s_SIINCU_GNT_REQ (1) if (siu_coverage_ifc.ncu_req === 1'b1);
+		}
+	}
+
+	////// SII-L2 //////
+. for ($bank=0; $bank<8; $bank++)
+. {
+	coverage_group sii_l2${bank}_req_ack_cov
+	{
+    		sample_event = sync (ANY, l2${bank}req_evnt_trig );
+		sample siu_coverage_ifc_l2.sii_l2t${bank}
+		{
+			state s_SIIL2${bank}_REQ_DQ (1) if (siu_coverage_ifc_l2.l2t${bank}_iq_dq === 1'b1);
+			state s_SIIL2${bank}_REQ_WIB (1) if (siu_coverage_ifc_l2.l2t${bank}_wib_dq === 1'b1);
+			state s_SIIL2${bank}_REQ_CTAG (1) if (siu_coverage_ifc_l2.l2b${bank}_sio_ctag_vld === 1'b1);
+		}
+	}
+. }
+
+	////// declare functions & tasks //////
+	task new(StandardDisplay dbg);
+	task set_cov_cond_bits ();
+} // class siu_intf_schmoo_coverage
+
+////// siu_intf_schmoo class
+task siu_intf_schmoo_coverage::new(StandardDisplay dbg)
+{
+	bit coverage_on;
+
+
+
+	myname = "siu_intf_schmoo_coverage";
+	this.dbg = dbg;
+
+	if (mChkPlusarg(siu_intf_schmoo_coverage) || mChkPlusarg(coverage_on)) {
+		coverage_on = 1;
+		if (mChkPlusarg(siu_intf_schmoo_cov_debug)) {
+			siu_intf_schmoo_cov_debug = 1'b1;
+		}
+	} else {
+		coverage_on = 0;
+	}
+
+	if (coverage_on) 
+	{
+		sii_niu_req_ack_cov = new();	
+
+		fork {
+		   @(posedge siu_coverage_ifc.cmp_diag_done);
+		   coverage_save_database(1);
+		} join none
+
+		set_cov_cond_bits();
+	} // coverage_on
+} //  siu_intf_schmoo_coverage new
+
+task siu_intf_schmoo_coverage::set_cov_cond_bits()
+{
+        integer       siu_ncu_this_cmd_cycle;
+        integer       siu_ncu_last_cmd_cycle;
+ 
+        siu_ncu_this_cmd_cycle            = get_cycle(siu_coverage_ifc.clk);
+
+fork
+   {
+   while(1)
+   {
+    @(posedge siu_coverage_ifc.clk);
+    if (niusiu_oqdq_b2b_cnt === 'd8)
+    {
+
+        if (siu_coverage_ifc.niuoqdq === 1'b1)
+          niusiu_oqdq_b2b_cnt = 1;
+        else
+          niusiu_oqdq_b2b_cnt = 0;
+     }
+    else if (siu_coverage_ifc.niuoqdq === 1'b1)
+     {
+        niusiu_oqdq_b2b_cnt = niusiu_oqdq_b2b_cnt + 1;
+        @(posedge siu_coverage_ifc.clk);
+        if (niusiu_oqdq_b2b_cnt === 'd8)
+        trigger (niureq_oqdq_evnt_trig);
+      }
+     else
+        niusiu_oqdq_b2b_cnt = 0;
+   }
+   }  
+join none
+
+
+fork
+{
+while(1)
+{
+ @(posedge siu_coverage_ifc.clk);
+ if (niusiu_bqdq_b2b_cnt === 'd8)
+ {
+
+     if (siu_coverage_ifc.niubqdq === 1'b1)
+       niusiu_bqdq_b2b_cnt = 1;
+     else
+       niusiu_bqdq_b2b_cnt = 0;
+  }
+ else if (siu_coverage_ifc.niubqdq === 1'b1)
+  {
+     niusiu_bqdq_b2b_cnt = niusiu_bqdq_b2b_cnt + 1;
+     @(posedge siu_coverage_ifc.clk);
+     if (niusiu_bqdq_b2b_cnt === 'd8)
+     trigger (niureq_bqdq_evnt_trig);
+   }
+  else
+     niusiu_bqdq_b2b_cnt = 0;
+}
+}
+join none
+
+
+fork
+{
+while(1)
+{
+ @(posedge siu_coverage_ifc.clk);
+ if (niusiu_bqdq_al_b2b_cnt === 'd5)
+ {
+
+     if (siu_coverage_ifc.niubqdq === 1'b1 && siu_coverage_ifc.niuoqdq === 1'b0)
+       niusiu_bqdq_al_b2b_cnt = 1;
+     else
+       niusiu_bqdq_al_b2b_cnt = 0;
+  }
+ else if (siu_coverage_ifc.niubqdq === 1'b1 && siu_coverage_ifc.niuoqdq === 1'b0)
+  {
+     niusiu_bqdq_al_b2b_cnt = niusiu_bqdq_al_b2b_cnt + 1;
+ @(posedge siu_coverage_ifc.clk);
+     if (siu_coverage_ifc.niuoqdq === 1'b1 && siu_coverage_ifc.niubqdq === 1'b0)
+     niusiu_bqdq_al_b2b_cnt = niusiu_bqdq_al_b2b_cnt + 1;
+ @(posedge siu_coverage_ifc.clk);
+     if (siu_coverage_ifc.niubqdq === 1'b1 && siu_coverage_ifc.niuoqdq === 1'b0)
+     niusiu_bqdq_al_b2b_cnt = niusiu_bqdq_al_b2b_cnt + 1;
+ @(posedge siu_coverage_ifc.clk);
+     if (siu_coverage_ifc.niuoqdq === 1'b1 && siu_coverage_ifc.niubqdq === 1'b0)
+     niusiu_bqdq_al_b2b_cnt = niusiu_bqdq_al_b2b_cnt + 1;
+ @(posedge siu_coverage_ifc.clk);
+     if (siu_coverage_ifc.niubqdq === 1'b1 && siu_coverage_ifc.niuoqdq === 1'b0)
+     niusiu_bqdq_al_b2b_cnt = niusiu_bqdq_al_b2b_cnt + 1;
+     if (niusiu_bqdq_al_b2b_cnt === 'd5)
+     trigger (niureq_bqdq_al_evnt_trig);
+   }
+  else
+     niusiu_bqdq_al_b2b_cnt = 0;
+}
+}
+join none
+
+
+fork
+{
+while(1)
+{
+ @(posedge siu_coverage_ifc.clk);
+ if (niusiu_bqdq_que_b2b_cnt === 'd15)
+ {
+
+     if (siu_coverage_ifc.niureq === 1'b1 && siu_coverage_ifc.niudata[125] === 1'b1 && siu_coverage_ifc.niubqdq === 1'b0 && siu_coverage_ifc.niuoqdq === 1'b0 )
+       niusiu_bqdq_que_b2b_cnt = 1;
+     else
+       niusiu_bqdq_que_b2b_cnt = 0;
+  }
+ else if (siu_coverage_ifc.niureq === 1'b1 && siu_coverage_ifc.niudata[125] === 1'b1 && siu_coverage_ifc.niubqdq === 1'b0 && siu_coverage_ifc.niuoqdq === 1'b0 )
+  {
+     niusiu_bqdq_que_b2b_cnt = niusiu_bqdq_que_b2b_cnt + 1;
+     if (niusiu_bqdq_que_b2b_cnt >= 11)
+     trigger (niureq_bqdq_que_evnt_trig);
+   }
+  else
+     niusiu_bqdq_que_b2b_cnt = 0;
+}
+}
+join none
+
+fork
+{
+while(1)
+{
+ @(posedge siu_coverage_ifc.clk);
+ if (niusiu_bqdq_que_b2b_wri_nonpost_cnt === 'd15)
+ {
+
+     if (siu_coverage_ifc.niureq === 1'b1 && siu_coverage_ifc.niudata[127] === 1'b0 && siu_coverage_ifc.niudata[126] === 1'b0 && siu_coverage_ifc.niudata[125] === 1'b0 && siu_coverage_ifc.niubqdq === 1'b0 && siu_coverage_ifc.niuoqdq === 1'b0 )
+       niusiu_bqdq_que_b2b_wri_nonpost_cnt = 1;
+     else
+       niusiu_bqdq_que_b2b_wri_nonpost_cnt = 0;
+  }
+ else if (siu_coverage_ifc.niureq === 1'b1 && siu_coverage_ifc.niudata[127] === 1'b0 && siu_coverage_ifc.niudata[126] === 1'b0 && siu_coverage_ifc.niudata[125] === 1'b0 && siu_coverage_ifc.niubqdq === 1'b0 && siu_coverage_ifc.niuoqdq === 1'b0 )
+  {
+     niusiu_bqdq_que_b2b_wri_nonpost_cnt = niusiu_bqdq_que_b2b_wri_nonpost_cnt + 1;
+     if (niusiu_bqdq_que_b2b_wri_nonpost_cnt >= 11)
+     trigger (niureq_bqdq_wri_nonpost_que_evnt_trig);
+     repeat (4) @(posedge siu_coverage_ifc.clk);
+   }
+  else
+     niusiu_bqdq_que_b2b_wri_nonpost_cnt = 0;
+}
+}
+join none
+
+fork
+{
+while(1)
+{
+ @(posedge siu_coverage_ifc.clk);
+ if (niusiu_bqdq_que_b2b_wri_post_cnt === 'd15)
+ {
+
+     if (siu_coverage_ifc.niureq === 1'b1 && siu_coverage_ifc.niudata[127] === 1'b0 && siu_coverage_ifc.niudata[126] === 1'b1 && siu_coverage_ifc.niudata[125] === 1'b0 && siu_coverage_ifc.niubqdq === 1'b0 && siu_coverage_ifc.niuoqdq === 1'b0 )
+       niusiu_bqdq_que_b2b_wri_post_cnt = 1;
+     else
+       niusiu_bqdq_que_b2b_wri_post_cnt = 0;
+  }
+ else if (siu_coverage_ifc.niureq === 1'b1 && siu_coverage_ifc.niudata[127] === 1'b0 && siu_coverage_ifc.niudata[126] === 1'b1 && siu_coverage_ifc.niudata[125] === 1'b0 && siu_coverage_ifc.niubqdq === 1'b0 && siu_coverage_ifc.niuoqdq === 1'b0 )
+  {
+     niusiu_bqdq_que_b2b_wri_post_cnt = niusiu_bqdq_que_b2b_wri_post_cnt + 1;
+     if (niusiu_bqdq_que_b2b_wri_post_cnt >= 11)
+     trigger (niureq_bqdq_wri_post_que_evnt_trig);
+     repeat (4) @(posedge siu_coverage_ifc.clk);
+   }
+  else
+     niusiu_bqdq_que_b2b_wri_post_cnt = 0;
+}
+}
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                if ( siu_coverage_ifc.ncu_req === 1'b1 )
+                    @(posedge siu_coverage_ifc.clk);
+                        trigger (ncu_gnt_req_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                if ( siu_coverage_ifc.ncu_req === 1'b1 )
+                repeat (2) @(posedge siu_coverage_ifc.clk);
+                        trigger (ncu_gnt_req_del_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                if ( siu_coverage_ifc.ncu_req === 1'b1 ) 
+                 { 
+                 siu_ncu_last_cmd_cycle = get_cycle(siu_coverage_ifc.clk);
+                 @(posedge siu_coverage_ifc.ncu_gnt);
+                 siu_ncu_this_cmd_cycle = get_cycle(siu_coverage_ifc.clk);
+                 siu_ncu_gnt_req = siu_ncu_this_cmd_cycle - siu_ncu_last_cmd_cycle;
+                 if (siu_ncu_gnt_req == 10) { 
+                        trigger (ncu_gnt_req_del_10_evnt_trig);
+                     } 
+                 else siu_ncu_gnt_req = 0;
+                 }
+           }
+        }
+join none
+
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01       = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23       = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45       = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67       = siu_coverage_ifc.ncu_ba67;
+                  partial_mode   = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                  if ( siu_coverage_ifc.ncu_pm === 1'b1 ) 
+                  trigger (ncu_pm_1_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  dmu_data_6            = siu_coverage_ifc.dmudata[6];
+                  dmu_data_7            = siu_coverage_ifc.dmudata[7];
+                  dmu_data_8            = siu_coverage_ifc.dmudata[8];
+                  dmu_data_876          = {dmu_data_8,dmu_data_7,dmu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b0001 && siu_coverage_ifc.dmureq === 1'b1)
+                  trigger (ncu_pm1_1_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  dmu_data_6            = siu_coverage_ifc.dmudata[6];
+                  dmu_data_7            = siu_coverage_ifc.dmudata[7];
+                  dmu_data_8            = siu_coverage_ifc.dmudata[8];
+                  dmu_data_876_2        = {dmu_data_8,dmu_data_7,dmu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b0010 && siu_coverage_ifc.dmureq === 1'b1)
+                  trigger (ncu_pm1_2_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  dmu_data_6            = siu_coverage_ifc.dmudata[6];
+                  dmu_data_7            = siu_coverage_ifc.dmudata[7];
+                  dmu_data_8            = siu_coverage_ifc.dmudata[8];
+                  dmu_data_876_3        = {dmu_data_8,dmu_data_7,dmu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b0011 && siu_coverage_ifc.dmureq === 1'b1)
+                  trigger (ncu_pm1_3_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  dmu_data_6            = siu_coverage_ifc.dmudata[6];
+                  dmu_data_7            = siu_coverage_ifc.dmudata[7];
+                  dmu_data_8            = siu_coverage_ifc.dmudata[8];
+                  dmu_data_876_4        = {dmu_data_8,dmu_data_7,dmu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b0100 && siu_coverage_ifc.dmureq === 1'b1)
+                  trigger (ncu_pm1_4_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  dmu_data_6            = siu_coverage_ifc.dmudata[6];
+                  dmu_data_7            = siu_coverage_ifc.dmudata[7];
+                  dmu_data_8            = siu_coverage_ifc.dmudata[8];
+                  dmu_data_876_5        = {dmu_data_8,dmu_data_7,dmu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b0101 && siu_coverage_ifc.dmureq === 1'b1)
+                  trigger (ncu_pm1_5_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  dmu_data_6            = siu_coverage_ifc.dmudata[6];
+                  dmu_data_7            = siu_coverage_ifc.dmudata[7];
+                  dmu_data_8            = siu_coverage_ifc.dmudata[8];
+                  dmu_data_876_6        = {dmu_data_8,dmu_data_7,dmu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b0110 && siu_coverage_ifc.dmureq === 1'b1)
+                  trigger (ncu_pm1_6_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  dmu_data_6            = siu_coverage_ifc.dmudata[6];
+                  dmu_data_7            = siu_coverage_ifc.dmudata[7];
+                  dmu_data_8            = siu_coverage_ifc.dmudata[8];
+                  dmu_data_876_7        = {dmu_data_8,dmu_data_7,dmu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b1000 && siu_coverage_ifc.dmureq === 1'b1)
+                  trigger (ncu_pm1_7_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  dmu_data_6            = siu_coverage_ifc.dmudata[6];
+                  dmu_data_7            = siu_coverage_ifc.dmudata[7];
+                  dmu_data_8            = siu_coverage_ifc.dmudata[8];
+                  dmu_data_876_8        = {dmu_data_8,dmu_data_7,dmu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b1001 && siu_coverage_ifc.dmureq === 1'b1)
+                  trigger (ncu_pm1_8_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  dmu_data_6            = siu_coverage_ifc.dmudata[6];
+                  dmu_data_7            = siu_coverage_ifc.dmudata[7];
+                  dmu_data_8            = siu_coverage_ifc.dmudata[8];
+                  dmu_data_876_9        = {dmu_data_8,dmu_data_7,dmu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b1010 && siu_coverage_ifc.dmureq === 1'b1)
+                  trigger (ncu_pm1_9_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  dmu_data_6            = siu_coverage_ifc.dmudata[6];
+                  dmu_data_7            = siu_coverage_ifc.dmudata[7];
+                  dmu_data_8            = siu_coverage_ifc.dmudata[8];
+                  dmu_data_876_10       = {dmu_data_8,dmu_data_7,dmu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b1100 && siu_coverage_ifc.dmureq === 1'b1)
+                  trigger (ncu_pm1_10_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  dmu_data_6            = siu_coverage_ifc.dmudata[6];
+                  dmu_data_7            = siu_coverage_ifc.dmudata[7];
+                  dmu_data_8            = siu_coverage_ifc.dmudata[8];
+                  dmu_data_876_11       = {dmu_data_8,dmu_data_7,dmu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b1111 && siu_coverage_ifc.dmureq === 1'b1)
+                  trigger (ncu_pm1_11_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  niu_data_6            = siu_coverage_ifc.niudata[6];
+                  niu_data_7            = siu_coverage_ifc.niudata[7];
+                  niu_data_8            = siu_coverage_ifc.niudata[8];
+                  niu_data_876          = {niu_data_8,niu_data_7,niu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b0001 && siu_coverage_ifc.niureq === 1'b1)
+                  trigger (ncu_pm1_niu_1_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  niu_data_6            = siu_coverage_ifc.niudata[6];
+                  niu_data_7            = siu_coverage_ifc.niudata[7];
+                  niu_data_8            = siu_coverage_ifc.niudata[8];
+                  niu_data_876_2        = {niu_data_8,niu_data_7,niu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b0010 && siu_coverage_ifc.niureq === 1'b1)
+                  trigger (ncu_pm1_niu_2_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  niu_data_6            = siu_coverage_ifc.niudata[6];
+                  niu_data_7            = siu_coverage_ifc.niudata[7];
+                  niu_data_8            = siu_coverage_ifc.niudata[8];
+                  niu_data_876_3        = {niu_data_8,niu_data_7,niu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b0011 && siu_coverage_ifc.niureq === 1'b1)
+                  trigger (ncu_pm1_niu_3_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  niu_data_6            = siu_coverage_ifc.niudata[6];
+                  niu_data_7            = siu_coverage_ifc.niudata[7];
+                  niu_data_8            = siu_coverage_ifc.niudata[8];
+                  niu_data_876_4        = {niu_data_8,niu_data_7,niu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b0100 && siu_coverage_ifc.niureq === 1'b1)
+                  trigger (ncu_pm1_niu_4_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  niu_data_6            = siu_coverage_ifc.niudata[6];
+                  niu_data_7            = siu_coverage_ifc.niudata[7];
+                  niu_data_8            = siu_coverage_ifc.niudata[8];
+                  niu_data_876_5        = {niu_data_8,niu_data_7,niu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b0101 && siu_coverage_ifc.niureq === 1'b1)
+                  trigger (ncu_pm1_niu_5_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  niu_data_6            = siu_coverage_ifc.niudata[6];
+                  niu_data_7            = siu_coverage_ifc.niudata[7];
+                  niu_data_8            = siu_coverage_ifc.niudata[8];
+                  niu_data_876_6        = {niu_data_8,niu_data_7,niu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b0110 && siu_coverage_ifc.niureq === 1'b1)
+                  trigger (ncu_pm1_niu_6_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  niu_data_6            = siu_coverage_ifc.niudata[6];
+                  niu_data_7            = siu_coverage_ifc.niudata[7];
+                  niu_data_8            = siu_coverage_ifc.niudata[8];
+                  niu_data_876_7        = {niu_data_8,niu_data_7,niu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b1000 && siu_coverage_ifc.niureq === 1'b1)
+                  trigger (ncu_pm1_niu_7_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  niu_data_6            = siu_coverage_ifc.niudata[6];
+                  niu_data_7            = siu_coverage_ifc.niudata[7];
+                  niu_data_8            = siu_coverage_ifc.niudata[8];
+                  niu_data_876_8        = {niu_data_8,niu_data_7,niu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b1001 && siu_coverage_ifc.niureq === 1'b1)
+                  trigger (ncu_pm1_niu_8_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  niu_data_6            = siu_coverage_ifc.niudata[6];
+                  niu_data_7            = siu_coverage_ifc.niudata[7];
+                  niu_data_8            = siu_coverage_ifc.niudata[8];
+                  niu_data_876_9        = {niu_data_8,niu_data_7,niu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b1010 && siu_coverage_ifc.niureq === 1'b1)
+                  trigger (ncu_pm1_niu_9_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  niu_data_6            = siu_coverage_ifc.niudata[6];
+                  niu_data_7            = siu_coverage_ifc.niudata[7];
+                  niu_data_8            = siu_coverage_ifc.niudata[8];
+                  niu_data_876_10       = {niu_data_8,niu_data_7,niu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b1100 && siu_coverage_ifc.niureq === 1'b1)
+                  trigger (ncu_pm1_niu_10_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                  ncu_ba01              = siu_coverage_ifc.ncu_ba01;
+                  ncu_ba23              = siu_coverage_ifc.ncu_ba23;
+                  ncu_ba45              = siu_coverage_ifc.ncu_ba45;
+                  ncu_ba67              = siu_coverage_ifc.ncu_ba67;
+                  niu_data_6            = siu_coverage_ifc.niudata[6];
+                  niu_data_7            = siu_coverage_ifc.niudata[7];
+                  niu_data_8            = siu_coverage_ifc.niudata[8];
+                  niu_data_876_11       = {niu_data_8,niu_data_7,niu_data_6};
+                  partial_mode1         = {ncu_ba67,ncu_ba45,ncu_ba23,ncu_ba01};
+                if ( siu_coverage_ifc.ncu_pm === 1'b1 && partial_mode1 === 4'b1111 && siu_coverage_ifc.niureq === 1'b1)
+                  trigger (ncu_pm1_niu_11_evnt_trig);
+           }
+        }
+join none
+
+fork
+	{
+           while (1)
+           {
+                @(posedge siu_coverage_ifc.clk);
+                if ( siu_coverage_ifc.niureq === 1'b1 )
+                        trigger (niureq_evnt_trig);
+           }
+	}
+join none
+
+fork
+	{
+	   while (1)
+	   {
+		@(posedge siu_coverage_ifc.clk);
+		if ( siu_coverage_ifc.dmureq === 1'b1 )
+			trigger (dmureq_evnt_trig);
+	   }	
+	}
+join none
+
+fork
+. for ($bank=0; $bank<8; $bank++)
+. {
+	{
+	   while (1)
+	   {
+		@(posedge siu_coverage_ifc_l2.clk);
+		if ( siu_coverage_ifc_l2.sii_l2t${bank} === 1'b1 )
+			trigger (l2${bank}req_evnt_trig);
+	   }	
+	}
+. }
+join none
+
+} // siu_intf_schmoo_coverage set_cov_cond_bits
+
+
+////////////////////////////////////////////////////////////////////////
+// sii internal coverage objects
+////////////////////////////////////////////////////////////////////////
+class siu_ipcs_coverage
+{
+	StandardDisplay	dbg;
+	local string	myname;
+
+	bit siu_ipcs_cov_debug = 1'b0;
+
+        event           ipcc_err_det_trig;
+        event           ipcc_ecc_err_trig;
+
+// siu wb coverage
+. for ($q=0; $q<2; $q++)
+. {
+	// sii
+	bit [3:0]	ipdohq${q}_wr_adr = 4'b0;
+	bit [3:0]	ipdbhq${q}_wr_adr = 4'b0;
+	bit [3:0]	ipdohq${q}_rd_adr = 4'b0;
+	bit [3:0]	ipdbhq${q}_rd_adr = 4'b0;
+	bit [5:0]	ipdodq${q}_wr_adr = 6'b0;
+	bit [5:0]	ipdbdq${q}_wr_adr = 6'b0;
+	bit [5:0]	ipdodq${q}_rd_adr = 6'b0;
+	bit [5:0]	ipdbdq${q}_rd_adr = 6'b0;
+
+	integer		ipdohq${q}_size = 0;
+	integer		ipdbhq${q}_size = 0;
+	integer		ipdodq${q}_size = 0;
+	integer		ipdbdq${q}_size = 0;
+	integer 	ipdoq${q}_d_wr_b2b = 0;
+	integer 	ipdbq${q}_d_wr_b2b = 0;
+	integer 	ipdoq${q}_d_rd_b2b = 0;
+	integer 	ipdbq${q}_d_rd_b2b = 0;
+
+	event		ipcc_ipcs${q}_orgo_evnt_trig;
+	event		ipcc_ipcs${q}_bygo_evnt_trig;
+
+. }
+
+. for ($q=0; $q<8; $q++)
+. {
+	bit [4:0]	ildq${q}_rd_adr = 5'b0;
+	bit [4:0]	ildq${q}_wr_adr = 5'b0;
+	integer 	ildq${q}_wr_b2b = 0;
+	integer 	ildq${q}_rd_b2b = 0;
+	integer		ildq${q}_size = 0;
+.}
+
+	bit [5:0]	indq_rd_adr = 6'b0;
+	bit [5:0]	indq_wr_adr = 6'b0;
+	integer 	indq_wr_b2b = 0;
+	integer 	indq_rd_b2b = 0;
+	integer		indq_size = 0;
+
+        bit [4:0]       dmu_or_cnt_r = 5'b0;
+        bit [4:0]       dmu_by_cnt_r = 5'b0;
+        bit [4:0]       niu_or_cnt_r = 5'b0;
+        bit [4:0]       niu_by_cnt_r = 5'b0;
+        bit [2:0]       sio_cnt_r = 2'b0;
+        bit [3:0]       dmu_wrm_cnt_r = 4'b0;
+        bit [2:0]       wrm_cnt_r = 3'b0;
+
+	event		ipcc_arb_evnt_trig;
+
+#ifndef SIU_WB_COV
+	////// indq //////
+	coverage_group indq_wr_cov
+	{
+	   sample_event = wait_var(indq_wr_adr); 
+	   #include "siu_indq_wr_sample.vrh"
+	} 
+	coverage_group indq_rd_cov
+	{
+	   sample_event = wait_var(indq_rd_adr); 
+	   #include "siu_indq_rd_sample.vrh"
+	}
+
+	////// ildq //////
+. for ($q=0; $q<8; $q++)
+. {
+	coverage_group ildq${q}_wr_cov
+	{
+	   sample_event = wait_var(ildq${q}_wr_adr); 
+	   #include "siu_ildq${q}_wr_sample.vrh"
+	} 
+	coverage_group ildq${q}_rd_cov
+	{
+	   sample_event = wait_var(ildq${q}_rd_adr); 
+	   #include "siu_ildq${q}_rd_sample.vrh"
+	} 
+. }
+#endif // not in siu_wb_cov
+
+	////// ipd(o,b)hq(0,1) 
+. for ($q=0; $q<2; $q++)
+. {
+	// header queue = ${q}
+	coverage_group ipdohq${q}_wr_cov
+	{
+	   sample_event = wait_var(ipdohq${q}_wr_adr); 
+	   #include "siu_ipdohq${q}_wr_sample.vrh"
+	} 
+	coverage_group ipdbhq${q}_wr_cov
+	{
+	   sample_event = wait_var(ipdbhq${q}_wr_adr); 
+	   #include "siu_ipdbhq${q}_wr_sample.vrh"
+	} 
+	coverage_group ipdohq${q}_rd_cov
+	{
+	   sample_event = wait_var(ipdohq${q}_rd_adr); 
+	   #include "siu_ipdohq${q}_rd_sample.vrh"
+	}
+	coverage_group ipdbhq${q}_rd_cov
+	{
+	   sample_event = wait_var(ipdbhq${q}_rd_adr); 
+	   #include "siu_ipdbhq${q}_rd_sample.vrh"
+	}
+
+	// data queue = ${q}
+	coverage_group ipdodq${q}_wr_cov
+	{
+	   sample_event = wait_var(ipdodq${q}_wr_adr); 
+	   #include "siu_ipdodq${q}_wr_sample.vrh"
+	} 
+	coverage_group ipdbdq${q}_wr_cov
+	{
+	   sample_event = wait_var(ipdbdq${q}_wr_adr); 
+	   #include "siu_ipdbdq${q}_wr_sample.vrh"
+	} 
+	coverage_group ipdodq${q}_rd_cov
+	{
+	   sample_event = wait_var(ipdodq${q}_rd_adr); 
+	   #include "siu_ipdodq${q}_rd_sample.vrh"
+	}
+	coverage_group ipdbdq${q}_rd_cov
+	{
+	   sample_event = wait_var(ipdbdq${q}_rd_adr); 
+	   #include "siu_ipdbdq${q}_rd_sample.vrh"
+	}
+. }
+
+#ifndef SIU_WB_COV
+	////// ipcc to ipcs ptr
+. for ($q=0; $q<2; $q++)
+. {
+	coverage_group ipcc_ipcs${q}_or_cov
+	{
+		sample_event = sync (ANY, ipcc_ipcs${q}_orgo_evnt_trig);
+		#include "siu_ipcc_ipcs${q}_or_sample.vrh"
+	}
+	coverage_group ipcc_ipcs${q}_by_cov
+	{
+		sample_event = sync (ANY, ipcc_ipcs${q}_bygo_evnt_trig);
+		#include "siu_ipcc_ipcs${q}_by_sample.vrh"
+	}
+.}
+
+  // ----------- coverage_group ----------------
+  coverage_group check_cnt_dmu_or_cov
+  {
+    //sample_event                = wait_var (dmu_or_cnt_r);
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event                = @(posedge  siu_coverage_ifc_l2.clk);
+
+    #include "siu_check_cnt_dmu_or_sample.vrh"
+  }
+
+  coverage_group check_cnt_dmu_by_cov
+  {
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event                = @(posedge  siu_coverage_ifc_l2.clk);
+
+    #include "siu_check_cnt_dmu_by_sample.vrh"
+  }
+
+  coverage_group check_cnt_niu_or_cov
+  {
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event                = @(posedge  siu_coverage_ifc_l2.clk);
+
+    #include "siu_check_cnt_niu_or_sample.vrh"
+  }
+
+  coverage_group check_cnt_niu_by_cov
+  {
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event                = @(posedge  siu_coverage_ifc_l2.clk);
+
+    #include "siu_check_cnt_niu_by_sample.vrh"
+  }
+
+. for ($q=0; $q<8; $q++)
+. {
+  coverage_group buffer_cnt_ilc${q}
+  {
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event                = @(posedge  siu_coverage_ifc_l2.clk);
+
+    #include "siu_buff_cnt_ilc${q}_sample.vrh"
+  }
+. }
+
+  coverage_group siu_ipcc_wrm_cov
+  {
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event                = @(posedge  siu_coverage_ifc_l2.clk);
+
+    #include "siu_ipcc_wrm_cnt_sample.vrh"
+  }
+
+. for ($q=0; $q<8; $q++)
+. {
+  coverage_group siu_ilc${q}_wrm_cov
+  {
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event                = @(posedge  siu_coverage_ifc_l2.clk);
+
+    #include "siu_ilc${q}_wrm_cnt_sample.vrh"
+  }
+. }
+#endif  // not in siu_wb_cov
+
+  coverage_group siu_order_rule_match0
+  {
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event                = @(posedge  siu_coverage_ifc_l2.clk);
+
+    #include "siu_ipcs0_match.vrh"
+  }
+
+
+  coverage_group siu_order_rule_match1
+  {
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event                = @(posedge  siu_coverage_ifc_l2.clk);
+
+    #include "siu_ipcs1_match.vrh"
+  }
+
+
+  coverage_group siu_order_rule_dep0
+  {
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event                = @(posedge  siu_coverage_ifc_l2.clk);
+
+    #include "siu_ipcs0_dep.vrh"
+  }
+
+  coverage_group siu_order_rule_dep1
+  {
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event                = @(posedge  siu_coverage_ifc_l2.clk);
+
+    #include "siu_ipcs1_dep.vrh"
+  }
+
+#ifndef SIU_WB_COV
+  coverage_group siu_order_rule_niu
+  {
+    sample_event                = @(posedge siu_coverage_ifc_l2.clk);
+    sample order_chk.siu_RDDord_pass_niuord_diffbank,
+           order_chk.siu_RDDord_not_pass_niuord_samebank,
+           order_chk.siu_WRIord_not_pass_niuord,
+           order_chk.siu_niubyp_pass_niubyp_diffbank,
+           order_chk.siu_niubyp_not_pass_niubyp_samebank,
+           order_chk.siu_niubyp_pass_niuord_diffbank,
+           order_chk.siu_RDDbyp_pass_RDDord_samebank,
+           order_chk.siu_WRIbyp_not_pass_niuord_samebank;
+  }
+
+. for ($q=0; $q<8; $q++)
+. {
+  coverage_group siu_state_ilc${q}
+  {
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event                = @(posedge  siu_coverage_ifc_l2.clk);
+
+    #include "siu_ilc${q}_state.vrh"
+  }
+. }
+
+  coverage_group siu_state_ipcc
+  {
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event                = @(posedge  siu_coverage_ifc_l2.clk);
+
+    #include "siu_ipcc_state.vrh"
+  }
+
+  coverage_group siu_state_inc
+  {
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event                = @(posedge  siu_coverage_ifc_l2.clk);
+
+    #include "siu_inc_state.vrh"
+  }
+
+. for ($q=0; $q<2; $q++)
+. {
+  coverage_group siu_state_ipcs${q}
+  {
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event                = @(posedge  siu_coverage_ifc_l2.clk);
+
+    #include "siu_ipcs${q}_state.vrh"
+  }
+. }
+
+
+	coverage_group ipcc_arb_cov
+	{
+		sample_event = sync (ANY, ipcc_arb_evnt_trig);
+		sample siu_coverage_ipcc_arb.niu_by_go, siu_coverage_ipcc_arb.niu_or_go, 
+			siu_coverage_ipcc_arb.dmu_by_go, siu_coverage_ipcc_arb.dmu_or_go;
+		cross siu_ipcc_cross_arb (
+		 siu_coverage_ipcc_arb.niu_by_go, siu_coverage_ipcc_arb.niu_or_go, 
+			siu_coverage_ipcc_arb.dmu_by_go, siu_coverage_ipcc_arb.dmu_or_go)
+		{
+			ignored IgnoreIpccarb (siu_coverage_ipcc_arb.niu_by_go == 0 && siu_coverage_ipcc_arb.niu_or_go == 0 && siu_coverage_ipcc_arb.dmu_by_go == 0 && siu_coverage_ipcc_arb.dmu_or_go == 0);
+		}
+	}
+
+#endif // not in siu_wb_cov
+
+////// RAS coverage for sii side
+
+	coverage_group sii_io_err_det_cov
+	{
+		//sample_event = sync (ANY, ipcc_err_det_trig);
+                sample_event = @(posedge siu_coverage_err_det.clk);
+		sample siu_coverage_err_det.cp_err, siu_coverage_err_det.ap_err, 
+		       siu_coverage_err_det.dp_err, siu_coverage_err_det.cecc_ce,
+                       siu_coverage_err_det.cecc_ue;
+		cross siu_sii_err_cross_cov (
+		 siu_coverage_err_det.cp_err, siu_coverage_err_det.ap_err,
+			siu_coverage_err_det.cecc_ce)
+		{
+			ignored IgnoreErr (siu_coverage_err_det.ap_err == 0 && siu_coverage_err_det.cp_err == 0 && siu_coverage_err_det.cecc_ce == 0);
+		}
+	}
+        coverage_group sii_ecc_err_cov
+        {
+          //sample_event = sync (ANY, ipcc_ecc_err_trig);
+          sample_event = @(siu_coverage_err_det.id or siu_coverage_err_det.c);
+          sample siu_coverage_err_det.e
+      	  {
+      		state s_CE (0:63) if ((siu_coverage_err_det.e[4:0] < 5'b10110) && (siu_coverage_err_det.e[5] === 1'b1));
+      		state s_NO_ERR (0:63)  if (siu_coverage_err_det.e === 6'b000000);
+      		state s_UE (0:63) if ((siu_coverage_err_det.e[4:0] !== 5'b00000) && ((siu_coverage_err_det.e[5] === 1'b0) || (siu_coverage_err_det.e[4:0] > 5'b10101)));
+      	  }
+        }
+        coverage_group sii_ebit_cov
+        {
+          sample_event = @(negedge siu_coverage_ifc.ncu_gnt);
+          sample siu_coverage_err_det.ebits_piortn
+          {
+                state s_0 (4'b0001);
+                state s_1 (4'b0010);
+                state s_2 (4'b0100);
+                state s_3 (4'b1000);
+                state s_4 (4'b1111);
+          }
+        }
+        coverage_group sii_syndrom_cov
+        {
+          sample_event = @(siu_coverage_err_det.sending_r or siu_ipcc_state_machine.cstate);
+          sample siu_coverage_err_det.err_sig_l
+      	  {
+      		state s_niud_pe (0:63) if (siu_coverage_err_det.err_sig_l[5] === 1'b1);
+      		state s_niua_pe (0:63) if (siu_coverage_err_det.err_sig_l[4] === 1'b1);
+      		state s_niuctag_ue (0:63) if (siu_coverage_err_det.err_sig_l[3] === 1'b1);
+      		state s_dmud_pe (0:63) if (siu_coverage_err_det.err_sig_l[2] === 1'b1);
+      		state s_dmua_pe (0:63) if (siu_coverage_err_det.err_sig_l[1] === 1'b1);
+      		state s_dmuctag_ue (0:63) if (siu_coverage_err_det.err_sig_l[0] === 1'b1);
+      	  }
+        }
+// RAS_COVERAGE sii side
+
+
+	task new(StandardDisplay dbg);
+	task set_cov_cond_bits ();
+	
+} // class siu_ipcs_coverage
+
+////// siu_ipcs_coverage class
+task siu_ipcs_coverage::new(StandardDisplay dbg)
+{
+	bit coverage_on;
+
+	myname = "siu_ipcs_coverage";
+	this.dbg = dbg;
+
+	if (mChkPlusarg(siu_ipcs_coverage) || mChkPlusarg(coverage_on)) {
+		coverage_on = 1;
+		if (mChkPlusarg(siu_ipcs_cov_debug)) {
+			siu_ipcs_cov_debug = 1'b1;
+		}
+	} else {
+		coverage_on = 0;
+	}
+
+	if (coverage_on) 
+	{
+	//	ipdohq0_wr_cov	= new();	
+
+		fork {
+		   @(posedge siu_coverage_ipdoq0_rd.cmp_diag_done);
+		   coverage_save_database(1);
+		} join none
+
+		set_cov_cond_bits();
+	} // coverage_on
+} // ipcs_coverage new
+
+task siu_ipcs_coverage::set_cov_cond_bits()
+{
+	fork
+#ifndef SIU_WB_COV
+
+	{
+	   integer indq_wr_last_cycle = 0;
+	   while(1)
+	   {
+	   	integer indq_wr_this_cycle = 0;
+		@(posedge siu_coverage_indq.clk);
+		if (siu_coverage_indq.wr_en === 1'b1)
+		{
+			indq_size++;
+
+			indq_wr_this_cycle = get_cycle(siu_coverage_indq.clk);
+			indq_wr_b2b = indq_wr_this_cycle - indq_wr_last_cycle; 
+			indq_wr_last_cycle = indq_wr_this_cycle;
+			indq_wr_adr = siu_coverage_indq.wr_adr;
+		}
+	   }
+	}
+	{
+	   integer indq_rd_last_cycle = 0;
+	   while(1)
+	   {
+	   	integer indq_rd_this_cycle = 0;
+		@(posedge siu_coverage_indq.clk);
+		if (siu_coverage_indq.rd_adr !== indq_rd_adr && siu_coverage_indq.rd_en === 1'b1 )
+		{
+			indq_size--;
+			indq_rd_this_cycle = get_cycle(siu_coverage_indq.clk);
+			indq_rd_b2b = indq_rd_this_cycle - indq_rd_last_cycle; 
+			indq_rd_last_cycle = indq_rd_this_cycle;
+			indq_rd_adr = siu_coverage_indq.rd_adr;
+		}
+	   }
+	}
+
+. for ($q=0; $q<8; $q++)
+. {
+	{
+	   integer ildq${q}_wr_last_cycle = 0;
+	   while(1)
+	   {
+	   	integer ildq${q}_wr_this_cycle = 0;
+		@(posedge siu_coverage_ildq${q}.clk);
+		if (siu_coverage_ildq${q}.wr_en === 1'b1)
+		{
+			ildq${q}_size++;
+
+			ildq${q}_wr_this_cycle = get_cycle(siu_coverage_ildq${q}.clk);
+			ildq${q}_wr_b2b = ildq${q}_wr_this_cycle - ildq${q}_wr_last_cycle; 
+			ildq${q}_wr_last_cycle = ildq${q}_wr_this_cycle;
+			ildq${q}_wr_adr = siu_coverage_ildq${q}.wr_adr;
+		}
+	   }
+	}
+	{
+	   integer ildq${q}_rd_last_cycle = 0;
+	   while(1)
+	   {
+	   	integer ildq${q}_rd_this_cycle = 0;
+		@(posedge siu_coverage_ildq${q}.clk);
+		if (siu_coverage_ildq${q}.rd_adr !== ildq${q}_rd_adr && siu_coverage_ildq${q}.rd_en === 1'b1 )
+		{
+			ildq${q}_size--;
+			ildq${q}_rd_this_cycle = get_cycle(siu_coverage_ildq${q}.clk);
+			ildq${q}_rd_b2b = ildq${q}_rd_this_cycle - ildq${q}_rd_last_cycle; 
+			ildq${q}_rd_last_cycle = ildq${q}_rd_this_cycle;
+			ildq${q}_rd_adr = siu_coverage_ildq${q}.rd_adr;
+		}
+	   }
+	}
+.}
+
+#endif // not in siu_wb_cov
+
+. for ($q=0; $q<2; $q++)
+. {
+	{
+	   while(1)
+	   {
+		@(posedge siu_coverage_ipdoq${q}_wr.clk);
+		if (siu_coverage_ipdoq${q}_wr.h_en === 1'b1)
+		{
+			ipdohq${q}_size ++;
+			ipdohq${q}_wr_adr = siu_coverage_ipdoq${q}_wr.h_adr;
+		}
+	   }
+	}
+	{
+	   while(1)
+	   {
+		@(posedge siu_coverage_ipdbq${q}_wr.clk);
+		if (siu_coverage_ipdbq${q}_wr.h_en === 1'b1)
+		{
+			ipdbhq${q}_size ++;
+			ipdbhq${q}_wr_adr = siu_coverage_ipdbq${q}_wr.h_adr;
+		}
+	   }
+	}	
+	{
+	   while(1)
+	   {
+		@(posedge siu_coverage_ipdoq${q}_rd.clk);
+		if (siu_coverage_ipdoq${q}_rd.h_adr !== ipdohq${q}_rd_adr && siu_coverage_ipdoq${q}_rd.h_en === 1'b1 )
+		{
+			ipdohq${q}_size --;
+			ipdohq${q}_rd_adr = siu_coverage_ipdoq${q}_rd.h_adr;
+		}
+	   }
+	}
+	{
+	   while(1)
+	   {
+		@(posedge siu_coverage_ipdbq${q}_rd.clk);
+		if (siu_coverage_ipdbq${q}_rd.h_adr !== ipdbhq${q}_rd_adr && siu_coverage_ipdbq${q}_rd.h_en === 1'b1)
+		{
+			ipdbhq${q}_size --;
+			ipdbhq${q}_rd_adr = siu_coverage_ipdbq${q}_rd.h_adr;
+		}
+	   }
+	}	
+
+	{
+	   integer ipdoq${q}_d_wr_last_cycle = 0;
+	   while(1)
+	   {
+	   	integer ipdoq${q}_d_wr_this_cycle;
+		@(posedge siu_coverage_ipdoq${q}_wr.clk);
+		if (siu_coverage_ipdoq${q}_wr.d_en === 1'b1)
+		{
+			ipdodq${q}_size ++;
+			ipdoq${q}_d_wr_this_cycle = get_cycle(siu_coverage_ipdoq${q}_wr.clk);
+			ipdoq${q}_d_wr_b2b = ipdoq${q}_d_wr_this_cycle - ipdoq${q}_d_wr_last_cycle;
+			ipdoq${q}_d_wr_last_cycle = ipdoq${q}_d_wr_this_cycle;
+			ipdodq${q}_wr_adr = siu_coverage_ipdoq${q}_wr.d_adr;
+		}
+	   }
+	}
+	{
+	   integer ipdbq${q}_d_wr_last_cycle = 0;
+	   while(1)
+	   {
+	   	integer ipdbq${q}_d_wr_this_cycle;
+		@(posedge siu_coverage_ipdbq${q}_wr.clk);
+		if (siu_coverage_ipdbq${q}_wr.d_en === 1'b1)
+		{
+			ipdbdq${q}_size ++;
+			ipdbq${q}_d_wr_this_cycle = get_cycle(siu_coverage_ipdbq${q}_wr.clk);
+			ipdbq${q}_d_wr_b2b = ipdbq${q}_d_wr_this_cycle - ipdbq${q}_d_wr_last_cycle;
+			ipdbq${q}_d_wr_last_cycle = ipdbq${q}_d_wr_this_cycle;
+			ipdbdq${q}_wr_adr = siu_coverage_ipdbq${q}_wr.d_adr;
+		}
+	   }
+	}	
+	{
+	   integer ipdoq${q}_d_rd_last_cycle = 0;
+	   while(1)
+	   {
+	   	integer ipdoq${q}_d_rd_this_cycle;
+		@(posedge siu_coverage_ipdoq${q}_rd.clk);
+		if (siu_coverage_ipdoq${q}_rd.d_adr !== ipdodq${q}_rd_adr)
+		{
+			ipdodq${q}_size --;
+			ipdoq${q}_d_rd_this_cycle = get_cycle(siu_coverage_ipdoq${q}_rd.clk);
+			ipdoq${q}_d_rd_b2b = ipdoq${q}_d_rd_this_cycle - ipdoq${q}_d_rd_last_cycle;
+			ipdoq${q}_d_rd_last_cycle = ipdoq${q}_d_rd_this_cycle;
+			ipdodq${q}_rd_adr = siu_coverage_ipdoq${q}_rd.d_adr;
+		}
+	   }
+	}
+	{
+	   integer ipdbq${q}_d_rd_last_cycle = 0;
+	   while(1)
+	   {
+	   	integer ipdbq${q}_d_rd_this_cycle;
+		@(posedge siu_coverage_ipdbq${q}_rd.clk);
+		if (siu_coverage_ipdbq${q}_rd.d_adr !== ipdbdq${q}_rd_adr)
+		{
+			ipdbdq${q}_size --;
+			ipdbq${q}_d_rd_this_cycle = get_cycle(siu_coverage_ipdbq${q}_rd.clk);
+			ipdbq${q}_d_rd_b2b = ipdbq${q}_d_rd_this_cycle - ipdbq${q}_d_rd_last_cycle;
+			ipdbq${q}_d_rd_last_cycle = ipdbq${q}_d_rd_this_cycle;
+			ipdbdq${q}_rd_adr = siu_coverage_ipdbq${q}_rd.d_adr;
+		}
+	   }
+	}	
+. }
+
+. for ($q=0; $q<2; $q++)
+. {
+	{
+	   while (1)
+	   {
+		@(posedge siu_coverage_ipcc_ipcs.clk);
+		if ( siu_coverage_ipcc_ipcs.by${q}_go === 1'b1 )
+			trigger (ipcc_ipcs${q}_bygo_evnt_trig);
+		if ( siu_coverage_ipcc_ipcs.or${q}_go === 1'b1 )
+			trigger (ipcc_ipcs${q}_orgo_evnt_trig);
+	   }
+	}
+. }
+
+	{
+	   while (1)
+	   {
+		@(posedge siu_coverage_ipcc_arb.clk);
+		if ( siu_coverage_ipcc_arb.niu_by_go === 1'b1 ||
+			siu_coverage_ipcc_arb.niu_or_go === 1'b1 ||
+			siu_coverage_ipcc_arb.dmu_by_go === 1'b1 ||
+			siu_coverage_ipcc_arb.dmu_or_go === 1'b1)
+			trigger (ipcc_arb_evnt_trig);
+	   }
+	}
+// RAS_COVERAGE
+
+	{
+	   while (1)
+	   {
+		@(posedge siu_coverage_err_det.clk);
+		if ( siu_coverage_err_det.cp_err === 1'b1 ||
+			siu_coverage_err_det.ap_err === 1'b1 ||
+			siu_coverage_err_det.dp_err === 1'b1 ||
+			siu_coverage_err_det.cecc_ue === 1'b1 ||
+			siu_coverage_err_det.cecc_ce === 1'b1)
+			trigger (ipcc_err_det_trig);
+	   }
+	}
+  
+        {
+           while (1)
+           {
+                @(siu_coverage_err_det.id or siu_coverage_err_det.c);
+                trigger (ipcc_ecc_err_trig);
+           }
+        }
+// ras coverage end
+
+	join none
+}
+
+
+////////////////////////////////////////////////////////////////////////
+// sio internal coverage objects
+////////////////////////////////////////////////////////////////////////
+class siu_opcs_coverage
+{
+	StandardDisplay	dbg;
+	local string	myname;
+
+	bit siu_opcs_cov_debug = 1'b0;
+        bit [2:0]       sio_sii_opcc_ipcc_dmu_by_cnt = 3'b0;
+        bit [2:0]       sio_sii_opcc_ipcc_niu_by_cnt = 3'b0;
+
+
+. for ($bank=0; $bank<8; $bank++)
+. {
+. for ($q=0; $q<2; $q++)
+. {
+	bit [4:0]	olddq${bank}${q}_rd_adr = 5'b0;
+	bit [4:0]	olddq${bank}${q}_wr_adr = 5'b0;
+	integer 	olddq${bank}${q}_wr_b2b = 1;
+	integer 	olddq${bank}${q}_rd_b2b = 0;
+	integer		olddq${bank}${q}_size = 0;
+.}
+.}
+
+. for ($q=0; $q<2; $q++)
+. {
+	// opdhq
+	bit [3:0]	opdhq${q}_rd_adr = 4'b0;
+	bit [3:0]	opdhq${q}_wr_adr = 4'b0;
+	integer		opdhq${q}_size = 0;
+	integer		opdhq${q}_wr_b2b = 0;
+	integer		opdhq${q}_rd_b2b = 0;
+.}
+
+. for ($q=0; $q<2; $q++)
+. {
+. for ($p=0; $p<2; $p++)
+. {
+	// opdhq
+	bit [5:0]	opddq${q}${p}_rd_adr = 6'b0;
+	bit [5:0]	opddq${q}${p}_wr_adr = 6'b0;
+	integer		opddq${q}${p}_size = 0;
+	integer		opddq${q}${p}_wr_b2b = 1;
+	integer		opddq${q}${p}_rd_b2b = 0;
+.}
+.}
+
+	event		opcc_arb_evnt_trig;
+
+	////// olddq //////
+. for ($bank=0; $bank<8; $bank++)
+. {
+. for ($q=0; $q<2; $q++)
+. {
+	coverage_group olddq${bank}${q}_wr_cov
+	{
+	   sample_event = wait_var(olddq${bank}${q}_wr_adr); 
+	   #include "siu_olddq${bank}${q}_wr_sample.vrh"
+	} 
+	coverage_group olddq${bank}${q}_rd_cov
+	{
+	   sample_event = wait_var(olddq${bank}${q}_rd_adr); 
+	   #include "siu_olddq${bank}${q}_rd_sample.vrh"
+	} 
+.}
+.}
+
+	////// opdhq(0,1) 
+. for ($q=0; $q<2; $q++)
+. {
+	coverage_group opdhq${q}_rd_cov
+	{
+	   sample_event = wait_var(opdhq${q}_rd_adr);
+	   #include "siu_opdhq${q}_rd_sample.vrh"
+	}
+	coverage_group opdhq${q}_wr_cov
+	{
+	   sample_event = wait_var(opdhq${q}_wr_adr);
+	   #include "siu_opdhq${q}_wr_sample.vrh"
+	}
+.}
+
+	////// opddq(0,1)(0,1) 
+. for ($q=0; $q<2; $q++)
+. {
+. for ($p=0; $p<2; $p++)
+. {
+	coverage_group opddq${q}${p}_rd_cov
+	{
+	   sample_event = wait_var(opddq${q}${p}_rd_adr);
+	   #include "siu_opddq${q}${p}_rd_sample.vrh"
+	}
+	coverage_group opddq${q}${p}_wr_cov
+	{
+	   sample_event = wait_var(opddq${q}${p}_wr_adr);
+	   #include "siu_opddq${q}${p}_wr_sample.vrh"
+	}
+.}
+.}
+  
+. for ($q=0; $q<2; $q++)
+. {
+  coverage_group siu_state_opcs${q}
+  {
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event                = @(posedge  siu_coverage_ifc_l2.clk);
+
+    #include "siu_opcs${q}_state.vrh"
+  }
+. }
+
+
+#ifndef SIU_WB_COV
+  coverage_group communicate_cnt_niu_by_cov
+  {
+    const_sample_reference      = 1;    // ref. to sample vars. is constant
+    sample_event                = @(posedge  siu_coverage_opcc_arb.clk);
+
+    #include "siu_commun_niu_by_sample.vrh"
+  }
+
+
+	coverage_group opcc_arb_cov
+	{
+		sample_event = sync (ANY, opcc_arb_evnt_trig);
+		sample siu_coverage_opcc_arb.olc0_req, 
+			siu_coverage_opcc_arb.olc1_req,
+			siu_coverage_opcc_arb.olc2_req,
+			siu_coverage_opcc_arb.olc3_req,
+			siu_coverage_opcc_arb.olc4_req,
+			siu_coverage_opcc_arb.olc5_req,
+			siu_coverage_opcc_arb.olc6_req,
+			siu_coverage_opcc_arb.olc7_req;
+		cross siu_opcc_cross_arb (
+			siu_coverage_opcc_arb.olc0_req,
+			siu_coverage_opcc_arb.olc1_req,
+			siu_coverage_opcc_arb.olc2_req,
+			siu_coverage_opcc_arb.olc3_req,
+			siu_coverage_opcc_arb.olc4_req,
+			siu_coverage_opcc_arb.olc5_req,
+			siu_coverage_opcc_arb.olc6_req,
+			siu_coverage_opcc_arb.olc7_req)
+		{
+			ignored IgnoreOpccarb (
+			siu_coverage_opcc_arb.olc0_req == 1'b0 &&
+			siu_coverage_opcc_arb.olc1_req == 1'b0 &&
+			siu_coverage_opcc_arb.olc2_req == 1'b0 &&
+			siu_coverage_opcc_arb.olc3_req == 1'b0 &&
+			siu_coverage_opcc_arb.olc4_req == 1'b0 &&
+			siu_coverage_opcc_arb.olc5_req == 1'b0 &&
+			siu_coverage_opcc_arb.olc6_req == 1'b0 &&
+			siu_coverage_opcc_arb.olc7_req == 1'b0);
+		}
+	}
+#endif // not in the siu_wb_cov	
+ 
+// RAS_COVERAGE
+        ////// opcs_err(0,1)
+. for ($q=0; $q<2; $q++)
+. {
+        coverage_group sio_opcs${q}_err_cov
+        {
+           sample_event = @(siu_coverage_opcs${q}_err.ctag_ue or
+                            siu_coverage_opcs${q}_err.ctag_ce);
+           sample siu_coverage_opcs${q}_err.ctag_ue
+           {
+               state S_UE (1);
+           }
+           sample siu_coverage_opcs${q}_err.ctag_ce
+           {
+               state S_CE (1);
+           }
+        }
+        coverage_group sio_opcs${q}_ecc_err_cov
+        {
+          sample_event = @(siu_coverage_opcs${q}_err.id);
+          sample siu_coverage_opcs${q}_err.e
+          {
+
+state s_CECC (0:63) if ((siu_coverage_opcs${q}_err.e[4:0] < 5'b10110) && (siu_coverage_opcs${q}_err.e[5] === 1'b1));
+                state s_NO_ERR (0:63)  if (siu_coverage_opcs${q}_err.e === 6'b000000);
+                state s_UECC (0:63) if ((siu_coverage_opcs${q}_err.e[4:0] !== 5'b00000) && ((siu_coverage_opcs${q}_err.e[5] === 1'b0) || (siu_coverage_opcs${q}_err.e[4:0] > 5'b10101)));
+          }
+        }
+.}
+
+        ////// E bit on from 8 L2 banks
+. for ($q=0; $q<8; $q++)
+. {
+        coverage_group sio_ebit_cov${q}
+        {
+           sample_event = @(posedge siu_coverage_ifc_l2.l2b${q}_sio_ctag_vld);
+           sample siu_coverage_ifc_l2.l2b${q}_sio_data[21];
+        }
+.}
+// RAS_COVERAGE end
+
+// for sio-niu interface coverage
+
+
+        coverage_group siu_niudq_req_cov
+	{
+    		sample_event = @(posedge siu_coverage_ifc.niu_sio_dq);
+		sample siu_coverage_ifc.niu_sio_dq
+		{
+			state s_SI0NIU_DQ_REQ (1) if (siu_coverage_ifc.sio_niu_req === 1'b1);
+		}
+	}
+//
+
+	task new(StandardDisplay dbg);
+	task set_cov_cond_bits ();
+	
+} // class siu_opcs_coverage
+
+////// siu_opcs_coverage class
+task siu_opcs_coverage::new(StandardDisplay dbg)
+{
+	bit coverage_on;
+
+	myname = "siu_opcs_coverage";
+	this.dbg = dbg;
+
+	if (mChkPlusarg(siu_opcs_coverage) || mChkPlusarg(coverage_on)) {
+		coverage_on = 1;
+		if (mChkPlusarg(siu_opcs_cov_debug)) {
+			siu_opcs_cov_debug = 1'b1;
+		}
+	} else {
+		coverage_on = 0;
+	}
+
+	if (coverage_on) 
+	{
+		//opdohq0_wr_cov	= new();	
+
+		fork {
+		   @(posedge siu_coverage_olddq00.cmp_diag_done);
+		   coverage_save_database(1);
+		} join none
+
+		set_cov_cond_bits();
+	} // coverage_on
+} // opcs_coverage new
+
+task siu_opcs_coverage::set_cov_cond_bits()
+{
+	fork
+
+. for ($bank=0; $bank<8; $bank++)
+. {
+. for ($q=0; $q<2; $q++)
+. {
+	{
+	   integer olddq_wr_last_cycle = 0;
+	   while(1)
+	   {
+	   	integer olddq_wr_this_cycle = 0;
+		@(posedge siu_coverage_olddq${bank}${q}.clk);
+		if (siu_coverage_olddq${bank}${q}.wr_en === 1'b1)
+		{
+			olddq${bank}${q}_size++;
+
+			olddq_wr_this_cycle = get_cycle(siu_coverage_olddq${bank}${q}.clk);
+			olddq${bank}${q}_wr_b2b = olddq_wr_this_cycle - olddq_wr_last_cycle; 
+			olddq_wr_last_cycle = olddq_wr_this_cycle;
+			olddq${bank}${q}_wr_adr = siu_coverage_olddq${bank}${q}.wr_adr;
+		}
+	   }
+	}
+	{
+	   integer olddq_rd_last_cycle = 0;
+	   while(1)
+	   {
+	   	integer olddq_rd_this_cycle = 0;
+		@(posedge siu_coverage_olddq${bank}${q}.clk);
+		if (siu_coverage_olddq${bank}${q}.rd_en === 1'b1)
+		{
+			olddq${bank}${q}_size--;
+
+			olddq_rd_this_cycle = get_cycle(siu_coverage_olddq${bank}${q}.clk);
+			olddq${bank}${q}_rd_b2b = olddq_rd_this_cycle - olddq_rd_last_cycle; 
+			olddq_rd_last_cycle = olddq_rd_this_cycle;
+			olddq${bank}${q}_rd_adr = siu_coverage_olddq${bank}${q}.rd_adr;
+		}
+	   }
+	}
+.}
+.}
+. for ($q=0; $q<2; $q++)
+. {
+	{
+	   integer opdhq${q}_rd_last_cycle = 0;
+	   while(1)
+	   {
+	   	integer opdhq${q}_rd_this_cycle = 0;
+		@(posedge siu_coverage_opdhq${q}_rd.clk);
+		if (siu_coverage_opdhq${q}_rd.rd_en === 1'b1 )
+		{
+			opdhq${q}_size --;
+			opdhq${q}_rd_this_cycle = get_cycle(siu_coverage_opdhq${q}_rd.clk);
+			opdhq${q}_rd_b2b = opdhq${q}_rd_this_cycle - opdhq${q}_rd_last_cycle;
+			opdhq${q}_rd_last_cycle = opdhq${q}_rd_this_cycle;
+
+			opdhq${q}_rd_adr = siu_coverage_opdhq${q}_rd.rd_adr;
+		}
+	   }
+	}
+	{
+	   integer opdhq${q}_wr_last_cycle = 0;
+	   while(1)
+	   {
+	   	integer opdhq${q}_wr_this_cycle = 0;
+		@(posedge siu_coverage_opdhq${q}_wr.clk);
+		if (siu_coverage_opdhq${q}_wr.wr_en === 1'b1 )
+		{
+			opdhq${q}_size ++;
+			opdhq${q}_wr_this_cycle = get_cycle(siu_coverage_opdhq${q}_wr.clk);
+			opdhq${q}_wr_b2b = opdhq${q}_wr_this_cycle - opdhq${q}_wr_last_cycle;
+			opdhq${q}_wr_last_cycle = opdhq${q}_wr_this_cycle;
+
+			opdhq${q}_wr_adr = siu_coverage_opdhq${q}_wr.wr_adr;
+		}
+	   }
+	}
+. }
+
+. for ($q=0; $q<2; $q++)
+. {
+. for ($p=0; $p<2; $p++)
+. {
+	{
+	   integer opddq${q}${p}_rd_last_cycle = 0;
+	   while(1)
+	   {
+	   	integer opddq${q}${p}_rd_this_cycle = 0;
+		@(posedge siu_coverage_opddq${q}${p}_rd.clk);
+		if (siu_coverage_opddq${q}${p}_rd.rd_en === 1'b1 )
+		{
+			opddq${q}${p}_size --;
+			opddq${q}${p}_rd_this_cycle = get_cycle(siu_coverage_opddq${q}${p}_rd.clk);
+			opddq${q}${p}_rd_b2b = opddq${q}${p}_rd_this_cycle - opddq${q}${p}_rd_last_cycle;
+			opddq${q}${p}_rd_last_cycle = opddq${q}${p}_rd_this_cycle;
+
+			opddq${q}${p}_rd_adr = siu_coverage_opddq${q}${p}_rd.rd_adr;
+		}
+	   }
+	}
+	{
+	   integer opddq${q}${p}_wr_last_cycle = 0;
+	   while(1)
+	   {
+	   	integer opddq${q}${p}_wr_this_cycle = 0;
+		@(posedge siu_coverage_opddq${q}${p}_wr.clk);
+		if (siu_coverage_opddq${q}${p}_wr.wr_en === 1'b1 )
+		{
+			opddq${q}${p}_size ++;
+			opddq${q}${p}_wr_this_cycle = get_cycle(siu_coverage_opddq${q}${p}_wr.clk);
+			opddq${q}${p}_wr_b2b = opddq${q}${p}_wr_this_cycle - opddq${q}${p}_wr_last_cycle;
+			opddq${q}${p}_wr_last_cycle = opddq${q}${p}_wr_this_cycle;
+
+			opddq${q}${p}_wr_adr = siu_coverage_opddq${q}${p}_wr.wr_adr;
+		}
+	   }
+	}
+. }
+. }
+#ifndef SIU_WB_COV
+	{
+	   while (1)
+	   {
+		@(posedge siu_coverage_opcc_arb.clk);
+		if ( siu_coverage_opcc_arb.olc0_req === 1'b1 ||
+			siu_coverage_opcc_arb.olc1_req === 1'b1 ||
+			siu_coverage_opcc_arb.olc2_req === 1'b1 ||
+			siu_coverage_opcc_arb.olc3_req === 1'b1 ||
+			siu_coverage_opcc_arb.olc4_req === 1'b1 ||
+			siu_coverage_opcc_arb.olc5_req === 1'b1 ||
+			siu_coverage_opcc_arb.olc6_req === 1'b1 ||
+			siu_coverage_opcc_arb.olc7_req === 1'b1)
+			trigger (opcc_arb_evnt_trig);
+	   }
+	}
+#endif
+
+	join none
+
+}
+
+// ***********************************************************************************
+// SIU coverage Objects for FC MAQ
+// ***********************************************************************************
+
+class fc_siu_internal_coverage
+{	
+  // for dispmon
+  StandardDisplay dbg;
+  local string 	  myname;
+  
+. for ($bank=0; $bank<8; $bank++)
+. {
+  event sii_ildq${bank}_evnt_trig;
+
+. for ($q=0; $q<2; $q++)
+. {
+	reg [5:0] sio_fifo_depth_olddq${bank}${q}_count_new = 6'd0;
+	reg [5:0] sio_fifo_depth_olddq${bank}${q}_count_old = 6'd0;
+.}
+	reg [5:0] sii_fifo_depth_ildq${bank}_count_new = 6'd0;
+	reg [5:0] sii_fifo_depth_ildq${bank}_count_old = 6'd0;
+.}
+
+    	reg [5:0] old_rd_adr = 6'd0;
+	reg [5:0] old_wr_adr = 6'd0;
+
+  // ----------- coverage_group ----------------
+. for ($bank=0; $bank<8; $bank++)
+. {
+. for ($q=0; $q<2; $q++)
+. {
+        coverage_group sio_fifo_depth_coverage_group_olddq${bank}${q}
+        {
+    	   const_sample_reference = 1;	// ref. to sample vars. is constant
+           sample_event = @(negedge sio_fifo_depth_olddq${bank}${q}.wr_en or
+			    negedge sio_fifo_depth_olddq${bank}${q}.rd_en);
+	   sample sio_fifo_depth_olddq${bank}${q}_count_new
+	   {
+. for ($z=0; $z <=32; $z++)
+. {
+		state sio_fifo_count_olddq${bank}${q}_${z}	(${z}) if(sio_fifo_depth_olddq${bank}${q}_count_new == 'd${z});
+. }
+	   }
+        }
+.}
+.}
+
+  // ----------- coverage_group ----------------
+. for ($bank=0; $bank<8; $bank++) {
+        coverage_group sii_fifo_depth_coverage_group_ildq${bank}
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ANY, sii_ildq${bank}_evnt_trig);
+           sample sii_fifo_depth_ildq${bank}_count_new
+           {
+.    for ($z=0; $z <=32; $z++) {
+                state sii_fifo_depth_ildq${bank}_${z}        (${z}) if(sii_fifo_depth_ildq${bank}_count_new == 'd${z});
+.    }
+           }
+        }
+.}
+
+
+  task new(StandardDisplay dbg);
+  task set_cov_cond_bits ();
+. for ($bank=0; $bank<8; $bank++)
+. {
+. for ($q=0; $q<2; $q++)
+. { 
+  task sio_fifo_olddq${bank}${q}();
+.}      
+.}      
+                
+. for ($bank=0; $bank<8; $bank++)
+. {                     
+  task sii_fifo_ildq${bank}();
+.}
+
+} //class fc_siu_internal_coverage
+
+
+/////////////////////////////////////////////////////////////////
+// Class creation 
+/////////////////////////////////////////////////////////////////
+task fc_siu_internal_coverage::new(StandardDisplay dbg)
+{
+  bit coverage_on = 0;
+  integer j;
+
+  // for dispmon
+  myname = "fc_siu_internal_coverage";
+  this.dbg = dbg;
+
+  if (mChkPlusarg(fc_siu_internal_coverage) || mChkPlusarg(coverage_on)) {
+    coverage_on = 1;
+  }
+
+  if (coverage_on) {
+    dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Internal Coverage turned on for SIU objects\n\n", get_time(LO)));
+. for ($bank=0; $bank<8; $bank++)
+. {
+. for ($q=0; $q<2; $q++)
+. {
+
+    sio_fifo_depth_coverage_group_olddq${bank}${q}	= new();
+.}
+    sii_fifo_depth_coverage_group_ildq${bank}		= new();
+.}
+
+    set_cov_cond_bits ();
+
+  } // if coverage_on
+} // fc_siu_internal_coverage::new()
+
+
+///////////////////////////////////////////////////////////////////////////
+// This task is a psuedo coverage object that combines a few conditions
+// so that the actual coverage objects' state space doesn't get too big
+//////////////////////////////////////////////////////////////////////////
+
+task fc_siu_internal_coverage:: set_cov_cond_bits ()
+{
+
+fork
+. for ($bank=0; $bank<8; $bank++)
+. {
+. for ($q=0; $q<2; $q++)
+. {
+	sio_fifo_olddq${bank}${q}();
+.}
+.}
+
+. for ($bank=0; $bank<8; $bank++)
+. {             
+	sii_fifo_ildq${bank}();
+.}
+
+join none
+
+} // task fc_siu_internal_coverage:: set_cov_cond_bits
+
+. for ($bank=0; $bank<8; $bank++)
+. {
+task fc_siu_internal_coverage::sio_fifo_olddq${bank}0()
+{
+    while(1)
+    {
+        @(negedge sio_fifo_depth_olddq${bank}0.clk);
+        {
+	  if((sio_fifo_depth_olddq${bank}0.wr_en == 1) && (sio_fifo_depth_olddq${bank}0.rd_en == 0))
+	  {
+		@(negedge sio_fifo_depth_olddq${bank}0.clk);
+		sio_fifo_depth_olddq${bank}0_count_new = sio_fifo_depth_olddq${bank}0_count_new + 1;
+          	dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Coverage-count for sio_fifo_depth_olddq${bank}0_count_new = %d\n\n", get_time(LO), sio_fifo_depth_olddq${bank}0_count_new));
+	  }
+	  else
+              if((sio_fifo_depth_olddq${bank}0.wr_en == 1) && (sio_fifo_depth_olddq${bank}0.rd_en == 1))
+	      {
+		sio_fifo_depth_olddq${bank}0_count_new = sio_fifo_depth_olddq${bank}0_count_new;
+          	dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Coverage-count for sio_fifo_depth_olddq${bank}0_count_new = %d\n\n", get_time(LO), sio_fifo_depth_olddq${bank}0_count_new));
+	      }
+	  else
+	      if((sio_fifo_depth_olddq${bank}0.wr_en == 0) && (sio_fifo_depth_olddq${bank}0.rd_en == 1))
+	      {
+		sio_fifo_depth_olddq${bank}0_count_new = sio_fifo_depth_olddq${bank}0_count_new - 1;
+          	dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Coverage-count for sio_fifo_depth_olddq${bank}0_count_new = %d\n\n", get_time(LO), sio_fifo_depth_olddq${bank}0_count_new));
+	      }
+
+        }
+    } // while
+}
+task fc_siu_internal_coverage::sio_fifo_olddq${bank}1()
+{
+    while(1)
+    {
+        @(negedge sio_fifo_depth_olddq${bank}1.clk);
+        {
+          if((sio_fifo_depth_olddq${bank}1.wr_en == 1) && (sio_fifo_depth_olddq${bank}1.rd_en == 0))
+          {
+                sio_fifo_depth_olddq${bank}1_count_new = sio_fifo_depth_olddq${bank}1_count_new + 1;
+                dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Coverage-count for sio_fifo_depth_olddq${bank}1_count_new = %d\n\n", get_time(LO), sio_fifo_depth_olddq${bank}1_count_new));
+          }
+          else
+              if((sio_fifo_depth_olddq${bank}1.wr_en == 1) && (sio_fifo_depth_olddq${bank}1.rd_en == 1))
+              {
+                sio_fifo_depth_olddq${bank}1_count_new = sio_fifo_depth_olddq${bank}1_count_new;
+                dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Coverage-count for sio_fifo_depth_olddq${bank}1_count_new = %d\n\n", get_time(LO), sio_fifo_depth_olddq${bank}1_count_new));
+              }
+          else
+              if((sio_fifo_depth_olddq${bank}1.wr_en == 0) && (sio_fifo_depth_olddq${bank}1.rd_en == 1))
+              {
+                sio_fifo_depth_olddq${bank}1_count_new = sio_fifo_depth_olddq${bank}1_count_new - 1;
+                dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Coverage-count for sio_fifo_depth_olddq${bank}1_count_new = %d\n\n", get_time(LO), sio_fifo_depth_olddq${bank}1_count_new));
+              }
+
+        }
+    } // while
+}
+
+.}
+
+. for ($bank=0; $bank<8; $bank++) {
+task fc_siu_internal_coverage::sii_fifo_ildq${bank}()
+{
+  integer ildq${q}_rd_adr = 0;
+  while(1)
+  {
+    @(posedge sii_fifo_depth_ildq${q}.clk);
+     sii_fifo_depth_ildq${bank}_count_old = sii_fifo_depth_ildq${bank}_count_new;
+    if (sii_fifo_depth_ildq${q}.wr_en === 1'b1)
+    {
+      sii_fifo_depth_ildq${bank}_count_new++;
+    }
+
+    if (sii_fifo_depth_ildq${q}.rd_adr !== ildq${q}_rd_adr &&
+        sii_fifo_depth_ildq${q}.rd_en === 1'b1 )
+    {
+      sii_fifo_depth_ildq${bank}_count_new--;
+      ildq${q}_rd_adr = sii_fifo_depth_ildq${q}.rd_adr;
+    }
+    if (sii_fifo_depth_ildq${bank}_count_old != sii_fifo_depth_ildq${bank}_count_new) {
+      dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Coverage-count for sii_fifo_depth_ildq${bank}_count_new = %d\n\n", get_time(LO), sii_fifo_depth_ildq${bank}_count_new));
+      trigger( sii_ildq${bank}_evnt_trig );
+    }
+  }
+}
+.}
+
+// ***********************************************************************************
+// FC SIU RAS coverage Objects for MAQ
+// ***********************************************************************************
+                
+class fc_siu_ras_coverage
+{          
+  // for dispmon
+  StandardDisplay dbg;
+  local string    myname;
+  integer i;
+
+. for ($bank=0; $bank<8; $bank++)
+. {
+  reg sii_to_l2_Ebit_RDD_O_NP_DMU_bank${bank} = 1'b0;
+  reg sii_to_l2_Ebit_wr8_O_P_DMU_bank${bank}  = 1'b0;
+  reg sii_to_l2_Ebit_wri_O_P_DMU_bank${bank}  = 1'b0;
+  reg sii_to_l2_Ebit_RDD_B_NIU_bank${bank}    = 1'b0;
+  reg sii_to_l2_Ebit_wri_O_NP_NIU_bank${bank} = 1'b0;
+  reg sii_to_l2_Ebit_wri_B_P_NIU_bank${bank}  = 1'b0;
+
+  reg sii_to_l2_Ebit_PA39_wr8_O_P_DMU_bank${bank}  = 1'b0;
+  reg sii_to_l2_Ebit_PA39_wri_O_P_DMU_bank${bank}  = 1'b0;
+  reg sii_to_l2_Ebit_PA39_wri_O_NP_NIU_bank${bank} = 1'b0;
+  reg sii_to_l2_Ebit_PA39_wri_B_P_NIU_bank${bank}  = 1'b0;
+  reg l2_to_sio_Ebit_bank${bank} = 1'b0;
+  event l2b${bank}_sio_ue_err_trig;
+. }
+  reg sio_to_niu_header81 = 1'b0;
+  reg sio_to_niu_header80 = 1'b0;
+  reg sio_to_dmu_header81 = 1'b0;
+  reg sio_to_dmu_header80 = 1'b0;
+  reg sii_ncu_dmuctag_ce_seen = 1'b0;
+  reg sii_ncu_niuctag_ce_seen = 1'b0;
+  reg sio_ncu_ctag_ce_seen = 1'b0;
+
+  event siu_ncu_ctag_ce_seen_trig;
+
+  // ----------- coverage_group ----------------
+. for ($bank=0; $bank<8; $bank++)
+. {
+        coverage_group soc_err_Ebit_bank${bank}
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = @(negedge siu_coverage_ifc_l2.sii_l2t${bank});
+           sample soc_err_Ebit_RDD_O_NP_DMU_bank${bank} (sii_to_l2_Ebit_RDD_O_NP_DMU_bank${bank})
+           {
+                state S_soc_err_Ebit_RDD_O_NP_DMU_bank${bank}  	(1'b1);
+           }
+	   sample soc_err_Ebit_wr8_O_P_DMU_bank${bank} (sii_to_l2_Ebit_wr8_O_P_DMU_bank${bank})
+	   {
+		state S_soc_err_Ebit_wr8_O_P_DMU_bank${bank} 	(1'b1);
+	   }
+	   sample soc_err_Ebit_wri_O_P_DMU_bank${bank}  (sii_to_l2_Ebit_wri_O_P_DMU_bank${bank})
+	   {
+		state S_soc_err_Ebit_wri_O_P_DMU_bank${bank} 	(1'b1);
+	   }
+	   sample soc_err_Ebit_RDD_B_NIU_bank${bank} (sii_to_l2_Ebit_RDD_B_NIU_bank${bank})
+	   {
+		state S_soc_err_Ebit_RDD_B_NIU_bank${bank} 	(1'b1);
+	   }
+	   sample soc_err_Ebit_wri_O_NP_NIU_bank${bank} (sii_to_l2_Ebit_wri_O_NP_NIU_bank${bank})
+	   {
+		state S_soc_err_Ebit_wri_O_NP_NIU_bank${bank} 	(1'b1);
+	   }
+	   sample soc_err_Ebit_wri_B_P_NIU_bank${bank} (sii_to_l2_Ebit_wri_B_P_NIU_bank${bank})
+	   {
+		state S_soc_err_Ebit_wri_B_P_NIU_bank${bank} 	(1'b1);
+	   }
+        }
+. }
+  // ----------- coverage_group ----------------
+. for ($bank=0; $bank<8; $bank++)
+. {
+        coverage_group soc_err_Ebit_PA39_bank${bank}
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = @(negedge siu_coverage_ifc_l2.sii_l2t${bank});
+           sample soc_err_Ebit_PA39_wr8_O_P_DMU_bank${bank} (sii_to_l2_Ebit_PA39_wr8_O_P_DMU_bank${bank})
+           {
+                state S_soc_err_Ebit_PA39_wr8_O_P_DMU_bank${bank}    (1'b1);
+           }
+           sample soc_err_Ebit_PA39_wri_O_P_DMU_bank${bank}  (sii_to_l2_Ebit_PA39_wri_O_P_DMU_bank${bank})
+           {
+                state S_soc_err_Ebit_PA39_wri_O_P_DMU_bank${bank}    (1'b1);
+           }
+           sample soc_err_Ebit_PA39_wri_O_NP_NIU_bank${bank} (sii_to_l2_Ebit_PA39_wri_O_NP_NIU_bank${bank})
+           {
+                state S_soc_err_Ebit_PA39_wri_O_NP_NIU_bank${bank}   (1'b1);
+           }
+           sample soc_err_Ebit_PA39_wri_B_P_NIU_bank${bank} (sii_to_l2_Ebit_PA39_wri_B_P_NIU_bank${bank})
+           {
+                state S_soc_err_Ebit_PA39_wri_B_P_NIU_bank${bank}    (1'b1);
+           }
+        }
+. }
+  // ----------- coverage_group ----------------
+. for ($bank=0; $bank<8; $bank++)
+. {
+        coverage_group soc_err_l2sioUe_bank${bank}
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = @(negedge l2b_to_sio_UEs.clk);
+           sample soc_err_l2sioUe_err_bank${bank} (l2b_to_sio_UEs.l2b${bank}_to_sio_ue_err)
+           {
+                state S_soc_err_l2sioUe_err_bank${bank}	(1'b1);
+           }
+        }
+. }
+
+  // ----------- coverage_group ----------------
+. for ($bank=0; $bank<8; $bank++)
+. {
+        coverage_group soc_err_l2sioUe_Ebit_bank${bank}
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ANY, l2b${bank}_sio_ue_err_trig);
+           sample soc_err_l2sioUe_err_Ebit_bank${bank} (l2_to_sio_Ebit_bank${bank})
+           {
+                state S_soc_err_l2sioUe_err_Ebit_bank${bank} (1'b1); 
+           }
+        }
+. }
+
+  // ----------- coverage_group ----------------
+        coverage_group soc_err_sioIoErrSignals
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = @(negedge siu_coverage_ifc.clk);
+           sample soc_err_sioIoErrSignals_NIU ({sio_to_niu_header81, sio_to_niu_header80})
+           {
+                state S_soc_err_sioIoErrSignals_NIU_01 (2'b01);
+                state S_soc_err_sioIoErrSignals_NIU_10 (2'b10);
+                state S_soc_err_sioIoErrSignals_NIU_11 (2'b11);
+           }
+           sample soc_err_sioIoErrSignals_DMU ({sio_to_dmu_header81, sio_to_dmu_header80})
+           {
+                state S_soc_err_sioIoErrSignals_DMU_01 (2'b01);
+                state S_soc_err_sioIoErrSignals_DMU_10 (2'b10);
+                state S_soc_err_sioIoErrSignals_DMU_11 (2'b11);
+           }
+        }
+  // ----------- coverage_group ----------------
+        coverage_group soc_err_multiCE_10cycle
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ANY, siu_ncu_ctag_ce_seen_trig);
+           sample soc_err_multiCE_10cycle_niu_n_dmu ({sii_ncu_dmuctag_ce_seen,sii_ncu_niuctag_ce_seen,sio_ncu_ctag_ce_seen})
+           {
+                state S_soc_err_multiCE_10cycle_niu_n_dmu (3'b111);
+           }
+        }
+  // ----------- coverage_group ----------------
+        coverage_group soc_err_multiCE_10times
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ANY, siu_ncu_ctag_ce_seen_trig);
+           at_least = 10;
+           sample soc_err_multiCE_10times_niu_n_dmu ({sii_ncu_dmuctag_ce_seen,sii_ncu_niuctag_ce_seen,sio_ncu_ctag_ce_seen})
+           {
+                state S_soc_err_multiCE_10times_niu_n_dmu (3'b111);
+           }
+        }
+  // ----------- coverage_group ----------------
+  
+
+
+  task new(StandardDisplay dbg);
+  task set_cov_cond_bits ();
+
+. for ($bank=0; $bank<8; $bank++)
+. {
+  task sii_to_l2_Ebit_bank${bank}();
+  task sii_to_l2_Ebit_PA39_bank${bank}();
+  task l2_to_sio_Ebit_UE_bank${bank}();
+. }
+  task sio_to_niu_Err();
+  task soc_niu_n_dmu_multi_ce_Err();
+
+}
+
+task fc_siu_ras_coverage::new(StandardDisplay dbg)
+{
+  bit coverage_on = 0;
+  integer j;
+
+  // for dispmon
+  myname = "fc_siu_ras_coverage";
+  this.dbg = dbg;
+
+  if (mChkPlusarg(fc_siu_ras_coverage) || mChkPlusarg(coverage_on)) {
+    coverage_on = 1;
+  }
+
+  if (coverage_on) {
+    dbg.dispmon(myname, MON_ALWAYS, psprintf("\n\n %d :fc_siu_ras_coverage Coverage turned on for SIU objects\n\n", get_time(LO)));
+
+. for ($bank=0; $bank<8; $bank++)
+. {
+    soc_err_Ebit_bank${bank}		= new();
+    soc_err_Ebit_PA39_bank${bank}	= new();
+    soc_err_l2sioUe_bank${bank}		= new();
+    soc_err_l2sioUe_Ebit_bank${bank}	= new();
+. }
+    soc_err_sioIoErrSignals		= new();
+    soc_err_multiCE_10cycle		= new();
+    soc_err_multiCE_10times		= new();
+    set_cov_cond_bits ();
+
+  } // if coverage_on
+} // fc_siu_ras_coverage::new()
+
+task fc_siu_ras_coverage:: set_cov_cond_bits ()
+{
+
+fork
+. for ($bank=0; $bank<8; $bank++)
+. {
+        sii_to_l2_Ebit_bank${bank}();
+	sii_to_l2_Ebit_PA39_bank${bank}();
+	l2_to_sio_Ebit_UE_bank${bank}();
+. }
+	sio_to_niu_Err();
+	soc_niu_n_dmu_multi_ce_Err();
+join none
+
+} // task fc_siu_ras_coverage:: set_cov_cond_bits
+
+. for ($bank=0; $bank<8; $bank++)
+. {
+task fc_siu_ras_coverage::sii_to_l2_Ebit_bank${bank}()
+{
+	while(1)
+	{
+	   @(negedge siu_coverage_ifc_l2.clk);
+	   {
+		if(siu_coverage_ifc_l2.sii_l2t${bank})
+	  	{
+  	  	sii_to_l2_Ebit_RDD_O_NP_DMU_bank${bank} = ((siu_coverage_ifc_l2.sii_l2t${bank}_data[26:24] == 3'b001) &&
+  	                                                    (siu_coverage_ifc_l2.sii_l2t${bank}_data[30] == 1'b1)      && 
+  	                                                    (siu_coverage_ifc_l2.sii_l2t${bank}_data[28] == 1'b1)      &&
+  	                                                    (siu_coverage_ifc_l2.sii_l2t${bank}_data[27] == 1'b1)) ;
+
+  	  	sii_to_l2_Ebit_wr8_O_P_DMU_bank${bank} = ((siu_coverage_ifc_l2.sii_l2t${bank}_data[26:24] == 3'b010) &&
+  	                                                    (siu_coverage_ifc_l2.sii_l2t${bank}_data[30] == 1'b1)      && 
+  	                                                    (siu_coverage_ifc_l2.sii_l2t${bank}_data[29] == 1'b1)      && 
+  	                                                    (siu_coverage_ifc_l2.sii_l2t${bank}_data[28] == 1'b1)      &&
+  	                                                    (siu_coverage_ifc_l2.sii_l2t${bank}_data[27] == 1'b1)) ;
+
+  	  	sii_to_l2_Ebit_wri_O_P_DMU_bank${bank} = ((siu_coverage_ifc_l2.sii_l2t${bank}_data[26:24] == 3'b100) &&
+  	                                                    (siu_coverage_ifc_l2.sii_l2t${bank}_data[30] == 1'b1)      && 
+  	                                                    (siu_coverage_ifc_l2.sii_l2t${bank}_data[29] == 1'b1)      && 
+  	                                                    (siu_coverage_ifc_l2.sii_l2t${bank}_data[28] == 1'b1)      &&
+  	                                                    (siu_coverage_ifc_l2.sii_l2t${bank}_data[27] == 1'b1)) ;
+  	  
+
+  	  	sii_to_l2_Ebit_RDD_B_NIU_bank${bank} = ((siu_coverage_ifc_l2.sii_l2t${bank}_data[26:24] == 3'b001) &&
+  	                                                    (siu_coverage_ifc_l2.sii_l2t${bank}_data[30] == 1'b0)      && 
+  	                                                    (siu_coverage_ifc_l2.sii_l2t${bank}_data[28] == 1'b1)      &&
+  	                                                    (siu_coverage_ifc_l2.sii_l2t${bank}_data[27] == 1'b0)) ;
+
+  	  	sii_to_l2_Ebit_wri_O_NP_NIU_bank${bank} = ((siu_coverage_ifc_l2.sii_l2t${bank}_data[26:24] == 3'b100) &&
+  	                                                    (siu_coverage_ifc_l2.sii_l2t${bank}_data[30] == 1'b1)      && 
+  	                                                    (siu_coverage_ifc_l2.sii_l2t${bank}_data[29] == 1'b0)      && 
+  	                                                    (siu_coverage_ifc_l2.sii_l2t${bank}_data[28] == 1'b1)      &&
+  	                                                    (siu_coverage_ifc_l2.sii_l2t${bank}_data[27] == 1'b0)) ;
+  	  
+  	  	sii_to_l2_Ebit_wri_B_P_NIU_bank${bank} = ((siu_coverage_ifc_l2.sii_l2t${bank}_data[26:24] == 3'b100) &&
+  	  						  (siu_coverage_ifc_l2.sii_l2t${bank}_data[30] == 1'b0)      &&
+  	  						  (siu_coverage_ifc_l2.sii_l2t${bank}_data[29] == 1'b1)      &&
+  	  						  (siu_coverage_ifc_l2.sii_l2t${bank}_data[28] == 1'b1)      &&
+  	  						  (siu_coverage_ifc_l2.sii_l2t${bank}_data[27] == 1'b0)) ;
+  	  
+		} // if
+	     }
+	}// while
+  	  
+}
+. }
+. for ($bank=0; $bank<8; $bank++)
+. {
+task fc_siu_ras_coverage::sii_to_l2_Ebit_PA39_bank${bank}()
+{
+        while(1)
+        {
+           @(negedge siu_coverage_ifc_l2.clk);
+           {
+                if(siu_coverage_ifc_l2.sii_l2t${bank})
+                {
+                sii_to_l2_Ebit_PA39_wr8_O_P_DMU_bank${bank} = ((siu_coverage_ifc_l2.sii_l2t${bank}_data[26:24] == 3'b010) &&
+                                                            (siu_coverage_ifc_l2.sii_l2t${bank}_data[30] == 1'b1)      &&
+                                                            (siu_coverage_ifc_l2.sii_l2t${bank}_data[29] == 1'b1)      &&
+                                                            (siu_coverage_ifc_l2.sii_l2t${bank}_data[28] == 1'b1)      &&
+                                                            (siu_coverage_ifc_l2.sii_l2t${bank}_data[27] == 1'b1)      &&
+							    (siu_coverage_ifc_l2.sii_l2t${bank}_data[7]  == 1'b1)) ;
+
+                sii_to_l2_Ebit_PA39_wri_O_P_DMU_bank${bank} = ((siu_coverage_ifc_l2.sii_l2t${bank}_data[26:24] == 3'b100) &&
+                                                            (siu_coverage_ifc_l2.sii_l2t${bank}_data[30] == 1'b1)      &&
+                                                            (siu_coverage_ifc_l2.sii_l2t${bank}_data[29] == 1'b1)      &&
+                                                            (siu_coverage_ifc_l2.sii_l2t${bank}_data[28] == 1'b1)      &&
+                                                            (siu_coverage_ifc_l2.sii_l2t${bank}_data[27] == 1'b1)      &&
+							    (siu_coverage_ifc_l2.sii_l2t${bank}_data[7]  == 1'b1)) ;
+
+
+                sii_to_l2_Ebit_PA39_wri_O_NP_NIU_bank${bank} = ((siu_coverage_ifc_l2.sii_l2t${bank}_data[26:24] == 3'b100) &&
+                                                            (siu_coverage_ifc_l2.sii_l2t${bank}_data[30] == 1'b1)      &&
+                                                            (siu_coverage_ifc_l2.sii_l2t${bank}_data[29] == 1'b0)      &&
+                                                            (siu_coverage_ifc_l2.sii_l2t${bank}_data[28] == 1'b1)      &&
+                                                            (siu_coverage_ifc_l2.sii_l2t${bank}_data[27] == 1'b0)      &&
+							    (siu_coverage_ifc_l2.sii_l2t${bank}_data[7]  == 1'b1)) ;
+
+                sii_to_l2_Ebit_PA39_wri_B_P_NIU_bank${bank} = ((siu_coverage_ifc_l2.sii_l2t${bank}_data[26:24] == 3'b100) &&
+                                                            (siu_coverage_ifc_l2.sii_l2t${bank}_data[30] == 1'b0)      &&
+                                                            (siu_coverage_ifc_l2.sii_l2t${bank}_data[29] == 1'b1)      &&
+                                                            (siu_coverage_ifc_l2.sii_l2t${bank}_data[28] == 1'b1)      &&
+                                                            (siu_coverage_ifc_l2.sii_l2t${bank}_data[27] == 1'b0)      &&
+						            (siu_coverage_ifc_l2.sii_l2t${bank}_data[7]  == 1'b1)) ;
+
+                } // if
+             }
+        }// while
+
+}
+. }
+
+. for ($bank=0; $bank<8; $bank++)
+. {
+task fc_siu_ras_coverage::l2_to_sio_Ebit_UE_bank${bank}()
+{
+        while(1)
+        {
+           @(negedge l2b_to_sio_UEs.clk);
+           {
+                if(l2b_to_sio_UEs.l2b${bank}_to_sio_ctag_vld)
+                {
+		   l2_to_sio_Ebit_bank${bank} = ((l2b_to_sio_UEs.l2b${bank}_to_sio_data[21] == 1'b1)  &&	// E-bit
+						 (l2b_to_sio_UEs.l2b${bank}_to_sio_data[16] == 1'b1));		// RDD
+		   for(i=0; i< 16; i++)
+		   {
+		   	@(negedge l2b_to_sio_UEs.clk);
+			if(l2b_to_sio_UEs.l2b${bank}_to_sio_ue_err)
+			   trigger (l2b${bank}_sio_ue_err_trig);
+		   }
+		 }
+		 else
+		    l2_to_sio_Ebit_bank${bank} = 1'b0;
+	   }
+	}
+
+}
+. }
+
+task fc_siu_ras_coverage::sio_to_niu_Err()
+{
+        while(1)
+        {
+           @(posedge siu_coverage_ifc.clk);
+           {
+		sio_to_niu_header81 = ((siu_coverage_ifc.sio_niu_req == 1'b1)  		&&		// hdr vld.
+				       (siu_coverage_ifc.sio_niu_data[127] == 1'b1)  	&&		// Response Bit
+				       (siu_coverage_ifc.sio_niu_data[81] == 1'b1));
+
+                sio_to_niu_header80 = ((siu_coverage_ifc.sio_niu_req == 1'b1)           &&              // hdr vld.
+                                       (siu_coverage_ifc.sio_niu_data[127] == 1'b1)     &&              // Response Bit
+                                       (siu_coverage_ifc.sio_niu_data[80] == 1'b1));
+
+		sio_to_dmu_header81 = ((siu_coverage_ifc.sio_dmu_req == 1'b1)		&&		// hdr vld
+				       (siu_coverage_ifc.sio_dmu_data[127:122] == 6'b101010)	&&	// DMA Read Response
+				       (siu_coverage_ifc.sio_dmu_data[81] == 1'b1));
+
+                sio_to_dmu_header80 = ((siu_coverage_ifc.sio_dmu_req == 1'b1)           &&              // hdr vld
+                                       (siu_coverage_ifc.sio_dmu_data[127:122] == 6'b101010)    &&      // DMA Read Response
+                                       (siu_coverage_ifc.sio_dmu_data[80] == 1'b1));
+
+	   }
+	}
+}
+
+
+task fc_siu_ras_coverage::soc_niu_n_dmu_multi_ce_Err()
+{
+        while(1)
+        {
+           @(negedge siu_ncu_ctag_ce.clk);
+           {
+             if((siu_ncu_ctag_ce.sii_ncu_dmuctag_ce == 1'b1) || (siu_ncu_ctag_ce.sii_ncu_niuctag_ce == 1'b1) || (siu_ncu_ctag_ce.sio_ncu_ctag_ce == 1'b1))
+             {
+                sii_ncu_dmuctag_ce_seen = 1'b0;
+                sii_ncu_niuctag_ce_seen = 1'b0;
+                sio_ncu_ctag_ce_seen = 1'b0;
+                for(i=0; i< 10; i++)
+                {
+                   @(posedge siu_ncu_ctag_ce.clk);
+                   {
+                   if(siu_ncu_ctag_ce.sii_ncu_dmuctag_ce == 1'b1)
+                   {
+                        sii_ncu_dmuctag_ce_seen = 1'b1;
+                        dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :sii_ncu_dmuctag_ce_seen\n\n", get_time(LO)));
+                   }
+                   if(siu_ncu_ctag_ce.sii_ncu_niuctag_ce == 1'b1)
+                   {
+                        sii_ncu_niuctag_ce_seen = 1'b1;
+                        dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :sii_ncu_niuctag_ce_seen\n\n", get_time(LO)));
+                   }
+                   if(siu_ncu_ctag_ce.sio_ncu_ctag_ce == 1'b1)
+                   {
+                        sio_ncu_ctag_ce_seen = 1'b1;
+                        dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :sio_ncu_ctag_ce_seen\n\n", get_time(LO)));
+                   }
+                   }
+                } // for
+                if(sii_ncu_dmuctag_ce_seen && sii_ncu_niuctag_ce_seen && sio_ncu_ctag_ce_seen)
+                   trigger(siu_ncu_ctag_ce_seen_trig);
+
+             } // if
+           } // @
+        }// while
+
+
+
+}
+
+// ***********************************************************************************
+// FC NIU coverage Objects for MAQ
+// ***********************************************************************************
+
+class fc_niu_coverage
+{
+  // for dispmon
+  StandardDisplay dbg;
+  local string    myname;
+  reg niu_npt_wr = 1'b0;
+  reg niu_npt_wr_count_en = 1'b0;
+  integer niu_npt_wr_count    = 0;
+  integer window_1000         = 0;
+  integer niu_npt_wr_bw	      = 0;
+  reg niu_npt_wr_latency = 1'b0;
+  integer niu_npt_wr_latency_count = 0;
+  reg niu_npt_wr_latency_count_en = 1'b0;
+
+  event niu_npt_wr_bandwith_trig;
+  event niu_npt_wr_latency_trig;
+
+  // ----------- coverage_group ----------------
+        coverage_group niu_npt_wr_bandwidth_1000cycles
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ANY, niu_npt_wr_bandwith_trig);
+           at_least = 1;
+           sample niu_npt_wr_bandwidth_1000cycles_window (niu_npt_wr_bw)
+           {
+                state S_niu_npt_wr_bandwidth_1000cycles_window (0:1000);
+           }
+        }
+  // ----------- coverage_group ----------------
+        coverage_group niu_npt_wr_latency_cycles
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ANY, niu_npt_wr_latency_trig);
+           at_least = 1;
+           sample niu_npt_wr_latency_count
+           {
+                state S_niu_npt_wr_latency_5cycles  (0:5)  if ((niu_npt_wr_latency_count > 0) && (niu_npt_wr_latency_count <= 5));
+                state S_niu_npt_wr_latency_10cycles (6:10)  if ((niu_npt_wr_latency_count > 5) && (niu_npt_wr_latency_count <= 10));
+                state S_niu_npt_wr_latency_15cycles (11:15)  if ((niu_npt_wr_latency_count > 10) && (niu_npt_wr_latency_count <= 15));
+                state S_niu_npt_wr_latency_20cycles (16:20)  if ((niu_npt_wr_latency_count > 15) && (niu_npt_wr_latency_count <= 20));
+           }
+        }
+  // ----------- coverage_group ----------------
+
+
+
+
+  task new(StandardDisplay dbg);
+  task set_cov_cond_bits ();
+
+  task niu_npt_wr_bandwith();
+  task niu_npt_wr_latency_fn();
+
+}
+
+task fc_niu_coverage::new(StandardDisplay dbg)
+{
+  bit coverage_on = 0;
+  integer j;
+
+  // for dispmon
+  myname = "fc_niu_coverage";
+  this.dbg = dbg;
+
+  if (mChkPlusarg(fc_niu_coverage) || mChkPlusarg(coverage_on)) {
+    coverage_on = 1;
+  }
+
+  if (coverage_on) {
+    dbg.dispmon(myname, MON_ALWAYS, psprintf("\n\n %d :fc_niu_coverage Coverage turned \n\n", get_time(LO)));
+
+    niu_npt_wr_bandwidth_1000cycles             = new();
+    niu_npt_wr_latency_cycles			= new();
+    set_cov_cond_bits ();
+
+  } // if coverage_on
+} // fc_niu_coverage::new()
+
+task fc_niu_coverage:: set_cov_cond_bits ()
+{
+
+fork
+        niu_npt_wr_bandwith();
+	niu_npt_wr_latency_fn();
+join none
+
+} // task fc_niu_coverage:: set_cov_cond_bits
+
+task fc_niu_coverage::niu_npt_wr_bandwith()
+{
+        while(1)
+        {       
+           @(negedge siu_coverage_ifc.clk);
+           {
+		niu_npt_wr = ((siu_coverage_ifc.niudatareq == 1'b1) && 
+			      (siu_coverage_ifc.niureq == 1'b1)     && 
+			      (siu_coverage_ifc.niubypass == 1'b0)  &&
+			      (siu_coverage_ifc.niudata[127:122] == 6'b000010));
+
+		if((niu_npt_wr == 1'b1) && (niu_npt_wr_count_en == 1'b0))
+		{
+		   niu_npt_wr_count_en = 1'b1;
+		   niu_npt_wr_count    = 1;
+		   window_1000	       = 1;
+		   dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Non-Posted Write Seen =  \n\n", get_time(LO), niu_npt_wr_bw));
+		}
+		else if((niu_npt_wr == 1'b1) && (niu_npt_wr_count_en == 1'b1) && (window_1000 < 'd1000))
+		     {
+			niu_npt_wr_count = niu_npt_wr_count + 1;
+			window_1000	= window_1000 + 1;
+		        dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Non-Posted Write Again =  \n\n", get_time(LO), niu_npt_wr_bw));
+		     }
+	        else if((niu_npt_wr_count_en == 1'b1) && (window_1000 == 'd1000))
+		     {
+			niu_npt_wr_bw = (window_1000/niu_npt_wr_count);
+			dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Non-Posted Write Band-width = %d \n\n", get_time(LO), niu_npt_wr_bw));
+			trigger(niu_npt_wr_bandwith_trig);
+			niu_npt_wr_count_en = 1'b0;
+                        niu_npt_wr_count    = 0;
+                        window_1000         = 0;
+		     }
+		else if((niu_npt_wr == 1'b0) && (niu_npt_wr_count_en == 1'b1) && (window_1000 < 'd1000))
+		     {
+			window_1000     = window_1000 + 1;
+		     }
+	     }
+	}
+}
+
+task fc_niu_coverage::niu_npt_wr_latency_fn()
+{
+        while(1)
+        {
+           @(negedge siu_coverage_ifc.clk);
+           {
+                niu_npt_wr_latency = ((siu_coverage_ifc.niudatareq == 1'b1) &&
+                                      (siu_coverage_ifc.niureq == 1'b1)     &&
+                                      (siu_coverage_ifc.niubypass == 1'b0)  &&
+                                      (siu_coverage_ifc.niudata[127:122] == 6'b000010));
+
+                if((niu_npt_wr_latency == 1'b1) && (niu_npt_wr_latency_count_en == 1'b0))
+		{
+		   niu_npt_wr_latency_count = 1;
+		   niu_npt_wr_latency_count_en = 1'b1;
+		   dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Non-Posted Write Latency seen \n\n", get_time(LO)));
+		}
+		else if((niu_npt_wr_latency == 1'b1) && (niu_npt_wr_latency_count_en == 1'b1))
+		{
+		   niu_npt_wr_latency_count = 1;
+		   niu_npt_wr_latency_count_en = 1'b1;
+		   dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Non-Posted Write Latency seen again \n\n", get_time(LO)));
+		}
+		else if((niu_npt_wr_latency == 1'b0) && (niu_npt_wr_latency_count_en == 1'b1) && (siu_coverage_ifc.niuoqdq == 1'b0))
+		{
+		   niu_npt_wr_latency_count = niu_npt_wr_latency_count + 1;
+		   niu_npt_wr_latency_count_en = 1'b1;
+		}
+		else if((niu_npt_wr_latency == 1'b0) && (niu_npt_wr_latency_count_en == 1'b1) && (siu_coverage_ifc.niuoqdq == 1'b1))
+		{
+		   dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Non-Posted Write Latency = %d \n\n", get_time(LO), niu_npt_wr_latency_count));
+		   trigger(niu_npt_wr_latency_trig);
+		   niu_npt_wr_latency_count_en = 1'b0;
+		}
+	    }
+	}
+
+}
+

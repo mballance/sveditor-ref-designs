@@ -1,0 +1,114 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: FNXPCIEXactorDenaliDevice.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "DenaliPCIE.vri"
+
+// report library
+#include "cReport.vrh"
+#include "report_macros.vri"
+#include "FNXPCIEXactorReportMacros.vri"
+
+class FNXPCIEXactorDenaliDevice extends denaliPcieDevice {
+
+  local ReportClass Report;
+
+  // Mailboxes Enqueue Packet and Register Callbacks From Denali Xactor
+  local integer mRegCb;
+  local integer mPktCb;
+
+  local string InstanceName;
+
+  // constructor
+  task new ( ReportClass _Report,
+	     string instName,
+	     string cbTaskName );
+
+  // public methods
+  function ReportClass CreateReport();
+  task PushPktCbRecord( FNXPCIEXactorPktCbRecord pktCbRecord );
+  function FNXPCIEXactorPktCbRecord PopPktCbRecord();
+  task PushRegCbRecord( FNXPCIEXactorRegCbRecord regCbRecord );
+  function FNXPCIEXactorRegCbRecord PopRegCbRecord();
+  function string GetInstanceName();
+}
+
+task FNXPCIEXactorDenaliDevice::new ( ReportClass _Report,
+				      string      instName,
+				      string      cbTaskName )
+{
+  super.new( instName,
+	     cbTaskName );
+  Report = _Report;
+  
+  InstanceName = instName;
+  
+  mPktCb = alloc( MAILBOX, 0, 1 );
+  mRegCb = alloc( MAILBOX, 0, 1 );
+}
+
+// enqueues a packet callback record
+task FNXPCIEXactorDenaliDevice::PushPktCbRecord( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  mailbox_put( mPktCb, pktCbRecord );
+}
+
+// waits for packet callback record, dequeues and  returns it
+function FNXPCIEXactorPktCbRecord FNXPCIEXactorDenaliDevice::PopPktCbRecord()
+{
+  mailbox_get( WAIT, mPktCb, PopPktCbRecord );
+}
+
+// enqueues a register callback record
+task FNXPCIEXactorDenaliDevice::PushRegCbRecord( FNXPCIEXactorRegCbRecord regCbRecord )
+{
+  mailbox_put( mRegCb, regCbRecord );
+}
+
+// waits for register callback record, dequeues and  returns it
+function FNXPCIEXactorRegCbRecord FNXPCIEXactorDenaliDevice::PopRegCbRecord()
+{
+  mailbox_get( WAIT, mRegCb, PopRegCbRecord );
+}
+
+// used in exported callback processor
+function ReportClass FNXPCIEXactorDenaliDevice::CreateReport()
+{
+  CreateReport = Report;
+}
+
+// return verilog wrapper module instance name i.e. fnx_top.pcieA
+function string FNXPCIEXactorDenaliDevice::GetInstanceName()
+{
+  GetInstanceName = InstanceName;
+}

@@ -1,0 +1,135 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_rxintr_utils.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "niu_rx_descp.vrh"
+#include "niu_int_dev.vrh"
+#include "niu_int_mgr.vrh"
+
+extern  Mesg            be_msg;
+extern  niu_gen_pio     gen_pio_drv;
+extern CNiuIntrMgr NiuIntrMgr;
+
+class CNiuIntrDevRxDMAm extends RxDMAChannel {
+  event isr_done;
+
+  task new(integer i, integer dev_id) {
+    super.new(i,"RXDMA",dev_id);
+    trigger(OFF, isr_done);
+  }
+  function integer isr( ( bit[1:0] ldf_flags = 0) ) {
+    bit[63:0] rd_data, rd_mask, wr_data;
+    integer ii;
+    string s;
+    bit fatal=0;
+    rxdma_ctl_stat_reg ctlstat_reg;
+    SetPendingFlag();
+
+    ctlstat_reg = new();
+
+    printf("rxISR Start id=%0d LDF Flags=0x%0h time=%0d\n", dev_id, ldf_flags, get_time(LO));
+    gen_pio_drv.pio_rd(RX_DMA_CTL_STAT_START+(RXDMA_STEP*dev_id), rd_data);
+    gen_pio_drv.pio_rd(RX_DMA_ENT_MSK_START+(RXDMA_STEP*dev_id), rd_mask);
+    printf("rxISR id=%0d stat[53:32]=0x%h mask=0x%h\n", dev_id, rd_data[53:32], rd_mask[21:0]);
+    for(ii=0; ii<22; ii++) {
+      fatal=0;
+      if(rd_data[ii+32]==1 && rd_mask[ii]==0) {
+        case(ii) {
+          0:  {s="CFIG_LOGPAGE"; fatal=1;}
+          1:  {s="RBR_LOGPAGE"; fatal=1;}
+          2:  {s="RBR_FULL"; fatal=1;}
+          3:   s="RBR_EMPTY";
+          4:  {s="RCR_FULL"; fatal=1;}
+          5:  {s="RCR_INCON"; fatal=1;}
+          6:  {s="CONFIG_ERR"; fatal=1;}
+          7:   s="RCR_SHADOW_FULL";
+          8:   s="RBR_PRE_EMTY";
+          9:   s="WRED_DROP";
+          10:  s="PORT_DROP_PKT";
+          11: {s="RBR_PRE_PAR"; fatal=1;}
+          12: {s="RBR_SHA_PAR"; fatal=1;}
+          13:  s="RCR_TO";
+          14:  s="RCR_THRES";
+          15:  s="MEX";
+          16:  s="DC_FIFO_ERR";
+          17: {s="RCR_ACK_ERR"; fatal=1;}
+          18: {s="RSP_DAT_ERR"; fatal=1;}
+          19: {s="BYTE_EN_BUS"; fatal=1;}
+          20: {s="RSP_CNT_ERR"; fatal=1;}
+          21: {s="RBR_TMOUT"; fatal=1;}
+        }
+        printf("rxISR id=%0d int active=%0d %s %s\n", dev_id, ii, s, fatal?"FATAL":"");
+        if(s=="RCR_THRES" || s=="RCR_TO")
+          CheckCR_Entries();
+        if(fatal) {
+	  resetRxDmaCh(dev_id);
+        }
+        else {
+          
+ 	// Step 1: Clear the status bit of whichever event has occured
+	  if (s=="RCR_THRES") {
+	    ctlstat_reg.status_RCRTHRES = 1;
+            printf("rxISR id=%0d clear RX_DMA_CTL_STAT_RCRTHRES interrupt time=%0d\n", dev_id, get_time(LO));
+	  }
+	  else if (s=="RCR_TO") {
+	    ctlstat_reg.status_RCRTO = 1;
+            printf("rxISR id=%0d clear RX_DMA_CTL_STAT_RCRTO interrupt time=%0d\n", dev_id, get_time(LO));
+  	  }
+	  else if (s=="PORT_DROP_PKT") {
+	    ctlstat_reg.status_PORT_DROP_PKT = 1;
+            printf("rxISR id=%0d clear RX_DMA_CTL_STAT_RCRTO interrupt time=%0d\n", dev_id, get_time(LO));
+  	  }
+	  else if (s=="WRED_DROP") {
+	    ctlstat_reg.status_WRED_DROP = 1;
+            printf("rxISR id=%0d clear RX_DMA_CTL_STAT_RCRTO interrupt time=%0d\n", dev_id, get_time(LO));
+  	  }
+
+	  rxdma_ctl_stat_update(1 /* mode */, ctlstat_reg);
+	  
+ 	// Step 2: Re-enable the MEX bit so hardware can interrupt us again
+	ctlstat_reg = new();
+	ctlstat_reg.MEX_bit = 1;
+	rxdma_ctl_stat_update(0 /* mode */, ctlstat_reg);
+        printf("rxISR id=%0d Enable MEX bit for next interrupt time=%0d\n", dev_id, get_time(LO));
+
+        }
+      }
+    }
+    ClrPendingFlag();
+  }
+  task resetRxDmaCh(integer dma_num) {
+      setRxDmaCfig_1(64'h0000_0000_4000_0000,1'b0); //Bit30 DMA_RST
+      repeat(100) @(posedge CLOCK);
+  }
+}

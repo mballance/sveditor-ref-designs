@@ -1,0 +1,113 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: DaemonAccessMethod.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "general_csr_defines.vri"
+#include "report_macros.vri"
+#include "CSRAccessMethod.vrh"
+
+#ifndef N2_FC
+extern verilog_task daemon_rd (bit[31:0] index, bit[CSRT_ADDR_WIDTH-1:0] addr, var bit [CSRT_DATA_WIDTH-1:0] dout, bit success, bit[31:0] watchdog);
+extern verilog_task daemon_wr (bit[31:0] index, bit zsub, bit[CSRT_ADDR_WIDTH-1:0] addr, bit [CSRT_DATA_WIDTH-1:0] din, bit success, bit[31:0] watchdog);
+#endif
+
+class DaemonAccessMethod extends CSRAccessMethod {
+
+  local integer 	index;
+  local integer 	zsub;
+  local integer	csr_daemon_sem;
+
+
+	//=================================================
+	//		Constructor
+	//=================================================
+
+  task new ( bit [31:0] input_index) {
+
+    index		= input_index;
+    csr_daemon_sem	= alloc(SEMAPHORE,0,1,1);
+
+    if (csr_daemon_sem == 0)
+      QuickReport(CSRReport, RTYP_CSR_ERROR, "DaemonAccessMethod::new: Out of semaphore space.");
+
+  } // end task new ()
+
+
+  //=================================================
+  //		Read function
+  //=================================================
+
+  function bit [CSRT_DATA_WIDTH-1:0] read (bit[CSRT_ADDR_OFFSET_WIDTH-1:0] addr) {
+#ifdef N2_FC
+   QuickReport(CSRReport, RTYP_CSR_ERROR, "DaemonAccessMethod::read: not supported in FC bench. addr = %h.", addr);
+#else
+    bit [CSRT_DATA_WIDTH-1:0] rd_data;
+    bit success;
+    bit [31:0] watchdog;
+
+    semaphore_get (WAIT, csr_daemon_sem, 1);
+    daemon_rd (index, addr, rd_data, success, watchdog);
+
+    if (!success)
+      QuickReport(CSRReport, RTYP_CSR_ERROR, "DaemonAccessMethod::read: Timeout for addr = %h.", addr);
+
+    read = rd_data;
+    semaphore_put (csr_daemon_sem, 1);
+#endif
+  } // end function read()
+
+
+  //=================================================
+  //		Write task
+  //=================================================
+
+  task  write ( bit[CSRT_ADDR_OFFSET_WIDTH-1:0] addr, bit [CSRT_DATA_WIDTH-1:0] wr_data ) {
+#ifdef N2_FC
+   QuickReport(CSRReport, RTYP_CSR_ERROR, "DaemonAccessMethod::write: not supported in FC bench. addr = %h.", addr);
+#else
+    bit success;
+    bit [31:0] watchdog;
+
+    semaphore_get (WAIT, csr_daemon_sem, 1);
+    daemon_wr (index, zsub, addr, wr_data, success, watchdog);
+
+    if (!success)
+      QuickReport(CSRReport, RTYP_CSR_ERROR, "DaemonAccessMethod::write: Timeout for addr = %h.", addr);
+
+    semaphore_put (csr_daemon_sem, 1);
+#endif
+  } // end task write
+
+} // end class DaemonAccessMethod
+

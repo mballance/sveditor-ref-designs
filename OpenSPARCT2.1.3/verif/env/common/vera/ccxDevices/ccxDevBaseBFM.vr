@@ -1,0 +1,1383 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ccxDevBaseBFM.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// To use this class, you must have in your bench a files called globals.vri
+// that has all global extern declerations in it.
+#include <globals.vri>
+
+
+#include <ccxDevicesDefines.vri>
+// #include <defines.vri>
+#include <std_display_defines.vri>
+
+#include <std_display_class.vrh>
+#include <basePktClass.vrh>
+#include <cpxPktClass.vrh>
+#include <pcxPktClass.vrh>
+#include <baseParamsClass.vrh>
+#include <sparcParams.vrh>
+
+
+// uncomment to debug
+//#define CCXDEVBASEBFM_DEBUG
+//#define CCXDEVBASEBFM_DEBUG2
+
+#define CLASSNAME CcxDevBaseBFM
+
+virtual class CLASSNAME {
+
+  // Keep track of load requests to same L2 cache line.
+  // Line is 64 bytes ([5:0] = 0, addr[63:6]).
+  // Index to this array will be addr[63:6].
+  // Array holds:
+  // count in [63:32], number of requests active for this line.
+  // cycle (time) in [31:0], most recent request for the line will go out at this time.
+  // Next response for line will have to be AFTER that cycle/time.
+  //
+  // On request, query lineHash:
+  // If hit, fullDelay = lineHash[LINECYCLE] + randDelay.
+  // Always, lineHash[addr[63:6]] = {count++,fullDelay}
+  //
+  // On our non-dropped response:
+  // lineHash[addr[63:6]] = {count--,fullDelay}
+  // if !count, delete lineHash[addr[63:6]]
+  protected reg [63:0] lineHash[];
+
+  protected reg ccxOnly; // only testing ccx  
+  protected integer myPort;
+  protected string name;
+  // protected reg [145:0] userRespSig []; // signature hash of packets that require
+  //                                       // a specific user provided response, not auto.
+
+  protected BasePkt expectedSig []; // signature hash of packets that should
+                                    // arrive at this port. idx = sig, data = pkt.
+
+  protected reg passive;    // we are watching port only, HW is driving.
+  protected integer outstandingReqs;
+  
+  // mailboxes, one per CCX destination
+  protected integer outBox, bypassBox;  // bypassBox for fast response.
+  // box conters
+  protected integer outBoxCnt, bypassBoxCnt;
+  protected integer boxLock;
+
+  protected reg [145:0] idleData;
+
+  protected reg flagUnexpected;
+
+  protected integer stallStart;
+  protected integer stallStop;
+
+  task new(integer instatnce, reg passiveIn=0, string nameIn);
+  task send(BasePkt pktHndl, integer fastResp=0);
+  function reg dataEqual (reg [63:0] data1, 
+                          reg [63:0] data2, 
+                          reg [7:0] size);
+
+//   protected task serviceSends(reg type);
+  protected task serviceSends2(reg type);
+
+  virtual task recv(BasePkt pktHndl);
+  virtual task cancelRecv(BasePkt pktHndl);
+
+  local task popQ(var reg [1:0] bufCount[9],
+                  var BasePkt slots[3][9],
+                  integer gntTarget,
+                  integer qSize,
+                  integer dropTarget);
+  protected function integer manyHot(reg [63:0] vec);
+  protected function integer whichHot(reg [63:0] vec, reg check=0);
+  protected function integer ordering(BasePkt basePkt, string text);  
+}  
+
+task CLASSNAME::new(integer instatnce, reg passiveIn=0, string nameIn) {
+
+  integer i;
+
+  name = nameIn;
+  passive = passiveIn;
+  myPort = instatnce;
+  
+  printf("%7d %s::new creating BFM on port %0d (passive=%0b)\n",get_time(LO),nameIn,instatnce,passiveIn);
+  
+  outstandingReqs = 0;
+  boxLock = alloc( SEMAPHORE, 0, 1, 1 );
+  
+  if (!passive) {
+    outBoxCnt = 0;
+    bypassBoxCnt =0;
+    outBox  = alloc (MAILBOX,0,1);
+    bypassBox  = alloc (MAILBOX,0,1);
+  } 
+
+  // review
+    idleData = {urandom(),urandom(),urandom(),urandom(),urandom()};
+
+}
+
+// Queue pkt for service
+task CLASSNAME::send(BasePkt pktHndl, integer fastResp) {
+
+  // do not drive on this port
+  if (passive) {
+    printf("ERROR FAIL: attempt to send packet on passive port %d!!!\n", myPort);
+    error("");
+    return;
+  }
+  
+  semaphore_get(WAIT, boxLock, 1 );
+  
+  if (fastResp) {
+    mailbox_put(bypassBox,pktHndl);
+    bypassBoxCnt++;
+  } else {
+    mailbox_put(outBox,pktHndl);
+    outBoxCnt++;
+  }
+
+#ifdef CCXDEVBASEBFM_DEBUG2
+  printf("%0d: CcxDevBaseBFM[%2d]::send mailbox_put: bypassBoxCnt=%0d outBoxCnt=%0d vec=%0h\n", get_time(LO),myPort,bypassBoxCnt,outBoxCnt,pktHndl.getVector());
+#endif
+
+  semaphore_put(boxLock, 1 );
+}
+
+
+
+// Compare 2 data DWs using size as a 8 bit mask
+function reg CLASSNAME::dataEqual (reg [63:0] data1, 
+                                   reg [63:0] data2, 
+                                   reg [7:0] size) {
+  integer i;
+  dataEqual = 1;
+  
+  for (i=0; i<8; i++) {
+    if ((data1[(i*8)+7:i*8] !== data2[(i*8)+7:i*8]) && size[i]) {
+      dataEqual = 0;
+      break;
+    }
+  }
+}
+
+
+// it is possible to have data asserted accross 8 clocks if all cores are
+// getting a packet. could send to all 8 targets in 9 clocks!
+
+// grant tells us that the CCX has pulled from the buffer and an entry
+// is now free no matter how long it takes.
+
+// It is the responsibility of the source to keep track of the number of
+// entries free in the FIFO. The PCX returns a grant signal to indicate
+// that access to the target was granted. Because the grant signal
+// arrives AT LEAST one (two) cycles after the request, some requests may be
+// speculative. If a grant is not received on the cycle after the
+// speculative request, that means the request was not accepted and the
+// packet was dropped. In this case, the sender must cancel any action taken
+// when the packet was issued to the PCX and retry the request later.
+
+// atomic request should never be dropped. They are sent only when
+// there is room for two entries in the CCX fifo (from the SPC side).
+
+// atomic responses (IFILL) must go back to back but the CCX fifo need
+// not be empty. if ifill #2 gets dropped, the retry only asserts req,
+// not atomic. For atomics, there is 1 req for both packets (unless ifill
+// #2 gets dropped), but there are 2 gnts.
+
+// When broadcasting invalidations, every target fifo targeted must not be
+// full. Will have to wait for fifo space when broadcasting. No speculating! review
+
+// Service mailboxes and drive pins of port. Fast resp box has priority.
+// This task is forked off in the extended classes.
+// task CLASSNAME::serviceSends(reg type) {
+//  
+//   BasePkt  sndPkt;
+//   CpxPkt   cpxSndPkt;
+//   ccxPort portVar;
+//   reg casAtomicWait = 0;
+//   reg gotGrant = 0;
+//   integer start = 0;
+//   integer dropBit = 0;
+//   integer valid = 0;
+//   integer dstPort; // will be 0-9
+//   integer i, j;
+//   integer offset;
+//   integer targets; // 8 or 9 ports
+//   integer slot=0;
+//   integer recvTarget=0;
+//   integer gntTarget=0;
+//   integer dropTarget=99; // target dropped. 99 means none dropped this clk
+//   integer dropTargetIF2 = 99; // dropped IFILL #2 pkts accross targets (target id).
+//   
+//   // keep state of CCX 2 entry queue
+//   reg [8:0] dropped = 0; // accumulated dropped pkts accross targets. Can be many hot.
+//   reg [1:0] count [9] = {0,0,0,0,0,0,0,0,0};
+//   BasePkt dropPkt [9];
+//   BasePkt reqedPkt;
+//   
+//   integer qSize = 3;
+//   BasePkt slots  [3] [9]; // x packets, over 8 or 9 ports
+//   // index, assuming we are streaming. May not get past 0 if !back2back pkts.
+//   // 0: pkt from 2 reqs back
+//   // 1: pkt from 1 reqs back
+//   // 2: pkt driven this clk
+// 
+//   reg multicastWait = 0; // waiting/spinning for all target ports to be not-full
+// 
+//    
+//   if (passive) return;
+// 
+//   // tmp holder for cast_assign
+//   cpxSndPkt = new();
+// 
+//   for (i=0; i<qSize; i++)
+//     for (j=0; j<9; j++)
+//       slots[i][j] = null;
+// 
+//   if (type == PP_PCX) {
+//     portVar = gPcxPort[myPort];
+//     offset = 8; // target ports are 9-17
+//     targets = 9;
+//   }
+//   else {
+//     portVar = gCpxPort[myPort];
+//     offset = 0; // target ports are 0-7
+//     targets = 8;
+//   }
+// 
+//   @(negedge portVar.$clk);
+// 
+//   
+//   while (1) {
+// //  if (get_cycle() > 1200 && myPort == 8) vera_plot("vera_plot",DEBUSSY, "this.*", 1);   
+//     
+//     //// block for sending req and data. ////
+//     // give priority to any previously dropped packets.
+//     {
+// 
+//       // if reqedPkt not null, previous clk did the req for this pkt
+//       // so we must send it now.
+//       if (reqedPkt !== null) {
+//         // review for multicast
+//         recvTarget = 0;
+//         while(reqedPkt.recvPorts[recvTarget] !== 1) recvTarget++;
+//         //recvTarget = reqedPkt.recvPorts - offset; // stay below 9
+//         
+//         portVar.$datao <= reqedPkt.getVector();
+//         
+// #ifdef CCXDEVBASEBFM_DEBUG
+//         printf("%0d: CcxDevBaseBFM[%2d]::serviceSends drive data port/target/tid:%0d/%0d/%0d COUNT now is=%0d vec=%0h\n",get_time(LO),myPort,myPort,recvTarget,reqedPkt.tid,count[recvTarget],reqedPkt.getVector());
+//         { integer x;
+//         for (x=0;x<qSize;x++)
+//           if (slots[x][recvTarget] !== null) printf("%0d: CcxDevBaseBFM[%2d]::serviceSends drive data dump port/targets/tid:%0d/%h/%0d vec[%2d]=%0h\n",get_time(LO),myPort,myPort,slots[x][recvTarget].recvPorts,slots[x][recvTarget].tid,x,slots[x][recvTarget].getVector());}
+// #endif          
+//         
+//         // lastly
+//         reqedPkt = null;
+//       } else {
+//         portVar.$datao <= IDLE_DATA;
+//       }
+// 
+// 
+//       // what packet will be next? need to *req* it 1 cycle before data.
+//       //
+//       // any dropped packets to send?
+//       // if a target has a dropped pkt, send it rather than a new pkt.     
+//       if (dropTargetIF2 !== 99) { // need to hold IFILL #2 pkt on wires until taken
+//         dropBit = dropTargetIF2;
+//         reqedPkt = dropPkt[dropBit]; // current dropped IFILL #2 packet
+//         portVar.$datao <= reqedPkt.getVector();
+//         
+// #ifdef CCXDEVBASEBFM_DEBUG
+//         printf("%0d: CcxDevBaseBFM[%2d]::serviceSends: holding IFILL #2 on wire until taken: targets=%h vec=%0h\n",get_time(LO),myPort,reqedPkt.recvPorts,reqedPkt.getVector());
+// #endif     
+//           
+//       } else if (dropped[8:0]) {
+//         // pick a dropped packet target at random by picking a random
+//         // port to start a circular check at.
+//         start = urandom_range(targets-1,0);
+//         while (dropped[start%targets] == 0) {
+//           // printf("%0d: start = %0d dropped[%2d]=%0d\n", get_time(LO),start,start%targets,dropped[start%targets]);
+//           start++;
+//         }
+//         dropBit = start%targets;
+// 
+//         // printf("%0d: start = %0d dropped[%2d]=%0d dropBit=%0d\n", get_time(LO),start,start%targets,dropped[start%targets],dropBit);
+//         
+//         // now drive chosen pkt req to chosen target
+//         // and store chosen pkt into reqedPkt for data send on next clk.
+//         portVar.$req <= 1 << dropBit;
+//         
+//         // drive atomic on ifill pkt #1 retrys only, not pkt #2
+//         if (dropPkt[dropBit].atomic == 1 && myPort !== DEV_NCU)
+//           portVar.$atmo <= 1; // << dropBit;
+// 
+//         // data to send next clk, doing req this clk
+//         reqedPkt = dropPkt[dropBit]; // previously dropped packet
+//         
+//         // push pkt.
+//         slots[count[recvTarget]][recvTarget] = reqedPkt;
+// 
+//         // CCX Q is based on req being set, not data
+//         count[dropBit]++;
+//         
+// // printf("%0d: CcxDevBaseBFM[%2d]::serviceSends dropped req, COUNT++ for target %0d is %0d.\n",get_time(LO),myPort,recvTarget,count[recvTarget]);          
+//         
+//         dropPkt[dropBit] = null;
+//         
+// #ifdef CCXDEVBASEBFM_DEBUG
+//         printf("%0d: CcxDevBaseBFM[%2d]::serviceSends: next clks pkt will be a DROP re-send: targets=%h dropped=%b vec=%0h\n",get_time(LO),myPort,reqedPkt.recvPorts,dropped,reqedPkt.getVector());
+// #endif
+//         // packet for target no longer dropped (unless dropped again)
+//         dropped[dropBit] = 0;      
+// 
+//       }
+//       // no dropped pkt to send, not waiting to multi cast, GET NEW PKT
+//       else if ((bypassBoxCnt || outBoxCnt) && !multicastWait) {
+//         // new pkt in mailbox
+//         semaphore_get(WAIT, boxLock, 1 );
+// 
+//         // peek ahead for atomics (CAS). If the CCX target Q is not empty,
+//         // we will have to wait for it to be. SPC sourced atomics must be together.
+//         // this could be more effecient later...
+//         if (myPort < 8) {
+//           if (bypassBoxCnt) {
+//             void = mailbox_get(COPY_NO_WAIT,bypassBox,sndPkt);
+//             if (count[sndPkt.recvPort]) {
+//               cast_assign(cpxSndPkt,sndPkt);
+//               if (cpxSndPkt.rtntyp !== CPX_IFILL) casAtomicWait = cpxSndPkt.atmIf2;
+//             }
+//           } else if (outBoxCnt) {
+//             void = mailbox_get(COPY_NO_WAIT,outBox,sndPkt);
+//             if (count[sndPkt.recvPort]) {
+//               cast_assign(cpxSndPkt,sndPkt);
+//               if (cpxSndPkt.rtntyp !== CPX_IFILL) casAtomicWait = cpxSndPkt.atmIf2;
+//             }
+//           }
+//         }
+// 
+// 
+//         // get a new pkt to send
+//         if (!casAtomicWait) {
+//           if (bypassBoxCnt) {
+//             valid = mailbox_get(NO_WAIT,bypassBox,sndPkt);
+//             bypassBoxCnt--;
+//             // review for multicast
+//             recvTarget = 0;
+//             while(sndPkt.recvPorts[recvTarget] !== 1) recvTarget++;
+//             // recvTarget = sndPkt.recvPort - offset; // stay below 9;
+//             
+// #ifdef CCXDEVBASEBFM_DEBUG
+//             printf("%0d: CcxDevBaseBFM[%2d]::serviceSends: got packet from bypassBox: bypassBoxCnt=%0d outBoxCnt=%0d latency=%0d vec=%0h\n",get_time(LO),myPort,bypassBoxCnt,outBoxCnt,get_time(LO)-sndPkt.reqTime,sndPkt.getVector());
+// #endif
+//           } else {
+//             valid = mailbox_get(NO_WAIT,outBox,sndPkt);
+//             outBoxCnt--;
+//             // review for multicast
+//             recvTarget = 0;
+//             while(sndPkt.recvPorts[recvTarget] !== 1) recvTarget++;
+//             // recvTarget = sndPkt.recvPort - offset; // stay below 9;
+//             
+// #ifdef CCXDEVBASEBFM_DEBUG
+//             printf("%0d: CcxDevBaseBFM[%2d]::serviceSends: got packet from outBox: bypassBoxCnt=%0d outBoxCnt=%0d latency=%0d vec=%0h\n",get_time(LO),myPort,bypassBoxCnt,outBoxCnt,get_time(LO)-sndPkt.reqTime,sndPkt.getVector());
+// #endif
+//           }
+//           
+//           semaphore_put(boxLock, 1 );
+// 
+//           // now drive chosen pkt req to chosen target
+//           // and store chosen pkt into reqedPkt for data send on next clk.
+//           // Second pkt of atomic pair does not req.
+//           if (sndPkt.atomic == 2) {
+//             portVar.$req <= 0;
+//             portVar.$atmo <= 0;
+//           } else {
+//             // review for multicast
+//             portVar.$req <= 1 << recvTarget; // sndPkt.recvPorts; // 1 << recvTarget;
+//             if (sndPkt.atomic == 1 && myPort !== DEV_NCU)
+//               portVar.$atmo <= 1; // << recvTarget; // sndPkt.recvPorts; // 1 << recvTarget;
+//           }
+//           
+//           // data to send next clk, doing req this clk
+//           reqedPkt = sndPkt;
+// 
+//           // push pkt.
+//           slots[count[recvTarget]][recvTarget] = reqedPkt;
+//           
+//           // CCX Q is based on req being set, not data
+//           count[recvTarget]++;
+// 
+// // printf("%0d: CcxDevBaseBFM[%2d]::serviceSends normal req, COUNT++ for target %0d is now %0d.\n",get_time(LO),myPort,recvTarget,count[recvTarget]);          
+// 
+//         } // if !casAtomicWait
+//       } else {
+//         // no new pkt for next cycle
+//         portVar.$req <= 0;
+//         if (myPort !== DEV_NCU) portVar.$atmo <= 0;
+//         reqedPkt = null;
+//       }
+//       
+//     } // block for sending req and data
+// 
+// 
+//     
+// 
+//     //// check grant block ////
+//     {      
+// 
+// // #ifdef CCXDEVBASEBFM_DEBUG
+// //     // only one port can drive these at a time
+// //     if (myPort == 11) {
+// //       probe_if.count0 = count[0] soft;
+// //       probe_if.count1 = count[1] soft;
+// //       probe_if.count2 = count[2] soft;
+// //       probe_if.count3 = count[3] soft;
+// //       probe_if.count4 = count[4] soft;
+// //       probe_if.count5 = count[5] soft;
+// //       probe_if.count6 = count[6] soft;
+// //       probe_if.count7 = count[7] soft;
+// //     }
+// // #endif
+// 
+//       // any grants in this cycle?
+//       gotGrant = 0;
+//       for (gntTarget=0;gntTarget<targets;gntTarget++) {
+//         case (count[gntTarget]) {
+//           0: { // Q empty
+//             if (portVar.$gnt[gntTarget]) {
+//               error("%0d: CcxDevBaseBFM[%2d]::serviceSends ERROR FAIL port/target:%0d/%0d bad pop or unexpected grant on port (count was 0)!\n",get_time(LO),myPort,myPort,gntTarget);
+//             }
+//           }
+//           1: { // Q half full
+//             if (portVar.$gnt[gntTarget]) {
+//               gotGrant = 1;
+//             }
+//           }
+//           2: { // Q full
+//             if (portVar.$gnt[gntTarget]) {
+//               gotGrant = 1;
+//             }
+//           }
+//           3: { // did speculative send succeed?
+//             // if Q already full, must get a grant in same cycle as our req or dropped
+//             if (portVar.$gnt[gntTarget]) {
+//               gotGrant = 1;
+//               dropTarget = 99;
+//               dropTargetIF2 = 99;
+// // printf("%0d: CcxDevBaseBFM[%2d]::serviceSends gotGrant, speculation SUCCESS, count for target %0d was %0d.\n",get_time(LO),myPort,gntTarget,count[gntTarget]);       
+//             } else {
+//               // speculation failed
+//               dropTarget = gntTarget;
+// // printf("%0d: CcxDevBaseBFM[%2d]::serviceSends gotGrant, NO grant, speculation FAIL, count for target %0d was %0d.\n",get_time(LO),myPort,gntTarget,count[gntTarget]);                     
+//             }
+//           }
+//           default: {
+//             error("%0d: CcxDevBaseBFM[%2d]::serviceSends: ERROR FAIL: port %0d Q count of %0d not right!\n",get_time(LO),myPort,myPort,count[gntTarget]);
+//           }
+//         }//case
+// 
+//         
+//         ///                           ///
+//         /// pop Q, packet made it out ///
+//         ///                           ///
+//         if (gotGrant) {
+// 
+//           // reset
+//           gotGrant = 0;
+//           popQ(count,
+//                slots,
+//                gntTarget,
+//                qSize,
+//                dropTarget);
+// 
+// 
+//           
+//           // if Q empty
+//           if (!count[gntTarget]) casAtomicWait = 0;
+//           
+//         } // if (gotGrant)          
+//       } // for (gntTarget=0;gntTarget<targets;gntTarget++)
+//     } // check grant blk
+// 
+// 
+//     
+//     //// block to handle dropped pkts. ////
+//     // save off dropped pkt as last thing after data sends.
+//     // deals with "dropTarget".
+//     {
+//       if (dropTarget !== 99) {
+//         dropPkt[dropTarget] = slots[2][dropTarget];
+// 
+// 
+//         // Special Case
+//         // if dropped pkt was second ifill pkt (CAS2 never dropped)
+//         // then keep driving packet data until we get a grant.
+//         if (dropPkt[dropTarget].atomic == 2) {
+// 
+//           // if not seeing gnt now, need to hold this packet (reqedPkt) on wire
+//           // for another clock, or more w/o setting req first.
+//           
+// #ifdef CCXDEVBASEBFM_DEBUG         
+//           printf("%0d: CcxDevBaseBFM[%2d]::serviceSends DROPPED IFILL 2 waiting for grant port/targets/tid:%0d/%h/%0d vec=%0h\n",get_time(LO),myPort,myPort,dropPkt[dropTarget].recvPorts,dropPkt[dropTarget].tid,dropPkt[dropTarget].getVector());
+// #endif
+// 
+// //           if (!portVar.$gnt[dropTarget])
+// //             @ (posedge portVar.$gnt[dropTarget]);
+// // 
+
+// // if (myPort == 11 && get_cycle() >= 10328) breakpoint;
+// // //if (myPort == 11 && count[dropTarget] > 3) breakpoint;
+// //           popQ(count,
+// //                slots,
+// //                dropTarget,
+// //                qSize,
+// //                dropTarget);
+// //         } else {             
+// 
+//           // will send the dropped pkt later.
+//           dropTargetIF2 = dropTarget; // used later by pkt send block
+//         }
+//         else {
+//           // will send the dropped pkt later.
+//           dropped[8:0] = 1 << dropTarget; // used later by pkt send block
+// 
+//         
+// #ifdef CCXDEVBASEBFM_DEBUG
+//           printf("%0d: CcxDevBaseBFM[%2d]::serviceSends pop, will have DROPPED pkt for this req port/targets/tid:%0d/%h/%0d COUNT-- now vec=%0h\n",get_time(LO),myPort,myPort,dropPkt[dropTarget].recvPorts,dropPkt[dropTarget].tid,count[dropTarget]-1,dropPkt[dropTarget].getVector());
+//           //dropPkt[dropTarget].printPkt();
+// #endif          
+// 
+// //           // pull it from Q, since pkt not in RTL Q
+// //           for (slot=0; slot<qSize-1; slot++) {
+// //             slots[slot][dropTarget] = slots[slot+1][dropTarget];
+// //             slots[slot+1][dropTarget] = null;
+// //           }
+// 
+//           // dec count since dropped pkt not in Q (3 -> 2)
+//           count[dropTarget]--;
+// 
+//           // pull it from Q, since pkt not in RTL Q
+//           slots[count[dropTarget]][dropTarget] = null;
+//           
+// #ifdef CCXDEVBASEBFM_DEBUG
+//           {integer x;
+//           for (x=0;x<qSize;x++)
+//             if (slots[x][dropTarget] !== null) printf("%0d: CcxDevBaseBFM[%2d]::serviceSends post dropped pop dump port/target/tid:%0d/%0d/%0d vec[%2d]=%0h\n",get_time(LO),myPort,myPort,dropTarget,slots[x][dropTarget].tid,x,slots[x][dropTarget].getVector());}
+// #endif
+//           
+//           // reset
+//           dropTarget = 99;
+//           
+//         }
+//       }
+//       
+//     } // block to handle dropped pkts.
+// 
+//     
+//     @(negedge portVar.$clk);
+//     
+//     // Block here on no box count, no gnt expected, no dropped pkt, etc
+//     // Are we idle? If so, wake up on mailbox having a packet. Only makes
+//     // sense for IOB since it has long periods of inactivity (about 85%-90%).
+//     // Downside is that we will miss unexpected grants so watch for that too.
+//     if (myPort < 8 && myPort > 15) {
+//       fork
+//       {
+//         if (count[0] == 0 && count[1] == 0 && count[2] == 0 && count[3] == 0 && 
+//             count[4] == 0 && count[5] == 0 && count[6] == 0 && count[7] == 0 &&
+//             count[8] == 0 && dropped == 0 && reqedPkt == null)
+//           wait_var(bypassBoxCnt,outBoxCnt);
+//       }
+//       {
+//         @(posedge portVar.$gnt);
+//       }
+//       join any
+//       
+//       if (portVar.$clk) @(negedge portVar.$clk);
+//       //if (myPort == 16) printf("%0d: port %0d looping...\n", get_time(LO),myPort);
+//     }
+//     
+//   } // while 1
+// }
+
+
+
+task CLASSNAME::popQ(var reg [1:0] bufCount[9],
+                     var BasePkt slots[3][9],
+                     integer gntTarget,
+                     integer qSize,
+                     integer dropTarget)
+{
+
+  integer slot = 0;
+  integer x = 0;
+  reg [31:0] respTime = 0;
+  reg [63:0] cnt = 0, tmp64;
+  reg [31:0] line;
+  
+#ifdef CCXDEVMEMBFM_DEBUG
+  slots[0][gntTarget].print(myPort);
+#endif
+  
+  bufCount[gntTarget]--;
+  
+#ifdef CCXDEVBASEBFM_DEBUG
+  printf("%0d: CcxDevBaseBFM[%2d]::serviceSends pop, BUFCOUNT-- for target %0d is now %0d.\n",get_time(LO),myPort,gntTarget,bufCount[gntTarget]);          
+  { integer x;
+  for (x=0;x<qSize;x++)
+    if (slots[x][gntTarget] !== null) printf("%0d: CcxDevBaseBFM[%2d]::serviceSends pop dump port/targets/tid:%0d/%h/%0d vec[%2d]=%0h\n",get_time(LO),myPort,myPort,slots[x][gntTarget].targetPorts,slots[x][gntTarget].tid,x,slots[x][gntTarget].getVector());}
+#endif
+
+  
+#ifdef CCXDEVBASEBFM_DEBUG
+  printf("%0d: CcxDevBaseBFM[%2d]::serviceSends pop, got grant  port/target/tid:%0d/%0d/%0d bufCount=%0d<-%0d, dropped=%0d, ccxSourced=%0d, outstandingReqs=%0d, vec=%0h\n",get_time(LO),myPort,myPort,gntTarget,slots[0][gntTarget].tid,bufCount[gntTarget],bufCount[gntTarget]+1,dropTarget != 99 ? 1:0,slots[0][gntTarget].ccxSourced,outstandingReqs,slots[0][gntTarget].getVector());
+  //slots[0][gntTarget].print(myPort);
+#endif
+
+
+  if (slots[0][gntTarget].ccxSourced || slots[0][gntTarget].ccxSourced2) {
+
+    // Keep track of (order) requests to same L2 cache line.
+    // If a request is satisfied, we can forget about it.   
+    if (myPort !== DEV_NCU) {
+//if (get_cycle() >= 6167 && myPort == 9) breakpoint;
+
+      line = slots[0][gntTarget].addr;
+      line = line & CACHE_LINE_MASK;
+// if (get_cycle() >= 6167 && myPort == 9  &&
+//     slots[0][gntTarget].tid == 0 && line == 8'h40) breakpoint;
+
+      // update ordering hash for CPX pkts.
+      // for multicast packets, ONLY call this for the lowest target.
+      if (gntTarget == whichHot(slots[0][gntTarget].targetPorts))
+        void = ordering(slots[0][gntTarget], "UPDATE");
+      
+    }
+  }
+  
+  // was grant from our response to a SPC request?
+  // look at oldest ungranted packet
+  if (slots[0][gntTarget].ccxSourced && slots[0][gntTarget].decGntTarget == gntTarget) {
+    // we have successfully responded to a ccx sourced request pkt.
+    // if pkt was a multicast, dont dec outstandingReqs on each gnt,
+    // just one of them. Will use the lowest target as the one to trigger
+    // the decrement.
+    outstandingReqs--;
+
+#ifdef CCXDEVBASEBFM_DEBUG
+    printf("%0d: CcxDevBaseBFM[%2d]::serviceSends pop, got grant  port/target/tid:%0d/%0d/%0d outstandingReqs--=%0d, vec=%0h\n",get_time(LO),myPort,myPort,gntTarget,slots[0][gntTarget].tid,outstandingReqs,slots[0][gntTarget].getVector());
+#endif
+
+    if (outstandingReqs < 0 || outstandingReqs > (stallStart*3)) {
+      printf("failing packet vvvvvvvvvvvvvv\n");
+      slots[0][gntTarget].print(myPort);
+      printf("%0d: CcxDevBaseBFM[%2d]::serviceSends pop ERROR FAIL: outstandingReqs count too high/low after above pkt sent (OR=%0d, stallStart=%0d, burst=%0d)\n",get_time(LO),myPort,outstandingReqs,stallStart,gParam.burstAmount);
+      printf ("%0d: CcxDevBaseBFM[%2d]::serviceSends pop will delay exit by 2 clks\n",get_time(LO),myPort);
+      repeat (2) @(posedge CLOCK);
+      error("outstandingReqs not right!\n");
+    }
+    
+  } // if ccxSourced
+
+  
+  // shift for Q pop
+  for (slot=0; slot<qSize-1; slot++) {
+    slots[slot][gntTarget] = slots[slot+1][gntTarget];
+    slots[slot+1][gntTarget] = null;
+  }
+
+#ifdef CCXDEVBASEBFM_DEBUG
+  {
+    integer x;
+    for (x=0;x<qSize;x++)
+      if (slots[x][gntTarget] !== null) printf("%0d: CcxDevBaseBFM[%2d]::serviceSends pop dump port/targets/tid:%0d/%h/%0d vec[%2d]=%0h\n",get_time(LO),myPort,myPort,slots[x][gntTarget].targetPorts,slots[x][gntTarget].tid,x,slots[x][gntTarget].getVector());
+  }
+#endif               
+  /// end pop ///
+
+}
+
+
+// how many bits set?
+function integer CLASSNAME::manyHot(reg [63:0] vec) {
+  manyHot = 0;
+  while (vec) {
+    manyHot += vec[0];
+    vec >>= 1;
+  }
+}
+
+// which bit set? if return is 99, there was 0 or > 1 hot.
+// returns the lowest bit number set.
+function integer CLASSNAME::whichHot(reg [63:0] vec, reg check=1) {
+  whichHot = 0;
+
+  while(vec[whichHot] !== 1) whichHot++;
+
+  // none hot
+  if (check && vec == 0) whichHot=99;
+  // >1 hot
+  if (check && manyHot(vec) > 1) whichHot=99;
+
+}
+
+
+
+// returns wait count for response. Updates cache line hash that
+// keeps track of when the latest response for a L2 cache line will go out.
+// 
+// If we are a NCU, everything is in order received!
+function integer CLASSNAME::ordering(BasePkt basePkt, string text)
+
+{
+  CpxPkt rspPkt;
+  reg [31:0] wait, respTime=0, curTime, tmp;
+  reg [63:0] count=0, tmp64;
+  reg [31:0] line;
+  reg ifill = 0;
+  reg exist = 0;
+
+
+  cast_assign(rspPkt, basePkt);
+  
+  curTime = get_cycle();
+
+  
+  // this case prevents all possibility of reordering.
+//   if (gParam.respDelayMax[myPort] == gParam.respDelayMin[myPort]) {
+//     ordering = gParam.respDelayMax[myPort];
+// 
+// #ifdef CCXDEVMEMBFM_DEBUG
+//     printf("%0d: CcxDevMemBFM[%2d]::ordering %s: addr=0x%0h, curTime=%0d, wait=%0d\n",get_time(LO),myPort,text,line,curTime,ordering);
+// #endif   
+//     return;
+//   }
+
+  
+  if (myPort == DEV_NCU) {
+
+    // just keep track of tha latest response time in [0] only
+    respTime = lineHash[0]; // get time/cycle
+    
+// #ifdef CCXDEVBASEBFM_DEBUG
+//     printf("%0d: CcxDevMemBFM[%2d]::ordering %s: existing addr=0x%0h, respTime=%0d\n",get_time(LO),myPort,text,rspPkt.addr,lineHash[0]);
+// #endif
+
+    // if current time is < latest resp then we need to add the difference to
+    // a random time. (respTime - curTime) else just delay a random time.
+    // wait = urandom_range(gParam.respDelayMax[myPort],
+    //                      gParam.respDelayMin[myPort]);
+    wait = rspPkt.responseDelay;
+    if (curTime < respTime) wait = wait + respTime - curTime;
+
+    // update entry.
+    lineHash[0] = curTime + wait;
+    
+#ifdef CCXDEVBASEBFM_DEBUG
+    printf("%0d: CcxDevBaseBFM[%2d]::ordering %9s: NCU addr=0x%h, desired respTime=%0d\n",get_time(LO),myPort,text,rspPkt.addr,lineHash[0]);
+#endif
+
+  } else {
+
+    line = rspPkt.addr[31:0];
+    line = line & CACHE_LINE_MASK;
+    
+    if (text == "UPDATE") {
+      // this HAS to be at the end of the time tick
+      // to get the accurate count value
+      fork {
+        suspend_thread(); // this HAS to be at the end of the time tick
+        if (assoc_index(CHECK,lineHash,line)) {
+          tmp64 = lineHash[line];
+          respTime = tmp64[31:0]; // get time/cycle
+          count = tmp64[63:32]; // get count
+          if (count == 1) {
+#ifdef CCXDEVBASEBFM_DEBUG
+            printf("%0d: CcxDevBaseBFM[%2d]::ordering    DELETE: existing line=0x%5h, tid=%0d, vec=%h\n",get_time(LO),myPort,line,basePkt.tid,rspPkt.getVector());
+            rspPkt.print(myPort);
+#endif
+            // this HAS to be at the end of the time tick
+            // or it will be deleted when other threads still need to see it.
+            void = assoc_index(DELETE,lineHash,line);
+
+          } else {
+            count--;
+            lineHash[line] = {count[31:0],respTime[31:0]};
+#ifdef CCXDEVBASEBFM_DEBUG
+            printf("%0d: CcxDevBaseBFM[%2d]::ordering DECREMNT: existing line=0x%5h, tid=%0d, count=%0d, vec=%h\n",get_time(LO),myPort,line,basePkt.tid,count,rspPkt.getVector());
+            rspPkt.print(myPort);
+#endif         
+          }
+        }
+      } join none
+
+      return;
+    }
+
+
+    if (text == "IFILL") ifill = 1;
+    
+    // already responding to this line?
+    if (assoc_index(CHECK,lineHash,line)) {
+      tmp64 = lineHash[line];
+      respTime = tmp64[31:0]; // get time/cycle
+      count = tmp64[63:32]; // get count
+      exist = 1;
+    }
+    
+    // if current time is < latest resp for this line
+    // then we need to add the difference to a random time. (respTime - curTime)
+    // else just delay a random time.
+    // wait = urandom_range(gParam.respDelayMax[myPort],
+    //                      gParam.respDelayMin[myPort]);
+    
+    // need a shorter time for CAS and SWAP second packets.
+    if (text == "SWAP ACK" || text == "CAS ACK") {
+      wait = rspPkt.pkt2Delay; // 1-3
+#ifdef CCXDEVBASEBFM_DEBUG
+      printf("%0d: CcxDevBaseBFM[%2d]::ordering %9s: wait changed to %0d\n",get_time(LO), myPort, text, wait);
+#endif
+    } else {
+      wait = rspPkt.responseDelay;
+    }
+    
+    if (curTime < respTime) {
+      wait = wait + (respTime - curTime);
+#ifdef CCXDEVBASEBFM_DEBUG
+      printf("%0d: CcxDevBaseBFM[%2d]::ordering  %9s: wait fixed to be %0d\n",get_time(LO), myPort, text, wait);
+#endif      
+    }
+    
+    count++;
+    
+    // update/create entry. ifill response has 2 pkts so second
+    // will go out 1 clock later. Record that extra clock.
+    respTime = curTime + wait + ifill;
+
+    lineHash[line] = {count[31:0],respTime[31:0]};
+    
+#ifdef CCXDEVBASEBFM_DEBUG
+    if (exist)
+      printf("%0d: CcxDevBaseBFM[%2d]::ordering %9s: existing line=0x%5h, tid=%0d, count=%0d, respTime=%0d, vec=%h\n",get_time(LO),myPort,text,line,rspPkt.tid,count,respTime,basePkt.getVector());
+    else
+      printf("%0d: CcxDevBaseBFM[%2d]::ordering %9s: initial  line=0x%5h, tid=%0d, count=%0d, desired respTime=%0d, vec=%h\n",get_time(LO),myPort,text,line,rspPkt.tid,count,respTime,basePkt.getVector());
+#endif
+
+  }
+
+  ordering = wait;
+
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// it is possible to have data asserted accross 8 clocks if all cores are
+// getting a packet. could send to all 8 targets in 9 clocks!
+
+// grant tells us that the CCX has pulled from the buffer and an entry
+// is now free no matter how long it takes.
+
+// It is the responsibility of the source to keep track of the number of
+// entries free in the FIFO. The PCX returns a grant signal to indicate
+// that access to the target was granted. Because the grant signal
+// arrives AT LEAST one (two) cycles after the request, some requests may be
+// speculative. If a grant is not received on the cycle after the
+// speculative request, that means the request was not accepted and the
+// packet was dropped. In this case, the sender must cancel any action taken
+// when the packet was issued to the PCX and retry the request later.
+
+// atomic request should never be dropped. They are sent only when
+// there is room for two entries in the CCX fifo (from the SPC side).
+
+// atomic responses (IFILL) must go back to back but the CCX fifo need
+// not be empty. if ifill #2 gets dropped, the retry only asserts req,
+// not atomic. For atomics, there is 1 req for both packets (unless ifill
+// #2 gets dropped), but there are 2 gnts.
+
+// When broadcasting invalidations, every target fifo targeted must not be
+// full. Will have to wait for fifo space when broadcasting. No speculating! review
+
+// Service mailboxes and drive pins of port. Fast resp box has priority.
+// This task is forked off in the extended classes.
+task CLASSNAME::serviceSends2(reg type) {
+ 
+  BasePkt  sndPkt;
+  CpxPkt   cpxSndPkt;
+  BasePkt reqedPkt;
+  ccxPort portVar;
+  reg gotGrant = 0;
+  integer start = 0;
+  integer valid = 0;
+  integer dstPort; // will be 0-9
+  integer i, j;
+  reg [8:0] tmp9;
+  integer offset;
+  integer targetsAvial; // 8 or 9 ports
+  integer slot=0;
+  integer recvTarget=0;
+  reg [8:0] recvTargets=0; // targets to request, from pkt
+  integer gntTarget=0;
+  integer tmpTarget=0;
+  integer dropTarget=99; // target dropped. 99 means none dropped this clk
+  reg dropped = 0;       // have dropped pkt
+  BasePkt dropPkt; 
+  integer dropTargetIF2 = 99; // dropped IFILL #2 pkts accross targets (target id).
+
+
+  
+  // keep state of CCX 2 entry queue
+  reg [1:0] bufCount [9] = {0,0,0,0,0,0,0,0,0};  
+  integer qSize = 3;
+  BasePkt slots  [3] [9]; // x packets, over 8 or 9 ports
+  // index, assuming we are streaming. May not get past 0 if !back2back pkts.
+  // 0: pkt from 2 reqs back
+  // 1: pkt from 1 reqs back
+  // 2: pkt driven this clk
+
+  reg [8:0] casAtomicWait = 0; // waiting/spinning for target ports to be empty
+  reg [8:0] fullBufferWait  = 0;  // waiting/spinning for target ports to be not-full
+  
+  reg noSpeculation = 0; // debug
+   
+  if (passive) return;
+
+  if (myPort == DEV_NCU) noSpeculation = 1;
+  
+  // tmp holder for cast_assign
+  cpxSndPkt = new();
+
+  for (i=0; i<qSize; i++)
+    for (j=0; j<9; j++)
+      slots[i][j] = null;
+
+  if (type == PP_PCX) {
+    portVar = gPcxPort[myPort];
+    offset = 8; // target ports are 9-17
+    targetsAvial = 9;
+  }
+  else {
+    portVar = gCpxPort[myPort];
+    offset = 0; // target ports are 0-7
+    targetsAvial = 8;
+  }
+
+  @(negedge portVar.$clk);
+
+  
+  while (1) {
+    //  if (get_cycle() > 1200 && myPort == 8) vera_plot("vera_plot",DEBUSSY, "this.*", 1);   
+
+    //// block for sending req and data. ////
+    // give priority to any previously dropped packet.
+    {
+
+      // if reqedPkt not null, previous clk did the req for this pkt
+      // so we must send it now.
+      if (reqedPkt !== null) {
+
+        recvTargets = reqedPkt.targetPorts;
+        
+        recvTarget = 0;        
+        while(recvTargets[recvTarget] !== 1) recvTarget++;
+        reqedPkt.decGntTarget = recvTarget; // for multicast
+        
+        portVar.$datao <= reqedPkt.getVector();
+        
+#ifdef CCXDEVBASEBFM_DEBUG
+        printf("%0d: CcxDevBaseBFM[%2d]::serviceSends drive data port/targets/tid:%0d/%0d/%0d COUNT now is=%0d vec=%0h\n",get_time(LO),myPort,myPort,recvTargets,reqedPkt.tid,bufCount[recvTarget],reqedPkt.getVector());
+        { integer x , y;
+        for (y=0;y<targetsAvial;y++) {
+          if (recvTargets[y]) {
+            for (x=0;x<qSize;x++)
+              if (slots[x][y] !== null) printf("%0d: CcxDevBaseBFM[%2d]::serviceSends drive data dump port/targets/tid:%0d/%h/%0d vec[%2d]=%0h\n",get_time(LO),myPort,myPort,slots[x][y].targetPorts,slots[x][y].tid,x,slots[x][y].getVector());
+          }
+        }
+        }
+#endif          
+        
+        // lastly
+        reqedPkt = null;
+      } else {
+        portVar.$datao <= IDLE_DATA;
+      }
+
+
+      // what packet will be next? need to *req* it 1 cycle before data.
+      // or hold previous packet if a dropped IF2.
+      //
+      // any dropped packets to send?
+      // if a target has a dropped pkt, send it rather than a new pkt.     
+      if (dropTargetIF2 !== 99) { // need to hold IFILL #2 pkt on wires until taken
+        dropTarget = dropTargetIF2;
+        reqedPkt = dropPkt; // current dropped IFILL #2 packet
+
+#ifdef CCXDEVBASEBFM_DEBUG
+        printf("%0d: CcxDevBaseBFM[%2d]::serviceSends: holding dropped IFILL #2 on wire until taken: targets=%h vec=%0h\n",get_time(LO),myPort,reqedPkt.targetPorts,reqedPkt.getVector());
+#endif     
+        
+      } else if (dropped) {
+        
+        // data to send next clk, doing req this clk
+        reqedPkt = dropPkt; // previously dropped packet
+
+        dropTarget = whichHot(reqedPkt.targetPorts);
+        
+        // now drive chosen pkt req to chosen target
+        // and store chosen pkt into reqedPkt for data send on next clk.
+        portVar.$req <= 1 << dropTarget; //dropBit;
+        
+        // drive atomic on ifill pkt #1 retrys only, not pkt #2
+        if (reqedPkt.atomic == 1 && myPort !== DEV_NCU)
+          portVar.$atmo <= 1;
+
+        
+        // push pkt.
+        // multicast pkts are never dropped so we are
+        // operating on single target pkt here.
+        slots[bufCount[recvTarget]][recvTarget] = reqedPkt;
+
+        // CCX Q is based on req being set, not data
+        bufCount[dropTarget]++;
+        
+        // printf("%0d: CcxDevBaseBFM[%2d]::serviceSends dropped req, COUNT++ for target %0d is %0d.\n",get_time(LO),myPort,recvTarget,bufCount[recvTarget]);          
+        
+        dropPkt = null;
+        
+#ifdef CCXDEVBASEBFM_DEBUG
+        printf("%0d: CcxDevBaseBFM[%2d]::serviceSends: next clks pkt will be a DROP re-send: targets=%h dropped=%b vec=%0h\n",get_time(LO),myPort,reqedPkt.targetPorts,dropped,reqedPkt.getVector());
+#endif
+        // packet for target no longer dropped (unless dropped again)
+        dropped= 0;
+
+      } // else if (dropped)
+      
+      // no dropped pkt to send, not already waiting for buffer slot(s), GET NEW PKT
+      else if ((bypassBoxCnt || outBoxCnt) && !fullBufferWait && !casAtomicWait) {
+        // new pkt in mailbox
+        semaphore_get(WAIT, boxLock, 1 );
+
+        // peek ahead for atomics (CAS). If the CCX target Q is not empty,
+        // we will have to wait for it to be. SPC sourced atomics must be together.
+        // this could be more effecient later...
+        //
+        // Also peek for multicast packets. Need to have buffer space for
+        // EVERY target before sending a multicast packet!
+        //
+        // If buffer not empty, we should be concerned about the next
+        // packet being atomic or multicast. Don't want to take it until
+        // we can deal with it.
+        if (bypassBoxCnt) {
+          void = mailbox_get(COPY_NO_WAIT,bypassBox,sndPkt);          
+        } else if (outBoxCnt) {
+          void = mailbox_get(COPY_NO_WAIT,outBox,sndPkt);
+        }
+        
+        //printf("%0d: CcxDevBaseBFM[%2d]::serviceSends packet peek\n",get_time(LO),myPort);
+        //cast_assign(cpxSndPkt,sndPkt);
+
+        // SPC sending atomic
+        if (sndPkt.rqtyp == PCX_CAS1 && bufCount[whichHot(sndPkt.targetPorts)])
+          casAtomicWait[whichHot(sndPkt.targetPorts)] = 1;
+        
+        if (manyHot(sndPkt.targetPorts) > 1) { // multicasting
+          // check every target for buffer space
+          //printf("%0d: CcxDevBaseBFM[%2d]::serviceSends multicast seen on peek!\n",get_time(LO),myPort);
+          tmp9 = sndPkt.targetPorts;
+          for (i=0;i<targetsAvial;i++)
+            if (tmp9[i] && bufCount[i] > 1) {
+              fullBufferWait[i] = 1; // not all buffers have space, this target
+              //printf("%0d: CcxDevBaseBFM[%2d]::serviceSends multicast fullBufferWait[%0d] set (%b)\n",get_time(LO),myPort,i,fullBufferWait);
+
+            }
+        } // multicast
+        
+        // speculation turned off
+        if (noSpeculation && bufCount[whichHot(sndPkt.targetPorts)] > 1)
+          fullBufferWait[whichHot(sndPkt.targetPorts)] = 1;
+
+        // get a new pkt to send if not waiting
+        if (!casAtomicWait && !fullBufferWait) {
+          if (bypassBoxCnt) {
+            valid = mailbox_get(NO_WAIT,bypassBox,sndPkt);
+            bypassBoxCnt--;
+            
+#ifdef CCXDEVBASEBFM_DEBUG
+            printf("%0d: CcxDevBaseBFM[%2d]::serviceSends: got packet from bypassBox: bypassBoxCnt=%0d outBoxCnt=%0d latency=%0d vec=%0h\n",get_time(LO),myPort,bypassBoxCnt,outBoxCnt,get_time(LO)-sndPkt.reqTime,sndPkt.getVector());
+#endif
+          } else {
+            valid = mailbox_get(NO_WAIT,outBox,sndPkt);
+            outBoxCnt--;
+
+#ifdef CCXDEVBASEBFM_DEBUG
+            printf("%0d: CcxDevBaseBFM[%2d]::serviceSends: got packet from outBox: bypassBoxCnt=%0d outBoxCnt=%0d latency=%0d vec=%0h\n",get_time(LO),myPort,bypassBoxCnt,outBoxCnt,get_time(LO)-sndPkt.reqTime,sndPkt.getVector());
+#endif
+          }
+          
+          recvTargets = sndPkt.targetPorts;
+          
+          recvTarget = 0;        
+          while(recvTargets[recvTarget] !== 1) recvTarget++;
+          sndPkt.decGntTarget = recvTarget; // for multicast
+
+
+          // now drive chosen pkt req to chosen target
+          // and store chosen pkt into reqedPkt for data send on next clk.
+          // Second pkt of atomic pair does not req.
+          if (sndPkt.atomic == 2) {
+            portVar.$req <= 0;
+            portVar.$atmo <= 0;
+          } else {
+            portVar.$req <= recvTargets; // 1 << recvTarget;
+            if (sndPkt.atomic == 1 && myPort !== DEV_NCU)
+              portVar.$atmo <= 1;
+            
+            // if (manyHot(recvTargets) > 1) printf("%0d: CcxDevBaseBFM[%2d]::serviceSends multicast seen on req!\n",get_time(LO),myPort);
+          }
+          
+          // data to send next clk, doing req this clk
+          reqedPkt = sndPkt;
+
+          // push pkt.         
+          for (i=0;i<targetsAvial;i++) {
+            if (recvTargets[i]) { // for multicast
+              slots[bufCount[i]][i] = reqedPkt;
+              // CCX Q is based on req being set, not data
+              bufCount[i]++;
+#ifdef CCXDEVBASEBFM_DEBUG
+              printf("%0d: CcxDevBaseBFM[%2d]::serviceSends pushing pkt for target %0d, bufCount now %0d\n",get_time(LO),myPort, i, bufCount[i]);
+#endif
+            }
+          }
+
+        } else { // if !casAtomicWait && !fullBufferWait
+          // no new pkt for next cycle
+          portVar.$req <= 0;
+          if (myPort !== DEV_NCU) portVar.$atmo <= 0;
+          reqedPkt = null;
+        }
+        
+#ifdef CCXDEVBASEBFM_DEBUG
+        if (casAtomicWait)
+          printf("%0d: CcxDevBaseBFM[%2d]::serviceSends casAtomicWait state!\n",
+                 get_time(LO),myPort);
+        if (fullBufferWait)
+          printf("%0d: CcxDevBaseBFM[%2d]::serviceSends fullBufferWait state!\n",
+                 get_time(LO),myPort);
+#endif
+
+        semaphore_put(boxLock, 1 );
+
+      } else {
+        // no new pkt for next cycle
+        portVar.$req <= 0;
+        if (myPort !== DEV_NCU) portVar.$atmo <= 0;
+        reqedPkt = null;
+
+        //portVar.$datao <= IDLE_DATA;
+      }
+
+      
+    } // block for sending req and data
+
+
+    
+
+    //// check grant block ////
+    {      
+
+      // #ifdef CCXDEVBASEBFM_DEBUG
+      //     // only one port can drive these at a time
+      //     if (myPort == 11) {
+      //       probe_if.count0 = count[0] soft;
+      //       probe_if.count1 = count[1] soft;
+      //       probe_if.count2 = count[2] soft;
+      //       probe_if.count3 = count[3] soft;
+      //       probe_if.count4 = count[4] soft;
+      //       probe_if.count5 = count[5] soft;
+      //       probe_if.count6 = count[6] soft;
+      //       probe_if.count7 = count[7] soft;
+      //     }
+      // #endif
+
+      // any grants in this cycle? check all targets.
+      gotGrant = 0;
+      for (gntTarget=0;gntTarget<targetsAvial;gntTarget++) {
+        case (bufCount[gntTarget]) {
+          0: { // Q empty
+            if (portVar.$gnt[gntTarget]) {
+              error("%0d: CcxDevBaseBFM[%2d]::serviceSends ERROR FAIL port/target:%0d/%0d bad pop or unexpected grant on port (bufCount was 0)!\n",get_time(LO),myPort,myPort,gntTarget);
+            }
+          }
+          1: { // Q half full
+            if (portVar.$gnt[gntTarget]) {
+              gotGrant = 1;
+            }
+          }
+          2: { // Q full
+            if (portVar.$gnt[gntTarget]) {
+              gotGrant = 1;
+            }
+          }
+          3: { // did speculative send succeed?
+            // if Q already full, must get a grant in same cycle as our req or dropped
+            if (portVar.$gnt[gntTarget]) {
+              gotGrant = 1;
+              dropTarget = 99;
+              dropTargetIF2 = 99;
+              // printf("%0d: CcxDevBaseBFM[%2d]::serviceSends gotGrant, speculation SUCCESS, bufCount for target %0d was %0d.\n",get_time(LO),myPort,gntTarget,bufCount[gntTarget]);       
+            } else {
+              // speculation failed
+              dropTarget = gntTarget;
+              // printf("%0d: CcxDevBaseBFM[%2d]::serviceSends gotGrant, NO grant, speculation FAIL, bufCount for target %0d was %0d.\n",get_time(LO),myPort,gntTarget,bufCount[gntTarget]);                     
+            }
+          }
+          default: {
+            error("%0d: CcxDevBaseBFM[%2d]::serviceSends: ERROR FAIL: port %0d Q count of %0d not right!\n",get_time(LO),myPort,myPort,bufCount[gntTarget]);
+          }
+        }//case
+
+        
+        ///                                      ///
+        /// pop Q, packet made it out other side ///
+        ///                                      ///
+        if (gotGrant) {
+
+          // reset
+          gotGrant = 0;
+          popQ(bufCount,
+               slots,
+               gntTarget,
+               qSize,
+               dropTarget);
+          
+          // Q empty?
+          if (bufCount[gntTarget] == 0) casAtomicWait[gntTarget] = 0;
+          // if (fullBufferWait[gntTarget]) printf("%0d: CcxDevBaseBFM[%2d]::serviceSends fullBufferWait[%0d] clear!\n",get_time(LO),myPort,gntTarget);          
+
+//           // delay this for 1 clock to be more like real NCU
+//           if (myPort == DEV_NCU) {
+//             fork {
+//               tmpTarget = gntTarget;
+//               @(negedge portVar.$clk);
+//               if (bufCount[tmpTarget] <= 1) fullBufferWait[tmpTarget] = 0;
+//             } join none
+//           } else {
+            if (bufCount[gntTarget] <= 1) fullBufferWait[gntTarget] = 0;
+//           }
+          
+        } // if (gotGrant)          
+      } // for (gntTarget=0;gntTarget<targetsAvial;gntTarget++)
+    } // check grant blk
+
+
+    
+    //// block to handle dropped pkts. ////
+    // save off dropped pkt as last thing after data sends.
+    // deals with "dropTarget". multicast pkts never dropped!
+    {
+      if (dropTarget !== 99) {
+        dropPkt = slots[2][dropTarget];
+
+
+        // Special Case
+        // if dropped pkt was second ifill pkt (CAS2 never dropped)
+        // then keep driving packet data until we get a grant.
+        if (dropPkt.atomic == 2) {
+
+          // if not seeing gnt now, need to hold this packet (reqedPkt) on wire
+          // for another clock, or more w/o setting req first.
+          
+#ifdef CCXDEVBASEBFM_DEBUG         
+          printf("%0d: CcxDevBaseBFM[%2d]::serviceSends DROPPED IFILL 2 waiting for grant port/targets/tid:%0d/%h/%0d vec=%0h\n",get_time(LO),myPort,myPort,dropPkt.targetPorts,dropPkt.tid,dropPkt.getVector());
+#endif
+
+          // will send the dropped pkt later.
+          dropTargetIF2 = dropTarget; // used later by pkt send block
+          
+        } else {
+          // will send the dropped pkt later.
+          dropped = 1; // used later by pkt send block
+          
+#ifdef CCXDEVBASEBFM_DEBUG
+          printf("%0d: CcxDevBaseBFM[%2d]::serviceSends pop, will have DROPPED pkt for this req port/targets/tid:%0d/%h/%0d COUNT-- now vec=%0h\n",get_time(LO),myPort,myPort,dropPkt.targetPorts,dropPkt.tid,bufCount[dropTarget]-1,dropPkt.getVector());
+          //dropPkt.printPkt();
+#endif          
+
+          // dec bufCount since dropped pkt not in Q (3 -> 2)
+          bufCount[dropTarget]--;
+
+          // pull it from Q, since pkt not in RTL Q
+          slots[bufCount[dropTarget]][dropTarget] = null;
+          
+#ifdef CCXDEVBASEBFM_DEBUG
+          {integer x;
+          for (x=0;x<qSize;x++)
+            if (slots[x][dropTarget] !== null) printf("%0d: CcxDevBaseBFM[%2d]::serviceSends post dropped pop dump port/target/tid:%0d/%0d/%0d vec[%2d]=%0h\n",get_time(LO),myPort,myPort,dropTarget,slots[x][dropTarget].tid,x,slots[x][dropTarget].getVector());}
+#endif
+          
+          // reset
+          dropTarget = 99;
+          
+        }
+      }
+      
+    } // block to handle dropped pkts.
+
+    
+    @(negedge portVar.$clk);
+    
+    // Block/sleep here on no box count, no gnt expected, no dropped pkt, etc
+    // Are we idle? If so, wake up on mailbox having a packet. Only makes
+    // sense for IOB since it has long periods of inactivity (about 85%-90%).
+    // Downside is that we will miss unexpected grants so watch for that too.
+    if (myPort < 8 && myPort > 15) {
+      fork
+      {
+        if (bufCount[0] == 0 && bufCount[1] == 0 && bufCount[2] == 0 && bufCount[3] == 0 && 
+            bufCount[4] == 0 && bufCount[5] == 0 && bufCount[6] == 0 && bufCount[7] == 0 &&
+            bufCount[8] == 0 && dropped == 0 && reqedPkt == null)
+          wait_var(bypassBoxCnt,outBoxCnt);
+      }
+      {
+        @(posedge portVar.$gnt);
+      }
+      join any
+      
+      if (portVar.$clk) @(negedge portVar.$clk);
+      //if (myPort == 16) printf("%0d: port %0d looping...\n", get_time(LO),myPort);
+    }
+    
+  } // while 1
+}

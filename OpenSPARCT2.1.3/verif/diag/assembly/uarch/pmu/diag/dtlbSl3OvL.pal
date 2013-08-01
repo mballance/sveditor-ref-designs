@@ -1,0 +1,67 @@
+
+:#define MAIN_PAGE_NUCLEUS_ALSO
+:#define MAIN_PAGE_HV_ALSO
+:#define DMMU_SKIP_IF_NO_TTE
+:#define CREGS_PIL 0x0
+
+:#include "mmu_custom_intr_handlers.s"  
+:#include "hboot.s"
+
+:/************************************************************************
+:   Test case code start
+: ************************************************************************/
+
+:.text
+:.global main
+
+:main:		/* test begin */
+
+
+:! Thread 0 Start
+
+:!main_t0:
+
+
+:	set    0x5842C232,     %l3 ! Count DTLB References to L2 
+
+:	! Execute Main Diag ..
+:	ta T_CHANGE_PRIV            ! Should cause Watchdog_reset trap
+	
+
+:Cnt_DTLB_References:
+:	wr	%l3, %g0, %pcr	!  count DTLB References
+:       setx    0xFFFFFF00FFFFFFE7, %l5, %l6
+:	wr 	%l6, %g0, %pic  !  zero out the counter	
+
+:    setx  0x60040000, %g4, %g5
+
+for ($i = 0; $i <10; $i++) {
+:    ta T_CHANGE_HPRIV
+:    set 0x80, %g1
+:    stxa %g1, [%g1] 0x5f
+:    ta T_CHANGE_NONHPRIV
+:    ldx  [%g5], %g2    
+}
+	
+:fail:
+:	EXIT_BAD	/* bad count */
+
+:/************************************************************************
+:   Test case data start
+: ************************************************************************/
+:.data
+:user_data_start:
+:scratch_area:
+:.align 16	
+:load_1:	
+:.word 0xFFFF2e2d       
+:.word 0x2e2dFFFF
+:.align 16
+
+:store_1:
+:.align 16
+:.word 0xDEADBEEF			
+:.word 0xAAAAAAAA		
+:.align 16	
+
+:.end

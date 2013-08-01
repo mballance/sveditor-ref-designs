@@ -1,0 +1,113 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: FC_Utils.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "std_display_defines.vri"
+#include <ccxDevices.if.vrh>
+#include <ccxDevices.binds.vrh>
+
+#include "globals.vri"
+
+#include "baseParamsClass.vrh"
+#include "sparcParams.vrh"
+#include "sparcParams.vrh"
+
+#include "baseUtilsClass.vrh"
+#include "sparcBenchUtils.vrh"
+
+#include "std_display_class.vrh"
+#include "basePktClass.vrh"
+#include "cpxPktClass.vrh"
+#include "pcxPktClass.vrh"
+#include "ccxDevBaseBFM.vrh"
+#include "ccxDevMemBFM.vrh"
+#include "ccxDevSpcBFM.vrh"
+#include "memArray.vrh"
+#include "ssi.if.vrh"
+#include "ssi.vrh"
+#include "FC_Utils.vrh"
+#include "ccx_tag_class.vrh"
+
+//#include "verilog_tasks.vri"
+
+
+#define CLASSNAME FC_Utils
+#define CLASSNAMEQ "FC_Utils"
+
+class CLASSNAME extends SparcBenchUtils {
+  
+  local string className = "FC_Utils";
+  local StandardDisplay dbg;
+  local integer clockPeriod;
+  SSI   bootrom;
+  task new(StandardDisplay dbgHndl, integer clockPeriod = 628);
+  task initTB();
+}
+
+
+task CLASSNAME::new(StandardDisplay dbgHndl, integer clockPeriod = 628) {
+  super.new (dbgHndl, clockPeriod);
+  srandom(gSeed,this);
+  this.dbg = dbgHndl;
+  void = randomize(); // keep!
+}
+
+// useMCUbfms 0=no, 1=yes, 2=monitor
+task CLASSNAME::initTB() {
+
+  integer i;
+  VeraRandomState rstate;
+  
+  // mem array
+  gMem = new(0,gDbg,0); 
+
+  // basic probes
+  gProbesPort = probesBind;
+
+  // Initialize main memory from mem.image
+  gMem.loadMem("mem.image");
+
+  bootrom = new(dbg,ncu,ssi);
+  @(negedge CLOCK);
+
+  
+  getstate(rstate);
+  
+
+  
+  setstate(rstate);
+
+}
+
+

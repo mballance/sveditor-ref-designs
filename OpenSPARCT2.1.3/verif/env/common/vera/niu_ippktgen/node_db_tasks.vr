@@ -1,0 +1,195 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: node_db_tasks.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "pcg_defines.vri"
+#include "pcg_types.vri"
+#include "pcg_classes.vrh"
+extern class node_db;
+extern class fr_cl;
+
+extern node_db node[32];
+extern tup_descr tud[32];
+extern fr_cl fr[8];
+
+
+
+class node_db {
+	node_desc	ip[8];
+   }
+
+
+task node_db_init() {
+integer n,i,z;
+bit [31:0] my_node, my_ip;
+bit [47:0] my_da;
+bit [15:0] tci;
+
+for(n=0;n<32;n=n+1) {
+	node[n] = new;
+	node[n].ip[0] = new;
+	node[n].ip[0].src_port = 0;
+	if(n<20)	node[n].ip[0].src_port[n] = 1;
+	else		node[n].ip[0].src_port    = 20'hfffff;
+	my_node = n;
+	my_ip    = {8'h0, my_node[7:0]+1,16'h0000};
+	my_da = {16'h0, my_node[7:0]+1, 24'h0};
+	tci = random();
+	_setup_node(	node[my_node], my_da, random(),
+			my_ip++, my_ip++, my_ip++, my_ip++,
+			my_ip++, my_ip++, my_ip++, my_ip++ );
+   }
+
+for(n=0;n<32;n=n+1) {
+	tud[n] = new;
+	tud[n].src_tcp_udp_port = random();
+	tud[n].dst_tcp_udp_port = random();
+   }
+
+
+for(n=0;n<8;n++) {
+   fr[n] = new;
+   for(i=0;i<32;i++) {
+   	fr[n].cl[i] = new;
+	for(z=0;z<12;z++) {
+		fr[n].cl[i].sz[z] = new;
+		case(n) {
+		   L2:	fr[n].cl[i].sz[z].frame_type = 3'b000;
+		   L2T:	fr[n].cl[i].sz[z].frame_type = 3'b100;
+		   L3:	fr[n].cl[i].sz[z].frame_type = 3'b010;
+		   L3T:	fr[n].cl[i].sz[z].frame_type = 3'b110;
+		   L3L:	fr[n].cl[i].sz[z].frame_type = 3'b011;
+		   L3LT:fr[n].cl[i].sz[z].frame_type = 3'b111;
+		   }
+		fr[n].cl[i].sz[z].frame_class = i;
+		fr[n].cl[i].sz[z].class_mask = NONE;
+		fr[n].cl[i].sz[z].class_funct = 0;
+		if(z>5)		fr[n].cl[i].sz[z].data_type = DAT_RAND;
+		else		fr[n].cl[i].sz[z].data_type = DAT_SEQ;
+		fr[n].cl[i].sz[z].data_seed = 8'hc0;
+		fr[n].cl[i].sz[z].type = -1;
+/*
+		case(z) {
+		   0:	fr[n].cl[i].sz[z].data_length = -1;
+		   1:	fr[n].cl[i].sz[z].data_length = -2;
+		   2:	fr[n].cl[i].sz[z].data_length = -3;
+		   3:	fr[n].cl[i].sz[z].data_length = -4;
+		   4:	fr[n].cl[i].sz[z].data_length = -5;
+		   5:	fr[n].cl[i].sz[z].data_length = -6;
+		   6:	fr[n].cl[i].sz[z].data_length = -1;
+		   7:	fr[n].cl[i].sz[z].data_length = -2;
+		   8:	fr[n].cl[i].sz[z].data_length = -3;
+		   9:	fr[n].cl[i].sz[z].data_length = -4;
+		   10:	fr[n].cl[i].sz[z].data_length = -5;
+		   11:	fr[n].cl[i].sz[z].data_length = -6;
+		   }
+*/
+	   }
+      }
+  }
+
+
+}
+
+// -----------------------------------------
+
+class cl_cl {
+	frame_desc sz[12];
+   }
+
+class fr_cl {
+	cl_cl	cl[32];
+   }
+
+/*
+fr[frame_select].cl[class_select].sz[size_select]
+
+frame_select
+L2
+L2T
+L3
+L3T
+L3L
+L2LT
+
+class_select
+
+size_select
+0 - 64 (SEQ)
+1 - 128 (SEQ)
+2 - 256 (SEQ)
+3 - 512 (SEQ)
+4 - 1024 (SEQ)
+5 - max (1518|1522) (SEQ)
+
+6 - 64 (SEQ)
+7 - 128 (SEQ)
+8 - 256 (SEQ)
+9 - 512 (SEQ)
+10 - 1024 (SEQ)
+11 - max (1518|1522) (SEQ)
+
+*/
+
+
+task _setup_node(node_db node, bit [47:0] l2_addr, bit [15:0] tci,
+		bit [31:0] ip_addr0, bit [31:0] ip_addr1, bit [31:0] ip_addr2,
+		bit [31:0] ip_addr3, bit [31:0] ip_addr4, bit [31:0] ip_addr5,
+		bit [31:0] ip_addr6, bit [31:0] ip_addr7 ) {
+integer i;
+
+node.ip[0].l2_addr  = l2_addr;
+node.ip[0].tci      = tci;
+node.ip[0].ip_addr  = ip_addr0;
+node.ip[0].ipv6_addr  = {ip_addr0, ip_addr0, ip_addr0, ip_addr0};
+for(i=1;i<8;i++)	node.ip[i] = new node.ip[0];
+
+node.ip[1].ip_addr  = ip_addr1;
+node.ip[2].ip_addr  = ip_addr2;
+node.ip[3].ip_addr  = ip_addr3;
+node.ip[4].ip_addr  = ip_addr4;
+node.ip[5].ip_addr  = ip_addr5;
+node.ip[6].ip_addr  = ip_addr6;
+node.ip[7].ip_addr  = ip_addr7;
+
+node.ip[1].ipv6_addr  = {ip_addr1, ip_addr1, ip_addr1, ip_addr1};
+node.ip[2].ipv6_addr  = {ip_addr2, ip_addr2, ip_addr2, ip_addr2};   
+node.ip[3].ipv6_addr  = {ip_addr3, ip_addr3, ip_addr3, ip_addr3};
+node.ip[4].ipv6_addr  = {ip_addr4, ip_addr4, ip_addr4, ip_addr4};
+node.ip[5].ipv6_addr  = {ip_addr5, ip_addr5, ip_addr5, ip_addr5};
+node.ip[6].ipv6_addr  = {ip_addr6, ip_addr6, ip_addr6, ip_addr6};
+node.ip[7].ipv6_addr  = {ip_addr7, ip_addr7, ip_addr7, ip_addr7};
+}
+
+

@@ -1,0 +1,354 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: N2fcilupeuIngressDmaRdStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+extern integer fc_peu_dma_ptr;
+
+class N2fcDmaRdPEUStr extends PEUStrBase {
+  
+  local bit [63:0]      N2fcSAddr;
+  local bit [63:0]      N2fcEAddr;
+  local bit             N2fcAddrSpecified;
+  local bit [31:0]      length;
+  local bit [31:0]      dat;
+
+  integer               f_len;		  // The packet's payload length
+  bit[3:0]              f_firstDWBE;	  // It's "first DWBE" field
+  bit[3:0]              f_lastDWBE;	  // It's "last DWBE" field
+  integer               f_bndy;	 	  // The address' boundary
+  bit                   f_lenSpecified;	  // Was a length specified?
+  bit                   f_firstSpecified; // Was a "firstDWBE" specified?
+  bit                   f_lastSpecified;  // Was a "lastDWBE" specified?
+  bit                   f_bndySpecified;  // Was an addr bndy specified?
+  bit                   f_poison;	  // Is the completion poisoned?
+  bit                   f_UR;		  // Is the completion UR?
+  bit                   f_CA;		  // Is the completion CA?
+  bit                   f_INTx;		  // Do an INTx after completion?
+  bit                   f_dma_read_lk;	  // Do a DMA Read Lock
+  bit                   f_drop_cmpl;	  // Drop the completion
+  string                intx_cmd;
+  N2fcIommuMgr          MMU;
+  bit [7:0]             bus_id;
+  integer               f_tc;		  // The packet's traffic class
+  
+  task new( PEUTestEnv a_env )
+    {
+    super.new( a_env );
+    f_lenSpecified   = 0;
+    f_firstSpecified = 0;
+    f_lastSpecified  = 0;
+    f_bndySpecified  = 0;
+    f_poison         = 0;
+    f_UR             = 0;
+    f_CA             = 0;
+    f_INTx           = 0;
+    f_dma_read_lk    = 0;
+    f_drop_cmpl      = 0;
+    f_tc             = -1;
+    MMU = new();
+    
+    printf ("%0d- N2fcDmaRdPEUStr:new first random # = %0h\n", get_time(LO), random() );
+    }
+  
+  task SetLen( integer a_len )
+    {
+    f_len = a_len;
+    f_lenSpecified = 1;
+    }
+  
+  task SetFirstDWBE( bit[3:0] a_dwbe )
+    {
+    f_firstDWBE = a_dwbe;
+    f_firstSpecified = 1;
+    }
+  
+  task SetLastDWBE( bit[3:0] a_dwbe )
+    {
+    f_lastDWBE = a_dwbe;
+    f_lastSpecified = 1;
+    }
+  
+  task SetAddrBndy( integer a_bndy )
+    {
+    f_bndy = a_bndy;
+    f_bndySpecified = 1;
+    }
+  
+  task SetPoisonedPayload()
+    {
+    f_poison = 1;
+    }
+  
+  task SetUC( bit isUR )
+    {
+    if ( isUR )
+      f_UR = 1;
+    else
+      f_CA = 1;
+    }
+  
+  task DoIntxAfterCompletion(string cmd)
+    {
+    f_INTx = 1;
+    intx_cmd = cmd;
+    }
+  
+  task SetRdLk()
+    {
+    f_dma_read_lk = 1;
+    }
+
+  task DropCmpl()
+    {
+    f_drop_cmpl = 1;
+    }
+
+
+  task N2fcSetAddr( bit [63:0] i_saddr, bit [63:0] i_eaddr )
+  {
+      N2fcAddrSpecified  = 1;
+      N2fcSAddr          = i_saddr;
+      N2fcEAddr          = i_eaddr;
+  }
+
+
+  task Execute()
+    {
+    bit [63:0] address  = 64'b0; // Virtual address
+    bit [39:0] pa       = 40'b0; // Physical address
+    bit hdr_4dw;
+
+    bit[PEC_PCI__HDR] ingressHdr;		// The ingress TLP's header
+    integer ingressData;			// A payload descriptor
+    bit[7:0] ingressTag;			// The tag for the TLP
+    bit[7:0] egressAddr;			// The payload's DOU address 
+    integer dwTotal;				// #DWs required for completion
+    integer dwDone;				// #DWs completed so far
+    bit zero_len_read;
+
+    shadow bit[PEC_PCI__HDR] egressHdr;		// The egress TLP's header
+    shadow integer egressData;			// The completion payload
+    shadow integer dma_ptr;			// dma id
+    
+    if (N2fcAddrSpecified == 1) {
+      address = N2fcSAddr;
+    }
+    else {
+      error ("N2fcDmaRdPEUStr::Execute() : the start and end address must be specifed\n");
+    }
+
+    // First, get in line for a DMA tag...
+    f_env.allocDmaTag( ingressTag );
+
+    // Then build a TLP
+    if ( f_lenSpecified )
+      f_env.genIngressRdReq( ingressTag, ingressHdr, ingressData, f_len );
+    else
+      error ("N2fcDmaRdPEUStr::Execute() : the length must be specifed\n");
+
+    // Special case for DMA RD LK
+    if ( f_dma_read_lk ) {
+      ingressHdr[PEC_PCI__TYPE]    = PEC_PCI__TYPE_MEM_LK;
+      ingressHdr[PEC_PCI__TC]      = 0;
+      
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLkReq );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLkEP );
+      f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLST_LKUR_2 );
+    }
+
+    // set the Traffic Class (for non - DMA RD LK)
+    else if( f_tc != -1 ) {
+      ingressHdr[PEC_PCI__TC]      = f_tc;
+    }
+
+    if( address[63:32] != 32'h00000000 ) {
+      ingressHdr[PEC_PCI__FMT_4DW] = 1;         // 4DW hdr fmt, 64-bit address
+      ingressHdr[PEC_PCI__ADDR]    = address;
+    }
+    else {
+      ingressHdr[PEC_PCI__FMT_4DW] = 0;         // 3DW hdr fmt, 32-bit address
+      ingressHdr[PEC_PCI__ADDR32]  = address[31:0];
+    }
+    
+    printf ("%0d- UDEBUG N2fcDmaRdPEUStr:Execute Address = %0h  Byp = %0h, Len = 'd%0d\n",
+            get_time(LO), address, address[63:39], f_len);
+    
+    // ...and set fields as requested
+    // by the caller.
+    
+    if ( f_bndySpecified )
+      f_env.setAddrBndy( ingressHdr, f_bndy, 4 );
+    
+    //N2 Set the DWBE after setAddrBndy since it adjusts the DWBE now
+    if ( f_firstSpecified )
+      ingressHdr[PEC_PCI__FIRST_DWBE] = f_firstDWBE;
+    if ( f_lastSpecified )
+      ingressHdr[PEC_PCI__LAST_DWBE] = f_lastDWBE;
+
+					// Send the read-request through the
+                                        // ingress pipeline.
+    f_env.drivePCIE( ingressHdr, ingressData,*,*,*,*,*,1 );
+
+
+    zero_len_read = (ingressHdr[PEC_PCI__LEN] == 1) &&
+                    (ingressHdr[PEC_PCI__FIRST_DWBE] == 0) &&
+                    (ingressHdr[PEC_PCI__LAST_DWBE] == 0) ;
+    bus_id = ingressHdr[ILUPEU_TLP_HDR_REQ_BUS_NUM_BITS];
+
+    fork {
+      
+      f_env.MMU.get_mmu_cntl_reg();
+      if (!MMU.get_physical_address(address, pa, bus_id, 1)) {
+        f_CA = 1;
+      }
+      
+      // get the l2sio_stub lock, to serialize new requests
+      semaphore_get (WAIT, l2sio_stub.reqst_semph_id, 1);
+
+      // Now send a completion to our original request through the
+      // egress pipeline.
+      if ( f_drop_cmpl )
+      {
+        // no completion was requested, probably due to
+        // error injection. However, the siu<->l2 monitor needs to
+        // know to expect the RDD and rd return packets.
+        dma_ptr = fc_peu_dma_ptr++;
+        //        l2sio_stub.l2_cl_idx = l2sio_stub.l2_cl_idx + 1;
+        fork
+          l2sio_stub.reassemble_dma_pkt("N2fcDmaRdPEUStr::Execute",
+                                        ingressHdr[PEC_PCI__LEN],
+                                        address,
+                                        dma_ptr);
+        join none
+        repeat (1) @(posedge CLOCK);
+      }
+      else if ( f_UR || f_CA )
+      {
+        printf ("UDEBUG : N2fcDmaRdPEUStr UR or CA\n");
+        f_env.genEgressCpl( ingressHdr, egressHdr, egressData );
+        egressHdr[PEC_PCI__FMT_DATA] = 0;
+        egressHdr[PEC_PCI__LEN]      = 0;
+        egressHdr[PEC_PCI__CPL_ID]   = 0;
+        if ( f_UR )
+          egressHdr[PEC_PCI__CPL_STATUS] = PEC_PCI__CPL_STATUS_UR;
+        else {
+          egressHdr[PEC_PCI__CPL_STATUS] = PEC_PCI__CPL_STATUS_CA;
+          f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLST_CA_2 );
+        }
+        fork
+          f_env.expectPCIE( egressHdr, egressData, *, 1 );
+        join none
+        repeat (1) @(posedge CLOCK);
+      }
+      else if ( ingressHdr[PEC_PCI__LEN] > 0 &&
+                4*ingressHdr[PEC_PCI__LEN] <= f_env.getMaxPayloadSize() ||
+                f_dma_read_lk)
+      {
+        f_env.genEgressCpl( ingressHdr, egressHdr, egressData );
+        if ( f_poison ) {
+          f_env.poisonPayload( egressData );
+          egressHdr[PEC_PCI__EP] = 1;
+          f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPL_Poison );
+        }
+        else if ( f_dma_read_lk ) {
+          egressHdr[PEC_PCI__TYPE]       = PEC_PCI__TYPE_CPL_LK;
+          egressHdr[PEC_PCI__FMT ]       = PEC_PCI__FMT_NO_DATA_3DW;
+          egressHdr[PEC_PCI__LEN]        = 0;
+          egressHdr[PEC_PCI__CPL_STATUS] = PEC_PCI__CPL_STATUS_UR;
+          egressHdr[PEC_PCI__BYTECOUNT]  = 12'hxxx; //ingressHdr[PEC_PCI__LEN] * 4;
+          egressHdr[PEC_PCI__LOWADDR]    =  7'hxx;
+        }
+        egressHdr [PEC_PCI__CPL_ID] = 0;
+
+        dma_ptr = fc_peu_dma_ptr++;
+        fork
+          f_env.expectPCIE( egressHdr, egressData, *, 1 , dma_ptr);
+        join none
+        repeat (1) @(posedge CLOCK);
+      }
+      // ...or as many as it takes for a
+      // complex ('bulk') request.
+      else 
+      {
+        dwTotal = ingressHdr[PEC_PCI__LEN];
+        if ( dwTotal == 0 ) dwTotal = 1024;
+        dwDone = 0;
+        while( dwTotal > dwDone )
+        {
+          f_env.genEgressPartialCpl( ingressHdr, egressHdr, egressData, dwDone );
+          dwDone = dwDone + egressHdr[PEC_PCI__LEN];
+          if ( f_poison ) {
+            f_env.poisonPayload( egressData );
+            egressHdr[PEC_PCI__EP] = 1;
+            f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPL_Poison );
+          }
+          
+          egressHdr [PEC_PCI__CPL_ID] = 0;
+
+          dma_ptr = fc_peu_dma_ptr++;
+          fork
+            f_env.expectPCIE( egressHdr, egressData, *, 1, dma_ptr );
+          join none
+          @(posedge CLOCK);
+        }
+      }
+
+      if ( f_poison ) {
+        f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPL_Poison );
+      }
+      if ( f_CA ) {
+        f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr(  PCIE_TL_NONFATAL_TLP_CPLST_CA_2 );
+      }
+      // The environment frees the completion's DOU space 
+      // So we only have to free the tag. 
+      f_env.freeDmaTag( ingressTag );
+
+      // release the l2sio_stub lock
+      semaphore_put (l2sio_stub.reqst_semph_id, 1);
+      
+      // Does the cpu want an interrupt when the DMARD is done?
+      if (f_INTx) {
+        N2fcIntxStr intxStr;
+        
+        // wait for read completion
+        wait_child();
+
+        // now do an INTx ASSERT command to let the cpu know the dmard is completed
+        intxStr = new(f_env, intx_cmd, "ASSERT");
+      }
+
+    } join none 
+    
+  } /* end Execute */
+  
+} /* end DmaRdPECStr class*/

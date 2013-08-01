@@ -1,0 +1,430 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: AccessorBase.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "general_csr_defines.vri"
+#include "base_access_define.vri"
+#include "CSRAccessMethod.vrh"
+//#include "StubAccessMethod.vrh"
+//#include "CSRField.vrh"
+//#include "CSRState.vrh"
+#include "cReport.vrh"
+#include "report_macros.vri"
+
+class AccessorBase {
+  CSRAccessMethod   access_methods[];
+
+  protected integer	    access_level[];
+  protected BOOLEAN	    csr_check_enabled;
+  protected integer         DefaultMethod;
+  protected CSRField	    reg_field[];
+  protected ReportClass     CSRReport = new;
+  protected CSRState        ShadowState;
+  protected string          AccessName[];
+
+
+  local bit [CSRT_ADDR_OFFSET_WIDTH-1:0]    addr_offset;
+  local bit [CSRT_DATA_WIDTH-1:0]	    por_value;
+  local bit [CSRT_DATA_WIDTH-1:0]	    rmask;
+  local bit [CSRT_DATA_WIDTH-1:0]	    read_only_mask;
+  local bit [CSRT_DATA_WIDTH-1:0]	    write_mask;
+  local bit [CSRT_DATA_WIDTH-1:0]	    clear_mask;
+  local bit [CSRT_DATA_WIDTH-1:0]	    set_mask;
+  local bit [CSRT_DATA_WIDTH-1:0]	    toggle_mask;
+  local string				    name;
+  local integer			            max_num_fields;
+
+
+   //=================================================
+   //	Constructor
+   //=================================================
+
+   task new ( CSRState                         ShadowState,
+	      bit [CSRT_ADDR_OFFSET_WIDTH-1:0] input_addr_offset,
+              bit [CSRT_DATA_WIDTH-1:0]        input_por_value,
+              bit [CSRT_DATA_WIDTH-1:0]        input_rmask,
+              bit [CSRT_DATA_WIDTH-1:0]        input_read_only_mask,
+              bit [CSRT_DATA_WIDTH-1:0]        input_write_mask,
+              bit [CSRT_DATA_WIDTH-1:0]        input_clear_mask,
+              bit [CSRT_DATA_WIDTH-1:0]        input_set_mask,
+              bit [CSRT_DATA_WIDTH-1:0]        input_toggle_mask,
+              string                           input_name,
+              integer                          input_num_fields  ) {
+
+      integer            ii;
+
+      this.ShadowState      = ShadowState;
+      this.addr_offset      = input_addr_offset;
+      this.por_value        = input_por_value;
+      this.rmask            = input_rmask;
+      this.read_only_mask   = input_read_only_mask;
+      this.write_mask       = input_write_mask;
+      this.clear_mask       = input_clear_mask;
+      this.set_mask         = input_set_mask;
+      this.toggle_mask      = input_toggle_mask;
+
+      sprintf (this.name, "%s", input_name);
+
+      this.max_num_fields   = input_num_fields;
+
+      for (ii = 0; ii < max_num_fields; ii++) {
+	this.reg_field[ii] = new ();
+      }
+   } //end task new
+
+  //=================================================
+  //		Set Accessor Mode Task
+  //=================================================
+
+  task set_accessor_mode (bit [CSRT_MODE_WIDTH-1:0] new_accessor_mode, integer method = CSRT_USE_DEFAULT_METHOD) {
+    if (method == CSRT_USE_DEFAULT_METHOD)
+      method = DefaultMethod;
+
+    QuickReport(CSRReport, RTYP_CSR_DEBUG_1,"CSRAccessor: Changing mode of accessor to %0h by way of %s register: ", 
+		     new_accessor_mode,
+		     get_name());
+
+    access_methods[method].set_accessor_mode(new_accessor_mode);
+  } // end task set_accessor_mode()
+
+   //=================================================
+   //		Enable Checking Task
+   //=================================================
+
+   task enable_checking() {
+
+     QuickReport(CSRReport, RTYP_CSR_DEBUG_1,"CSR enable_checking(): %s register:\t%0d",get_name());
+
+     csr_check_enabled = CSRT_CHECK_ENABLED;
+
+   } // end task enable_checking
+
+   //=================================================
+   //		Disable Checking Task
+   //=================================================
+
+   task disable_checking() {
+     csr_check_enabled = CSRT_CHECK_DISABLED;
+   } // end task disable_checking()
+
+
+  //=================================================
+  //		Get Accessor Mode Function
+  //=================================================
+  function bit [CSRT_MODE_WIDTH-1:0] get_accessor_mode (integer method = CSRT_USE_DEFAULT_METHOD) {
+    if (method == CSRT_USE_DEFAULT_METHOD)
+      method = DefaultMethod;
+
+    get_accessor_mode = access_methods[method].get_accessor_mode();
+  } // end function get_accessor_mode()
+
+
+  // This task is used to change the default access method.
+  // The initial setting of default method is Omni.
+  task set_default_access_method (integer method) {
+    DefaultMethod = method;
+  }
+
+
+   //=================================================
+   // 	init_field_info task
+   //=================================================
+
+   task init_field_info ( integer                  field_id,
+                          bit [CSRT_DATA_WIDTH-1:0] input_field_mask,
+                          integer                  input_field_position,
+                          string                   input_field_name) {
+
+      reg_field[field_id].init ( input_field_mask,
+                                 input_field_position,
+                                 input_field_name);
+
+   } // end task init_field_info
+
+
+   //=================================================
+   //      Set Field Function
+   //=================================================
+
+   function bit [CSRT_DATA_WIDTH-1:0] set_field ( integer field_id,
+						  bit [CSRT_DATA_WIDTH-1:0]	field_data,
+						  bit [CSRT_DATA_WIDTH-1:0]	csr_data ) 
+  {
+    bit [CSRT_DATA_WIDTH-1:0] field_positioned_data;
+    bit [CSRT_DATA_WIDTH-1:0] zero_field_mask;
+    bit [CSRT_DATA_WIDTH-1:0] refresh_bit_mask;
+
+    if (field_id < get_max_num_fields()) {
+
+      field_positioned_data	= reg_field[field_id].get_field_mask() & (field_data << reg_field[field_id].get_field_position());
+      zero_field_mask	        = ~(reg_field[field_id].get_field_mask());
+      refresh_bit_mask	= zero_field_mask & get_write_mask ();
+
+      set_field		= (csr_data & refresh_bit_mask) | field_positioned_data;
+    }
+    else {
+      QuickReport(CSRReport, RTYP_CSR_ERROR, "AccessorBase::set_field: Invalid field_id %0h", field_id);
+      set_field = 64'hx;
+    }
+
+  } // end set_field
+
+
+   //=================================================
+   //	set_shadow_data task
+   //=================================================
+
+  //This task allows shadow data to be set to any arbitrary value, independently
+  //of any mask (i.e. access permissions). It is the basis of the public set_shadow_csr
+  //task.
+    protected task set_shadow_data (bit [CSRT_DATA_WIDTH-1:0] new_data) {
+     bit [CSRT_DATA_WIDTH-1:0] rmask = get_rmask();
+     bit [CSRT_DATA_WIDTH-1:0] next_state;
+
+     //Prohibit a verifier from setting non-existent bits to non-zero
+     //      this.data = new_data & rmask;
+     next_state = new_data & rmask;
+     ShadowState.SetState(next_state);
+   } // end task set_shadow_data
+
+
+   //=================================================
+   //	get_shadow_data task
+   //=================================================
+
+    protected function bit [CSRT_DATA_WIDTH-1:0] get_shadow_data () {
+//      get_shadow_data = this.data;
+      get_shadow_data = ShadowState.GetState();
+   } // end function get_shadow_data
+
+
+   //=================================================
+   //	update_shadow_data task
+   //=================================================
+
+    protected task update_shadow_data (bit [CSRT_DATA_WIDTH-1:0] new_data) {
+
+      bit [CSRT_DATA_WIDTH-1:0] tmp_data;
+      bit [CSRT_DATA_WIDTH-1:0] rmask;
+      bit [CSRT_DATA_WIDTH-1:0] read_mask;
+      bit [CSRT_DATA_WIDTH-1:0] write_mask;
+      bit [CSRT_DATA_WIDTH-1:0] clear_mask;
+      bit [CSRT_DATA_WIDTH-1:0] set_mask;
+      bit [CSRT_DATA_WIDTH-1:0] toggle_mask;
+
+
+      rmask  = get_rmask();
+      new_data &= rmask; //This will set bits corresponding to non-existant bit positions to zero
+
+      read_mask	        = get_read_only_mask();
+      write_mask	= get_write_mask();
+      clear_mask	= get_clear_mask();
+      set_mask	        = get_set_mask();
+      toggle_mask	= get_toggle_mask();
+
+      //Read-only bits in shadow data should always retain their current values.
+      //This current value could result from:
+      // 1. The POR state of the register
+      // 2. A value set by a verifier using the set_shadow_csr task
+
+      //The use of write_mask below should deal with read-only bits in a similar way.
+
+	 tmp_data = ShadowState.GetState();
+	 tmp_data = ((tmp_data & ~write_mask) | (new_data & write_mask));
+	 tmp_data = (tmp_data & ~(tmp_data & new_data & clear_mask)) ;
+	 tmp_data = (tmp_data | (new_data & set_mask)) ; //Write one to set
+	 tmp_data = (tmp_data ^ (new_data & toggle_mask));
+	 ShadowState.SetState(tmp_data);
+   } // end task update_shadow_data
+
+
+   //=================================================
+   //       get_addr_offset function
+   //=================================================
+
+   protected function bit [CSRT_ADDR_OFFSET_WIDTH-1:0] get_addr_offset() {
+      get_addr_offset = this.addr_offset;
+   } // end function get_addr_offset
+
+
+
+   //=================================================
+   //       get_por_value function
+   //=================================================
+
+   protected function bit [CSRT_DATA_WIDTH-1:0] get_por_value() {
+      get_por_value = this.por_value;
+   } // end function get_por_value
+
+
+   //=================================================
+   //       get_rmask function
+   //=================================================
+
+   protected function bit [CSRT_DATA_WIDTH-1:0]  get_rmask() {
+      get_rmask = this.rmask;
+   } // end function get_rmask
+
+
+   //=================================================
+   //       get_read_only_mask function
+   //=================================================
+
+   protected function bit [CSRT_DATA_WIDTH-1:0]  get_read_only_mask() {
+      get_read_only_mask = this.read_only_mask;
+   } // end function get_read_only_mask
+
+
+
+   //=================================================
+   //       get_write_mask function
+   //=================================================
+
+   protected function bit [CSRT_DATA_WIDTH-1:0]  get_write_mask() {
+      get_write_mask = this.write_mask;
+   } // end function get_write_mask
+
+
+
+   //=================================================
+   //       get_clear_mask function
+   //=================================================
+
+   protected function bit [CSRT_DATA_WIDTH-1:0]  get_clear_mask() {
+      get_clear_mask = this.clear_mask;
+   } // end function get_clear_mask
+
+
+   //=================================================
+   //       get_set_mask function
+   //=================================================
+
+   protected function bit [CSRT_DATA_WIDTH-1:0]  get_set_mask() {
+      get_set_mask = this.set_mask;
+   } // end function get_set_mask
+
+
+
+   //=================================================
+   //       get_toggle_mask function
+   //=================================================
+
+   protected function bit [CSRT_DATA_WIDTH-1:0]  get_toggle_mask() {
+      get_toggle_mask = this.toggle_mask;
+   } // end function get_toggle_mask
+
+
+
+   //=================================================
+   //       get_name function
+   //=================================================
+
+  virtual function string get_name() {
+      sprintf (get_name, "%s", this.name);
+   } // end function get_name
+
+
+
+   //=================================================
+   //       get_max_num_fields function
+   //=================================================
+
+   protected function integer get_max_num_fields() {
+      get_max_num_fields = this.max_num_fields;
+   } // end function get_name
+
+
+
+   //=================================================
+   //       set_por_value task
+   //=================================================
+
+   protected task set_por_value (bit [CSRT_DATA_WIDTH-1:0] new_por_value) {
+      this.por_value = new_por_value;
+   } // end task set_por_value
+
+
+   //=================================================
+   //           Check Method Task
+   //=================================================
+
+  protected task check_method (integer method) {
+    if (!assoc_index(CHECK, access_methods, method))
+      QuickReport(CSRReport, RTYP_CSR_ERROR, "AccessorBase::check_method(): %s :Invalid method %0d",
+	     get_name(), method);
+
+  } // end task check_method()
+  
+
+  protected task set_method_array ( CSRAccessMethod  input_access_methods[], 
+				    integer input_access_levels[],
+				    string  input_access_name[]
+				    )  {
+    integer   MethodIndex;
+    integer   success;
+    integer ii;
+
+
+    //Set first location of each array
+    success = assoc_index(FIRST, input_access_methods, MethodIndex);
+
+    if (!success) {
+      QuickReport(CSRReport, RTYP_CSR_ERROR, 
+		  "AccessorBase::set_method_array: Empty or badly formed access method array passed to CSRAccessor");
+    }
+
+    access_methods[MethodIndex] = input_access_methods[MethodIndex];
+    access_level[MethodIndex] = input_access_levels[MethodIndex];
+    AccessName[MethodIndex] = input_access_name[MethodIndex];
+
+    //Set remaining index of each array
+    while (assoc_index(NEXT, input_access_methods, MethodIndex)) {
+      access_methods[MethodIndex] = input_access_methods[MethodIndex];
+      access_level[MethodIndex] = input_access_levels[MethodIndex];
+      AccessName[MethodIndex] = input_access_name[MethodIndex];
+    }
+      
+  }
+
+  protected function string get_method_name ( integer method) {
+    if (method == CSRT_OMNI)
+      get_method_name = "OMNI";
+    else
+      get_method_name = AccessName[method];
+  }
+ 
+} 
+
+
+

@@ -1,0 +1,186 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuIngParErr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class IngParErrStr extends PEUStrBase 
+  {
+  integer f_errQueue;				// A mailbox for bad pkt headers
+  integer f_len;				// The packet's payload length
+  bit f_lenSpecified;				// Was a length specified?
+  bit[4:0] f_type;				// The packet's type
+  bit f_typeSpecified;				// Was a type specified?
+  bit f_injectType;
+  bit[3:0] f_mask;				// Which bits are in error?
+  integer bit_flip;
+
+  task new( PEUTestEnv a_env )
+    {
+    super.new( a_env );
+    f_errQueue = 0;
+    f_lenSpecified = 0;
+    f_typeSpecified = 0;
+    f_injectType = 0;
+    f_mask = 4'b0;
+    bit_flip = random() % 4;
+    }
+
+  task SetErrQueue( integer a_queue )
+    {
+    f_errQueue = a_queue;
+    } /* end SetErrQueue */
+
+  task SetLength( integer a_len )
+    {
+    f_len = a_len;
+    f_lenSpecified = 1;
+    } /* end SetLength */
+
+  task SetType( integer a_type )
+    {
+    f_type = a_type;
+    f_typeSpecified = 1;
+    } /* end SetType */
+
+  task SetInjectType( bit a_injectType )
+    {
+    f_injectType = a_injectType;
+    }
+
+  task SetMask( bit[3:0] a_mask )
+    {
+    f_mask = a_mask;
+    } /* end SetMask */
+
+  task Execute()
+    {
+    bit[PEC_PCI__HDR] egressHdr;		// The egress TLP's header
+    integer egressData;				// A payload descriptor
+    bit[7:0] tlpTag;				// The tag for the TLP
+    bit[7:0] egressAddr;			// The DOU starting address
+    bit[PEC_PCI__HDR] ingressHdr;		// The ingress TLP's header
+    integer ingressData;			// A payload descriptor
+    bit[3:0] errMask;
+    bit [63:0] data;
+
+    if ( f_mask != 0 )
+      errMask = f_mask;
+    else
+      errMask = urandom()%15 + 1;
+
+
+					// Build a TLP, using the specified
+					// type and length, if any.
+    if ( !f_typeSpecified )
+      {
+      randcase
+        {
+        4 : { f_type = PEC_PCI__TYPE_MEM; f_len = urandom()%16 + 1; }
+        1 : { f_type = PEC_PCI__TYPE_MSG; f_len = 1; }
+        1 : { f_type = PEC_PCI__TYPE_CPL; f_len = urandom()%4 + 1; }
+        }
+      }
+
+    else if ( !f_lenSpecified ) 
+      {
+      if ( f_type == PEC_PCI__TYPE_CPL )
+        f_len = urandom()%4 + 1;
+      else if ( f_type == PEC_PCI__TYPE_MEM )
+        f_len = urandom()%16 + 1;
+      else
+        f_len = 1;
+      }
+
+    if (f_injectType ) {
+      data = f_env.readCSRdirect(f_env.getCSRaddr(e_CSR_tlu_diag));
+      data[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_DIAG_IHI_PAR_SLC] = 1 << (bit_flip % 4);
+      data[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_DIAG_IHI_TRG_SLC] = 1;
+      f_env.writeCSRdirect(f_env.getCSRaddr(e_CSR_tlu_diag), data);
+      f_env.enterDrainState();
+    } else {
+      data = f_env.readCSRdirect(f_env.getCSRaddr(e_CSR_tlu_diag));
+      data[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_DIAG_IDI_PAR_SLC] = 1 << (bit_flip % 4);
+      data[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_DIAG_IDI_TRG_SLC] = 1;
+      f_env.writeCSRdirect(f_env.getCSRaddr(e_CSR_tlu_diag), data);
+    }
+
+    repeat (100) @ (posedge CLOCK);
+
+					// If a completion (with data) was
+					// requested, then base it on a PIO
+					// read request.
+    if ( f_type == PEC_PCI__TYPE_CPL )
+      {
+      f_env.allocRdTag( tlpTag );
+      f_env.genEgressRdReq( tlpTag, egressHdr, egressData, f_len );
+      f_env.driveILU( egressHdr, 0, egressData );
+      f_env.expectPCIE( egressHdr, egressData );
+      f_env.genIngressCpl( egressHdr, ingressHdr, ingressData );
+      }
+    else
+      {
+      f_env.allocDmaTag( tlpTag );
+      if ( f_len == 0 )
+        f_env.genIngressRdReq( tlpTag, ingressHdr, ingressData );
+      else
+        f_env.genIngressWrReq( tlpTag, ingressHdr, ingressData, f_len );
+      }
+
+					// Present the TLP to the TLU, and 
+					// specify that parity errors are to
+					// be injected into the IHB.
+					// We aren't going to release the tag
+					// so that only one error is injected.
+    f_env.reserveIngressCredits( ingressHdr );
+    f_env.drivePCIE( ingressHdr, ingressData );
+printf("drove the packet\n");
+    f_env.consumeIngressCredits( ingressHdr );
+
+                                        // Error injected on the Header are logged
+                                        // in the ILU Error register. Errors injected
+                                        // on the data pass through and are flagged upstream
+
+    if (f_injectType) {
+      if ( f_errQueue != 0 )
+      {
+        mailbox_put( f_errQueue, e_ERR_ilu_ihb );
+        mailbox_put( f_errQueue, ingressHdr );
+      }
+    } else {
+printf("Waiting for ILU packet\n");
+      f_env.expectILU( ingressHdr, ingressData );
+printf("received ILU packet\n");
+    }
+
+
+    } /* end Execute */
+  } /* end IngParErrStr */

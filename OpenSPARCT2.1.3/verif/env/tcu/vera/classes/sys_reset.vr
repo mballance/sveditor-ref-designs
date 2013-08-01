@@ -1,0 +1,551 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: sys_reset.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "std_display_class.vrh"
+#include "ucb___packet.vrh"
+#include "rst_defines.vri"
+#include "tcu_top.vri"
+// #include "ccu_top.vri" // @@UPDATE@@ This file should be split and included as reg_top.vri
+#include "reg_top.vri"
+#include "rst_top.vri"
+
+#include "tcu_tasks.vrh"
+#include "sys_registers.vrh"
+
+#include "ucb_top.vri"
+#include "ucb_monitor.vrh"
+
+class SystemReset {
+  string dispmonScope;
+
+  sc__port        sc_port;
+  rst__port       rst_port;
+  SystemTap       dft;
+  SystemRegs      resetSource;    // Physical RST register
+  SystemRegs      resetGenerate;  // Physical RST register
+  SystemRegs      resetStatus;    // Physical RST register
+  SystemRegs      resetSubsystem; // Physical RST register
+  SystemRegs      resetLocktime;  // Physical RST register
+  SystemRegs      resetNiutime;  // Physical RST register
+  SystemRegs      resetCcutime;  // Physical RST register
+  SystemRegs      resetProptime;  // Physical RST register
+  SystemRegs      resetFee;  	  // Physical RST register
+  UCB_port 	  ucb_port;
+  UCB_monitor 	  ucb_monitor;
+
+  StandardDisplay dbg;
+  integer clkgenBegin;
+  integer clkgenEnd;
+  integer clkenStartBegin;
+  integer clkenStartEnd;
+  integer clkenStopBegin;
+  integer clkenStopEnd;
+  integer rst_attribs[RST_LOCK_ATTRIB_COUNT+1][RST_LOCK_ATTRIB_FIELD_COUNT+1] = RST_LOCK;
+  integer refCycleCnt;
+  integer resetSeqTimeout;    // timeout of reset seq not progressing (in sysclk cycs)
+  bit [63:0] temp_reg_val_holder;
+  rand integer pwron_assrt_time;	// Number of cycles to assign the PWRON_RST pin
+
+  constraint pwron{
+	pwron_assrt_time in { 1 : 30 };
+  }
+
+  task new(StandardDisplay dbgIn, SystemTap dftIn) {
+    dispmonScope = "rst";
+    sc_port  = sc_bind;
+    rst_port = rst_bind;
+    dbg      = dbgIn;
+    dft      = dftIn;
+ 
+    if (get_plus_arg(CHECK, "rst_resetSeqTimeout="))
+      resetSeqTimeout = get_plus_arg(NUM, "rst_resetSeqTimeout=");
+    else
+      resetSeqTimeout = TEST_RST_SEQUENCE_TIME;
+
+    dbg.dispmon(dispmonScope, MON_INFO, "$Id: sys_reset.vr,v 1.6 2007/07/28 20:36:17 drp Exp $");
+    resetGenerate  = new(dbg,dft,"RST_ASI_RESET_GEN_REG"
+                         , RST_ASI_RESET_GEN_REG,    RST_ASI_RESET_GEN_DEF,    RST_ASI_RESET_GEN_MASK,    creg_bind_rgen);
+    resetStatus    = new(dbg,dft,"RST_ASI_RESET_STAT_REG"
+                         , RST_ASI_RESET_STAT_REG,   RST_ASI_RESET_STAT_DEF,   RST_ASI_RESET_STAT_MASK,   creg_bind_rstat);
+    resetSource    = new(dbg,dft,"RST_ASI_RESET_SOURCE_REG"
+                         , RST_ASI_RESET_SOURCE_REG, RST_ASI_RESET_SOURCE_DEF, RST_ASI_RESET_SOURCE_MASK, creg_bind_rsrc);
+    resetSubsystem = new(dbg,dft,"RST_ASI_RESET_SSYS_REG"
+                         , RST_ASI_RESET_SSYS_REG,   RST_ASI_RESET_SSYS_DEF,   RST_ASI_RESET_SSYS_MASK,   creg_bind_rssys);
+    resetLocktime = new(dbg,dft,"RST_ASI_LOCK_TIME_REG"
+                         , RST_ASI_LOCK_TIME_REG,  RST_ASI_LOCK_TIME_DEF, RST_ASI_LOCK_TIME_MASK,  creg_bind_locktime);
+    resetNiutime = new(dbg,dft,"RST_ASI_NIU_TIME_REG"
+                         , RST_ASI_NIU_TIME_REG,  RST_ASI_NIU_TIME_DEF, RST_ASI_NIU_TIME_MASK,  creg_bind_niutime);
+    resetCcutime = new(dbg,dft,"RST_ASI_CCU_TIME_REG"
+                         , RST_ASI_CCU_TIME_REG,  RST_ASI_CCU_TIME_DEF, RST_ASI_CCU_TIME_MASK,  creg_bind_ccutime);
+    resetProptime = new(dbg,dft,"RST_ASI_PROP_TIME_REG"
+                         , RST_ASI_PROP_TIME_REG,  RST_ASI_PROP_TIME_DEF, RST_ASI_PROP_TIME_MASK,  creg_bind_proptime);
+    resetFee = new(dbg,dft,"RST_ASI_RESET_FEE_REG"
+                         , RST_ASI_RESET_FEE_REG,  RST_ASI_RESET_FEE_DEF, RST_ASI_RESET_FEE_MASK,  creg_bind_rfee);
+    void = randomize();
+
+    ucb_port = rst_ucb_mon_bind;
+    if (get_plus_arg(CHECK, "rst_noUcbMon"))
+      dbg.dispmon(dispmonScope, MON_ALWAYS, "warning: UCB monitor is disable");
+    else
+      ucb_monitor = new("rst_ucb_mon", dbg, ucb_port, 4, 8'h89 , 1); // Instantiate and start the monitor
+
+    // dft.stop_port.$rst_tcu_flush_req  = 1'b0; // @@UPDATE@@ remove when flush connect to RST
+// FC  regression failing for PEU because vera driving these inputs to RST 
+#ifndef FC_BENCH   // could not drive package pins becoz vera drives it 
+#ifdef TCU_SAT
+    rst_port.$l2t0_rst_fatal_error    = 1'b0 async ;
+    rst_port.$l2t1_rst_fatal_error    = 1'b0 async ;
+    rst_port.$l2t2_rst_fatal_error    = 1'b0 async ;
+    rst_port.$l2t3_rst_fatal_error    = 1'b0 async ;
+    rst_port.$l2t4_rst_fatal_error    = 1'b0 async ;
+    rst_port.$l2t5_rst_fatal_error    = 1'b0 async ;
+    rst_port.$l2t6_rst_fatal_error    = 1'b0 async ;
+    rst_port.$l2t7_rst_fatal_error    = 1'b0 async ;
+    rst_port.$ncu_rst_fatal_error     = 1'b0 async ;
+#endif
+//  sc_port.$por_                     = 1'b0 soft async ; // asked for assert from time 0
+    sc_port.$por_                     = 1'bx soft async ; 
+    sc_port.$pb_xir_                  = 1'bx soft async ;
+    sc_port.$pb_rst_                  = 1'bx soft async ;
+#endif  // FC_BENCH ndef
+
+    //// Start another process, count the reference clocks
+    fork {
+      while(1) {
+        @(posedge sc_port.$clk);
+        // @@UPDATE@@ This might change -csr
+        if (sc_port.$por_in_ == 1'b0) {
+          refCycleCnt = 0;
+        } else {
+          refCycleCnt++;
+        }
+      }
+    } join none
+  }
+
+  //------------------ Knobs will be initialized in :/verif/diag files ---------------------
+  task runRstSequence() {
+    integer pllreset_cyc_cnt;      // number of sys clks that PWRON_RST_L is asserted
+    integer pllreset_min_cycs = 0; // minimum time required to reset pll
+    integer async_delay;  
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("PWRON_RST_L assert time is %d pll_sys_clkp cycles", pwron_assrt_time));      
+    sc_port.$pb_xir_ = 1'bx;
+    sc_port.$pb_rst_ = 1'bx;
+    sc_port.$por_ = 1'bx;
+    repeat (10) @(negedge sc_port.$clk);
+    sc_port.$por_ = 1'b0; // PRM 1.2 section 13.9.1 step 1
+    dft.TapDrive_trst_n(1'b0); // PRM 1.2 section 13.9.1 step 1
+    pllreset_cyc_cnt = get_cycle(sc_port.$clk);
+    dft.TapDrive_tms(1'b1); // PRM 1.2 section 13.9.1 step 4
+    sc_port.$pb_xir_ = 1'b1;   // Define the XIR & PB now since it matters
+    sc_port.$pb_rst_ = 1'b1; 
+    repeat (5) @(negedge sc_port.$clk);
+    dft.TapDrive_trst_n(1'b1); // PRM 1.2 section 13.9.1 step 5
+    repeat (5) dft.toggleDutTck(); // PRM 1.2 section 13.9.1 step 6
+    if (get_plus_arg(CHECK, "pllreset_time=")) {
+      pllreset_min_cycs = get_plus_arg(NUM, "pllreset_time=");
+      pllreset_cyc_cnt = get_cycle(sc_port.$clk) - pllreset_cyc_cnt;
+      pllreset_cyc_cnt = pllreset_min_cycs - pllreset_cyc_cnt;
+      if (pllreset_cyc_cnt > 0)
+        repeat (pllreset_cyc_cnt) @(posedge sc_port.$clk); // wait to meet min cycs
+    }
+    else
+      repeat (pwron_assrt_time) @(negedge sc_port.$clk);
+//    async_delay = urandom_range(7499, 0);
+//    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("PWRON_RST_L deasert asyncdelay is  %d ps", async_delay));      
+//    delay(async_delay) ;
+    sc_port.$por_ = 1'b1 ; // Service processor deasserts
+    wait_unpark_thread();
+  }
+
+  task runRstSequenceJtpor() {
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("PWRON_RST_L assert time is %d pll_sys_clkp cycles", pwron_assrt_time));
+    repeat (5) @(posedge sc_port.$clk);
+    sc_port.$por_ = 1'b0;
+    sc_port.$pb_rst_ = 1'b0; // PRM 1.2 section 13.9.1 step 1
+    dft.TapDrive_trst_n(1'b0); // According to PRM 11.9.1 09/21/2004 
+    @(posedge sc_port.$clk);
+    @(posedge sc_port.$clk);
+    dft.TapDrive_tms(1'b1); // PRM 1.2 section 13.9.1 step 4
+    sc_port.$pb_xir_ = 1'b1;   // Define the XIR & PB now since it matters
+    sc_port.$pb_rst_ = 1'b1;
+    repeat (5) @(posedge sc_port.$clk);
+    dft.TapDrive_trst_n(1'b1); // PRM 1.2 section 13.9.1 step 5
+    repeat (5) dft.toggleDutTck(); // PRM 1.2 section 13.9.1 step 6
+    repeat (1) @(posedge sc_port.$clk);
+    //repeat (pwron_assrt_time) @(posedge sc_port.$clk);
+    sc_port.$por_	 = 1'b1; // Service processor deasserts
+//  repeat (2) @(posedge sc_port.$clk);
+
+    wait_for_por2();
+  }
+
+
+  //------------------ Update Reset Registers Expected Value ---------------------
+  task expectedResetUpdate(integer reset_type) {
+    // Update the Shadow Status registers (RST spec v.0.92)
+    resetStatus.asiVeraValue[RST_ASI_RESET_STAT_POR_S]  = resetStatus.asiVeraValue[RST_ASI_RESET_STAT_POR];
+    resetStatus.asiVeraValue[RST_ASI_RESET_STAT_WMR_S]  = resetStatus.asiVeraValue[RST_ASI_RESET_STAT_WMR];
+    resetStatus.asiVeraValue[RST_ASI_RESET_STAT_FREQ_S] = resetStatus.asiVeraValue[RST_ASI_RESET_STAT_FREQ];
+
+    case ( reset_type ) {
+      RST_ASI_RESET_STAT_POR: {
+        resetStatus.asiVeraValue[RST_ASI_RESET_STAT_POR]  = 1'b1;
+        resetStatus.asiVeraValue[RST_ASI_RESET_STAT_WMR]  = 1'b0;
+        resetStatus.asiVeraValue[RST_ASI_RESET_STAT_FREQ] = 1'b0;
+      }    
+      RST_ASI_RESET_STAT_WMR: {
+        resetStatus.asiVeraValue[RST_ASI_RESET_STAT_POR]  = 1'b0;
+        resetStatus.asiVeraValue[RST_ASI_RESET_STAT_WMR]  = 1'b1;
+        resetStatus.asiVeraValue[RST_ASI_RESET_STAT_FREQ] = 1'b0;
+      }    
+      RST_ASI_RESET_STAT_FREQ: {
+        resetStatus.asiVeraValue[RST_ASI_RESET_STAT_POR]  = 1'b0;
+        resetStatus.asiVeraValue[RST_ASI_RESET_STAT_WMR]  = 1'b1;
+        resetStatus.asiVeraValue[RST_ASI_RESET_STAT_FREQ] = 1'b1;
+      }    
+      default: dbg.dispmon(dispmonScope, MON_ERR, psprintf("Unrecognized reset type (%s) for RESET_STAT_REG", reset_type));
+    }
+  }
+
+  //------------------ Update Reset Registers Expected Value ---------------------
+  task check_resetStatReg(string bitfield) {
+	if(bitfield == "WMR"){
+		expectedResetUpdate(RST_ASI_RESET_STAT_WMR);
+	}
+	else if(bitfield == "POR"){
+                expectedResetUpdate(RST_ASI_RESET_STAT_POR);
+        }
+        else if (bitfield == "FREQ"){
+                expectedResetUpdate(RST_ASI_RESET_STAT_FREQ);
+        }
+        else{
+	  dbg.dispmon(dispmonScope, MON_ERR, psprintf("ERROR: Wrong argument to task check_resetStatReg - %s ", bitfield));
+	  return;
+	}
+	resetStatus.printCurrentRegister(); //Fetch asiCurrentValue
+	resetStatus.printCheckRegister(resetStatus.asiVeraValue , resetStatus.asiCurrentValue);
+  }// End of check_resetStatReg
+
+  // Task to cause a simple POR reset with PWRON_RST_L pin. 02/20/05
+  task	POR_reset() {
+	runRstSequence();
+  }// End of POR_reset
+
+  // Task to cause a WMR reset with PB_RST_L pin. 03/01/05
+  task	WMR_PB_RST() {
+	// Initiate warm reset through PB_RST_L pin
+	dbg.dispmon(dispmonScope, MON_ALWAYS, "Assert PB_RST_L pin");
+	repeat (5) @(posedge sc_port.$clk);
+	sc_port.$pb_rst_ = 1'b0;
+	repeat (urandom_range(20, 2)) @(posedge sc_port.$clk);
+	delay(urandom_range(7499, 0));
+	sc_port.$pb_rst_ = 1'b1 async;
+	wait_unpark_thread();
+	repeat (20) @(posedge sc_port.$clk);
+  }// End of WMR_PB_RST
+
+  // Task to cause a WMR reset with L2t_error signal pins. 03/01/05
+  task	gen_fatal_error(string error_type) {
+    reg [63:0] fee_reg_data = 64'd0;
+	sc_port.$pb_rst_ = 1'b1;
+	sc_port.$por_ = 1'b1;
+	sc_port.$pb_xir_ = 1'b1;
+	if (error_type == "L2T_ERR"){	
+		dbg.dispmon(dispmonScope, MON_ALWAYS, "Generate L2t fatal error");
+		fee_reg_data[8]  = random();
+		fee_reg_data[9]  = random();
+		fee_reg_data[10] = random();
+		fee_reg_data[11] = random();
+		fee_reg_data[12] = random();
+		fee_reg_data[13] = random();
+		fee_reg_data[14] = random();
+		fee_reg_data[15] = random();
+		if (fee_reg_data == 64'd0){
+			fee_reg_data[8] = 1'b1;
+		}
+		resetFee.ucbWrite(fee_reg_data);
+		void = resetFee.ucbRead();
+		repeat (5) @(posedge rst_port.$clk_iol2clk);
+
+		rst_port.$l2t0_rst_fatal_error	  = fee_reg_data[8] async ; 
+		rst_port.$l2t1_rst_fatal_error	  = fee_reg_data[9] async ;
+		rst_port.$l2t2_rst_fatal_error	  = fee_reg_data[10] async ;
+		rst_port.$l2t3_rst_fatal_error	  = fee_reg_data[11] async ;
+		rst_port.$l2t4_rst_fatal_error	  = fee_reg_data[12] async ;
+		rst_port.$l2t5_rst_fatal_error	  = fee_reg_data[13] async ;
+		rst_port.$l2t6_rst_fatal_error	  = fee_reg_data[14] async ;
+		rst_port.$l2t7_rst_fatal_error	  = fee_reg_data[15] async ;
+		repeat (1) @(posedge rst_port.$clk_iol2clk);
+		rst_port.$l2t0_rst_fatal_error	  = 1'b0 async ;
+		rst_port.$l2t1_rst_fatal_error	  = 1'b0 async ;
+		rst_port.$l2t2_rst_fatal_error	  = 1'b0 async ;
+		rst_port.$l2t3_rst_fatal_error	  = 1'b0 async ;
+		rst_port.$l2t4_rst_fatal_error	  = 1'b0 async ;
+		rst_port.$l2t5_rst_fatal_error	  = 1'b0 async ;
+		rst_port.$l2t6_rst_fatal_error	  = 1'b0 async ;
+		rst_port.$l2t7_rst_fatal_error	  = 1'b0 async ;
+	}
+	else if(error_type == "NCU_ERR") {
+		dbg.dispmon(dispmonScope, MON_ALWAYS, "Generate NCU fatal error");
+		repeat (5) @(posedge rst_port.$clk_iol2clk);
+		rst_port.$ncu_rst_fatal_error = 1'b1 async;
+		repeat (1) @(posedge rst_port.$clk_iol2clk);
+		rst_port.$ncu_rst_fatal_error = 1'b0 async;
+	}
+	else {
+		dbg.dispmon(dispmonScope, MON_ERR, "ERROR: Did not specify the type of fatal error to generate");
+	}
+	wait_unpark_thread();
+
+// For L2 error check weather FEE register is reset to all zeros
+	fee_reg_data = resetFee.ucbRead() & resetFee.asiWriteableMask;
+	if (fee_reg_data != 64'd0)
+	{
+		dbg.dispmon(dispmonScope, MON_ERR, "ERROR: RESET_FEE register is not reset after warm reset");
+		dbg.dispmon(dispmonScope, MON_ERR, psprintf("FEE REG is': 0x%64h", fee_reg_data));
+	}
+  }// End of WMR_L2t_error
+
+  // Task to cause XIR reset through the BUTTON_XIR_L pin
+  task XIR_reset() {
+	dbg.dispmon(dispmonScope, MON_ALWAYS, "Assert XIR reset");
+	sc_port.$pb_rst_ = 1'b1;
+	sc_port.$por_    = 1'b1;
+	sc_port.$pb_xir_ = 1'b0;
+        fork
+        {
+         repeat (urandom_range(20, 2)) @(posedge sc_port.$clk);
+         delay(urandom_range(7499, 0));
+	 sc_port.$pb_xir_ = 1'b1 async;
+        }
+        join none
+	wait_xir_reset();
+	repeat (20) @(posedge sc_port.$clk); 
+  }//  End of XIR_reset
+
+  // Task for software generated resets, excercice RESET_GEN register and SSYS reg
+  task software_gen_reset(string rst_type)
+  {
+        bit 	  reset_timeout; //To have smart timeout than default timeout-  03/03/05
+
+    	dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("%s  S/W Reset gen", rst_type));
+	if (rst_type == "WMR_GEN"){
+		resetGenerate.printCurrentRegister();
+		resetGenerate.ucbWrite(64'd1);
+	} else
+	if (rst_type == "XIR_GEN"){
+		resetGenerate.printCurrentRegister();
+		resetGenerate.ucbWrite(64'd2 );
+	} else
+	if (rst_type == "DBR_GEN"){
+		resetGenerate.printCurrentRegister();
+		resetGenerate.ucbWrite(64'd8 );
+	} else
+	if (rst_type == "SSYS_DMU_PEU"){
+		resetSubsystem.printCurrentRegister();
+		resetSubsystem.ucbWrite(64'd2 );
+	} else
+	if (rst_type == "SSYS_NIU"){
+		resetSubsystem.printCurrentRegister();
+		resetSubsystem.ucbWrite(64'd1 );
+	} else
+		dbg.dispmon(dispmonScope, MON_ERR, psprintf("Unrecognized s/w reset to generate for %s in  RESET_GEN_REG", rst_type));
+
+	if((rst_type == "WMR_GEN") || (rst_type == "DBR_GEN") ){
+		 wait_unpark_thread();
+	}
+	else {
+		reset_timeout = 1'b0;
+		fork
+		{
+			if(rst_type == "XIR_GEN"){
+				@(posedge rst_port.$ncu_rst_xir_done async);
+			}
+			else if(rst_type == "SSYS_DMU_PEU"){
+				@(negedge rst_port.$rst_dmu_peu_wmr_ );
+				repeat (50) @(posedge sc_port.$clk async);
+			}
+			else if(rst_type == "SSYS_NIU"){
+				@(negedge rst_port.$rst_niu_wmr_ );
+				repeat (50) @(posedge sc_port.$clk async);
+			}
+			reset_timeout = 1'b0;
+		}
+		{
+			repeat (resetSeqTimeout) @(posedge sc_port.$clk);
+			reset_timeout = 1'b1;
+		}
+		join any
+		terminate;
+		if(reset_timeout)
+		{
+	  	dbg.dispmon(dispmonScope, MON_ERR, psprintf("ERROR: TIMEOUT for %s reset, failed to generate reset ", rst_type));
+		}
+	}
+	repeat (50) @(posedge sc_port.$clk);
+
+  } // End of software_gen_reset
+
+  // This task tests that source register is correctly updated and also clears the field in order to simulate the s/w behaviour
+  task check_resetSourceReg(string bitfield) {
+	integer bitPosition = 2;
+        reg [63:0] expectedVal = 64'd0;
+	resetSource.printCurrentRegister(); // Update the currentValue variable in the class
+	if( bitfield == "WMR_GEN")
+		bitPosition = 0;
+	else if( bitfield == "XIR_GEN")
+		bitPosition = 1;
+	else if( bitfield == "DBR_GEN")
+		bitPosition = 3;
+	else if( bitfield == "PWRON_RST")
+		bitPosition = 4;
+	else if( bitfield == "PB_RST")
+		bitPosition = 5;
+	else if( bitfield == "PB_XIR")
+		bitPosition = 6;
+	else if( bitfield == "NCU_FATAL")
+		bitPosition = 7;
+	else if( bitfield == "L2T_FATAL"){
+		temp_reg_val_holder = resetSource.asiCurrentValue & 64'h000000000000ff00;
+		if((resetSource.asiCurrentValue & 64'h000000000000ff00) > 64'd0){
+	  		dbg.dispmon(dispmonScope, MON_INFO, psprintf(" Source register is correctly updated for field %s", bitfield));
+			resetSource.ucbWrite(resetSource.asiWriteableMask);
+		}
+		else
+	  		dbg.dispmon(dispmonScope, MON_ERR, psprintf("ERROR: Source register not set for bit %s ", bitfield));
+		return;
+	}else
+	  	dbg.dispmon(dispmonScope, MON_ERR, psprintf("ERROR: Wrong argument to task check_resetSourceReg - %s ", bitfield));
+
+	expectedVal[bitPosition] = 1'b1;
+//	if(resetSource.asiCurrentValue[bitPosition] == 1'b1)
+	if((resetSource.asiWriteableMask & resetSource.asiCurrentValue) == expectedVal)
+		dbg.dispmon(dispmonScope, MON_INFO, psprintf(" Source register is correctly updated for field %s", bitfield));
+	
+	else
+  		dbg.dispmon(dispmonScope, MON_ERR, psprintf("ERROR: Source register NOT correctly updated for reset %s", bitfield));
+	
+	resetSource.ucbWrite(resetSource.asiWriteableMask);
+	void = resetSource.ucbRead();  // Dumy read to ensure write completed
+  } // End of checkSourceReg
+
+  //Wait for unpark_thread
+  task wait_unpark_thread(){
+    integer counter = 0;
+    bit unpark_done = 0;
+
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "Waiting for unpark_thread ");
+    fork {
+	  fork
+	  {
+		@(posedge rst_port.$rst_ncu_unpark_thread);
+        dbg.dispmon(dispmonScope, MON_ALWAYS, "unpark_thread asserted");
+        unpark_done = 1;
+	  }
+	  {
+		while (!unpark_done) {
+		  @(posedge sc_port.$clk);
+           counter++; 
+           if (counter == 1000) {
+             counter = 0;
+	  	      dbg.dispmon(dispmonScope, MON_ALWAYS, "Complete 1000 cycle wait");
+           }
+		}
+      }
+	  {
+		repeat (resetSeqTimeout) @(posedge sc_port.$clk);
+	  	dbg.dispmon(dispmonScope, MON_ERR, "ERROR: TIMEOUT for task wait_unpark_thread ");
+		exit(1);
+	  }
+	  join any
+	  terminate;
+    }join all
+  }//End of wait_unpark_thread
+
+
+
+    //Wait for por2
+  task wait_for_por2(){
+    integer counter = 0;
+    bit por2_start = 0;
+
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "Waiting for por2 ");
+    fork { 
+	  fork
+	  {
+		@(posedge rst_port.$rst_tcu_flush_init_req);
+	dbg.dispmon(dispmonScope, MON_ALWAYS, "por2");
+        por2_start = 1;
+	  }
+          {
+           	while (!por2_start) {
+			  @(posedge sc_port.$clk);
+	   counter++;
+	   if (counter == 1000) {
+             counter = 0;
+  	dbg.dispmon(dispmonScope, MON_ALWAYS, "Complete 1000 cycle wait");
+           }
+  		}
+      }
+       	  {
+           	repeat (resetSeqTimeout) @(posedge sc_port.$clk);
+		dbg.dispmon(dispmonScope, MON_ERR, "ERROR: TIMEOUT for task wait_unpark_thread ");
+		exit(1);
+	  }
+          join any
+		  terminate;
+    }join all
+  }//End of wait_por2
+
+
+
+  //Wait for xir_reset
+  task wait_xir_reset(){
+    fork {
+	  fork
+	  {
+         	@(posedge rst_port.$ncu_rst_xir_done);
+	  }
+	  {
+		repeat (resetSeqTimeout) @(posedge sc_port.$clk);
+	  	dbg.dispmon(dispmonScope, MON_ERR, "ERROR: TIMEOUT for task wait_xir_reset ");
+		exit(1);
+	  }
+	  join any
+	  terminate;
+    }join all
+  }//End of wait_xir_reset
+}  // End of sys_reset

@@ -1,0 +1,574 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: PEC.vri
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#ifndef PEC_VRI_DEFINED
+#define PEC_VRI_DEFINED
+
+#include <vera_defines.vrh>
+#include "cReport.vrh"
+// #include "testbench.combined.vrh"
+
+#define PEC_CREDIT_TYPE__IDLE                           3'b000
+
+#define PEC_CREDIT_TYPE__INIT_COMP                      3'b001
+#define PEC_CREDIT_TYPE__INIT_NONPOST                   3'b010
+#define PEC_CREDIT_TYPE__INIT_POST                      3'b011
+
+#define PEC_CREDIT_TYPE__UPDT_COMP                      3'b101
+#define PEC_CREDIT_TYPE__UPDT_NONPOST                   3'b110
+#define PEC_CREDIT_TYPE__UPDT_POST                      3'b111
+
+#define PEC_CREDIT_TYPE__INIT_COMP_VCNZ                 8
+#define PEC_CREDIT_TYPE__INIT_NONPOST_VCNZ              9
+#define PEC_CREDIT_TYPE__INIT_POST_VCNZ                 10
+
+#define PEC_CREDIT_TYPE__UPDT_COMP_VCNZ                 11
+#define PEC_CREDIT_TYPE__UPDT_NONPOST_VCNZ              12
+#define PEC_CREDIT_TYPE__UPDT_POST_VCNZ                 13
+
+#define PEC_CREDIT_TYPE__UPDT_COMP_NZ_AFT_INF           14
+#define PEC_CREDIT_TYPE__UPDT_NONPOST_NZ_AFT_INF        15
+#define PEC_CREDIT_TYPE__UPDT_POST_NZ_AFT_INF           16
+
+#define PEC_CREDIT_TYPE__UPDT_COMP_OVERFLOW             17
+#define PEC_CREDIT_TYPE__UPDT_NONPOST_OVERFLOW          18
+#define PEC_CREDIT_TYPE__UPDT_POST_OVERFLOW             19
+
+#define PEC_CREDIT_TYPE__RETRY                          20
+
+
+
+#define PEC_TLP_CMD__IDLE                               3'b000
+#define PEC_TLP_CMD__SOP                                3'b110
+#define PEC_TLP_CMD__EOP                                3'b011
+#define PEC_TLP_CMD__SOPEOP                             3'b111
+#define PEC_TLP_CMD__DATA                               3'b010
+#define PEC_TLP_CMD__ERROR                              3'b001
+
+/*
+* The following "defines" specify bit ranges for fields within a 4DW PCI header
+*/
+#define PEC_PCI__HDR        127:0
+#define PEC_PCI__FMT        126:125
+#define PEC_PCI__FMT_DATA   126
+#define PEC_PCI__FMT_4DW    125
+
+#define PEC_PCI__FMT_DATA_3DW       2'b_10
+#define PEC_PCI__FMT_DATA_4DW       2'b_11
+#define PEC_PCI__FMT_NO_DATA_3DW    2'b_00
+#define PEC_PCI__FMT_NO_DATA_4DW    2'b_01
+
+#define PEC_PCI__TYPE       124:120
+#define PEC_PCI__TYPE_MEM           5'b00000
+#define PEC_PCI__TYPE_MEM_LK        5'b00001
+#define PEC_PCI__TYPE_CPL           5'b01010
+#define PEC_PCI__TYPE_CPL_LK        5'b01011
+#define PEC_PCI__TYPE_CFG0          5'b00100
+#define PEC_PCI__TYPE_CFG1          5'b00101
+#define PEC_PCI__TYPE_IO            5'b00010
+#define PEC_PCI__TYPE_MSG           5'b10000
+#define PEC_PCI__TYPE_MSG_RC_MASK   5'b00111
+#define PEC_PCI__TYPE_VALID_00     32'h00000c37
+#define PEC_PCI__TYPE_VALID_01     32'h00ff0003
+#define PEC_PCI__TYPE_VALID_10     32'h00000c35
+#define PEC_PCI__TYPE_VALID_11     32'h00ff0001
+#define PEC_PCI__TC         118:116
+#define PEC_PCI__TD         111
+#define PEC_PCI__EP         110
+#define PEC_PCI__ATTR       109:108
+#define PEC_PCI__LEN        105:96
+#define PEC_PCI__REQ_ID     95:80
+#define PEC_PCI__TLP_TAG    79:72
+#define PEC_PCI__LAST_DWBE  71:68
+#define PEC_PCI__FIRST_DWBE 67:64
+#define PEC_PCI__MSG_CODE   71:64
+#define PEC_PCI__ADDR       63:0
+#define PEC_PCI__ADDR32     63:32
+#define PEC_PCI__CPL_ID     95:80
+#define PEC_PCI__CPL_STATUS 79:77
+#define PEC_PCI__CPL_STATUS_SC          3'b_000
+#define PEC_PCI__CPL_STATUS_UR          3'b_001
+#define PEC_PCI__CPL_STATUS_CRS         3'b_010
+#define PEC_PCI__CPL_STATUS_CA          3'b_100
+#define PEC_PCI__CPL_STATUS_TIMEOUT     3'b_111
+#define PEC_PCI__CPL_STATUS_RSVD1       3'b_011
+#define PEC_PCI__CPL_STATUS_RSVD2       3'b_101
+#define PEC_PCI__CPL_STATUS_RSVD3       3'b_110
+#define PEC_PCI__CPL_STATUS_RSVD4       3'b_111
+
+#define PEC_PCI__BCM        76
+#define PEC_PCI__BYTECOUNT  75:64
+#define PEC_PCI__CPL_REQ_ID 63:48
+#define PEC_PCI__CPL_TAG    47:40
+#define PEC_PCI__LOWADDR    38:32
+
+#define PEC_PCI__MSG_CODE_ASSERT_INTA 		8'h20
+#define PEC_PCI__MSG_CODE_ASSERT_INTB 		8'h21
+#define PEC_PCI__MSG_CODE_ASSERT_INTC 		8'h22
+#define PEC_PCI__MSG_CODE_ASSERT_INTD 		8'h23
+#define PEC_PCI__MSG_CODE_DEASSERT_INTA 	8'h24
+#define PEC_PCI__MSG_CODE_DEASSERT_INTB 	8'h25
+#define PEC_PCI__MSG_CODE_DEASSERT_INTC 	8'h26
+#define PEC_PCI__MSG_CODE_DEASSERT_INTD 	8'h27
+#define PEC_PCI__MSG_CODE_PM_PME 		8'h18
+#define PEC_PCI__MSG_CODE_PM_TURN_OFF   	8'h19
+#define PEC_PCI__MSG_CODE_PM_TO_ACK 		8'h1b
+#define PEC_PCI__MSG_CODE_PM_ACTIVE_STATE_NAK   8'h14
+#define PEC_PCI__MSG_CODE_SET_SLOT_POWER_LIMIT  8'h50
+#define PEC_PCI__MSG_CODE_ERR_COR 		8'h30
+#define PEC_PCI__MSG_CODE_ERR_NONFATAL 		8'h31
+#define PEC_PCI__MSG_CODE_ERR_FATAL 		8'h33
+#define PEC_PCI__MSG_CODE_ATTN 			8'h48
+#define PEC_PCI__MSG_CODE_VENDOR_TYPE_0         8'h7E
+#define PEC_PCI__MSG_CODE_VENDOR_TYPE_1         8'h7F
+
+
+/*
+* The following "defines" specify bit ranges for fields within a PEC record.
+*/
+#define PEC__RECD       125:0
+#define PEC__FMT        125:124
+#define PEC__FMT_DATA   125
+#define PEC__FMT_4DW    124
+#define PEC__TYPE       123:119
+#define PEC__TYPE_UR    7'b0001001
+#define PEC__TC         118:116
+#define PEC__ATTR       115:114
+#define PEC__LEN        113:104
+#define PEC__REQ_ID     103:88
+#define PEC__TLP_TAG    87:80
+#define PEC__LAST_DWBE  79:76
+#define PEC__FIRST_DWBE 75:72
+#define PEC__MSG_CODE   79:72
+#define PEC__ADDR       71:8
+#define PEC__ADDR32     39:8
+#define PEC__DWADDR     71:10
+#define PEC__DWADDR32   39:10
+#define PEC__D_PTR      7:2                     /* Egress */
+#define PEC__V_PTR      9:2                     /* Ingress */
+#define PEC__TERMINATE  1  			/* Egress */
+#define PEC__BUF_REL    0  			/* Egress */
+#define PEC__CPL_ID     103:88
+#define PEC__CPL_STATUS 87:85
+#define PEC__BCM        84
+#define PEC__BYTECOUNT  83:72
+#define PEC__CPL_REQ_ID 39:24
+#define PEC__CPL_TAG    23:16
+#define PEC__LOWADDR    14:8
+#define PEC__LOWADDR_CPL_MASK  7'b1111100
+#define PEC__LOWADDR_CPLD_MASK 7'b0111100
+#define PEC__LOWADDR_CPLD_ZERO 7'b0110000	/* Ingress */
+
+/*
+* There's a pipeline delay within the ILU when accessing the IDB
+*/
+#define PEC_IDB_ADDR_DELAY 0
+
+/*
+* Enqueue/dequeue credits are exchanged between the ILU and the DMU
+*/
+#define PEC_ILU_INGRESS_CREDITS 6
+#define PEC_ILU_EGRESS_CREDITS  4
+
+enum PECBool       { e_false, e_true };
+enum PECPIOType    { e_PIOMWr,     e_PIOMRd,
+                     e_PIOCfgIOWr, e_PIOCfgIORd};
+enum PECParamMode  { e_random, e_fixed, e_random_all };
+
+
+/*
+* We'll use a enumerated type to specify ILU/TLU CSRs...
+*/
+#define PEC_LPU_CSR_MAX_COUNT 8192
+#define PEC_LPU_CSR_AHB_ADDR  14:2
+#define PEC_CSR__IS_PEC_ADDR(addr) (((addr) & 32'h00080000)!=0)
+enum PEC_CSRtype {
+                 e_CSR_pec_int_en,
+                 e_CSR_pec_err,
+                 e_CSR_ilu_int_en,
+                 e_CSR_ilu_log_en,
+                 e_CSR_ilu_en_err,
+                 e_CSR_ilu_err,
+                 e_CSR_ilu_err_diag,
+                 e_CSR_ilu_dev_cap,     // ILU device capability (estar)
+		 e_CSR_ilu_diagnos,	// ILU Diagnostic Register
+                 e_CSR_dev_cap,		// TLU device capability
+                 e_CSR_dev_ctl,		// TLU device control
+		 e_CSR_dev_status,	// TLU device status
+                 e_CSR_lnk_cap,		// TLU link capability
+                 e_CSR_lnk_ctl,         // TLU link control
+                 e_CSR_lnk_status,      // TLU link status
+                 e_CSR_slot_cap,        // TLU slot capability
+                 e_CSR_pme_ctl,         // TLU generate PME Turn-Off message
+                 e_CSR_ue_int_en,
+                 e_CSR_ue_log_en,
+                 e_CSR_ue_en_err,
+                 e_CSR_ue_err,
+                 e_CSR_ue_err_diag,
+                 e_CSR_ue_recv_hdr1,
+                 e_CSR_ue_recv_hdr2,
+                 e_CSR_ue_xmit_hdr1,
+                 e_CSR_ue_xmit_hdr2,
+                 e_CSR_ce_int_en,
+                 e_CSR_ce_log_en,
+                 e_CSR_ce_en_err,
+                 e_CSR_ce_err,
+                 e_CSR_ce_err_diag,
+                 e_CSR_oe_int_en,
+                 e_CSR_oe_log_en,
+                 e_CSR_oe_en_err,
+                 e_CSR_oe_err,
+                 e_CSR_oe_err_diag,
+                 e_CSR_oe_recv_hdr1,
+                 e_CSR_oe_recv_hdr2,
+                 e_CSR_oe_xmit_hdr1,
+                 e_CSR_oe_xmit_hdr2,
+                 e_CSR_tlu_ctl,
+                 e_CSR_tlu_stat,
+                 e_CSR_tlu_diag,
+                 e_CSR_tlu_debug_a,
+                 e_CSR_tlu_debug_b,
+                 e_CSR_ecrdt_avail,
+                 e_CSR_ecrdt_used,
+                 e_CSR_retry_crdt,
+                 e_CSR_icrdt_init,
+                 e_CSR_icrdt_avail,
+                 e_CSR_icrdt_used,
+                 e_CSR_tlu_prfc,
+                 e_CSR_tlu_prf0,
+                 e_CSR_tlu_prf1,
+                 e_CSR_tlu_prf2,
+                 e_CSR_serdes_rev,		//DLPL/SERDES Revision
+                 e_CSR_acknak_thresh,		//DLPL DLL AckNak Latency Threshold
+                 e_CSR_acknak_timer,		//DLPL AckNak Latency Timer
+                 e_CSR_replay_tim_thresh,	//DLPL DLL Replay Timer Threshold
+                 e_CSR_replay_timer,		//DLPL DLL Replay Timer
+                 e_CSR_ven_dllp_msg,		//DLPL DLL Vendor DLLP Message
+                 e_CSR_force_ltssm,		//DLPL LTSSM Control Register
+                 e_CSR_dlpl_link_cfg,		//DLPL DLL Control
+                 e_CSR_dlpl_link_ctl,		//DLPL MACL/PCS Control
+                 e_CSR_lane_skew,		//DLPL MACL LANE Skew Control
+                 e_CSR_symbol_num,		//DLPL MACL Symbol Number Control
+                 e_CSR_symbol_timer,		//DLPL MACL Symbol Timer
+                 e_CSR_core_status,		//DLPL Core Status
+                 e_CSR_dlpl_ee_log_en,		//DLPL Event/Error Log Enable
+                 e_CSR_dlpl_ee_int_en,		//DLPL Event/Error Interrupt Enable
+                 e_CSR_dlpl_ee_int_sts,		//DLPL Event/Error Interrupt Status
+                 e_CSR_dlpl_ee_err, 		//DLPL Event/Error Status Set
+                 e_CSR_dlpl_ee_err_diag, 	//DLPL Event/Error Status Set
+                 e_CSR_serdes_pll,		//SERDES Control
+                 e_CSR_serdes_rcvr_lane_ctl,	//SERDES RECEIVER Lane 0 - 7 control
+                 e_CSR_serdes_rcvr_lane_sts,	//SERDES RECEIVER Lane 0 - 7 status
+                 e_CSR_serdes_xmtr_lane_ctl	//SERDES RECEIVER Lane 0 - 7 control
+                 };
+
+enum PEC_PMtype {
+                 e_PEC_PM_none,			// Just a placeholder
+                 e_PEC_PM_requestL1,		// A ASPM request to enter L1
+                 e_PEC_PM_L1,       		// A request/demand to enter L1
+                 e_PEC_PM_L23       		// A request/demand to enter L23
+                };
+
+enum PEC_FCtype {
+ 		 e_FC_nonposted,
+                 e_FC_posted,
+                 e_FC_completion
+                };
+
+enum PEC_ERRtype {
+                 e_ERR_none,			// Not an error
+                 e_ERR_ue_mfp,			// Malformed packet
+                 e_ERR_ue_rof,			// Receiver overflow
+                 e_ERR_ue_ur,			// Unsupported request
+                 e_ERR_ue_uc,			// Unexpected completion
+                 e_ERR_ue_cto,			// Completion time-out
+                 e_ERR_ue_fcp,			// Flow-control protocol error
+                 e_ERR_ue_pp,			// Poisoned TLP received
+                 e_ERR_ue_dlp,			// Data-link protocol error(LPU)
+                 e_ERR_ce_rto,			// Replay time-out (LPU)
+                 e_ERR_ce_rnr,			// Replay roll-over (LPU)
+                 e_ERR_ce_bdp,			// Bad DLLP (LPU)
+                 e_ERR_ce_btp,			// Bad TLP (LPU)
+                 e_ERR_ce_re,			// Receiver error (LPU)
+                 e_ERR_oe_mrc,			// Memory read capture
+                 e_ERR_oe_cto,			// Completion time-out (dup)
+                 e_ERR_oe_mfc,			// Malformed completion
+                 e_ERR_oe_nfp,			// No forward progress
+                 e_ERR_oe_lwc,			// Link-width change  
+                 e_ERR_oe_wuc,			// Unsuccessful cpl to write
+                 e_ERR_oe_ruc,			// Unsuccessful cpl to read
+                 e_ERR_oe_crs,			// Cfg cpl'n with retry status
+                 e_ERR_oe_iip,			// Ingress interface parity err
+                 e_ERR_oe_edp,			// Egress data (EDB) parity err
+                 e_ERR_oe_ehp,			// Egress hdr (EHB) parity err
+                 e_ERR_oe_lin,			// Link interrupt
+                 e_ERR_oe_lrs,			// Link reset
+                 e_ERR_oe_ldn,			// Link down
+                 e_ERR_oe_lup,			// Link up
+                 e_ERR_oe_eru,                  // Egress retry buffer underflow
+                 e_ERR_oe_ero,                  // Egress retry buffer overflow
+                 e_ERR_oe_emp,			// Egress minimum pkt error
+                 e_ERR_oe_epe,			// Egress protocol error
+                 e_ERR_oe_erp,			// Egress retry parity error
+                 e_ERR_oe_eip,			// Egress interface parity error
+                 e_ERR_ilu_ihb,			// Ingress hdr (IHB) parity err
+                 e_ERR_dlpl_sds_los,		// Serdes Loss Signal 
+                 e_ERR_dlpl_src_tlp,		// Ingress TLP w/ inverted CRC and EDB 
+                 e_ERR_dlpl_unsup_dllp,		// Ingress Unsupported DLLP 
+                 e_ERR_dlpl_ill_stp_pos,	// Ingress illegal STP position 
+                 e_ERR_dlpl_ill_sdp_pos,	// Ingress illegal SDP position 
+                 e_ERR_dlpl_multi_stp,		// Ingress multiple stp without END/EDB 
+                 e_ERR_dlpl_multi_sdp,		// Ingress multiple sdp without END 
+                 e_ERR_dlpl_ill_pad_pos,	// Ingress illegal pad position 
+                 e_ERR_dlpl_stp_no_end_edb,	// Ingress STP without END/EDB 
+                 e_ERR_dlpl_sdp_no_end,		// Ingress STP without END 
+                 e_ERR_dlpl_end_no_stp_sdp,	// Ingress END without STP/SDP 
+                 e_ERR_dlpl_sync,		// Lost bit/byte sync 
+                 e_ERR_dlpl_ill_end_pos,	// Ingress illegal END position 
+                 e_ERR_dlpl_kchar_dllp,		// Ingress kchar in dllp 
+                 e_ERR_dlpl_align,		// Alignment error 
+                 e_ERR_dlpl_elas_fifo_ovfl,	// Elastic fifo overflow
+                 e_ERR_dlpl_elas_fifo_unfl,	// Elastic fifo underflow
+                 e_ERR_dlpl_out_skip,		// Number of outstanding SKIPs > 6 
+		 e_ERR_mmu_bypass_err,		// MMU Bypass Error
+		 e_ERR_mmu_translation_err,	// MMU Translation Error
+		 e_ERR_mmu_device_key_err,	// MMU sun4v Device Key Error
+		 e_ERR_msi_not_enabled_err,	// MSI not enabled error
+		 e_ERR_eq_not_enabled_err	// Event Queue not enabled error
+                 };
+
+#define PEC_ERR_isUE(err) ((err)>e_ERR_none && (err)<=e_ERR_ue_dlp)
+#define PEC_ERR_isCE(err) ((err)>=e_ERR_ce_rto && (err)<=e_ERR_ce_re)
+#define PEC_ERR_isOE(err) ((err)>=e_ERR_oe_mrc && (err)<=e_ERR_oe_eip)
+#define PEC_ERR_isILU(err) ((err)==e_ERR_ilu_ihb)
+#define PEC_ERR_isLPU(err) ( (err) == e_ERR_ue_dlp || \
+                             (err) == e_ERR_ce_rto || \
+                             (err) == e_ERR_ce_rnr || \
+                             (err) == e_ERR_ce_bdp || \
+                             (err) == e_ERR_ce_btp || \
+                             (err) == e_ERR_ce_re  || \
+                             (err) == e_ERR_oe_lin || \
+                             (err) == e_ERR_oe_lrs || \
+                             (err) == e_ERR_oe_eru || \
+                             (err) == e_ERR_oe_ero || \
+                             (err) == e_ERR_oe_emp || \
+                             (err) == e_ERR_oe_epe || \
+                             (err) == e_ERR_oe_erp || \
+                             (err) == e_ERR_oe_eip )
+#define PEC_ERR_isDLPL(err) ((err)>=e_ERR_dlpl_sds_los && (err)<=e_ERR_dlpl_out_skip)
+
+// Bit-masks for UE/CE/OE/ILU/DLPL flags in the PEC (top) error register
+#define PEC_ERR_UE_mask \
+        FIRE_DLC_ILU_CIB_CSR_A_PEC_INT_EN_PEC_UE_FMASK
+#define PEC_ERR_CE_mask \
+        FIRE_DLC_ILU_CIB_CSR_A_PEC_INT_EN_PEC_CE_FMASK
+#define PEC_ERR_OE_mask \
+        FIRE_DLC_ILU_CIB_CSR_A_PEC_INT_EN_PEC_OE_FMASK
+#define PEC_ERR_ILU_mask \
+        FIRE_DLC_ILU_CIB_CSR_A_PEC_INT_EN_PEC_ILU_FMASK
+#define PEC_ERR_DLPL_mask \
+        FIRE_DLC_ILU_CIB_CSR_A_PEC_INT_EN_PEC_FMASK
+
+// Bit indices for different errors in the corresponding (lower) error registers
+#define PEC_ERR_bitIndex(err) \
+        ( PEC_ERR_isUE(err) ? \
+	  ( (err) == e_ERR_ue_mfp ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_UE_ERR_RW1C_ALIAS_MFP_P_POSITION \
+	  : (err) == e_ERR_ue_rof ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_UE_ERR_RW1C_ALIAS_ROF_P_POSITION \
+	  : (err) == e_ERR_ue_ur ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_UE_ERR_RW1C_ALIAS_UR_P_POSITION \
+	  : (err) == e_ERR_ue_uc ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_UE_ERR_RW1C_ALIAS_UC_P_POSITION \
+	  : (err) == e_ERR_ue_cto ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_UE_ERR_RW1C_ALIAS_CTO_P_POSITION \
+	  : (err) == e_ERR_ue_fcp ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_UE_ERR_RW1C_ALIAS_FCP_P_POSITION \
+	  : (err) == e_ERR_ue_pp ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_UE_ERR_RW1C_ALIAS_PP_P_POSITION \
+	  : (err) == e_ERR_ue_dlp ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_UE_ERR_RW1C_ALIAS_DLP_P_POSITION \
+          : -1 ) \
+        : PEC_ERR_isCE(err) ? \
+	  ( (err) == e_ERR_ce_rto ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_CE_ERR_RW1C_ALIAS_RTO_P_POSITION \
+	  : (err) == e_ERR_ce_rnr ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_CE_ERR_RW1C_ALIAS_RNR_P_POSITION \
+	  : (err) == e_ERR_ce_bdp ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_CE_ERR_RW1C_ALIAS_BDP_P_POSITION \
+	  : (err) == e_ERR_ce_btp ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_CE_ERR_RW1C_ALIAS_BTP_P_POSITION \
+	  : (err) == e_ERR_ce_re ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_CE_ERR_RW1C_ALIAS_RE_P_POSITION \
+          : -1 ) \
+        : PEC_ERR_isOE(err) ? \
+	  ( (err) == e_ERR_oe_mrc ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_MRC_P_POSITION \
+	  : (err) == e_ERR_oe_cto ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_CTO_P_POSITION \
+	  : (err) == e_ERR_oe_mfc ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_MFC_P_POSITION \
+	  : (err) == e_ERR_oe_nfp ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_NFP_P_POSITION \
+	  : (err) == e_ERR_oe_lwc ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_LWC_P_POSITION \
+	  : (err) == e_ERR_oe_wuc ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_WUC_P_POSITION \
+	  : (err) == e_ERR_oe_ruc ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_RUC_P_POSITION \
+	  : (err) == e_ERR_oe_crs ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_CRS_P_POSITION \
+	  : (err) == e_ERR_oe_iip ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_IIP_P_POSITION \
+	  : (err) == e_ERR_oe_edp ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_EDP_P_POSITION \
+	  : (err) == e_ERR_oe_ehp ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_EHP_P_POSITION \
+	  : (err) == e_ERR_oe_lin ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_LIN_P_POSITION \
+	  : (err) == e_ERR_oe_lrs ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_LRS_P_POSITION \
+	  : (err) == e_ERR_oe_ldn ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_LDN_P_POSITION \
+	  : (err) == e_ERR_oe_lup ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_LUP_P_POSITION \
+	  : (err) == e_ERR_oe_eru ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_ERU_P_POSITION \
+	  : (err) == e_ERR_oe_ero ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_ERO_P_POSITION \
+	  : (err) == e_ERR_oe_emp ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_EMP_P_POSITION \
+	  : (err) == e_ERR_oe_epe ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_EPE_P_POSITION \
+	  : (err) == e_ERR_oe_erp ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_ERP_P_POSITION \
+	  : (err) == e_ERR_oe_eip ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_EIP_P_POSITION \
+          : -1 ) \
+        : PEC_ERR_isILU(err) ? \
+	  ( (err) == e_ERR_ilu_ihb ? \
+            FIRE_DLC_ILU_CIB_CSR_A_ILU_LOG_ERR_RW1C_ALIAS_IHB_PE_P_POSITION \
+          : -1 ) \
+        : PEC_ERR_isDLPL(err) ? \
+	  ( (err) == e_ERR_dlpl_sds_los ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_STS_CLR_RW1C_ALIAS_ERR_SDS_LOS_POSITION \
+	  : (err) == e_ERR_dlpl_src_tlp ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_STS_CLR_RW1C_ALIAS_ERR_SRC_TLP_POSITION \
+	  : (err) == e_ERR_dlpl_unsup_dllp ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_STS_CLR_RW1C_ALIAS_ERR_UNSUP_DLLP_POSITION \
+	  : (err) == e_ERR_dlpl_ill_stp_pos ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_STS_CLR_RW1C_ALIAS_ERR_ILL_STP_POS_POSITION \
+	  : (err) == e_ERR_dlpl_ill_sdp_pos ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_STS_CLR_RW1C_ALIAS_ERR_ILL_SDP_POS_POSITION \
+	  : (err) == e_ERR_dlpl_multi_stp ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_STS_CLR_RW1C_ALIAS_ERR_MULTI_STP_POSITION \
+	  : (err) == e_ERR_dlpl_multi_sdp ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_STS_CLR_RW1C_ALIAS_ERR_MULTI_SDP_POSITION \
+	  : (err) == e_ERR_dlpl_ill_pad_pos ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_STS_CLR_RW1C_ALIAS_ERR_ILL_PAD_POS_POSITION \
+	  : (err) == e_ERR_dlpl_stp_no_end_edb ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_STS_CLR_RW1C_ALIAS_ERR_STP_NO_END_EDB_POSITION \
+	  : (err) == e_ERR_dlpl_sdp_no_end ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_STS_CLR_RW1C_ALIAS_ERR_SDP_NO_END_POSITION \
+	  : (err) == e_ERR_dlpl_end_no_stp_sdp ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_STS_CLR_RW1C_ALIAS_ERR_END_EDB_NO_STP_SDP_POSITION \
+	  : (err) == e_ERR_dlpl_sync ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_STS_CLR_RW1C_ALIAS_ERR_SYNC_POSITION \
+	  : (err) == e_ERR_dlpl_ill_end_pos ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_STS_CLR_RW1C_ALIAS_ERR_ILL_END_POS_POSITION \
+	  : (err) == e_ERR_dlpl_kchar_dllp ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_STS_CLR_RW1C_ALIAS_ERR_KCHAR_DLLP_POSITION \
+	  : (err) == e_ERR_dlpl_align ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_STS_CLR_RW1C_ALIAS_ERR_ALIGN_POSITION \
+	  : (err) == e_ERR_dlpl_elas_fifo_ovfl ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_STS_CLR_RW1C_ALIAS_ERR_ELASTIC_FIFO_OVRFLW_POSITION \
+	  : (err) == e_ERR_dlpl_elas_fifo_unfl ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_STS_CLR_RW1C_ALIAS_ERR_ELASTIC_FIFO_UNDRFLW_POSITION \
+	  : (err) == e_ERR_dlpl_out_skip ? \
+            FIRE_PLC_TLU_CTB_TLR_CSR_A_EVENT_ERR_STS_CLR_RW1C_ALIAS_ERR_OUTSTANDING_SKIP_POSITION \
+          : -1 ) \
+        : -1 )
+
+// Bit indices within LPU-to-TLU status signals
+// review: not sure about thie first one
+#define PEC_ERR_LPUpos(err) ( (err) == e_ERR_ue_dlp ? 4 \
+                            : (err) == e_ERR_ce_rto ? 7 \
+                            : (err) == e_ERR_ce_rnr ? 4 \
+                            : (err) == e_ERR_ce_bdp ? 3 \
+                            : (err) == e_ERR_ce_btp ? 2 \
+                            : (err) == e_ERR_ce_re  ? 0 \
+                            : (err) == e_ERR_oe_eru ? FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_ERU_P_POSITION \
+                            : (err) == e_ERR_oe_ero ? FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_ERO_P_POSITION \
+                            : (err) == e_ERR_oe_emp ? FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_EMP_P_POSITION \
+                            : (err) == e_ERR_oe_epe ? FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_EPE_P_POSITION \
+                            : (err) == e_ERR_oe_erp ? FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_ERP_P_POSITION \
+                            : (err) == e_ERR_oe_eip ? FIRE_PLC_TLU_CTB_TLR_CSR_A_OE_ERR_RW1C_ALIAS_EIP_P_POSITION \
+			    : -1 )
+
+
+/*
+parameter    S_DETECT_QUIET         = 5'h00;
+parameter    S_DETECT_ACT           = 5'h01;
+parameter    S_POLL_ACTIVE          = 5'h02;
+parameter    S_POLL_COMPLIANCE      = 5'h03;
+parameter    S_POLL_CONFIG          = 5'h04;
+parameter    S_PRE_DETECT_QUIET     = 5'h05;
+parameter    S_DETECT_WAIT          = 5'h06;
+parameter    S_CFG_LINKWD_START     = 5'h07;
+parameter    S_CFG_LINKWD_ACEPT     = 5'h08;
+parameter    S_CFG_LANENUM_WAIT     = 5'h09;
+parameter    S_CFG_LANENUM_ACEPT    = 5'h0A;
+parameter    S_CFG_COMPLETE         = 5'h0B;
+parameter    S_CFG_IDLE             = 5'h0C;
+parameter    S_RCVRY_LOCK           = 5'h0D;
+parameter    S_RCVRY_RCVRCFG        = 5'h0E;
+parameter    S_RCVRY_IDLE           = 5'h0F;
+parameter    S_L0                   = 5'h10;
+parameter    S_L0S                  = 5'h11;
+parameter    S_L123_SEND_EIDLE      = 5'h12;
+parameter    S_L1_IDLE              = 5'h13;
+parameter    S_L2_IDLE              = 5'h14;
+parameter    S_L2_WAKE              = 5'h15;
+parameter    S_DISABLED_ENTRY       = 5'h16;
+parameter    S_DISABLED_IDLE        = 5'h17;
+parameter    S_DISABLED             = 5'h18;
+parameter    S_LPBK_ENTRY           = 5'h19;
+parameter    S_LPBK_ACTIVE          = 5'h1A;
+parameter    S_LPBK_EXIT            = 5'h1B;
+parameter    S_LPBK_EXIT_TIMEOUT    = 5'h1C;
+parameter    S_HOT_RESET_ENTRY      = 5'h1D;
+parameter    S_HOT_RESET            = 5'h1F;
+*/
+
+#endif

@@ -1,0 +1,128 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: dmu_ilu_ingress_sample.vrhpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#inc "dmu_cov_inc.pal";
+
+#ifndef DMU_INTF_COV
+sample ilu_dmu_intf_iHdr_F_Type_cov (ilu_dmu_hdr_F_Type) {
+           state PEC_Ingress_DMA_MRd32   ( 7'b0000000);
+           state PEC_Ingress_DMA_MRd64   ( 7'b0100000);
+#ifndef DMU_INTF_COV
+           state PEC_Ingress_DMA_MRdLk32 ( 7'b0000001);
+           state PEC_Ingress_DMA_MRdLk64 ( 7'b0100001);
+#endif
+           state PEC_Ingress_Unsupported ( 7'b0001001);
+           state PEC_Ingress_DMA_MWr32   ( 7'b1000000);
+           state PEC_Ingress_DMA_MWr64   ( 7'b1100000);
+  wildcard state PEC_Ingress_Msg         ( 7'b0110xxx);
+           state PEC_Ingress_PIO_Cpl     ( 7'b0001010);
+           state PEC_Ingress_PIO_CplD    ( 7'b1001010);
+}
+
+
+
+sample ilu_dmu_intf_iHdr_DMARd_Len_cov (ilu_dmu_hdr_Len) {
+  m_state DMA_MRd_mps128(0:1023) if ((ilu_dmu_hdr_F_Type =?= 7'b0x0000x) && (ilu_dmu_mps==3'b000));
+  m_state DMA_MRd_mps256(0:1023) if ((ilu_dmu_hdr_F_Type =?= 7'b0x0000x) && (ilu_dmu_mps==3'b001));
+  m_state DMA_MRd_mps512(0:1023) if ((ilu_dmu_hdr_F_Type =?= 7'b0x0000x) && (ilu_dmu_mps==3'b010));
+}
+
+sample ilu_dmu_intf_iHdr_TC_cov (ilu_dmu_hdr_TC) {
+. &toggle(3);
+  cov_weight = 1;
+}
+
+sample ilu_dmu_intf_iHdr_Atr_cov (ilu_dmu_hdr_Atr) {
+. &toggle(2);
+  cov_weight = 1;
+}
+
+sample ilu_dmu_intf_iHdr_ReqID_cov (ilu_dmu_hdr_ReqID) {
+. &toggle(16);
+  cov_weight = 1;
+}
+
+sample ilu_dmu_intf_iHdr_TLPTag_cov (ilu_dmu_hdr_TLPTag) {
+. &toggle(8);
+  cov_weight = 1;
+}
+
+sample ilu_dmu_intf_iHdr_LastDWBE_cov (ilu_dmu_hdr_LastDWBE) {
+  m_state DWBE (0:15);
+  cov_weight = 1;
+}
+
+sample ilu_dmu_intf_iHdr_FirstDWBE_cov (ilu_dmu_hdr_FirstDWBE) {
+  m_state DWBE (0:15);
+  cov_weight = 1;
+}
+
+sample ilu_dmu_intf_iHdr_Addr_cov (ilu_dmu_hdr_Addr) {
+. &toggle(62);
+  cov_weight = 1;
+}
+
+#endif
+
+
+sample dmu_peu_intf_intr_intx_dup_msg_cov (intx_dup_reg) {
+  wildcard state ASSERT_INTA_B2B         ( 8'bxxxxxxx1);
+  wildcard state ASSERT_INTB_B2B         ( 8'bxxxxxx1x);
+  wildcard state ASSERT_INTC_B2B         ( 8'bxxxxx1xx);
+  wildcard state ASSERT_INTD_B2B         ( 8'bxxxx1xxx);
+  wildcard state DE_ASSERT_INTA_B2B      ( 8'bxxx1xxxx);
+  wildcard state DE_ASSERT_INTB_B2B      ( 8'bxx1xxxxx);
+  wildcard state DE_ASSERT_INTC_B2B      ( 8'bx1xxxxxx);
+  wildcard state DE_ASSERT_INTD_B2B      ( 8'b1xxxxxxx);
+}
+
+sample dmu_peu_intf_intr_intx_msg_cov (ilu_dmu_hdr_msg_code) {
+           state Assert_INTA      ( 8'b00100000) if (ilu_dmu_hdr_F_Type == 7'b0110100);
+           state Assert_INTB      ( 8'b00100001) if (ilu_dmu_hdr_F_Type == 7'b0110100);
+           state Assert_INTC      ( 8'b00100010) if (ilu_dmu_hdr_F_Type == 7'b0110100);
+           state Assert_INTD      ( 8'b00100011) if (ilu_dmu_hdr_F_Type == 7'b0110100);
+           state Deasert_INTA     ( 8'b00100100) if (ilu_dmu_hdr_F_Type == 7'b0110100);
+           state Deasert_INTB     ( 8'b00100101) if (ilu_dmu_hdr_F_Type == 7'b0110100);
+           state Deasert_INTC     ( 8'b00100110) if (ilu_dmu_hdr_F_Type == 7'b0110100);
+           state Deasert_INTD     ( 8'b00100111) if (ilu_dmu_hdr_F_Type == 7'b0110100);
+}
+
+
+sample dmu_peu_intf_intr_pwr_msg_cov (ilu_dmu_hdr_msg_code) {
+           state PM_PME                 ( 8'b00011000) if (ilu_dmu_hdr_F_Type == 7'b0110000);
+           state PME_TO_ACK             ( 8'b00011011) if (ilu_dmu_hdr_F_Type == 7'b0110101);
+           state ERR_COR                ( 8'b00110000) if (ilu_dmu_hdr_F_Type == 7'b0110000);
+           state ERR_NONFTAL            ( 8'b00110001) if (ilu_dmu_hdr_F_Type == 7'b0110000);
+           state ERR_FATAL              ( 8'b00110011) if (ilu_dmu_hdr_F_Type == 7'b0110000);
+}

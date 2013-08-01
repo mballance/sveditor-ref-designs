@@ -1,0 +1,201 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: N2fcPioMWrStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class N2fcPioMWrStr extends PioMWrPEUStr {
+
+  local string          cmd;
+  local bit [63:0]      addr;
+  local bit [31:0]      length;
+  local bit [63:0]      dat;
+  local bit [63:0]      base;
+  local bit [63:0]      offset;
+  local integer         pio_error; // 0 = no error, 1 = timeout, 2 = uc
+
+  // ******************************************************************
+  // Constructor
+  // ******************************************************************
+  public task new (PEUTestEnv a_env,
+                   string     a_cmd,
+                   bit [63:0] a_addr,
+                   bit [31:0] a_length,
+                   bit [63:0] a_dat,
+                   bit [63:0] a_base,
+                  (bit [63:0] a_offset = 0),
+                   integer    err);
+
+  public task Execute();
+  local task SetupParms ();
+}
+
+
+
+//-------------------------------------------------------------------
+// Method Name: 
+// Description: 
+//-------------------------------------------------------------------
+task N2fcPioMWrStr::new(PEUTestEnv a_env,
+                        string     a_cmd,
+                        bit [63:0] a_addr,
+                        bit [31:0] a_length,
+                        bit [63:0] a_dat,
+                        bit [63:0] a_base,
+                        (bit[63:0] a_offset = 0),
+                        integer    err)
+{
+  super.new(a_env);
+  this._env = a_env;  
+
+  if ( err == 3 ) {
+    return; // don't set up an expect or a completion
+  }
+  
+  this.cmd       = a_cmd;
+  this.addr      = a_addr;
+  this.length    = a_length;
+  this.dat       = a_dat;
+  this.base      = a_base;
+  this.offset    = a_offset;
+  this.pio_error = err;
+
+  this.SetupParms ();
+  this.Execute ();
+}
+
+
+
+//-------------------------------------------------------------------
+// Method Name: 
+// Description: 
+//-------------------------------------------------------------------
+task N2fcPioMWrStr::Execute() {
+  integer cnt1,cnt2;
+
+  SetPacketParams();
+
+  if (pio_error == 4) {
+    //Make denali check for this instead of just disabling error
+    //[PCISIG-PHY.2.3#11].  [port_0].RX Nullified TLP 
+//    f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_NULL_TLP );
+    //Packet will come out as a NULL packet so set the Xtr to check 
+    // for the PCIE_PL_NONFATAL_FRAME_NULL_TLP error
+    _env.Pod.FNXPCIEEnableTrans.ExpectNullPkt();
+    cnt1 = _env.Pod.FNXPCIEBldr.SignalInterface.expectNullPkt; 
+  }
+  
+  // Set up the Reqest ID bits from the CSR
+  pktHdr[PEC_PCI__REQ_ID] = PiuCsrs.piuREQ_ID;
+  
+  this._env.expectPCIE(pktHdr, this._data, 1);
+
+  //If the packet gets transmitted than make sure its NULL
+  if (pio_error == 4) {
+    cnt2 = _env.Pod.FNXPCIEBldr.SignalInterface.expectNullPkt; 
+    //Make sure packet expect wasn't removed and a NULL pkt was received
+    if( cnt1 !== (cnt2 + 1)  &&  !sync( CHECK, _env.ev_removePcie ) ){
+      _env.Report.report(RTYP_TEST_ERROR,"N2fcPioMWrStr Outgoing packet matched but a NullPkt wasn't received\n");
+    }
+  }
+
+  if ( this.pio_error == 1 ) {
+    printf ("\nDEBUG : N2fcPioMWrStr::Execute pio timeout requested, but for MEM32/64 Wr there is no completion\n");
+  }
+  
+  this._env.freePioTag(this._tag);
+}
+
+
+
+//-------------------------------------------------------------------
+// Method Name: SetupParms()
+// Description: Override the base class SetupParms(), to set up the
+//              expected fields based on the PIO the core executed.
+//-------------------------------------------------------------------
+task N2fcPioMWrStr::SetupParms() {
+  bit [63:0] tmpAddr;
+
+  tmpAddr                    = this.addr - (this.base + 64'hc0_0000_0000) | this.offset;
+
+  _addr_msb_min              = tmpAddr[63:32];
+  _addr_msb_max              = tmpAddr[63:32];
+  
+  _addr_lsb_min              = tmpAddr[31:0];
+  _addr_lsb_max              = tmpAddr[31:0];
+
+  if(tmpAddr[63:32]) {
+    _format_req_prob_3dw     = 0;
+    _format_req_prob_4dw     = 100;
+  }
+  else {
+    _format_req_prob_3dw     = 100;
+    _format_req_prob_4dw     = 0;
+  }
+  
+  _data_min                 = this.dat;
+
+  _req_id_min               = 0;
+  _req_id_max               = 0;
+
+
+  // Select DWBE based on address, length combination
+  if((length[7:4] == 0) && (length[3:0] != 0)) {
+    // got to "shift up" the dwbe, addr[2], and data since first_dwbe == 0 is illegal
+    _first_dwbe_min            = {length[0], length[1], length[2], length[3]};
+    _last_dwbe_min             = 0;
+    // make sure that address bit 2 is set 
+   _addr_lsb_min[2]            = 1;
+   _data_min[63:32]            = this.dat[31:0];
+  }
+  else {
+    _first_dwbe_min            = {length[4], length[5], length[6], length[7]};
+    _last_dwbe_min             = {length[0], length[1], length[2], length[3]};
+    // make sure that address bit 2 is cleared
+   _addr_lsb_min[2]            = 0;
+  }
+   _addr_lsb_max[2]            = _addr_lsb_min[2];
+  
+  _last_dwbe_max             = _last_dwbe_min;
+  _first_dwbe_max            = _first_dwbe_min;
+
+  _data_max                  = _data_min;
+
+  if( (length[7:4] != 0) && (length[3:0] != 0) )
+    _len_min = 2;
+  else
+    _len_min = 1;
+  
+  _len_max                   = _len_min;
+
+   printf ("UDEBUG :N2fcPioMWrStr: length = %0h %0h %0h - _len = %0h\n\t_addr_msb_min %h _addr_lsb_min %h addr %h base %h offset %h\n",
+            length, length[3:0], length[7:4],  _len_min, _addr_msb_min, _addr_lsb_min, addr, base, offset);
+}

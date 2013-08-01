@@ -1,0 +1,367 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: mac_pio_class.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "bmac_memory_map.vri"
+#include "xmac_memory_map.vri"
+#include "pcs_memory_map.vri"
+#include "mac_shadow_class.vrh"
+#include "xmac_shadow_class.vrh"
+#include "pio_driver.vrh"
+#include "cMesg.vrh"
+
+//extern pio_drv pio_driver_class;
+extern Mesg be_msg;
+extern niu_gen_pio gen_pio_drv;
+
+class mac_pio_cl {
+        mac_shadow_cl mac_shadow_class[4]; 
+        xmac_shadow_cl xmac_shadow_class[4];
+        pio_drv pio_drv_mac;
+
+        task new ( ) ;
+        //task mac_init () ;
+	task mac_pio_rd (bit [39:0] addr, var bit [31:0] read_data) ;
+	task mac_pio_wr (bit [39:0] addr, bit [31:0] write_data) ;
+	task xmac_pio_rd(bit[39:0] addr,var bit[31:0] read_data, \
+                         bit compare_en,(bit expect_pio_err = 1'b0));
+	task bmac_pio_rd(bit[39:0] addr,var bit[31:0] read_data, \
+                         bit compare_en, (bit expect_pio_err = 1'b0)); 
+	task xmac_pio_wr(bit[39:0] addr,bit[31:0] write_data, \
+                         (bit expect_pio_err = 1'b0) );
+	task bmac_pio_wr(bit[39:0] addr,bit[31:0] write_data, (bit expect_pio_err = 1'b0) );
+	function bit isMACPromisBitSet ( integer port_id, bit [47:0] pkt_mac_da);
+	local function integer getPortID(bit [39:0] addr) {
+		case(addr[19:12])
+                {
+                  8'h80:getPortID = 0;
+                  8'h82:getPortID = 0;
+                  8'h84:getPortID = 0;
+                  8'h86:getPortID = 1;
+                  8'h88:getPortID = 1;
+                  8'h8a:getPortID = 1;
+                  8'h8c:getPortID = 2;
+                  8'h8e:getPortID = 2;
+                  8'h90:getPortID = 3;
+                  8'h92:getPortID = 3;
+                }
+        }
+}
+
+task mac_pio_cl::new( ) { 
+
+  integer i;
+  pio_drv_mac = new ();
+  for(i = 0;i<2;i++)
+  {
+    xmac_shadow_class[i] = new(i);
+  }
+}
+
+
+function bit mac_pio_cl::isMACPromisBitSet ( integer port_id, bit [47:0] pkt_mac_da) {
+  bit [31:0] data;
+  bit [32:0] addr;
+  bit [31:0] data_mask;
+  bit  data_valid;
+  bit promisc_bit;
+  bit da_match;
+  
+  printf ("mac_pio_cl::isMACPromisBitSet port_id=%0d, pkt_mac_da=%0h\n", port_id, pkt_mac_da);
+  if(port_id>1) {
+    mac_shadow_class[port_id].get_data(RxMAC_CONFIG,data, data_mask, data_valid);
+       addr = RxMAC_CONFIG; 
+    if(data[3] == 1) {
+      promisc_bit = 1;
+    }    
+    else 
+      promisc_bit = 0;
+      }
+  else {
+    xmac_shadow_class[port_id].get_data(XMAC_CONFIG,data, data_mask, data_valid);
+    if(data[9] == 1)
+      promisc_bit = 1;
+    else
+      promisc_bit = 0;
+  }
+  
+  da_match = 0;
+  // Now, see if the given pkt_DA matches with any of the programmed DAs for this port
+  if (port_id==0 | port_id==1) { // XMAC
+    if (({xmac_shadow_class[port_id].xmac_addr5[15:0], \
+          xmac_shadow_class[port_id].xmac_addr4[15:0], \
+          xmac_shadow_class[port_id].xmac_addr3[15:0]}===pkt_mac_da) && \
+          xmac_shadow_class[port_id].xmac_addr_cmpen_lsb[0]) // DA0
+      da_match = 1;
+
+    else if  (({xmac_shadow_class[port_id].xmac_addr8[15:0], \
+                xmac_shadow_class[port_id].xmac_addr7[15:0], \
+                xmac_shadow_class[port_id].xmac_addr6[15:0]}===pkt_mac_da) && \
+                xmac_shadow_class[port_id].xmac_addr_cmpen_lsb[1]) // DA1
+      da_match = 1;
+
+    else if  (({xmac_shadow_class[port_id].xmac_addr11[15:0], \
+                xmac_shadow_class[port_id].xmac_addr10[15:0], \
+                xmac_shadow_class[port_id].xmac_addr9[15:0]}===pkt_mac_da) && \
+                xmac_shadow_class[port_id].xmac_addr_cmpen_lsb[2]) // DA2
+      da_match = 1;
+    
+    else if  (({xmac_shadow_class[port_id].xmac_addr14[15:0], \
+                xmac_shadow_class[port_id].xmac_addr13[15:0], \
+                xmac_shadow_class[port_id].xmac_addr12[15:0]}===pkt_mac_da) && \
+                xmac_shadow_class[port_id].xmac_addr_cmpen_lsb[3]) // DA3
+      da_match = 1;
+    
+    else if  (({xmac_shadow_class[port_id].xmac_addr17[15:0], \
+                xmac_shadow_class[port_id].xmac_addr16[15:0], \
+                xmac_shadow_class[port_id].xmac_addr15[15:0]}===pkt_mac_da) && \
+                xmac_shadow_class[port_id].xmac_addr_cmpen_lsb[4]) // DA4
+      da_match = 1;
+    
+    else if (({xmac_shadow_class[port_id].xmac_addr20[15:0], \
+               xmac_shadow_class[port_id].xmac_addr19[15:0], \
+               xmac_shadow_class[port_id].xmac_addr18[15:0]}===pkt_mac_da) && \
+               xmac_shadow_class[port_id].xmac_addr_cmpen_lsb[5]) // DA5
+      da_match = 1;
+    else if (({xmac_shadow_class[port_id].xmac_addr23[15:0], \
+               xmac_shadow_class[port_id].xmac_addr22[15:0], \
+               xmac_shadow_class[port_id].xmac_addr21[15:0]}===pkt_mac_da) && \
+               xmac_shadow_class[port_id].xmac_addr_cmpen_lsb[6]) // DA6
+      da_match = 1;
+    else if (({xmac_shadow_class[port_id].xmac_addr26[15:0], \
+               xmac_shadow_class[port_id].xmac_addr25[15:0], \
+               xmac_shadow_class[port_id].xmac_addr24[15:0]}===pkt_mac_da) && \
+               xmac_shadow_class[port_id].xmac_addr_cmpen_lsb[7]) // DA7
+      da_match = 1;
+    else if (({xmac_shadow_class[port_id].xmac_addr29[15:0], \
+               xmac_shadow_class[port_id].xmac_addr28[15:0], \
+               xmac_shadow_class[port_id].xmac_addr27[15:0]}===pkt_mac_da) && \
+               xmac_shadow_class[port_id].xmac_addr_cmpen_lsb[8]) // DA8
+       da_match = 1;
+    else if (({xmac_shadow_class[port_id].xmac_addr32[15:0], \
+               xmac_shadow_class[port_id].xmac_addr31[15:0], \
+               xmac_shadow_class[port_id].xmac_addr30[15:0]}===pkt_mac_da) && \
+               xmac_shadow_class[port_id].xmac_addr_cmpen_lsb[9]) // DA9
+       da_match = 1;
+    else if (({xmac_shadow_class[port_id].xmac_addr35[15:0], \
+               xmac_shadow_class[port_id].xmac_addr34[15:0], \
+               xmac_shadow_class[port_id].xmac_addr33[15:0]}===pkt_mac_da) && \
+               xmac_shadow_class[port_id].xmac_addr_cmpen_lsb[10]) // DA10
+       da_match = 1;
+    else if (({xmac_shadow_class[port_id].xmac_addr38[15:0], \
+               xmac_shadow_class[port_id].xmac_addr37[15:0], \
+               xmac_shadow_class[port_id].xmac_addr36[15:0]}===pkt_mac_da) && \
+               xmac_shadow_class[port_id].xmac_addr_cmpen_lsb[11]) // DA11
+      da_match = 1;
+    else if (({xmac_shadow_class[port_id].xmac_addr41[15:0], \
+               xmac_shadow_class[port_id].xmac_addr40[15:0], \
+               xmac_shadow_class[port_id].xmac_addr39[15:0]}===pkt_mac_da) && \
+               xmac_shadow_class[port_id].xmac_addr_cmpen_lsb[12]) // DA12
+       da_match = 1;
+    else if (({xmac_shadow_class[port_id].xmac_addr44[15:0], \
+               xmac_shadow_class[port_id].xmac_addr43[15:0], \
+               xmac_shadow_class[port_id].xmac_addr42[15:0]}===pkt_mac_da) && \
+               xmac_shadow_class[port_id].xmac_addr_cmpen_lsb[13]) // DA13
+       da_match = 1;
+    else if (({xmac_shadow_class[port_id].xmac_addr47[15:0], \
+               xmac_shadow_class[port_id].xmac_addr46[15:0], \
+               xmac_shadow_class[port_id].xmac_addr45[15:0]}===pkt_mac_da) && \
+               xmac_shadow_class[port_id].xmac_addr_cmpen_lsb[14]) // DA14
+      da_match = 1;
+    else if (({xmac_shadow_class[port_id].xmac_addr50[15:0], \
+               xmac_shadow_class[port_id].xmac_addr49[15:0], \
+               xmac_shadow_class[port_id].xmac_addr48[15:0]}===pkt_mac_da) && \
+               xmac_shadow_class[port_id].xmac_addr_cmpen_lsb[15]) // DA15
+      da_match = 1;
+    else
+      da_match = 0;
+  }
+  else if (port_id==2 | port_id==3) { // BMAC
+
+    printf("pkt_mac_da for port_id %0d is %0h\n", pkt_mac_da, port_id);
+    
+    if (({mac_shadow_class[port_id].mac_addr5[15:0], \
+          mac_shadow_class[port_id].mac_addr4[15:0], \
+          mac_shadow_class[port_id].mac_addr3[15:0]}===pkt_mac_da) && \
+          mac_shadow_class[port_id].bmac_altad_cmpen[1]) // DA0 // bit 0 is for unique address
+      da_match = 1;
+    else if (({mac_shadow_class[port_id].mac_addr8[15:0], \
+               mac_shadow_class[port_id].mac_addr7[15:0], \
+               mac_shadow_class[port_id].mac_addr6[15:0]}===pkt_mac_da) && \
+               mac_shadow_class[port_id].bmac_altad_cmpen[2]) // DA1
+      da_match = 1;
+    else if (({mac_shadow_class[port_id].mac_addr11[15:0], \
+               mac_shadow_class[port_id].mac_addr10[15:0], \
+               mac_shadow_class[port_id].mac_addr9[15:0]}===pkt_mac_da) && \
+               mac_shadow_class[port_id].bmac_altad_cmpen[3]) // DA2
+      da_match = 1;
+    else if (({mac_shadow_class[port_id].mac_addr14[15:0], \
+               mac_shadow_class[port_id].mac_addr13[15:0], \
+               mac_shadow_class[port_id].mac_addr12[15:0]}===pkt_mac_da) && \
+               mac_shadow_class[port_id].bmac_altad_cmpen[4]) // DA3
+      da_match = 1;
+    else if (({mac_shadow_class[port_id].mac_addr17[15:0], \
+               mac_shadow_class[port_id].mac_addr16[15:0], \
+               mac_shadow_class[port_id].mac_addr15[15:0]}===pkt_mac_da) && \
+               mac_shadow_class[port_id].bmac_altad_cmpen[5]) // DA4
+      da_match = 1;
+    else if (({mac_shadow_class[port_id].mac_addr20[15:0], \
+               mac_shadow_class[port_id].mac_addr19[15:0], \
+               mac_shadow_class[port_id].mac_addr18[15:0]}===pkt_mac_da) && \
+               mac_shadow_class[port_id].bmac_altad_cmpen[6]) // DA5
+       da_match = 1;
+    else if (({mac_shadow_class[port_id].mac_addr23[15:0], \
+               mac_shadow_class[port_id].mac_addr22[15:0], \
+               mac_shadow_class[port_id].mac_addr21[15:0]}===pkt_mac_da) && \
+               mac_shadow_class[port_id].bmac_altad_cmpen[7]) // DA6
+      da_match = 1;
+    else
+      da_match = 0;
+  }
+ 
+  
+  // Now, set the actual promisc_bit_set result
+  if (da_match) // DA MATCHED
+    isMACPromisBitSet = 0;
+  else { // NO DA MATCH
+    if (promisc_bit) {
+      isMACPromisBitSet = 1;
+      printf("isMACPromisBitSet:prom bit is set\n"); }
+    else {
+      isMACPromisBitSet = 0;
+    printf("isMACPromisBitSet: prom bit is not set\n"); }
+  }
+}
+
+task mac_pio_cl::xmac_pio_rd(bit[39:0] addr,var bit[31:0] read_data,
+                 bit compare_en, (bit expect_pio_err = 1'b0))
+{
+	bit[31:0] exp_data = 0;
+
+        bit [31:0] exp_data_mask = 0;
+        bit        exp_data_valid = 0;
+        bit [63:0] gen_read_data;
+	integer port_id;
+        
+
+        port_id = getPortID(addr);
+
+        if(port_id <2){
+        xmac_shadow_class[port_id].get_data(addr,exp_data,exp_data_mask,exp_data_valid);
+        }
+        
+        
+        // if (addr[32] != 1) {
+	  gen_pio_drv.pio_rd(addr,gen_read_data,exp_data, exp_data_mask, \
+                                  compare_en, expect_pio_err );
+          read_data[31:0] = gen_read_data[31:0];
+         // }
+	
+
+}
+
+task mac_pio_cl::bmac_pio_rd(bit[39:0] addr,var bit[31:0] read_data, \
+                 bit compare_en,  (bit expect_pio_err = 1'b0))
+{
+	bit[31:0] exp_data,exp_data_mask;
+	bit exp_data_valid,compare_en;
+        bit [63:0] gen_read_data;
+	integer port_id;
+        port_id = getPortID(addr);
+        if(port_id>1) {
+	mac_shadow_class[port_id].get_data(addr,exp_data,exp_data_mask,exp_data_valid);
+        }
+         //if (addr[32] != 1) {
+	gen_pio_drv.pio_rd(addr,gen_read_data,exp_data,exp_data_mask,compare_en,expect_pio_err);
+        read_data[31:0] = gen_read_data[31:0];
+        //}
+
+
+}
+ 
+task mac_pio_cl::mac_pio_rd(bit [39:0] addr, var bit [31:0] read_data) {
+
+  bit [31:0] exp_data = 0;
+  bit [31:0] exp_data_mask = 0;
+  bit        exp_data_valid = 0;
+  bit        compare_en = 0;
+  bit [63:0] gen_read_data;
+  // Add code here to see if the register address is valid within PC. 
+  integer port_id;
+  port_id = getPortID(addr);
+
+  if(port_id>1) {
+  
+  mac_shadow_class[port_id].get_data(addr, exp_data, exp_data_mask, exp_data_valid);
+  } else
+  xmac_shadow_class[port_id].get_data(addr, exp_data, exp_data_mask, exp_data_valid);
+   
+// pio_driver_class.pio_rd(addr, read_data, exp_data, exp_data_mask, compare_en);
+  gen_pio_drv.pio_rd(addr, gen_read_data, compare_en);
+  read_data[31:0] = gen_read_data[31:0];
+}
+
+//
+// pc_pio_wr Task
+//
+task mac_pio_cl::xmac_pio_wr(bit[39:0] addr,bit[31:0] write_data, \
+                             (bit expect_pio_err = 1'b0))
+{
+  integer port_id;
+  port_id = getPortID(addr);
+
+  if(port_id < 2) 
+  xmac_shadow_class[port_id].put_data(addr,write_data);
+
+  pio_drv_mac.pio_wr(addr, write_data, expect_pio_err);
+   //}
+}
+task mac_pio_cl::bmac_pio_wr(bit[39:0] addr,bit[31:0] write_data, \
+                             (bit expect_pio_err = 1'b0))
+{
+  integer port_id;
+  port_id = getPortID(addr);
+  if(port_id>1) {
+    mac_shadow_class[port_id].put_data(addr ,write_data);
+  }
+  pio_drv_mac.pio_wr(addr, write_data,expect_pio_err);
+        //}
+}
+
+task mac_pio_cl::mac_pio_wr(bit [39:0] addr, bit [31:0] write_data) {
+
+  pio_drv_mac.pio_wr(addr,   write_data );
+
+}
+

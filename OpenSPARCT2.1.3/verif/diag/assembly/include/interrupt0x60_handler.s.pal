@@ -1,0 +1,927 @@
+/*
+* ========== Copyright Header Begin ==========================================
+* 
+* OpenSPARC T2 Processor File: interrupt0x60_handler.s.pal
+* Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+* 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+*
+* DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License as published by
+* the Free Software Foundation; version 2 of the License.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+*
+* For the avoidance of doubt, and except that if any non-GPL license 
+* choice is available it will apply instead, Sun elects to use only 
+* the General Public License version 2 (GPLv2) at this time for any 
+* software where a choice of GPL license versions is made 
+* available with the language indicating that GPLv2 or any later version 
+* may be used, or where a choice of which version of the GPL is applied is 
+* otherwise unspecified. 
+*
+* Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+* CA 95054 USA or visit www.sun.com if you need additional information or 
+* have any questions. 
+*
+* 
+* ========== Copyright Header End ============================================
+*/
+start_perl
+# $Id: interrupt0x60_handler.s.pal,v 1.14 2006/12/01 19:20:42 granvold Exp $
+print "/* \$Id\$ */\n";
+
+# Hardware constraints:
+$hw_num_ivs = 64;      $hw_max_ivn = $hw_num_ivs - 1;
+$hw_num_threads = 64;  $hw_max_thread_num = $hw_num_threads - 1;
+
+# interrupt0x60 constraints:
+$max_cc_ivns  = 48;  $max_cc_ivns_m1 = $max_cc_ivns - 1;
+$max_niu_ivns = 16; $max_niu_ivns_m1 = $max_niu_ivns - 1;
+$max_msi_idx  =  8;  $max_msi_idx_m1 = $max_msi_idx - 1;
+
+start_text(>)
+/* Shared trap handler for interrupts (TT=0x60) */
+
+/*>>>>>> ONLY EDIT THE .pal VERSION OF THIS FILE <<<<<<<<*/
+
+/*
+ * This is tightly linked with interrupt0x60_defines.h and
+ * interrupt0x60_sys_init.s
+ *
+ * There are several different consumers of interrupt information:
+ *  1. random test generators which stimulate interrupts
+ *  2. boot code that initializes interrupt-related registers
+ *  3. the shared interrupt trap handler
+ */
+
+#ifdef USE_BOBO
+#include "bobo_defines.h"
+#endif /* USE_BOBO */
+
+SECTION .HTRAPS
+.text
+.global intr0x60_handler
+
+intr0x60_handler:
+    mov     %g7, %o7                    ! Restore %o7
+    ldxa    [%g0] ASI_INTR_ID, %g1      ! Get the thread number
+
+    ldxa    [%g0] ASI_INTR_R, %g2       ! Get the interrupt vector number
+
+    setx    intr0x60_ivn_to_ig, %g4, %g3
+    ldub    [%g3+%g2], %g4
+
+    cmp     %g4, INTR0x60_IG_CC
+    be      intr0x60_handle_cc
+    nop
+
+#ifdef INTR0x60_NIU_TX_IV_0
+    cmp     %g4, INTR0x60_IG_NIU_TX
+    be      intr0x60_handle_niu_tx
+    nop
+#endif /* INTR0x60_NIU_TX_IV_0 */
+
+#ifdef INTR0x60_NIU_RX_IV_0
+    cmp     %g4, INTR0x60_IG_NIU_RX
+    be      intr0x60_handle_niu_rx
+    nop
+#endif /* INTR0x60_NIU_RX_IV_0 */
+
+#ifdef INTR0x60_MONDO_IV
+    cmp     %g4, INTR0x60_IG_PIU
+    be      intr0x60_handle_piu
+    nop
+#endif /* INTR0x60_MONDO_IV */
+
+#if (INTR0x60_SSI_ERR_IV != INTR0x60_BAD_IV)
+    cmp     %g4, INTR0x60_IG_SSI_ERR
+    be      intr0x60_handle_ssi_err
+    nop
+#endif /* (INTR0x60_SSI_ERR_IV != INTR0x60_BAD_IV) */
+
+#if (INTR0x60_SSI_INT_IV != INTR0x60_BAD_IV)
+    cmp     %g4, INTR0x60_IG_SSI_INT
+    be      intr0x60_handle_ssi_int
+    nop
+#endif /* (INTR0x60_SSI_INT_IV != INTR0x60_BAD_IV) */
+
+/* If we get here, we got an unexpected vector number */
+intr0x60_bad_ivn:
+    !\$EV trig_pc_d(1, \@VA(.HTRAPS.intr0x60_bad_ivn)) -> printf("ERROR: Bad interrupt vector number",*,1)
+    EXIT_BAD
+
+
+/************************************************************************/
+/* Handle cross-call interrupts */
+
+intr0x60_handle_cc:
+    !\$EV trig_pc_d(1, \@VA(.HTRAPS.intr0x60_handle_cc)) -> printf("INFO: Cross-call interrupt received",*,1)
+#ifndef INTR0x60_CC_DEST_ALL
+    /* Make sure that this thread is allowed to receive cross-calls */
+    setx intr0x60_handle_cc_thread_table, %g5, %g4
+#ifdef PORTABLE_CORE
+    and  %g1, 0x7, %g5
+    ldub [%g4+%g5], %g4
+#else
+    ldub [%g4+%g1], %g4
+#endif
+    brz  %g4, intr0x60_handle_cc_bad_thread
+    nop
+#endif /* INTR0x60_CC_DEST_ALL */
+
+    /* Include any extra cross-call handler from the user */
+    /* The code can assume that %g1 is the thread and %g2 is the vector */
+#ifdef INTR0x60_CC_EXTRA_HANDLER
+intr0x60_handle_cc_extra_handler:
+INTR0x60_CC_EXTRA_HANDLER
+#endif /* INTR0x60_CC_EXTRA_HANDLER */
+
+intr0x60_handle_cc_retry:
+    /* Retry the instruction that was trapped */
+    retry
+
+#ifndef INTR0x60_CC_DEST_ALL
+intr0x60_handle_cc_bad_thread:
+    !\$EV trig_pc_d(1, \@VA(.HTRAPS.intr0x60_handle_cc_bad_thread)) -> printf("ERROR: Cross-call received on unexpected thread",*,1)
+    EXIT_BAD
+
+.data
+intr0x60_handle_cc_thread_table:
+>for ($thread = 0; $thread < $hw_num_threads; $thread++) {
+#if defined(INTR0x60_CC_DEST_${thread})
+    .byte 1
+#else
+    .byte 0
+#endif
+>}
+
+.text
+#endif /* INTR0x60_CC_DEST_ALL */
+
+
+#ifdef INTR0x60_NIU_TX_IV_0
+/************************************************************************/
+/* Handle NIU TX interrupts */
+
+intr0x60_handle_niu_tx:
+    !\$EV trig_pc_d(1, \@VA(.HTRAPS.intr0x60_handle_niu_tx)) -> printf("INFO: NIU TX interrupt received",*,1)
+    /* Make sure that this thread is the right one for this NIU interrupt */
+>for ($ivn = 0; $ivn < $max_niu_ivns; $ivn++) {
+#ifdef INTR0x60_NIU_TX_IV_${ivn}
+intr0x60_handle_niu_tx_check_thread_${ivn}:
+    cmp  %g2, INTR0x60_NIU_TX_IV_${ivn}
+    bnz  1f
+#ifdef PORTABLE_CORE
+    and  %g1, 0x7, %g7
+    cmp  %g7, INTR0x60_NIU_TX_THREAD_${ivn}
+#else
+    cmp  %g1, INTR0x60_NIU_TX_THREAD_${ivn}
+#endif
+    bnz  intr0x60_handle_niu_tx_bad_thread
+    best_set_reg(INTR0x60_NIU_TX_DMA_${ivn}, %g7, %g3)
+    ba   intr0x60_handle_niu_tx_good_thread
+    nop
+1:
+#endif /* INTR0x60_NIU_TX_IV_${ivn} */
+
+>}
+
+    /* If we get here, we have an unknown vector */
+intr0x60_handle_niu_tx_bad_vector:
+    !\$EV trig_pc_d(1, \@VA(.HTRAPS.intr0x60_handle_niu_tx_bad_vector)) -> printf("interrupt0x60_handler.s ERROR: intr0x60_iv_to_ig said this is an NIU TX interrupt, but it is not defined in INTR0x60_NIU_TX_IV_x",*,1)
+    EXIT_BAD
+
+    /* If we get here, we know we have the right thread for this vector */
+intr0x60_handle_niu_tx_good_thread:
+    /* Clear the source of the interrupt */
+    ! Re-enable the interrupt in the transmit DMA channel
+    best_set_reg(TX_CS, %g7, %g4)			! TX_CS
+    best_set_reg(TDMC_STEP, %g7, %g5)
+    mulx    %g5, %g3, %g5       ! %g3 is the DMA TX channel
+    add     %g4, %g5, %g4
+    ldxa    [%g4]ASI_PRIMARY_LITTLE, %g0	! Reset MK
+
+    ! Re-enable the interrupt in the NIU
+    best_set_reg(LDGIMGN, %g7, %g4)          ! LDGIMGN
+    best_set_reg(LDGIMGN_STEP, %g7, %g5)
+    mulx    %g5, %g2, %g5
+    add     %g4, %g5, %g4
+    best_set_reg(0x80000001, %g7, %g5)
+    stxa    %g5, [%g4]ASI_PRIMARY_LITTLE
+    nop
+
+    /* Include any extra NIU handler from the user */
+    /* The code can assume that %g1 is the thread, %g2 is the vector,
+     * and %g3 is the TX DMA channel */
+#ifdef INTR0x60_NIU_TX_EXTRA_HANDLER
+intr0x60_handle_niu_tx_extra_handler:
+INTR0x60_NIU_TX_EXTRA_HANDLER
+#endif /* INTR0x60_NIU_TX_EXTRA_HANDLER */
+
+intr0x60_handle_niu_tx_retry:
+    /* Retry the instruction that was trapped */
+    retry
+
+intr0x60_handle_niu_tx_bad_thread:
+    !\$EV trig_pc_d(1, \@VA(.HTRAPS.intr0x60_handle_niu_tx_bad_thread)) -> printf("ERROR: NIU TX interrupt received on unexpected thread",*,1)
+    EXIT_BAD
+#endif /* INTR0x60_NIU_TX_IV_0 */
+
+
+#ifdef INTR0x60_NIU_RX_IV_0
+/************************************************************************/
+/* Handle NIU RX interrupts */
+
+intr0x60_handle_niu_rx:
+    !\$EV trig_pc_d(1, \@VA(.HTRAPS.intr0x60_handle_niu_rx)) -> printf("INFO: NIU RX interrupt received",*,1)
+    /* Make sure that this thread is the right one for this NIU interrupt */
+>for ($ivn = 0; $ivn < $max_niu_ivns; $ivn++) {
+#ifdef INTR0x60_NIU_RX_IV_${ivn}
+intr0x60_handle_niu_rx_check_thread_${ivn}:
+    cmp  %g2, INTR0x60_NIU_RX_IV_${ivn}
+    bnz  1f
+#ifdef PORTABLE_CORE
+    and  %g1, 0x7, %g7
+    cmp  %g7, INTR0x60_NIU_RX_THREAD_${ivn}
+#else
+    cmp  %g1, INTR0x60_NIU_RX_THREAD_${ivn}
+#endif
+    bnz  intr0x60_handle_niu_rx_bad_thread
+    best_set_reg(INTR0x60_NIU_RX_DMA_${ivn}, %g7, %g3)
+    ba   intr0x60_handle_niu_rx_good_thread
+    nop
+1:
+#endif /* INTR0x60_NIU_RX_IV_${ivn} */
+
+>}
+
+    /* If we get here, we have an unknown vector */
+intr0x60_handle_niu_rx_bad_vector:
+    !\$EV trig_pc_d(1, \@VA(.HTRAPS.intr0x60_handle_niu_rx_bad_vector)) -> printf("interrupt0x60_handler.s ERROR: intr0x60_iv_to_ig said this is an NIU RX interrupt, but it is not defined in INTR0x60_NIU_RX_IV_x",*,1)
+    EXIT_BAD
+
+    /* If we get here, we know we have the right thread for this vector */
+intr0x60_handle_niu_rx_good_thread:
+    /* Clear the source of the interrupt */
+    best_set_reg(RX_DMA_CTL_STAT, %g7, %g4)
+    mulx    %g3, RX_DMA_CTL_STAT_STEP, %g7  ! %g3 is the DMA RX channel
+    add     %g4, %g7, %g4       ! Addr of RX DMA Ctl/stat for this channel
+intr0x60_handle_niu_rx_get_rx_dma_ctl_stat:
+    ldxa    [%g4]ASI_PRIMARY_LITTLE, %g5  ! Get status
+    mov     0x7, %g7
+    sllx    %g7, 32, %g7        ! Mask for clear-on-reset error bits
+    and     %g5, %g7, %g7
+    brz     %g7, intr0x60_handle_niu_rx_nonfatal
+    nop
+
+intr0x60_handle_niu_rx_fatal_error:
+#ifdef INTR0x60_NIU_RX_FATAL_HANDLER
+INTR0x60_NIU_RX_FATAL_HANDLER
+#else /* INTR0x60_NIU_RX_FATAL_HANDLER */
+#ifdef INTR0x60_NIU_RX_CLEAR_FATAL_FOR_TSOTOOL
+/* This code does what is needed for tsotool NIU RX fatal error interrupts */
+    best_set_reg(RXDMA_CFIG1, %g7, %g4)
+    mulx    %g3, RX_DMA_CTL_STAT_STEP, %g7  ! %g3 is the DMA RX channel
+    add     %g4, %g7, %g4
+intr0x60_handle_niu_rx_fatal_error_disable_dma_channel:
+    stxa    %g0, [%g4]ASI_PRIMARY_LITTLE
+    membar  #Sync
+    mov     1, %g7
+    sllx    %g7, 30, %g7        ! RST bit in RXDMA_CFIG1
+intr0x60_handle_niu_rx_fatal_error_reset_dma_channel:
+    stxa    %g7, [%g4]ASI_PRIMARY_LITTLE
+    srlx    %g7, 1, %g7         ! QST bit in RXDMA_CFIG1
+    mov     10, %g6             ! Timeout
+intr0x60_handle_niu_rx_fatal_error_wait_for_dma_channel:
+    ldxa    [%g4]ASI_PRIMARY_LITTLE, %g5  ! Get the status
+    cmp     %g5, %g7
+    beq     intr0x60_handle_niu_rx_fatal_error_enable_intr_for_dma_channel
+    dec     %g6
+    brnz    %g6, intr0x60_handle_niu_rx_fatal_error_wait_for_dma_channel
+    nop
+intr0x60_handle_niu_rx_fatal_error_timeout_wait_for_dma_channel:
+    !\$EV trig_pc_d(1, \@VA(.HTRAPS.intr0x60_handle_niu_rx_fatal_error_timeout_wait_for_dma_channel)) -> printf("ERROR: NIU RX interrupt received for fatal error and DMA channel reset never completed",*,1)
+    EXIT_BAD
+intr0x60_handle_niu_rx_fatal_error_enable_intr_for_dma_channel:
+    best_set_reg(RX_DMA_ENT_MSK, %g7, %g5)
+    mulx    %g3, RX_DMA_CTL_STAT_STEP, %g7  ! %g3 is the DMA RX channel
+    add     %g5, %g7, %g5
+    stxa    %g0, [%g5]ASI_PRIMARY_LITTLE
+    ba      intr0x60_handle_niu_rx_reenable_ldg
+    membar  #Sync
+#else /* INTR0x60_NIU_RX_CLEAR_FATAL_FOR_TSOTOOL */
+    !\$EV trig_pc_d(1, \@VA(.HTRAPS.intr0x60_handle_niu_rx_fatal_error)) -> printf("ERROR: NIU RX interrupt received for fatal error",*,1)
+    EXIT_BAD
+#endif /* INTR0x60_NIU_RX_CLEAR_FATAL_FOR_TSOTOOL */
+#endif /* INTR0x60_NIU_RX_FATAL_HANDLER */
+
+intr0x60_handle_niu_rx_nonfatal:
+    best_set_reg(0xffffffffffff0000, %g7, %g6)
+    and     %g5, %g6, %g5       ! Only preserve error bits, for RW1C
+    best_set_reg(RCR_STAT_A, %g7, %g6)
+    mulx    %g3, RX_DMA_CTL_STAT_STEP, %g7  ! %g3 is the DMA RX channel
+    add     %g6, %g7, %g6
+intr0x60_handle_niu_rx_get_rcr_stat_a:
+    ldxa    [%g6]ASI_PRIMARY_LITTLE, %g6  ! Get the number of pkts received
+    or      %g6, %g5, %g6
+    best_set_reg(THRES_INT, %g7, %g5)     ! Bit to enable mailbox (MEX in PRM)
+    or      %g6, %g5, %g6
+intr0x60_handle_niu_rx_reset_rx_dma_ctl_stat:
+    stxa    %g6, [%g4]ASI_PRIMARY_LITTLE  ! RW1C on RCRTHRES, RCRTO, etc., plus
+                                          ! set MEX, decrement QLEN by pkt read
+intr0x60_handle_niu_rx_reenable_ldg:
+    ! Re-enable the interrupt in the NIU LDG
+    best_set_reg(LDGIMGN, %g7, %g4)          ! LDGIMGN
+    best_set_reg(LDGIMGN_STEP, %g7, %g5)
+    mulx    %g5, %g2, %g5
+    add     %g4, %g5, %g4
+    best_set_reg(0x80000001, %g7, %g5)
+    stxa    %g5, [%g4]ASI_PRIMARY_LITTLE  ! Arm LDGI, set timer to 1
+    nop
+
+    /* Include any extra NIU handler from the user */
+    /* The code can assume that %g1 is the thread, %g2 is the vector,
+     * and %g3 is the RX DMA channel */
+#ifdef INTR0x60_NIU_RX_EXTRA_HANDLER
+intr0x60_handle_niu_rx_extra_handler:
+INTR0x60_NIU_RX_EXTRA_HANDLER
+#endif /* INTR0x60_NIU_RX_EXTRA_HANDLER */
+
+intr0x60_handle_niu_rx_retry:
+    /* Retry the instruction that was trapped */
+    retry
+
+intr0x60_handle_niu_rx_bad_thread:
+    !\$EV trig_pc_d(1, \@VA(.HTRAPS.intr0x60_handle_niu_rx_bad_thread)) -> printf("ERROR: NIU RX interrupt received on unexpected thread",*,1)
+    EXIT_BAD
+#endif /* INTR0x60_NIU_RX_IV_0 */
+
+
+#ifdef INTR0x60_MONDO_IV
+/************************************************************************/
+/* Handle PIU interrupts */
+
+intr0x60_handle_piu:
+    !\$EV trig_pc_d(1, \@VA(.HTRAPS.intr0x60_handle_piu)) -> printf("INFO: PIU interrupt received",*,1)
+#ifndef INTR0x60_DO_NOT_READ_ADATA1
+    /* To reach coverage goals, do a dummy read from ADATA1 */
+    best_set_reg(MONDO_INT_ADATA1, %g4, %g3)
+    ldx  [%g3], %g3
+#endif /* INTR0x60_DO_NOT_READ_ADATA1 */
+    best_set_reg(MONDO_INT_ADATA0, %g4, %g3)
+    ldx  [%g3], %g3
+    and  %g3, 0x3f, %g3  /* WIP: Mask to get INO */
+#if INTR0x60_MONDO_20_V
+    cmp  %g3, 20
+    be   intr0x60_handle_piu_inta
+    nop
+#endif /* INTR0x60_MONDO_20_V */
+#if INTR0x60_MONDO_21_V
+    cmp  %g3, 21
+    be   intr0x60_handle_piu_intb
+    nop
+#endif /* INTR0x60_MONDO_21_V */
+#if INTR0x60_MONDO_22_V
+    cmp  %g3, 22
+    be   intr0x60_handle_piu_intc
+    nop
+#endif /* INTR0x60_MONDO_22_V */
+#if INTR0x60_MONDO_23_V
+    cmp  %g3, 23
+    be   intr0x60_handle_piu_intd
+    nop
+#endif /* INTR0x60_MONDO_23_V */
+>for $idx (0 .. $max_msi_idx_m1) {
+#ifdef INTR0x60_MSI_${idx}_NUM
+intr0x60_handle_piu_check_msi_${idx}:
+    cmp  %g3, mpeval(INTR0x60_MSI_${idx}_EQN+24)
+    be   intr0x60_handle_piu_msi_${idx}
+    mov  ${idx}, %g4
+#endif /* INTR0x60_MSI_${idx}_NUM */
+>}
+#ifdef INTR0x60_PM_PME_EQN
+intr0x60_handle_piu_check_pm_pme:
+    cmp  %g3, mpeval(INTR0x60_PM_PME_EQN+24)
+    be   intr0x60_handle_piu_pm_pme
+    nop
+#endif /* INTR0x60_PM_PME_EQN */
+#ifdef INTR0x60_PME_TO_ACK_EQN
+intr0x60_handle_piu_check_pme_to_ack:
+    cmp  %g3, mpeval(INTR0x60_PME_TO_ACK_EQN+24)
+    be   intr0x60_handle_piu_pme_to_ack
+    nop
+#endif /* INTR0x60_PME_TO_ACK_EQN */
+
+    /* If we get here, we got an unexpected INO */
+intr0x60_bad_mondo_INO:
+    !\$EV trig_pc_d(1, \@VA(.HTRAPS.intr0x60_bad_mondo_INO)) -> printf("ERROR: Bad mondo INO",*,1)
+    EXIT_BAD
+
+>@intx_letters = ("A", "B", "C", "D");
+>for ($intx = 0; $intx < 4; $intx++) {
+>  $ino = 20 + $intx;
+>  $uc = $intx_letters[$intx];
+>  $lc = lc $uc;
+#if INTR0x60_MONDO_${ino}_V
+    /************ Handle INT${uc} ***********/
+intr0x60_handle_piu_int${lc}:
+    /* Check whether this thread matches this INO */
+#ifdef PORTABLE_CORE
+    and  %g1, 0x7, %g7
+    cmp  %g7/*tid*/, INTR0x60_MONDO_${ino}_THREAD
+#else
+    cmp  %g1/*tid*/, INTR0x60_MONDO_${ino}_THREAD
+#endif
+    bne  intr0x60_handle_piu_bad_thread
+    nop
+    /* Clear the interrupt */
+intr0x60_handle_piu_int${lc}_deassert:
+#ifdef FC_NO_PEU_VERA
+#ifdef USE_BOBO
+    ! Offset accesses by PCIE_MEM64_OFFSET since
+    ! BAR is set that way. Physical addresses generated via TSB
+    ! have this offset so mimic that when accessing directly, as here.
+    best_set_reg(mpeval(N2_PCIE_BASE_ADDR
+                        + MEM64_OFFSET_BASE_REG_DATA
+                        + PCIE_MEM64_OFFSET
+                        + BOBO_INTR_VECT_STATUS_OFFSET), %g7, %g4)
+    ! Interrupt type
+    mov  eval(1 << $intx), %g5
+#else /* USE_BOBO */
+    ! Offset accesses by PCIE_MEM64_OFFSET since
+    ! BAR is set that way. Physical addresses generated via TSB
+    ! have this offset so mimic that when accessing directly, as here.
+    best_set_reg(mpeval(N2_PCIE_BASE_ADDR
+                        + MEM64_OFFSET_BASE_REG_DATA
+                        + PCIE_MEM64_OFFSET
+                        + (INTR0x60_MONDO_${ino}_DMAEPT_ENGINE << 8)
+                        + DMAEPT_INTERRUPT_ACK), %g7, %g4)
+    ! Interrupt type
+    best_set_reg(DMAEPT_INTERRUPT_ACK_INT${uc}, %g7, %g5)
+#endif /* USE_BOBO */
+    stwa    %g5, [%g4] ASI_NL
+#else /* FC_NO_PEU_VERA */
+    ! \$EV trig_pc_d(1, \@VA(.HTRAPS.intr0x60_handle_piu_int${lc}_deassert)) -> EnablePCIeIgCmd ("INT${uc}", 0, 0, "DEASSERT", 1, *, 1 )
+#endif /* FC_NO_PEU_VERA */
+
+    /* Loop on the INTX Status Register until the deassert message
+     * has arrived and been processed. */
+    best_set_reg(PCI_E_INTX_STATUS_ADDR, %g5, %g4)
+    best_set_reg(INTR0x60_INTX_DEASSERT_TIMEOUT, %g5, %g6)
+intr0x60_handle_piu_int${lc}_deassert_loop:
+    brz  %g6, intr0x60_handle_piu_int${lc}_deassert_timeout
+    dec  %g6
+    ldx  [%g4], %g3
+>$bit = 1 << (3-$intx);
+    and  %g3, ${bit}, %g3          ! ${bit} == bit for INT${uc}
+    brnz %g3, intr0x60_handle_piu_int${lc}_deassert_loop
+    set	 1, %g3
+intr0x60_handle_piu_int${lc}_clear:
+    best_set_reg(PCI_E_INT_${uc}_CLEAR_ADDR, %g5, %g4)
+    stx  %g3, [%g4]
+    best_set_reg(mpeval(PCI_E_INT_CLEAR_ADDR+${intx}*PCI_E_INT_CLEAR_STEP), %g5, %g4)
+    stx  %g0, [%g4]
+    best_set_reg(MONDO_INT_ABUSY, %g5, %g4)
+    stx  %g0, [%g4]
+
+    /* Include any extra INT${uc} handler from the user */
+    /* The code can assume that %g1 is the thread and %g2 is the vector */
+#ifdef INTR0x60_INT${uc}_EXTRA_HANDLER
+intr0x60_handle_int${lc}_extra_handler:
+INTR0x60_INT${uc}_EXTRA_HANDLER
+#endif /* INTR0x60_INT${uc}_EXTRA_HANDLER */
+
+intr0x60_handle_piu_int${lc}_retry:
+    /* Retry the instruction that was trapped */
+    retry
+#endif /* INTR0x60_MONDO_${ino}_V */
+
+    /* If we get here, the interrupt status bit didn't deassert */
+intr0x60_handle_piu_int${lc}_deassert_timeout:
+    !\$EV trig_pc_d(1, \@VA(.HTRAPS.intr0x60_handle_piu_int${lc}_deassert_timeout)) -> printf("ERROR: INT${uc} status bit did not deassert within INTR0x60_INTX_DEASSERT_TIMEOUT iterations",*,1)
+    EXIT_BAD
+
+
+>}
+
+
+
+>for $idx (0 .. $max_msi_idx_m1) {
+#ifdef INTR0x60_MSI_${idx}_NUM
+    /************ Handle MSI ${idx} ***********/
+intr0x60_handle_piu_msi_${idx}:
+!WIP:    /* Check whether this thread matches this INO */
+!WIP:    cmp  %g1/*tid*/, INTR0x60_MONDO_XXX_THREAD
+!WIP:    bne  intr0x60_handle_piu_bad_thread
+!WIP:    nop
+    /* Clear the interrupt */
+    /* MSI Clear reg. */
+intr0x60_handle_piu_msi_${idx}_clear_eqwr:
+    set	 1, %g4
+    sllx %g4, 62, %g4           ! EQWR_N is bit 62
+    best_set_reg(mpeval(PCI_E_MSI_CLEAR_ADDR
+                        +PCI_E_MSI_CLEAR_STEP*INTR0x60_MSI_${idx}_NUM),
+                 %g7, %g5)
+    stx  %g4, [%g5]			! clear EQWR in MSI map reg.
+    membar #Sync
+
+intr0x60_handle_piu_msi_${idx}_disable_eq:
+    set  1, %g4
+    sllx %g4, 44, %g4           ! DIS is bit 44
+    best_set_reg(mpeval(PCI_E_EV_QUE_CTL_CLEAR_ADDR
+                        +PCI_E_EV_QUE_CTL_CLEAR_STEP*INTR0x60_MSI_${idx}_EQN),
+                 %g7, %g5)
+    stx  %g4, [%g5]
+
+    ! Set Event Queue Head = Event Queue Tail
+intr0x60_handle_piu_msi_${idx}_reset_eq_head:
+    best_set_reg(mpeval(PCI_E_EV_QUE_TAIL_ADDR
+                        +PCI_E_EV_QUE_TAIL_STEP*INTR0x60_MSI_${idx}_EQN),
+                 %g7, %g5)
+    ldx  [%g5], %g6
+    best_set_reg(mpeval(PCI_E_EV_QUE_HEAD_ADDR
+                        +PCI_E_EV_QUE_HEAD_STEP*INTR0x60_MSI_${idx}_EQN),
+                 %g7, %g5)
+    stx  %g6, [%g5]
+
+intr0x60_handle_piu_msi_${idx}_clear_int:
+    best_set_reg(mpeval(PCI_E_INT_CLEAR_ADDR
+                        +(4+INTR0x60_MSI_${idx}_EQN)*PCI_E_INT_CLEAR_STEP),
+                 %g5, %g4)
+    stx  %g0, [%g4]
+
+    /* Include any extra MSI handler from the user that needs to be
+     * executed while the mondo busy flag is still asserted. */
+    /* The code can assume that %g1 is the thread,
+     * %g2 is the vector, and
+     * %g3 is the INO */
+#ifdef INTR0x60_MSI_${idx}_EXTRA_HANDLER_WHILE_BUSY
+intr0x60_handle_msi_${idx}_extra_handler_while_busy:
+INTR0x60_MSI_${idx}_EXTRA_HANDLER_WHILE_BUSY
+#endif /* INTR0x60_MSI_${idx}_EXTRA_HANDLER_WHILE_BUSY */
+
+intr0x60_handle_piu_msi_${idx}_clear_mondo_busy:
+    best_set_reg(MONDO_INT_ABUSY, %g5, %g4)
+    stx  %g0, [%g4]
+
+    /* Include any extra MSI handler from the user that needs to be
+     * executed while the event queue is disabled. */
+    /* The code can assume that %g1 is the thread,
+     * %g2 is the vector, and
+     * %g3 is the INO */
+#ifdef INTR0x60_MSI_EXTRA_HANDLER_WHILE_EQ_DISABLED
+intr0x60_handle_msi_extra_handler_while_eq_disabled_${idx}:
+INTR0x60_MSI_EXTRA_HANDLER_WHILE_EQ_DISABLED
+#endif /* INTR0x60_MSI_EXTRA_HANDLER_WHILE_EQ_DISABLED */
+
+intr0x60_handle_piu_msi_${idx}_enable_eq:
+    set  1, %g4
+    sllx %g4, 44, %g4           ! EN is bit 44
+    best_set_reg(mpeval(PCI_E_EV_QUE_CTL_SET_ADDR
+                        +PCI_E_EV_QUE_CTL_SET_STEP*INTR0x60_MSI_${idx}_EQN),
+                 %g7, %g5)
+    stx  %g4, [%g5]
+
+    ba   intr0x60_handle_msi_extra_handler
+    nop
+#endif /* INTR0x60_MSI_${idx}_NUM */
+
+
+>}
+
+
+    /* Include any extra MSI handler from the user */
+    /* The code can assume that %g1 is the thread,
+     * %g2 is the vector, and
+     * %g3 is the INO */
+intr0x60_handle_msi_extra_handler:
+#ifdef INTR0x60_MSI_EXTRA_HANDLER
+INTR0x60_MSI_EXTRA_HANDLER
+#endif /* INTR0x60_MSI_EXTRA_HANDLER */
+
+intr0x60_handle_piu_msi_retry:
+    /* Retry the instruction that was trapped */
+    retry
+
+
+#ifdef INTR0x60_PM_PME_EQN
+    /************ Handle PM_PME ***********/
+intr0x60_handle_piu_pm_pme:
+!WIP:    /* Check whether this thread matches this INO */
+!WIP:    cmp  %g1/*tid*/, INTR0x60_MONDO_XXX_THREAD
+!WIP:    bne  intr0x60_handle_piu_bad_thread
+!WIP:    nop
+    /* Clear the interrupt */
+
+intr0x60_handle_piu_pm_pme_disable_eq:
+    set  1, %g4
+    sllx %g4, 44, %g4           ! DIS is bit 44
+    best_set_reg(mpeval(PCI_E_EV_QUE_CTL_CLEAR_ADDR
+                        +PCI_E_EV_QUE_CTL_CLEAR_STEP*INTR0x60_PM_PME_EQN),
+                 %g7, %g5)
+    stx  %g4, [%g5]
+
+    ! Set Event Queue Head = Event Queue Tail
+intr0x60_handle_piu_pm_pme_reset_eq_head:
+    best_set_reg(mpeval(PCI_E_EV_QUE_TAIL_ADDR
+                        +PCI_E_EV_QUE_TAIL_STEP*INTR0x60_PM_PME_EQN),
+                 %g7, %g5)
+    ldx  [%g5], %g6
+    best_set_reg(mpeval(PCI_E_EV_QUE_HEAD_ADDR
+                        +PCI_E_EV_QUE_HEAD_STEP*INTR0x60_PM_PME_EQN),
+                 %g7, %g5)
+    stx  %g6, [%g5]
+
+intr0x60_handle_piu_pm_pme_clear_int:
+    best_set_reg(mpeval(PCI_E_INT_CLEAR_ADDR
+                        +(4+INTR0x60_PM_PME_EQN)*PCI_E_INT_CLEAR_STEP),
+                 %g5, %g4)
+    stx  %g0, [%g4]
+
+intr0x60_handle_piu_pm_pme_clear_mondo_busy:
+    best_set_reg(MONDO_INT_ABUSY, %g5, %g4)
+    stx  %g0, [%g4]
+
+    /* Include any extra PM_PME handler from the user that needs to be
+     * executed while the event queue is disabled. */
+    /* The code can assume that %g1 is the thread,
+     * %g2 is the vector, and
+     * %g3 is the INO */
+#ifdef INTR0x60_PM_PME_EXTRA_HANDLER_WHILE_EQ_DISABLED
+intr0x60_handle_pm_pme_extra_handler_while_eq_disabled:
+INTR0x60_PM_PME_EXTRA_HANDLER_WHILE_EQ_DISABLED
+#endif /* INTR0x60_PM_PME_EXTRA_HANDLER_WHILE_EQ_DISABLED */
+
+intr0x60_handle_piu_pm_pme_enable_eq:
+    set  1, %g4
+    sllx %g4, 44, %g4           ! EN is bit 44
+    best_set_reg(mpeval(PCI_E_EV_QUE_CTL_SET_ADDR
+                        +PCI_E_EV_QUE_CTL_SET_STEP*INTR0x60_PM_PME_EQN),
+                 %g7, %g5)
+    stx  %g4, [%g5]
+
+    /* Include any extra PM_PME handler from the user */
+    /* The code can assume that %g1 is the thread,
+     * %g2 is the vector, and
+     * %g3 is the INO */
+intr0x60_handle_pm_pme_extra_handler:
+#ifdef INTR0x60_PM_PME_EXTRA_HANDLER
+INTR0x60_PM_PME_EXTRA_HANDLER
+#endif /* INTR0x60_PM_PME_EXTRA_HANDLER */
+
+intr0x60_handle_piu_pm_pme_retry:
+    /* Retry the instruction that was trapped */
+    retry
+#endif /* INTR0x60_PM_PME_EQN */
+
+
+#ifdef INTR0x60_PME_TO_ACK_EQN
+    /************ Handle PME_TO_ACK ***********/
+intr0x60_handle_piu_pme_to_ack:
+!WIP:    /* Check whether this thread matches this INO */
+!WIP:    cmp  %g1/*tid*/, INTR0x60_MONDO_XXX_THREAD
+!WIP:    bne  intr0x60_handle_piu_bad_thread
+!WIP:    nop
+    /* Clear the interrupt */
+
+intr0x60_handle_piu_pme_to_ack_disable_eq:
+    set  1, %g4
+    sllx %g4, 44, %g4           ! DIS is bit 44
+    best_set_reg(mpeval(PCI_E_EV_QUE_CTL_CLEAR_ADDR
+                        +PCI_E_EV_QUE_CTL_CLEAR_STEP*INTR0x60_PME_TO_ACK_EQN),
+                 %g7, %g5)
+    stx  %g4, [%g5]
+
+    ! Set Event Queue Head = Event Queue Tail
+intr0x60_handle_piu_pme_to_ack_reset_eq_head:
+    best_set_reg(mpeval(PCI_E_EV_QUE_TAIL_ADDR
+                        +PCI_E_EV_QUE_TAIL_STEP*INTR0x60_PME_TO_ACK_EQN),
+                 %g7, %g5)
+    ldx  [%g5], %g6
+    best_set_reg(mpeval(PCI_E_EV_QUE_HEAD_ADDR
+                        +PCI_E_EV_QUE_HEAD_STEP*INTR0x60_PME_TO_ACK_EQN),
+                 %g7, %g5)
+    stx  %g6, [%g5]
+
+intr0x60_handle_piu_pme_to_ack_clear_int:
+    best_set_reg(mpeval(PCI_E_INT_CLEAR_ADDR
+                        +(4+INTR0x60_PME_TO_ACK_EQN)*PCI_E_INT_CLEAR_STEP),
+                 %g5, %g4)
+    stx  %g0, [%g4]
+
+intr0x60_handle_piu_pme_to_ack_clear_mondo_busy:
+    best_set_reg(MONDO_INT_ABUSY, %g5, %g4)
+    stx  %g0, [%g4]
+
+    /* Include any extra PME_TO_ACK handler from the user that needs to be
+     * executed while the event queue is disabled. */
+    /* The code can assume that %g1 is the thread,
+     * %g2 is the vector, and
+     * %g3 is the INO */
+#ifdef INTR0x60_PME_TO_ACK_EXTRA_HANDLER_WHILE_EQ_DISABLED
+intr0x60_handle_pme_to_ack_extra_handler_while_eq_disabled:
+INTR0x60_PME_TO_ACK_EXTRA_HANDLER_WHILE_EQ_DISABLED
+#endif /* INTR0x60_PME_TO_ACK_EXTRA_HANDLER_WHILE_EQ_DISABLED */
+
+intr0x60_handle_piu_pme_to_ack_enable_eq:
+    set  1, %g4
+    sllx %g4, 44, %g4           ! EN is bit 44
+    best_set_reg(mpeval(PCI_E_EV_QUE_CTL_SET_ADDR
+                        +PCI_E_EV_QUE_CTL_SET_STEP*INTR0x60_PME_TO_ACK_EQN),
+                 %g7, %g5)
+    stx  %g4, [%g5]
+
+    /* Include any extra PME_TO_ACK handler from the user */
+    /* The code can assume that %g1 is the thread,
+     * %g2 is the vector, and
+     * %g3 is the INO */
+intr0x60_handle_pme_to_ack_extra_handler:
+#ifdef INTR0x60_PME_TO_ACK_EXTRA_HANDLER
+INTR0x60_PME_TO_ACK_EXTRA_HANDLER
+#endif /* INTR0x60_PME_TO_ACK_EXTRA_HANDLER */
+
+intr0x60_handle_piu_pme_to_ack_retry:
+    /* Retry the instruction that was trapped */
+    retry
+#endif /* INTR0x60_PME_TO_ACK_EQN */
+
+
+intr0x60_handle_piu_bad_thread:
+    !\$EV trig_pc_d(1, \@VA(.HTRAPS.intr0x60_handle_piu_bad_thread)) -> printf("ERROR: Mondo delivered to wrong thread",*,1)
+    EXIT_BAD
+#endif /* INTR0x60_MONDO_IV */
+
+
+#if (INTR0x60_SSI_ERR_IV != INTR0x60_BAD_IV)
+/************************************************************************/
+/* Handle SSI parity error interrupts */
+
+intr0x60_handle_ssi_err:
+    !\$EV trig_pc_d(1, \@VA(.HTRAPS.intr0x60_handle_ssi_err)) -> printf("INFO: SSI parity error interrupt received",*,1)
+    /* Make sure that this thread is the right one */
+    best_set_reg(INTR0x60_SSI_ERR_THREAD, %g7, %g4)
+#ifdef PORTABLE_CORE
+    and  %g1, 0x7, %g7
+    cmp  %g7, %g4
+#else
+    cmp  %g1, %g4
+#endif
+    bne  intr0x60_handle_ssi_err_bad_thread
+    nop
+
+    /* Include any extra SSI parity error handler from the user */
+    /* The code can assume that %g1 is the thread and %g2 is the vector */
+#ifdef INTR0x60_SSI_ERR_EXTRA_HANDLER
+intr0x60_handle_ssi_err_extra_handler:
+INTR0x60_SSI_ERR_EXTRA_HANDLER
+#endif /* INTR0x60_SSI_ERR_EXTRA_HANDLER */
+
+intr0x60_handle_ssi_err_retry:
+    /* Retry the instruction that was trapped */
+    retry
+
+intr0x60_handle_ssi_err_bad_thread:
+    !\$EV trig_pc_d(1, \@VA(.HTRAPS.intr0x60_handle_ssi_err_bad_thread)) -> printf("ERROR: SSI parity error interrupt received on unexpected thread",*,1)
+    EXIT_BAD
+#endif /* (INTR0x60_SSI_ERR_IV != INTR0x60_BAD_IV) */
+
+
+#if (INTR0x60_SSI_INT_IV != INTR0x60_BAD_IV)
+/************************************************************************/
+/* Handle SSI_EXT_INT_L interrupts */
+
+intr0x60_handle_ssi_int:
+    !\$EV trig_pc_d(1, \@VA(.HTRAPS.intr0x60_handle_ssi_int)) -> printf("INFO: SSI_EXT_INT_L interrupt received",*,1)
+    /* Make sure that this thread is the right one */
+    best_set_reg(INTR0x60_SSI_INT_THREAD, %g7, %g4)
+#ifdef PORTABLE_CORE
+    and  %g1, 0x7, %g7
+    cmp  %g7, %g4
+#else
+    cmp  %g1, %g4
+#endif
+    bne  intr0x60_handle_ssi_int_bad_thread
+    nop
+
+    /* Include any extra SSI_EXT_INT_L handler from the user */
+    /* The code can assume that %g1 is the thread and %g2 is the vector */
+#ifdef INTR0x60_SSI_INT_EXTRA_HANDLER
+intr0x60_handle_ssi_int_extra_handler:
+INTR0x60_SSI_INT_EXTRA_HANDLER
+#endif /* INTR0x60_SSI_INT_EXTRA_HANDLER */
+
+intr0x60_handle_ssi_int_retry:
+    /* Retry the instruction that was trapped */
+    retry
+
+intr0x60_handle_ssi_int_bad_thread:
+    !\$EV trig_pc_d(1, \@VA(.HTRAPS.intr0x60_handle_ssi_int_bad_thread)) -> printf("ERROR: SSI_EXT_INT_L interrupt received on unexpected thread",*,1)
+    EXIT_BAD
+#endif /* (INTR0x60_SSI_INT_IV != INTR0x60_BAD_IV) */
+
+
+
+
+/*
+ * Need to have some tables to identify the source of the interrupt
+ * and whether it is expected for this thread.
+ *
+ * intr0x60_ivn_to_ig has one byte per interrupt vector number (0-63),
+ *     which indicates the interrupt group, encoded as
+ *          0 - unused (error)
+ *          1 - cross-call
+ *          2 - SSI error
+ *          3 - SSI_EXT_INT_L
+ *          4 - NIU
+ *          5 - PIU mondo
+ */
+
+.data
+intr0x60_ivn_to_ig:
+>for ($count = 0; $count < $max_cc_ivns; $count++) {
+
+#ifdef INTR0x60_CC_IV_${count}
+#define INTR0x60_CC_IV_${count}_CHECK (INTR0x60_CC_IV_${count} == `\$1')
+#else
+#define INTR0x60_CC_IV_${count}_CHECK (0)
+#endif
+>}
+>for ($count = 0; $count < $max_niu_ivns; $count++) {
+
+#ifdef INTR0x60_NIU_RX_IV_${count}
+#define INTR0x60_NIU_RX_IV_${count}_CHECK (INTR0x60_NIU_RX_IV_${count} == `\$1')
+#else
+#define INTR0x60_NIU_RX_IV_${count}_CHECK (0)
+#endif
+>}
+>for ($count = 0; $count < $max_niu_ivns; $count++) {
+
+#ifdef INTR0x60_NIU_TX_IV_${count}
+#define INTR0x60_NIU_TX_IV_${count}_CHECK (INTR0x60_NIU_TX_IV_${count} == `\$1')
+#else
+#define INTR0x60_NIU_TX_IV_${count}_CHECK (0)
+#endif
+>}
+
+#if (INTR0x60_SSI_ERR_IV != INTR0x60_BAD_IV)
+#define INTR0x60_SSI_ERR_IV_CHECK (INTR0x60_SSI_ERR_IV == `\$1')
+#else
+#define INTR0x60_SSI_ERR_IV_CHECK (0)
+#endif
+
+#if (INTR0x60_SSI_INT_IV != INTR0x60_BAD_IV)
+#define INTR0x60_SSI_INT_IV_CHECK (INTR0x60_SSI_INT_IV == `\$1')
+#else
+#define INTR0x60_SSI_INT_IV_CHECK (0)
+#endif
+
+#ifdef INTR0x60_MONDO_IV
+#define INTR0x60_MONDO_IV_CHECK (INTR0x60_MONDO_IV == `\$1')
+#else
+#define INTR0x60_MONDO_IV_CHECK (0)
+#endif
+
+/* Note: Need to put INTR0x60_IG_* names on a separate line
+ * because the *_CHECK macros may contain a half-quote which
+ * would prevent cpp from doing the macro replacement */
+define(`INTR0x60_IVN_TO_IG',
+       `ifelse(eval(   INTR0x60_CC_IV_0_CHECK
+>for ($count = 1; $count < $max_cc_ivns-1; $count++) {
+                    || INTR0x60_CC_IV_${count}_CHECK
+>}
+                    || INTR0x60_CC_IV_${count}_CHECK), 1,
+                                         INTR0x60_IG_CC,
+               eval( INTR0x60_SSI_ERR_IV_CHECK ), 1,
+                                         INTR0x60_IG_SSI_ERR,
+               eval( INTR0x60_SSI_INT_IV_CHECK ), 1,
+                                         INTR0x60_IG_SSI_INT,
+               eval( INTR0x60_MONDO_IV_CHECK   ), 1,
+                                         INTR0x60_IG_PIU,
+               eval(   INTR0x60_NIU_RX_IV_0_CHECK
+>for ($count = 1; $count < $max_niu_ivns-1; $count++) {
+                    || INTR0x60_NIU_RX_IV_${count}_CHECK
+>}
+                    || INTR0x60_NIU_RX_IV_${count}_CHECK), 1,
+                                         INTR0x60_IG_NIU_RX,
+               eval(   INTR0x60_NIU_TX_IV_0_CHECK
+>for ($count = 1; $count < $max_niu_ivns-1; $count++) {
+                    || INTR0x60_NIU_TX_IV_${count}_CHECK
+>}
+                    || INTR0x60_NIU_TX_IV_${count}_CHECK), 1,
+                                         INTR0x60_IG_NIU_TX,
+               INTR0x60_IG_UNUSED)'
+       )dnl
+
+>for ($ivn = 0; $ivn < $hw_num_ivs; $ivn++) {
+    .byte INTR0x60_IVN_TO_IG(${ivn})
+>}
+undefine(`INTR0x60_IVN_TO_IG')dnl

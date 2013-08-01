@@ -1,0 +1,538 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: utilsClass.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <std_display_defines.vri>
+#include <ccxDevicesDefines.vri>
+
+#include <globals.vri>
+
+#include <baseParamsClass.vrh>
+#include <sparcParams.vrh>
+#include <baseUtilsClass.vrh>
+#include <sparcBenchUtils.vrh>
+#include <std_display_class.vrh>
+#include <basePktClass.vrh>
+#include <cpxPktClass.vrh>
+#include <pcxPktClass.vrh>
+#include <ccxDevBaseBFM.vrh>
+#include <ccxDevMemBFM.vrh>
+#include <ccxDevSpcBFM.vrh>
+#include <memArray.vrh>
+#include <ccx_tag_class.vrh>
+
+#ifdef CMP_BENCH
+#include <MCUStub_class.vrh>
+#endif
+
+
+#include <ccxPktMon.vrh>
+
+#define CLASSNAME Utils
+#define CLASSNAMEQ "Utils"
+
+class CLASSNAME extends SparcBenchUtils {
+  
+  local string className = "UtilsClass";
+  local StandardDisplay dbg;
+  local integer clockPeriod;
+
+  // rands
+  local randc reg [5:0] startThread;
+  // end rands
+
+//  local integer count = 0;
+
+  
+  task new(StandardDisplay dbgHndl, integer clockPeriod = 100);
+  task initTB(integer useMCUbfms = 0,
+              reg useL1Tags = 0,
+              reg useL2bfms = 0,
+              reg loadOnlyIOmem = 1);
+  task resetDut();
+  task initDut(integer wait = 0);
+//  local task enableL2(bit [7:0] enable=8'hff, reg [5:0] useThread=63);
+  //local task sendPOR(reg [31:0] resetThis=0, integer sendPort = DEV_NCU);
+  task sendIntrLoop(integer sendPort = DEV_NCU);
+  task sendIntr(reg [5:0] tid,
+                reg [1:0] type,
+                reg [5:0] vect,
+                integer sendPort = DEV_NCU);
+
+  task randEvict();
+  
+}
+
+
+task CLASSNAME::new(StandardDisplay dbgHndl, integer clockPeriod = 100) {
+  super.new(dbgHndl, clockPeriod);
+  srandom(gSeed,this);
+  this.dbg = dbgHndl;
+  void = randomize(); // keep!
+}
+
+task CLASSNAME::resetDut()
+{
+  super.resetDut();
+}
+
+
+// useMCUbfms 0=no, 1=yes, 2=monitor
+task CLASSNAME::initTB(integer useMCUbfms = 0,
+                       reg useL1Tags = 0,
+                       reg useL2bfms = 0,
+                       reg loadOnlyIOmem = 1) { // do not load vera array if !using it
+
+  integer i;
+  VeraRandomState rstate;
+
+  
+#ifndef CMP0
+  if (gParam.asmDiagName != null) {
+    // mem array.
+    // 3rd param will return random data (in place of 0) from mem if set.
+    gMem = new(0,gDbg,0);
+    // Initialize main memory from mem.image
+    gMem.loadMem("mem.image", loadOnlyIOmem, gParam.hash_on, this);
+  }
+#endif
+  
+  // Put all binds into global handles so that various objects
+  // will have access to HW.
+  
+  // SPC
+  gPcxPort[DEV_SPC0] = pcxBindDEV_SPC0;
+  gCpxPort[DEV_SPC0] = cpxBindDEV_SPC0;
+  gPcxPort[DEV_SPC1] = pcxBindDEV_SPC1;
+  gCpxPort[DEV_SPC1] = cpxBindDEV_SPC1;
+  gPcxPort[DEV_SPC2] = pcxBindDEV_SPC2;
+  gCpxPort[DEV_SPC2] = cpxBindDEV_SPC2;
+  gPcxPort[DEV_SPC3] = pcxBindDEV_SPC3;
+  gCpxPort[DEV_SPC3] = cpxBindDEV_SPC3;
+  gPcxPort[DEV_SPC4] = pcxBindDEV_SPC4;
+  gCpxPort[DEV_SPC4] = cpxBindDEV_SPC4;
+  gPcxPort[DEV_SPC5] = pcxBindDEV_SPC5;
+  gCpxPort[DEV_SPC5] = cpxBindDEV_SPC5;
+  gPcxPort[DEV_SPC6] = pcxBindDEV_SPC6;
+  gCpxPort[DEV_SPC6] = cpxBindDEV_SPC6;
+  gPcxPort[DEV_SPC7] = pcxBindDEV_SPC7;
+  gCpxPort[DEV_SPC7] = cpxBindDEV_SPC7;
+
+  // L2
+#ifndef RTL_NO_BNK01
+  gPcxPort[DEV_MEM0] = pcxBindDEV_MEM0;
+  gCpxPort[DEV_MEM0] = cpxBindDEV_MEM0;
+  gPcxPort[DEV_MEM1] = pcxBindDEV_MEM1;
+  gCpxPort[DEV_MEM1] = cpxBindDEV_MEM1;
+#endif
+#ifndef RTL_NO_BNK23
+  gPcxPort[DEV_MEM2] = pcxBindDEV_MEM2;
+  gCpxPort[DEV_MEM2] = cpxBindDEV_MEM2;
+  gPcxPort[DEV_MEM3] = pcxBindDEV_MEM3;
+  gCpxPort[DEV_MEM3] = cpxBindDEV_MEM3;
+#endif
+#ifndef RTL_NO_BNK45
+  gPcxPort[DEV_MEM4] = pcxBindDEV_MEM4;
+  gCpxPort[DEV_MEM4] = cpxBindDEV_MEM4;
+  gPcxPort[DEV_MEM5] = pcxBindDEV_MEM5;
+  gCpxPort[DEV_MEM5] = cpxBindDEV_MEM5;
+#endif
+#ifndef RTL_NO_BNK67
+  gPcxPort[DEV_MEM6] = pcxBindDEV_MEM6;
+  gCpxPort[DEV_MEM6] = cpxBindDEV_MEM6;
+  gPcxPort[DEV_MEM7] = pcxBindDEV_MEM7;
+  gCpxPort[DEV_MEM7] = cpxBindDEV_MEM7;
+#endif
+  
+  // ncu
+  gPcxPort[DEV_NCU] = pcxBindDEV_NCU;
+  gCpxPort[DEV_NCU] = cpxBindDEV_NCU;
+
+  // basic probes
+  gProbesPort = probesBind;
+
+#ifdef CMP_BENCH
+  if (useMCUbfms) {
+    // MCU binds
+#ifndef RTL_NO_BNK01    
+    gMcuPort[0] = mcu_bind_0;
+    gMcuPort[1] = mcu_bind_1;
+    gMcuDataPort[0] = mcu_bind_data_01;
+    gMcuDataPort[1] = mcu_bind_data_01;
+#endif
+#ifndef RTL_NO_BNK23
+    gMcuPort[2] = mcu_bind_2;
+    gMcuPort[3] = mcu_bind_3;
+    gMcuDataPort[2] = mcu_bind_data_23;
+    gMcuDataPort[3] = mcu_bind_data_23;
+#endif
+#ifndef RTL_NO_BNK45
+    gMcuPort[4] = mcu_bind_4;
+    gMcuPort[5] = mcu_bind_5;
+    gMcuDataPort[4] = mcu_bind_data_45;
+    gMcuDataPort[5] = mcu_bind_data_45;
+#endif
+#ifndef RTL_NO_BNK67    
+    gMcuPort[6] = mcu_bind_6;
+    gMcuPort[7] = mcu_bind_7;
+    gMcuDataPort[6] = mcu_bind_data_67;
+    gMcuDataPort[7] = mcu_bind_data_67;
+#endif
+  }
+#endif
+  
+#ifdef NOL2RTL
+  // these are used when L2 is BFMs, not RTL
+  gLdStSyncPort[8] = ldStSync_bind_b0;
+  gLdStSyncPort[9] = ldStSync_bind_b1;
+  gLdStSyncPort[10] = ldStSync_bind_b2;
+  gLdStSyncPort[11] = ldStSync_bind_b3;
+  gLdStSyncPort[12] = ldStSync_bind_b4;
+  gLdStSyncPort[13] = ldStSync_bind_b5;
+  gLdStSyncPort[14] = ldStSync_bind_b6;
+  gLdStSyncPort[15] = ldStSync_bind_b7;
+#endif
+  gLdStSyncPort[16] = ldStSync_bind_b8;
+  
+
+  @(negedge CLOCK);
+
+  // Always Initialize ncu BFM/stub as ACTIVE
+  gCcxDevMem[DEV_NCU] = new(DEV_NCU); // gCcxDevMem[15] #8 mem device
+  gCcxDevice[DEV_NCU] = gCcxDevMem[DEV_NCU]; // generic handle gCcxDevice[16] = gCcxDevMem[8] 
+
+  // Always Initialize core BFMs/stubs if enabled & no real core on port
+  for (i=DEV_SPC0;i<=DEV_SPC7; i++) { // 0-7
+    if (gParam.enableSpcBFM[i])
+      if (gParam.coreAvilable[i]) gCcxDevSpc[i] = new(i,1,0);
+      else gCcxDevSpc[i] = new(i,0,0); 
+    else gCcxDevSpc[i] = null;
+    gCcxDevice[i] = gCcxDevSpc[i]; // generic handle 0-7
+  }
+
+  // Always Initialize L1 duplicate tags, one pair for each core
+  for (i=0;i<8;i++) {
+    if ((useL1Tags || useL2bfms) && gParam.coreAvilable[i]) {
+      dtag[i] = new (DATA_TAG, 127, 3, i);
+      itag[i] = new (INSTR_TAG, 63, 7, i);
+    }
+    else {
+      dtag[i] = null;
+      itag[i] = null;
+    }
+  }
+
+
+  
+  // Initialize L2 BFMs/stubs  8-15
+  // can access as gCcxDevice[8-15]
+  if (useL2bfms) {
+
+    
+    getstate(rstate, this);
+    vera_save_rng_state(this);
+      
+#ifndef RTL_NO_BNK01
+    i = 8;
+    if (gParam.enableMemBFM[i-8]) gCcxDevMem[i] = new(i, ~useL2bfms); // (instance, passive)
+    else gCcxDevMem[i] = null;
+    gCcxDevice[i] = gCcxDevMem[i]; // generic handle gCcxDevice[8] = gCcxDevMem[8]
+    i = 9;
+    if (gParam.enableMemBFM[i-8]) gCcxDevMem[i] = new(i, ~useL2bfms); // (instance, passive)
+    else gCcxDevMem[i] = null;
+    gCcxDevice[i] = gCcxDevMem[i]; // generic handle gCcxDevice[8] = gCcxDevMem[8]
+#endif
+#ifndef RTL_NO_BNK23
+    i = 10;
+    if (gParam.enableMemBFM[i-8]) gCcxDevMem[i] = new(i, ~useL2bfms); // (instance, passive)
+    else gCcxDevMem[i] = null;
+    gCcxDevice[i] = gCcxDevMem[i]; // generic handle gCcxDevice[8] = gCcxDevMem[8]
+    i = 11;
+    if (gParam.enableMemBFM[i-8]) gCcxDevMem[i] = new(i, ~useL2bfms); // (instance, passive)
+    else gCcxDevMem[i] = null;
+    gCcxDevice[i] = gCcxDevMem[i]; // generic handle gCcxDevice[8] = gCcxDevMem[8]
+#endif
+#ifndef RTL_NO_BNK45
+    i = 12;
+    if (gParam.enableMemBFM[i-8]) gCcxDevMem[i] = new(i, ~useL2bfms); // (instance, passive)
+    else gCcxDevMem[i] = null;
+    gCcxDevice[i] = gCcxDevMem[i]; // generic handle gCcxDevice[8] = gCcxDevMem[8]
+    i = 13;
+    if (gParam.enableMemBFM[i-8]) gCcxDevMem[i] = new(i, ~useL2bfms); // (instance, passive)
+    else gCcxDevMem[i] = null;
+    gCcxDevice[i] = gCcxDevMem[i]; // generic handle gCcxDevice[8] = gCcxDevMem[8]
+#endif
+#ifndef RTL_NO_BNK67
+    i = 14;
+    if (gParam.enableMemBFM[i-8]) gCcxDevMem[i] = new(i, ~useL2bfms); // (instance, passive)
+    else gCcxDevMem[i] = null;
+    gCcxDevice[i] = gCcxDevMem[i]; // generic handle gCcxDevice[8] = gCcxDevMem[8]
+    i = 15;
+    if (gParam.enableMemBFM[i-8]) gCcxDevMem[i] = new(i, ~useL2bfms); // (instance, passive)
+    else gCcxDevMem[i] = null;
+    gCcxDevice[i] = gCcxDevMem[i]; // generic handle gCcxDevice[8] = gCcxDevMem[8]
+#endif
+
+    
+    setstate(rstate);
+    vera_restore_rng_state(this);
+  }
+
+
+  // Initialize MCU BFMs/stubs (CMP bench)
+  if (useMCUbfms) {
+    
+    getstate(rstate);
+    vera_save_rng_state(this);
+    
+#ifndef RTL_NO_BNK01
+    gMcuDev[0] = new(gMcuPort[0], gMcuDataPort[0], 0);
+    gMcuDev[1] = new(gMcuPort[1], gMcuDataPort[1], 1);
+#endif
+
+#ifndef RTL_NO_BNK23
+    gMcuDev[2] = new(gMcuPort[2], gMcuDataPort[2], 2);
+    gMcuDev[3] = new(gMcuPort[3], gMcuDataPort[3], 3);
+#endif
+
+#ifndef RTL_NO_BNK45
+    gMcuDev[4] = new(gMcuPort[4], gMcuDataPort[4], 4);
+    gMcuDev[5] = new(gMcuPort[5], gMcuDataPort[5], 5);
+#endif
+
+#ifndef RTL_NO_BNK67
+    gMcuDev[6] = new(gMcuPort[6], gMcuDataPort[6], 6);
+    gMcuDev[7] = new(gMcuPort[7], gMcuDataPort[7], 7);
+#endif
+    
+    
+    setstate(rstate);
+    vera_restore_rng_state(this);
+  }
+  
+
+  // optional packet printing
+  if (gParam.ccxPktPrintOn) {
+    CCXpktMon pktMon[17];
+      
+    
+    getstate(rstate);
+    vera_save_rng_state(this);
+    
+    for (i=DEV_SPC0;i<=DEV_SPC7; i++) { // 0-7
+      if (gParam.coreAvilable[i]) pktMon[i] = new(i, gPcxPort[i], gCpxPort[i]);
+      else pktMon[i] = null;
+    }
+    for (i=DEV_MEM0;i<=DEV_MEM7; i++) {
+      if (gParam.banksMask[i-8]) pktMon[i] = new(i, gPcxPort[i], gCpxPort[i]);
+      else pktMon[i] = null;
+    }
+    pktMon[DEV_NCU] = new(DEV_NCU, gPcxPort[DEV_NCU], gCpxPort[DEV_NCU]);
+
+    
+    setstate(rstate);
+    vera_restore_rng_state(this);
+  }
+
+
+  
+}
+
+
+task CLASSNAME::initDut(integer wait = 0) {
+
+  // wait for reset done
+  if (gProbesPort.$rst_l == 0) @(posedge gProbesPort.$rst_l);
+
+  repeat (wait) @(posedge CLOCK);
+
+  // obsolete
+  //this.enableL2();
+  
+}
+
+/////////////////////////////////////////////////////////////////////////////////
+// This task enables each L2 bank by
+// writing the Control Status Register of that bank.
+// Send a diag store PCX packet
+// review to use boot code
+/////////////////////////////////////////////////////////////////////////////////
+// task  CLASSNAME::enableL2(bit [7:0] enable=8'hff, reg [5:0] useThread=63) {
+// 
+//   PcxPkt     sndPkt;
+//   bit [3:0] i;
+// 
+//   if (gCcxDevSpc[useThread[5:3]] == null)
+//     error("Utils::enableL2 Can't find SPC BFM requested!!!\n");
+//   
+//   for(i=0; i<=7; i++) {
+//     if(enable[i]) {
+//       
+//       sndPkt = new();
+//       sndPkt.sendPort = useThread[5:3];
+//       sndPkt.recvPorts = 1 << i;
+//       sndPkt.valid = 1;
+//       sndPkt.rqtyp = PCX_DIAG_ST;
+//       sndPkt.nc = 1;
+//       sndPkt.cpuId = useThread[5:3];
+//       sndPkt.tid = useThread[2:0];
+//       sndPkt.inv = 1;
+//       sndPkt.pf = 1; 
+//       sndPkt.l1wayBis = 1;
+//       sndPkt.l1wayMMUid = 3;
+//       sndPkt.size = 8'hff;
+//       sndPkt.addr = 40'ha9_0000_0000;
+//       sndPkt.data = 0;
+//       sndPkt.send();
+//       
+//     } // if
+//   } // for
+//   
+// 
+// }
+
+
+
+
+// loop to send periodic interrupt packets like spc2 bench
+task CLASSNAME::sendIntrLoop(integer sendPort = DEV_NCU)
+{
+  reg [5:0] tid, nextTid;
+  CpxPkt     reqPkt;
+  integer maxTid = 0;
+  reg [7:0] tmp;
+
+  if (gParam.intr_en == 0) return;
+  
+  fork {
+
+    tmp = gParam.coreEnable;
+    repeat (8) {
+      if (tmp[0]) maxTid += 8;
+      tmp = tmp >> 1;
+    }
+    maxTid--;
+
+    // # clocks before Intr packets start
+    repeat (gParam.intr_wait) @(posedge CLOCK); 
+
+    // 1st TID that get Interrupt packet
+    if (gParam.intr_tid == -1) {
+      tid = urandom_range(maxTid,0);
+      while (gParam.intr_en[tid] == 0) tid = urandom_range(maxTid,0);
+    }
+    else tid = gParam.intr_tid;  
+    
+    while (1) {
+      // send intr
+      PR_NORMAL (className, MON_NORMAL,
+                    psprintf("Interrupt to thread T%0d (type/vec %b/%b)",
+                             tid,gParam.intr_type,gParam.intr_vect));
+
+      this.sendIntr(tid,gParam.intr_type,gParam.intr_vect); // INTR_RESET,INTR_POR
+
+      // delay
+      repeat (gParam.intr_delay) @(posedge CLOCK); // # clocks between Intr packets
+
+      // pick next tid
+      tid = urandom_range(maxTid,0);
+      while (gParam.intr_en[tid] == 0) tid = urandom_range(maxTid,0);
+    }
+  } join none
+}
+
+// generic call to send intr from NCU port. for $EV user events
+task CLASSNAME::sendIntr(reg [5:0] tid,
+                         reg [1:0] type,
+                         reg [5:0] vect,
+                         integer sendPort = DEV_NCU)
+{
+  CpxPkt     reqPkt;
+
+  reqPkt = new();
+  reqPkt.createIntr(tid,type,vect); // INTR_RESET,INTR_POR
+  reqPkt.sendPorts = 1 << sendPort;
+  reqPkt.targetPorts = 1 << tid[5:3];
+  PR_NORMAL(CLASSNAMEQ, MON_NORMAL,
+            psprintf ("Send Interrupt to C%0d T%0d  type=%b  vector=%b",
+                      tid[5:3],tid[2:0],type,vect));
+  reqPkt.send(1);
+}
+
+
+
+// random evictor for the CMP bench
+// Any L2 BFM can send the eviction packet(s).
+// Requires that the L2$ BFMs be in use!
+task CLASSNAME::randEvict() {
+
+  reg [3:0] sendPort = 15;
+  integer wait;
+  reg [63:0] evictPA;
+  reg [2:0] cidUsed;
+  reg whichCache;
+
+  
+  if (!gParam.inval_rate) return;  
+
+  wait = 100;
+  fork {
+    // not too soon
+    repeat (500) @(posedge CLOCK);
+    
+    while (1) {
+      repeat (wait) @(posedge CLOCK);
+
+      // odds of doing an evict this time
+      randcase {
+        (10000-gParam.inval_rate): continue; // no
+        (gParam.inval_rate): {
+          evictPA = evictAddr(gParam.coreEnable,
+                              cidUsed, // return
+                              *, // reg [3:0] cid = 4'hf,
+                              *); // integer dCacheWeight = 60) // 100 % based
+
+          if (evictPA !== 64'hffffffffffffffff) {
+            sendPort = whichBank(evictPA) + 8; // have to use right bank for this address!!!
+            gCcxDevMem[sendPort].enqueueEvict(gParam.coreEnable,
+                                              evictPA, // evict_pa
+                                              cidUsed, // cid
+                                              whichCache);
+          }
+        }
+      } // rc
+    } // while
+  } join none
+
+}

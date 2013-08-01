@@ -1,0 +1,124 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: mbox_class.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+
+
+//
+// The following are mbox_id variables to be used by either a driver module 
+// or a checker.  These modules will SEND appropriate tokens to this mailbox.  
+// For example the mac_ipp_chkr will get its token from the system mailbox.  
+// After processing the packet, this checker will send the token to the 
+// mac_ipp_chkr[my_port], where my_port is the port that this checker is 
+// residing on.
+class mbox_class {
+
+	integer		pg_mb[16];	    // Packet Generator Outgoing mailbox
+
+        integer         mac_ipp[4];         // MAC-IPP checker
+
+        integer         mac_opp[4];         // MAC-OPP checker
+
+        integer         chk_ntx_mac[4];     // NTX-MAC checker
+
+        integer         chk_opp_mac[4];     // Allocated by OPP_MAC_DRIVER
+
+        integer         mac_loopback[4];
+
+        integer         niu_tx_cb[4];
+        integer         niu_txdrr[4];
+
+
+        integer         niu_rxpath_mb [4];
+        integer         niu_rxpath_sb [4];
+        integer         niu_rxpath_cr;
+        integer         niu_rxpath_rcr_update[32];
+
+        integer         niu_pktcfglp [4]; // to be used for loopbacks through pktcfg
+
+        integer         niu_rxpacket_memchk_mb;
+
+
+        // add mail box for tx dmas txc path for drr 
+
+        integer         tx_dma_mb[32];
+        integer         rx_dma_mb[32];
+
+       // four mailboxes for the control fifo checker
+
+	integer 	cntl_chkr_mbox[4];
+	// mail box for checking function number in neptune
+	integer funcChk;
+
+        // adding a member global tx semaphore for random kicks 
+
+        integer semphore_txpktgen_id;
+
+// The indexes to the mailboxes are set to -1.  This allows driver and/or 
+// checkers to determine if the mailboxes are active prior to use.
+	task new() {
+		integer	n;
+
+		for(n=0;n<16;n++) {
+			pg_mb[n] = -1;
+                   }
+		for(n=0;n<4;n++) {
+                        niu_rxpath_mb[n] = -1;
+                        niu_rxpath_sb[n] = -1;
+			niu_tx_cb[n] = -1;
+			niu_txdrr[n] = -1;
+			niu_pktcfglp[n] = -1;
+			mac_ipp[n] = -1;
+			mac_opp[n] = -1;
+			chk_ntx_mac[n] = -1;
+			chk_opp_mac[n] = -1;
+                        mac_loopback[n] = -1;
+                        cntl_chkr_mbox[n] = -1;
+		}
+  		niu_rxpacket_memchk_mb = -1;
+  		niu_rxpath_cr = -1;
+		funcChk = alloc(MAILBOX,0,1);
+		semphore_txpktgen_id = alloc(MAILBOX,0,1);
+
+
+                for(n=0;n<32;n++) {
+                        tx_dma_mb[n]= - 1;
+                        rx_dma_mb[n]= - 1;
+			niu_rxpath_rcr_update[n] = -1;
+                }
+
+	}  // end of task
+
+}// end of class

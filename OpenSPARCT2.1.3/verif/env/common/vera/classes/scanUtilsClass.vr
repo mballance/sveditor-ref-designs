@@ -1,0 +1,343 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: scanUtilsClass.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <std_display_class.vrh>
+#include <globals.vri>
+
+// TAP specific defines
+#include <systemTapDefines.vri>
+
+// jtag interface
+#include <systemTap.if.vri>
+#include <systemTapClass.vrh>
+#include <tcu_tasks.vrh>
+
+//extern SystemTap dft;
+
+extern "C" task PLI_InitFlopPliWithChaindef_vr(string topMod, integer scanCfg, integer asicGates, integer chainEnable);
+extern "C" function string PLI_JtagShiftExpData_vr(integer chain, string scanIn);
+extern "C" function string PLI_JtagShiftExpDataConcat_vr(string scanIn);
+extern "C" task PLI_JtagCheckExpData_vr(integer chain);
+
+#define CLASSNAME scanUtilities
+
+#define MFG_SCAN_CFG 0
+#define JTAG_SCAN_CHAINSEL_CFG 1
+#define JTAG_SCAN_CONCAT_CFG 2
+#define TT_SCAN_CFG 3
+
+
+#define MAX_SCAN_CHAINS 32
+#define MAX_SHIFT_COUNT 75000
+#define TT_FUNC_CLK_DEFAULT 2
+#define TT_MAX_CMP_CLKS 255
+#define TT_MAX_IO_CLKS 63
+#define MAX_WAIT_BEFORE_SCAN 100
+#define MAX_WAIT_BEFORE_TT 100
+#define MAX_WAIT_AFTER_TT 100
+#define MAX_NUM_OF_SHIFTS 50
+#define BITS_IN_SCAN_STRING 32
+
+class CLASSNAME extends SystemTap {
+	local string className = "scanUtilities";
+	local string topLevel  = "tb_top.cpu";
+	local bit [31:0] chainEn;
+	local integer    scanChainConfig;
+	local integer    maxShift;
+   local integer    asicGatesPresent;
+	local bit [31:0] scanInData;
+	local integer    refModelEnabled;
+  
+   task new (
+		StandardDisplay dbgIn,
+	   integer refModEn=0,
+	   bit [32:0] scanData=33'h100000000
+   );
+   function bit [31:0] getMfgChainEn();
+   function bit [5:0]  getJtagChainEn();
+   function integer    getMaxShiftCount();
+   function integer    checkForAsicGates();
+   task                setupChipForScanDump();
+   function integer    tapJTAGSerscan (
+      integer shiftCount, 
+	   bit [5:0] chainSel, 
+	   integer scanOutChecking
+   );
+   function integer checkIfAsicCluster(
+			integer chain
+	);
+}
+
+
+/////////////////////////////////////////////////////////////////////////////
+task CLASSNAME::new(StandardDisplay dbgIn, integer refModEn=0, bit [32:0] scanData=33'h100000000) {
+  //tap_port = tap_bind;  
+  //dbg = dbgIn;
+  
+
+  //tap_state_reg            = 4'bx;
+  //tap_port.$test_mode      = 1'b0 soft async; // JTAG debug mode unless told to goto manufacturing test
+  //tap_port.$trst_n         = 1'bx soft async;
+  //tap_port.$tdi            = 1'bx soft async;
+  //tap_port.$tms            = 1'b1 soft async;
+  //if (!get_plus_arg(CHECK, "noJtagTapReset")) {
+    //dbg.dispmon(dispmonScope, MON_INFO, "WARNING: systemTapClass.vr : skip calling TapResetType1() to reset TAP");
+    //// Toggle TRST_L 0 -> 1
+    //TapResetType1();
+  //}
+
+	super.new(dbgIn);
+	chainEn = 31'h00000000;
+   asicGatesPresent = 0;
+	scanChainConfig = JTAG_SCAN_CHAINSEL_CFG;
+
+	if (scanData[32]==1) {
+      scanInData = urandom();
+	}
+	else {
+      scanInData = scanData[31:0];
+	}
+
+	refModelEnabled = refModEn;
+}
+
+function bit [31:0] CLASSNAME::getMfgChainEn() {
+   if (get_plus_arg(CHECK, "chainsel=")) {
+      chainEn = get_plus_arg(HNUM, "chainsel=");
+      `PR_ALWAYS(className, MON_ALWAYS, psprintf("Chain Enable is: %0h\n", chainEn));
+   }
+	else {
+      `PR_ALWAYS(className, MON_ALWAYS, psprintf("Chain Enable is: %0h\n", chainEn));
+	}
+	getMfgChainEn = chainEn;
+}
+
+function bit [5:0] CLASSNAME::getJtagChainEn() {
+   chainEn[5] = 1'b1;
+   if (get_plus_arg(CHECK, "chainsel=")) {
+	   chainEn[4:0] = get_plus_arg(NUM, "chainsel=");
+		scanChainConfig = JTAG_SCAN_CHAINSEL_CFG;
+      `PR_ALWAYS(className, MON_ALWAYS, psprintf("Chain Enable is: %d\n", chainEn));
+   }
+   else {
+	   // concat all chains
+      chainEn[5] = 1'b0;
+		scanChainConfig = JTAG_SCAN_CONCAT_CFG;
+      `PR_ALWAYS(className, MON_ALWAYS, psprintf("No chain enable selected; scanning all chains concatonated\n"));
+   }
+	getJtagChainEn = chainEn;
+}
+
+function integer CLASSNAME::getMaxShiftCount() {
+   if (get_plus_arg(CHECK, "maxchain=")) {
+	   maxShift = get_plus_arg(NUM, "maxchain=");
+   }
+   else
+   {
+	   maxShift = MAX_SHIFT_COUNT;
+   }
+	`PR_ALWAYS(className, MON_ALWAYS ,psprintf("Maximum number of scan shifts is %d\n", maxShift));
+	getMaxShiftCount = maxShift;
+}
+
+function integer CLASSNAME::checkForAsicGates() {
+   if (get_plus_arg(CHECK, "asicGates")) {
+	   asicGatesPresent = 1;
+	   `PR_ALWAYS(className, MON_ALWAYS ,psprintf("Asic gates are present in model\n"));
+   }
+	checkForAsicGates = asicGatesPresent;
+}
+
+task CLASSNAME::setupChipForScanDump() {
+   if (asicGatesPresent) {
+		`PR_ALWAYS(className, MON_ALWAYS ,psprintf("Configuring pli to look for flops in the asic clusters"));
+	}
+   else {
+		`PR_ALWAYS(className, MON_ALWAYS ,psprintf("Pli will bypass asic clusters when looking for flops (rtl)"));
+	}
+
+   PLI_InitFlopPliWithChaindef_vr(topLevel, scanChainConfig, asicGatesPresent, chainEn);
+}
+
+function integer CLASSNAME::tapJTAGSerscan(integer shiftCount, bit [5:0] chainSel, integer scanOutChecking) {
+   integer patBitSel, chainTotal, i;
+   integer sawPattern;
+	string  refModTdo;
+	bit [31:0] scanOutDataSeen;
+	bit [0:0]  prevTdi;
+
+	`PR_ALWAYS(className, MON_ALWAYS, psprintf("Chain: %0d, Enabled: %01b \n", chainSel[4:0], chainSel[5]));
+   tapJTAGSerscan = 0;
+
+   patBitSel  = 0;
+   chainTotal = 0;
+   scanOutDataSeen = BITS_IN_SCAN_STRING'b0;
+
+	`PR_ALWAYS(className, MON_ALWAYS, psprintf("Data pattern shifted in will be %d\n", scanInData));
+	if (refModelEnabled) `PR_ALWAYS(className, MON_ALWAYS, psprintf("Enabling scan chain reference model\n"));
+
+	// JTAG instructions to kick-off serscan
+	`PR_ALWAYS(className, MON_ALWAYS, psprintf("TapIRLoad of TAP_SCAN_SERIAL_SEL\n"));
+   void = dft.TapIRLoad(TAP_SCAN_SERIAL_SEL);
+   void = dft.TapDRLoad(dft.cnv2str(chainSel,6));
+	`PR_ALWAYS(className, MON_ALWAYS, psprintf("TapIRLoad of TAP_SCAN_SERIAL\n"));
+   void = dft.TapIRLoad(TAP_SCAN_SERIAL);
+   dft.TapGoto(TAP_SHIFT_DR);
+	`PR_ALWAYS(className, MON_ALWAYS, psprintf("Begin shifting...\n"));
+
+   sawPattern=0;
+   repeat(shiftCount) 
+	{
+		dft.tap_port.$tdi = scanInData[patBitSel];
+
+	   @(posedge dft.tap_port.$tck);
+
+	   scanOutDataSeen[30:0] = scanOutDataSeen[31:1];
+	   scanOutDataSeen[31]   = dft.tap_port.$tdo;
+
+		if (refModelEnabled && chainTotal>0) {
+	      `PR_ALWAYS(className, MON_ALWAYS, psprintf("Shifting Scan Chain Reference Model\n"));
+	      if (chainSel[5]==1'b0)  {
+				refModTdo = PLI_JtagShiftExpDataConcat_vr(dft.cnv2str(prevTdi,1));
+			}
+		   else {
+				refModTdo = PLI_JtagShiftExpData_vr(chainSel[4:0], dft.cnv2str(prevTdi,1));
+			}
+
+			if (refModTdo != dft.BinToChar(scanOutDataSeen[31])) {
+	         `PR_ERROR(className, MON_ERROR, psprintf("ERROR: tdo value from Scan Chain Reference Model did not match actual tdo value"));
+	         `PR_ERROR(className, MON_ERROR, psprintf("Expected tdo value=%s, Actual tdo value=%s\n", 
+							refModTdo, dft.BinToChar(scanOutDataSeen[31])));
+			}
+
+	      `PR_ALWAYS(className, MON_ALWAYS, psprintf("Checking Scan Chain Reference Model\n"));
+	      if (chainSel[5]==1'b0)  {
+				PLI_JtagCheckExpData_vr(31);
+			}
+		   else {
+				PLI_JtagCheckExpData_vr(chainSel[4:0]);
+			}
+		}
+
+		// save for reference model
+	   prevTdi = scanInData[patBitSel];
+
+	   patBitSel = (patBitSel+1) % BITS_IN_SCAN_STRING;
+	   chainTotal++;
+	   tapJTAGSerscan = chainTotal;
+
+		if ((chainTotal%500)==0)
+		{
+	      `PR_ALWAYS(className, MON_ALWAYS, psprintf("Flops shifted=%d", chainTotal));
+		}
+
+		if (scanOutChecking)
+		{
+	      if (scanOutDataSeen===scanInData) 
+	      {
+            sawPattern=1;
+	         `PR_ALWAYS(className, MON_ALWAYS, psprintf("TDO saw pattern shifted into TDI (%BITS_IN_SCAN_STRINGb)", scanOutDataSeen));
+	         `PR_ALWAYS(className, MON_ALWAYS, psprintf("Final flop count=%d\n", chainTotal));
+	         break;
+         }
+		}
+   }
+
+	if (scanOutChecking)
+	{
+	   if (!sawPattern)
+	   {
+		   `PR_ERROR(className, MON_ERR, psprintf("\nDiag Finished with ERRORs\n"
+			          "FAILED: NO MATCH AFTER =%d cycles\n\n", chainTotal));
+	   }
+	}
+
+
+	`PR_ALWAYS(className, MON_ALWAYS, psprintf("tapJTAGSerscan(): Done shifting\n"));
+
+   // Cannot count the final word shift
+   tapJTAGSerscan = (tapJTAGSerscan>BITS_IN_SCAN_STRING) ? tapJTAGSerscan-BITS_IN_SCAN_STRING : tapJTAGSerscan; 
+
+	//void = dft.TapIRLoad(TAP_BYPASS_INST);
+	//dft.TapGoto(TAP_IDLE);
+	`PR_ALWAYS(className, MON_ALWAYS, psprintf("Done tapJTAGSerscan\n"));
+}
+
+
+/*
+task shiftScanChainModel(bit[5:0] chain_sel)
+{
+   StandardDisplay dbg;
+   string className = "shiftScanChainModel"; 
+
+   @(probe_if.jtag_instr);
+   while (probe_if.jtag_instr != 8'h80)
+   {
+      // wait until we see the TAP_SERSCAN instruction
+      @(probe_if.jtag_instr);
+   }
+  
+   @(posedge probe_if.shift_dr_state);
+   @(negedge dft.tap_port.$tck);    // no shift on first tck
+   while (probe_if.shift_dr_state==1)
+   {
+      @(negedge dft.tap_port.$tck);
+      dbg.dispmon(className, MON_ALWAYS, psprintf("shiftScanChainModel(): Shifting scan chain model\n"));
+      //if (chain_sel[5] == 1'b0) verilog_PLI_jtag_shift_exp_data_concat(dft.tap_port.$tdi);
+      PLI_JtagShiftExpData_vr(chain_sel[4:0], "1");
+     
+      @(posedge dft.tap_port.$tck);
+      dbg.dispmon(className, MON_ALWAYS, psprintf("shiftScanChainModel(): Checking scan chain model\n"));
+      if (chain_sel[5] == 1'b0)  PLI_JtagCheckExpData_vr(31);
+      else                       PLI_JtagCheckExpData_vr(chain_sel[4:0]);
+   }
+}
+*/
+
+function integer CLASSNAME::checkIfAsicCluster(integer chain) {
+   if ((chain==19) ||
+       (chain==21) ||
+       (chain==20) ||
+       (chain==28) ||
+       (chain==29) ||
+       (chain==30)) {
+      checkIfAsicCluster=1;
+   }
+   else {
+      checkIfAsicCluster=0;
+   }
+}
+
+

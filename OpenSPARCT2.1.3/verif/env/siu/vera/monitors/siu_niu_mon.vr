@@ -1,0 +1,326 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: siu_niu_mon.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "siumon.if.vrh"
+#include "siumon_ports_binds.vrh"
+#include "std_display_class.vrh"
+#include "siu_niu_packet.vrh"
+#include "siu_monitor.vrh"
+
+class siu_niu_monitor {
+	niumon_port monitor;
+
+	local integer niu_credit;
+
+	siu_niu_packet snd_packet;
+	siu_niu_packet rec_packet;
+	integer snd_mbox, rec_mbox; 
+
+	StandardDisplay dbg;
+	string myname;
+
+	task new (niumon_port monitor, integer snd_mbox, integer rec_mbox, StandardDisplay dbg);
+	
+	task monitor_send ();
+	task monitor_recv ();
+	task monitor_niudq ();
+
+	function integer get_send_pkt(Cycle_Mode mode, integer cycle);
+	function integer check_send(Cycle_Mode mode);
+	function integer get_recv_pkt(Cycle_Mode mode, integer cycle);
+	function integer check_recv(Cycle_Mode mode);
+}
+
+task siu_niu_monitor::new(niumon_port monitor, integer snd_mbox, integer rec_mbox, StandardDisplay dbg)
+{
+	this.monitor = monitor;
+
+	snd_packet = new(RDD, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+	rec_packet = new(RDD, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+	
+	this.dbg = dbg;
+	myname = "siu-niu";
+	niu_credit = NIU_SIO_CREDIT;
+	this.snd_mbox = snd_mbox;
+	this.rec_mbox = rec_mbox;
+
+	dbg.dispmon(myname, MON_NORMAL, psprintf ("monitor ready !"));
+
+	fork { monitor_send(); } join none
+	fork { monitor_recv(); } join none
+	fork { monitor_niudq(); } join none
+}
+
+task siu_niu_monitor::monitor_niudq()
+{
+	while (1)
+	{
+		@(posedge monitor.$clk);
+		if (monitor.$niu_dq === 1'b1 && monitor.$rreq !== 1'b1)
+		{
+			niu_credit++;
+			dbg.dispmon (myname, MON_INFO, psprintf ("niu_sio_dq credit = %1d", niu_credit));
+		}
+	}	
+}
+
+task siu_niu_monitor::monitor_send()
+{
+siu_niu_packet packet;
+integer i, data_cycles;
+integer fail, result, temp;
+string t, p, q;
+
+	while (1)
+	{
+		@(posedge monitor.$clk);
+		if (monitor.$sreq === 1'b1)
+		{
+			data_cycles = 0;
+			fail = 0;
+			temp = 0;
+
+			// header
+			result = get_send_pkt(HEADER_C, 1);	
+			fail = check_send(HEADER_C);
+
+			if (snd_packet.type == RDD)
+			{	t="R"; p="N"; }
+			else
+			{  
+				t="W";
+				p=(snd_packet.posted) ? "P" : "N";
+			}
+			q = (snd_packet.bypass) ? "bypass" : "order";
+			dbg.dispmon (myname, MON_NORMAL, psprintf ("snd [%s%s,%4x,%10x] %s", t, p, snd_packet.id, snd_packet.pa, q));
+
+			// data
+			if (monitor.$sdatareq === 1'b1) 
+				data_cycles = 4;
+			for (i=0; i<data_cycles; i++)
+			{
+				@(posedge monitor.$clk);
+				result = get_send_pkt(DATA_C, i);
+				temp = check_send(DATA_C);
+				fail += temp;
+			}
+
+			if (fail != 0)
+			  dbg.dispmon(myname, MON_ERR, psprintf ("niu -> siu pkt=%x protocol fail!", snd_packet.id));
+			else
+				mailbox_put(snd_mbox, snd_packet);
+		}
+	}
+}
+
+task siu_niu_monitor::monitor_recv()
+{
+integer i, result, fail, temp, data_cycles;
+
+	while (1)
+	{
+		@(posedge monitor.$clk);
+		if (monitor.$rreq === 1'b1)
+		{
+			if (monitor.$niu_dq !== 1'b1)
+				niu_credit--;
+
+			data_cycles = 0;
+			fail = 0;
+			temp = 0;
+
+			result = get_recv_pkt(HEADER_C, 1);
+			fail = check_recv(HEADER_C);
+
+			if (niu_credit < 0)
+				dbg.dispmon(myname, MON_ERR, psprintf ("rec [%4x] credit underflow = %1d!", rec_packet.id, niu_credit));
+			else
+				dbg.dispmon (myname, MON_NORMAL, psprintf ("rec [%4x] credit = %1d", rec_packet.id, niu_credit));
+
+
+			// data
+			if (monitor.$rdatareq === 1'b1) data_cycles = 4;
+			for (i=0; i<data_cycles; i++)
+			{
+				@(posedge monitor.$clk);
+				result = get_recv_pkt(DATA_C, i);
+				temp = check_recv(DATA_C);
+				fail += temp;
+			}
+
+			if (fail != 0)
+			  dbg.dispmon(myname, MON_ERR, psprintf ("siu -> niu pkt=%x protocol fail!", rec_packet.id));
+			else
+				mailbox_put(rec_mbox, rec_packet);
+		}
+	}
+}
+
+function integer siu_niu_monitor::get_send_pkt(Cycle_Mode mode, integer cycle)
+{
+	if (mode == HEADER_C)
+	{
+		// bypass
+		snd_packet.bypass = monitor.$bypass;
+		// take header
+		snd_packet.posted = monitor.$sdata[126];	
+		snd_packet.id = monitor.$sdata[79:64];
+		snd_packet.pa = monitor.$sdata[39:0];
+		snd_packet.tout = monitor.$sdata[82];
+		snd_packet.ue = monitor.$sdata[81];
+		snd_packet.uce = monitor.$sdata[80];
+		// type
+		if (monitor.$sdatareq === 1'b0)
+			snd_packet.type = RDD;
+		else
+		if (monitor.$sdatareq === 1'b1)
+			snd_packet.type = WRI;
+	}
+	if (mode == DATA_C)
+	{
+		snd_packet.data[cycle*2] = monitor.$sdata[63:0];	
+		snd_packet.data[cycle*2+1] = monitor.$sdata[127:64];	
+	}
+}
+
+function integer siu_niu_monitor::check_send(Cycle_Mode mode)
+{
+	integer fail = 0;
+	reg posted = monitor.$sdata[126];
+
+	if (mode == HEADER_C)
+	{
+		if (monitor.$sdatareq === 1'b0)
+		{
+			if (monitor.$sdata[127:122] !== 6'b001010)
+			{
+				fail++;
+				dbg.dispmon(myname, MON_NORMAL, psprintf ("send: invalid RDD header"));
+			}
+		}
+		if (monitor.$sdatareq === 1'b1)
+		{
+			if (monitor.$sdata[127:122] !== {1'b0, posted, 4'b0010} )
+			{
+				fail++;
+				dbg.dispmon(myname, MON_NORMAL, psprintf ("send: invalid RDD header"));
+			}
+		}
+
+		/* Comment out for RAS, will add back when stable
+		if (monitor.$sdata[121:83] !== 39'b0 || monitor.$sdata[63:40] !== 24'b0)
+		{
+			fail++;
+			dbg.dispmon(myname, MON_NORMAL, psprintf ("send: header error, reserved bits not zero"));
+		}
+		*/
+	} 
+	if (mode == DATA_C)
+	{
+		if (monitor.$sreq === 1'b1 || monitor.$sdatareq === 1'b1)
+		{
+			fail++;
+			dbg.dispmon(myname, MON_NORMAL, psprintf ("send: req error, active in data cycles"));
+		}
+	}
+
+	check_send = fail;
+}
+
+function integer siu_niu_monitor::get_recv_pkt(Cycle_Mode mode, integer cycle)
+{
+	if (mode == HEADER_C)
+	{
+		// take header
+		rec_packet.posted = monitor.$rdata[126];	
+		rec_packet.id = monitor.$rdata[79:64];
+		rec_packet.pa = monitor.$rdata[39:0];
+		rec_packet.tout = monitor.$rdata[82];
+		rec_packet.ue = monitor.$rdata[81];
+		rec_packet.uce = monitor.$rdata[80];
+		// type
+		if (monitor.$rdatareq === 1'b0)
+			rec_packet.type = WRI;
+		else
+		if (monitor.$rdatareq === 1'b1)
+			rec_packet.type = RDD;
+	}
+	if (mode == DATA_C)
+	{
+		rec_packet.data[cycle*2] = monitor.$rdata[63:0];	
+		rec_packet.data[cycle*2+1] = monitor.$rdata[127:64];	
+	}
+}
+
+function integer siu_niu_monitor::check_recv(Cycle_Mode mode)
+{
+	integer fail = 0;
+	reg posted = monitor.$rdata[126];
+
+	if (mode == HEADER_C)
+	{
+		if (monitor.$rdatareq === 1'b0)
+		{
+		  if (monitor.$rdata[127:122] !== 6'b100010)
+		  {
+		  	fail++;
+		  	dbg.dispmon(myname, MON_NORMAL, psprintf ("recv: invalid WRI ack header %b", monitor.$rdata[127:122]));
+		  }
+		}
+		if (monitor.$rdatareq === 1'b1)
+		{
+		  if (monitor.$rdata[127:122] !== 6'b101010)
+		  {
+		  	fail++;
+		  	dbg.dispmon(myname, MON_NORMAL, psprintf ("recv: invalid RDD rtn header %b", monitor.$rdata[127:122]));
+		  }
+		}
+
+		if (monitor.$rdata[121:83] !== 39'b0 || monitor.$rdata[63:62] !== 2'b0 || monitor.$rdata[55:40] !== 16'b0)
+		{
+			fail++;
+			dbg.dispmon(myname, MON_NORMAL, psprintf ("recv: header error, reserved bits not zero"));
+		}
+	} 
+	if (mode == DATA_C)
+	{
+		if (monitor.$rreq === 1'b1)
+		{
+			fail++;
+			dbg.dispmon(myname, MON_NORMAL, psprintf ("recv: req error, active in data cycles"));
+		}
+	}
+
+	check_recv = fail;
+}

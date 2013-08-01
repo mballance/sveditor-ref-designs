@@ -1,0 +1,234 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuEgressContext.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class ilupeuEgressContext extends ilupeuContextBase {
+
+
+  //Inherited from CTContextBase
+  //integer       NumStrat;
+  //string        Name = "";
+  //protected    CTTransactionID      ID = new;  
+  
+
+  // Strategy Type Encoding
+  protected integer strat_type_tlp_enc;
+  protected integer strat_type_dllp_enc;
+
+  local bit     HangDetect = 0;
+  local integer WaitCount;
+
+  // Constructor
+  task new ( ReportClass     _Report,
+             CSRCollection   _CSR,
+             ilupeuPodClass  _Pod, 	//Xactors
+             ilupeuScenario  _Scenario );	//Xactors
+ 
+  // Public Methods
+  task Execute();
+
+  
+  function CTStrategyBase ProvideTlpStrategy();
+  function CTStrategyBase ProvideDllpStrategy();
+  function CTStrategyBase FinalizeTlpParms( CTStrategyBase FinalStrategy );
+  function CTStrategyBase FinalizeDllpParms( CTStrategyBase FinalStrategy );
+
+}	//End ilupeuEgressContext extends CTContextBase
+
+task ilupeuEgressContext::new ( ReportClass     _Report,
+                               CSRCollection    _CSR,
+                               ilupeuPodClass    _Pod,
+                               ilupeuScenario    _Scenario)
+{
+    
+  string Name = "ilupeuEgressContext" ;
+
+  super.new ( _Report,
+              _CSR,
+              _Pod, 
+              _Scenario,
+              Name );
+
+
+}	//End ilupeuEgressContext::new
+
+function CTStrategyBase ilupeuEgressContext::ProvideTlpStrategy()
+{
+  // All Supported TLP Strategies Should Be Listed Here
+  ilupeuEgressTlpStrategy  TlpStrat;
+ 
+  //Provide the strategy based on test parameters
+  randcase{
+
+     Scenario.EgrTlpWt: {
+          
+        strat_type_tlp_enc = ILUPEU_TLP_STRAT_ENC;
+        TlpStrat = new ( Report,
+                         CSR,
+                         Pod,
+                         Scenario ) ;
+
+        ProvideTlpStrategy = TlpStrat;
+     }
+  }
+} 	//End ilupeuEgressContext::ProvideTlpStrategy()
+
+
+function CTStrategyBase ilupeuEgressContext::ProvideDllpStrategy()
+{
+/* review
+  // All Supported DLLP Strategies Should Be Listed Here
+  ilupeuEgressDllpFCStrategy DllpFCStrat;
+//  ilupeuEgressDllpPMStrategy DllpPMStrat;
+ 
+  //Provide the strategy based on test parameters
+  randcase{
+     Scenario.EgrDllpFCWt: {
+          
+        strat_type_dllp_enc = ILUPEU_DLLP_FC_STRAT_ENC;
+        DllpFCStrat = new ( Report,
+                            CSR,
+                            Pod,
+                            Scenario ) ;
+
+        ProvideDllpStrategy = DllpFCStrat;
+     }
+
+     Scenario.EgrDllpPMWt: {
+          
+        strat_type_dllp_enc = ILUPEU_DLLP_PM_STRAT_ENC;
+        DllpPMStrat = new ( Report,
+                            CSR,
+                            Pod,
+                            Scenario ) ;
+
+        ProvideDllpStrategy = DllpPMStrat;
+     }
+  }
+*/
+}	//End ilupeuEgressContext::ProvideDllpStrategy()
+
+function CTStrategyBase ilupeuEgressContext::FinalizeTlpParms( CTStrategyBase FinalStrategy )
+{
+
+  // All Supported TLP Strategies Should Be Listed Here
+  ilupeuEgressTlpStrategy  TlpStrat;
+
+  //Cast assign to the correct Type
+  case( strat_type_tlp_enc ){
+     ILUPEU_TLP_STRAT_ENC  :    cast_assign( TlpStrat, FinalStrategy );
+
+     default : QuickReport( Report, RTYP_TEST_ERROR,
+                           "ilupeuEgressContext FinalizeTlpParms() -> hit default case strat_type_tlp_enc=%0d",
+                           strat_type_tlp_enc );
+  }
+
+  //Set up Necessary Parameters 
+  case( strat_type_tlp_enc ){
+     ILUPEU_TLP_STRAT_ENC     :    FinalizeTlpParms = TlpStrat;
+  }
+
+}	//End ilupeuEgressContext::FinalizeParms
+
+
+function CTStrategyBase ilupeuEgressContext::FinalizeDllpParms( CTStrategyBase FinalStrategy )
+{
+/*
+  // All Supported DLLP Strategies Should Be Listed Here
+//review - Will allow ilupeu and denali to handle all flow control
+  ilupeuEgressDllpFCStrategy DllpFCStrat;
+//  ilupeuEgressDllpPMStrategy DllpPMStrat;
+
+  //Cast assign to the correct Type
+  case( strat_type_dllp_enc ){
+     ILUPEU_DLLP_FC_STRAT_ENC :    cast_assign( DllpFCStrat, FinalStrategy );
+//     ILUPEU_DLLP_PM_STRAT_ENC :    cast_assign( DllpPMStrat, FinalStrategy );
+
+     default : QuickReport( Report, RTYP_TEST_ERROR,
+                           "ilupeuEgressContext FinalizeDllpParms() -> hit default case strat_type_dllp_enc=%0d",
+                           strat_type_dllp_enc );
+  }
+
+  //Set up Necessary Parameters 
+  case( strat_type_dllp_enc ){
+     ILUPEU_DLLP_FC_STRAT_ENC :    FinalizeDllpParms = DllpFCStrat;
+//     ILUPEU_DLLP_PM_STRAT_ENC :    FinalizeDllpParms = DllpPMStrat;
+  }
+*/
+}	//End ilupeuEgressContext::FinalizeDllpParms
+
+task ilupeuEgressContext::Execute() {
+
+  //Determine the number of strategies for each type 
+  tlpNumStrat = RandUtil.Rand32( Scenario.EgrTlpMinStrats, Scenario.EgrTlpMaxStrats );
+  dllpNumStrat = RandUtil.Rand32( Scenario.EgrDllpMinStrats, Scenario.EgrDllpMaxStrats );
+
+  //Set the min and max issue delay values 
+  tlpMinDelay = Scenario.EgrTlpMinIssueDly;
+  tlpMaxDelay = Scenario.EgrTlpMaxIssueDly;
+  dllpMinDelay = Scenario.EgrDllpMinIssueDly;
+  dllpMaxDelay = Scenario.EgrDllpMaxIssueDly;
+
+  //Set the min and max active strats values
+  tlpMinActiveStrats = Scenario.EgrTlpMinActiveStrats;
+  tlpMaxActiveStrats = Scenario.EgrTlpMaxActiveStrats;
+  dllpMinActiveStrats = Scenario.EgrDllpMinActiveStrats;
+  dllpMaxActiveStrats = Scenario.EgrDllpMaxActiveStrats;
+
+  QuickReport( Report,RTYP_INFO, "Starting Context %s ID = %0d tlpNumStrat=%0d dllpNumStrat=%0d",
+                       Name, ID.GetContextID(), tlpNumStrat,dllpNumStrat );
+
+  //Fork off a seperate thread for TLP's and DLLP's for better control
+  fork
+  { 
+      if( tlpNumStrat > 0 && Scenario.EgrTlpWt > 0 ){ 
+         ExecuteTlp();
+      }   
+  } 
+  {
+      if( dllpNumStrat > 0 && ( Scenario.EgrDllpFCWt > 0 || Scenario.EgrDllpPMWt > 0 ) ){
+         ExecuteDllp();
+      }  
+  }
+  join
+
+  //Delay to let any Report Errors filter through
+  repeat(20) @(posedge CLOCK);
+
+  QuickReport( Report,RTYP_INFO, "Finishing Context %s ID = %0d",
+                       Name,
+                       ID.GetContextID() );
+
+}
+ 
+

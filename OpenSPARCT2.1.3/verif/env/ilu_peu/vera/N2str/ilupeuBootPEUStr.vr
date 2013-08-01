@@ -1,0 +1,592 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuBootPEUStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class BootPEUStr extends PEUStrBase
+  {
+
+/*  Only need 1 Report object and Xtr's will be instantiated
+    in the Pod class
+  local DMUXtr f_DMUXtr;
+
+  local ReportClass f_CSRXtrReport;
+
+  local ReportClass f_PECXtrReport;
+  local PECXtrBaseConfiguration f_PECXtrConfig;
+  local PECXtrBaseErrorCenter f_PECXtrError;
+  local PECXtrTop f_PECXtr;
+
+  local ReportClass f_PCIEXtrReport;
+  local PECXtrBaseErrorCenter f_PCIEXtrError;
+  local PCIEXtrAPI f_PCIEXtr;
+
+  local LPUXtr f_LPUXtr;
+*/
+
+  local integer initPostHdr;		// Initial posted header credits
+  local integer initPostData;		// Initial posted data credits
+  local integer initNpstHdr;		// Init'l non-posted hdr credits
+  local integer initNpstData;		// Init'l non-posted data credits
+  local integer initCplnHdr;		// Init'l completion hdr credits
+  local integer initCplnData;		// Init'l completion data credits
+  local integer initRetry;		// Init'l LPU retry-buffer size/credits
+  local bit     envIntEnable;		// Should the env't monitor interrupts?
+
+  public integer _numPhyLanes;
+  public integer _numActiveLanes;
+  public bit     _fastTrain;
+  public PECBool  _txEnableScramble;
+  public PECBool  _rxEnableScramble;
+
+  public integer _FCTxTimeOutPosted;
+  public integer _FCTxTimeOutNonPosted;
+  public integer _FCTxTimeOutCompletion;
+
+  public integer _reset_txCycleQuantity;
+  public integer _bypass_txCycleQuantity;
+  public integer _detect_txCycleQuantity;
+
+  public integer _polling_active_txCycles;
+  public integer _polling_configuration_txCycles;
+
+  public integer _configuration_linkwidth_start_txCycles;
+  public integer _configuration_linkwidth_accept_txCycles;
+  public integer _configuration_lanenum_wait_txCycles;
+  public integer _configuration_lanenum_accept_txCycles;
+  public integer _configuration_complete_txCycles;
+  public integer _configuration_idle_txCycles;
+
+  public integer _recovery_rcvr_lock_txCycles;
+  public integer _recovery_rcvr_cfg_txCycles;
+  public integer _recovery_idle_txCycles;
+
+//N2 classes
+  local ilupeuCSR f_CSRXtr;
+  protected ReportClass Report;
+  protected ilupeuPodClass Pod;
+  protected CSRCollection  CSR;
+  protected ilupeuScenario Scenario;
+  string Name;
+
+  //Init Strategy
+#ifdef N2_FC
+  N2fcInitStrategy    InitStrat;
+#else
+  ilupeuInitStrategy  InitStrat;
+#endif
+  
+//END N2 classes
+
+  task new( ReportClass _Report,
+            ilupeuScenario _Scenario )
+    {
+    super.new(null);
+    Report = _Report;
+    Scenario = _Scenario;
+    initPostHdr = 16;
+    initPostData = 64;
+    initNpstHdr = 16;
+    initNpstData = 64;
+    initCplnHdr = 16;
+    initCplnData = 64;
+    initRetry = 4096;
+    envIntEnable = 1; //lets start by defaulting to ints enabled;
+
+    this._numPhyLanes = 8;
+    this._numActiveLanes = 8;
+    this._fastTrain = 1;
+    this._txEnableScramble = e_false;
+    this._rxEnableScramble = e_false;
+
+    this._FCTxTimeOutPosted = 75;
+    this._FCTxTimeOutNonPosted = 75;
+    this._FCTxTimeOutCompletion = 75;
+
+    this._reset_txCycleQuantity = 72;
+    this._bypass_txCycleQuantity = 12;
+    this._detect_txCycleQuantity = 16;
+
+    this._polling_active_txCycles = 16;
+    this._polling_configuration_txCycles = 16;
+
+    this._configuration_linkwidth_start_txCycles = 0;
+    this._configuration_linkwidth_accept_txCycles = 0;
+    this._configuration_lanenum_wait_txCycles = 0;
+    this._configuration_lanenum_accept_txCycles = 0;
+    this._configuration_complete_txCycles = 16;
+    this._configuration_idle_txCycles = 16;
+
+    this._recovery_rcvr_lock_txCycles = 0;
+    this._recovery_rcvr_cfg_txCycles = 16;
+    this._recovery_idle_txCycles = 16;
+  }
+
+  task Execute()
+    {
+
+/*  N2 - Use the Pod and Init Strategy to handle initialization
+    Need to map variables below to Scenario
+    bit  usePCIE;
+
+    // Are we using the PCI-Express xactor?
+    usePCIE = get_plus_arg( CHECK, "LPU" );
+    if ( usePCIE )
+      printf( "BootPEUStr: Using PCI-Express transactor with LPU\n" );
+    else
+      printf( "BootPEUStr: Using PEC core transactor (without LPU)\n" );
+
+
+    if ( usePCIE )
+    {
+      //
+      // Instantiate the PCI Express transactor (early)
+      //
+
+      f_PCIEXtrReport = new();
+      f_PCIEXtrReport.set_global_print_threshold( RPRT_NONMASKABLE );
+
+      f_PECXtrConfig = new( bindTlpIngress, bindTlpEgress, // po_pxPkt
+                            bindFcEgress, bindFcIngress,   // po_pxFC
+                            bindPecClk, bindPecClk,        // po_pxTimerClock
+                            bindXtrClk );		   // XactorClk
+
+      f_PECXtrConfig._txInitalPostedHeaderCredit = initPostHdr;
+      f_PECXtrConfig._txInitalPostedDataCredit = initPostData;
+      f_PECXtrConfig._txInitalNonPostedHeaderCredit = initNpstHdr;
+      f_PECXtrConfig._txInitalNonPostedDataCredit = initNpstData;
+      f_PECXtrConfig._txInitalCompletionHeaderCredit = initCplnHdr;
+      f_PECXtrConfig._txInitalCompletionDataCredit = initCplnData;
+
+      f_PCIEXtrError = new(f_PCIEXtrReport);
+
+      f_PCIEXtr = new(f_PCIEXtrReport,          // ReportClass a_report
+                      bd_pxATimerClock,         // po_pxTimerClock a_SKPTxClock
+                      bd_pxATimerClock,         // po_pxTimerClock a_SKPRxClock
+                      bd_pxATimerClock,         // po_pxTimerClock a_FCTxClock
+                      bd_pxATimerClock,         // po_pxTimerClock a_FCRxClock
+                      bd_pxATimerClock,         // po_pxTimerClock a_SNTxClock
+                      bd_pxATimerClock,         // po_pxTimerClock a_SNRxClock
+                      bd_pxATimerClock,         // po_pxTimerClock a_APIClock
+
+                      0,                        // integer a_xid
+                      "PCIEXtr0",               // string a_name
+                      this._numPhyLanes,        // integer a_numPhyLanes
+                      this._numActiveLanes,     // integer a_numActiveLanes
+
+                      0,                        // integer a_txIdleCyclesAfterTLP
+                      0,                        // integer a_txIdleCyclesAfterDLLP
+
+                      e_false,                // PECBool a_bypassFlowControlInit
+
+                      initPostHdr,              // bit [7:0] a_txInitalPostedHeaderCredit
+                      initNpstHdr,              // bit [7:0] a_txInitalNonPostedHeaderCredit
+                      initCplnHdr,              // bit [7:0] a_txInitalCompletionHeaderCredit
+
+                      initPostData,             // bit [11:0] a_txInitalPostedDataCredit
+                      initNpstData,             // bit [11:0] a_txInitalNonPostedDataCredit
+                      initCplnData,             // bit [11:0] a_txInitalCompletionDataCredit
+
+                      8'h_20,                   // bit [7:0] a_rxInitalPostedHeaderCredit
+                      8'h_10,                   // bit [7:0] a_rxInitalNonPostedHeaderCredit
+                      8'h_00,                   // bit [7:0] a_rxInitalCompletionHeaderCredit
+
+                      12'h_0C0,                 // bit [11:0] a_rxInitalPostedDataCredit
+                      12'h_000,                 // bit [11:0] a_rxInitalNonPostedDataCredit
+                      12'h_000,                 // bit [11:0] a_rxInitalCompletionDataCredit
+
+                      this._FCTxTimeOutPosted,
+                      this._FCTxTimeOutNonPosted,
+                      this._FCTxTimeOutCompletion,
+
+                      e_false,                // PECBool a_FCViolatePosted
+                      e_false,                // PECBool a_FCViolateNonPosted
+                      e_false,                // PECBool a_FCViolateCompletion
+
+                      150,                      // integer a_SNTxTimeOut
+                      450,                      // integer a_SNRxTimeOut
+
+                      3,                        // integer a_SKPTxLength
+                      1180,                     // integer a_SKPTxTimeOut
+                      5664,                     // integer a_SKPRxTimeOut
+
+                      e_false,                // PECBool a_bypassLinkTraining
+
+                      0,                        // integer a_linkNum
+                      140,                      // integer a_txNFTS
+                      140,                      // integer a_rxNFTS
+
+                      this._txEnableScramble,   // PECBool a_txEnableScramble
+                      this._rxEnableScramble,   // PECBool a_rxEnableScramble
+
+                      this._reset_txCycleQuantity,
+                      this._bypass_txCycleQuantity,
+                      this._detect_txCycleQuantity,
+
+                      this._polling_active_txCycles,
+                      this._polling_configuration_txCycles,
+
+                      this._configuration_linkwidth_start_txCycles,
+                      this._configuration_linkwidth_accept_txCycles,
+                      this._configuration_lanenum_wait_txCycles,
+                      this._configuration_lanenum_accept_txCycles,
+                      this._configuration_complete_txCycles,
+                      this._configuration_idle_txCycles,
+
+                      this._recovery_rcvr_lock_txCycles,
+                      this._recovery_rcvr_cfg_txCycles,
+                      this._recovery_idle_txCycles
+                      );
+
+
+      f_PCIEXtr.enableAutoTxAck();
+    }
+    // Wait for reset to be asserted
+    @( posedge CLOCK );
+*/
+
+					/* Gotta push credit stuff into the
+					   TLU during reset!                  */
+					/* These interfaces are not connected
+					   to anything if the LPU exists.     */
+/* N2 - 
+    if ( !usePCIE )
+    {
+      TLU_EgressCredit.type = 0;
+      TLU_EgressCredit.vc = 0;
+      TLU_EgressCredit.retry = initRetry;
+    }
+*/
+
+/* N2 - - Enabled in the Pod
+    //
+    // Fire up the CSR-ring transactor
+*/
+
+/* N2 - Use the InitStrategy
+    if ( !usePCIE )
+    {
+      // ...and hook-up the AHB port to the TLU (eventually)
+      TLU_AHB.Srdata = 32'b0;
+      TLU_AHB.Sready = 1'b0;
+      TLU_AHB.Sresp = 2'b0;
+
+      // ...and tell the TLU what the LPU's thinking about
+      TLU_PM.dllprecv = 3'b0;
+      TLU_PM.curr = 3'b001;       // Say that we're currently in L0
+      TLU_PM.status = 8'b0;	// Say that we're busy busy busy!
+      TLU_Control.int = 1'b0;
+      TLU_Control.reset = 1'b0;
+      TLU_Control.ue = 8'b0;
+      TLU_Control.ce = 8'b0;
+      TLU_Control.oe = 8'b0;
+      TLU_Control.status = 8'b0;  // Say that the data-link is inactive
+      TLU_Control.dbga = 8'b0;
+      TLU_Control.dbgb = 8'b0;
+    }
+*/
+
+/* N2 Use the Pod to enable the Xtr's
+    //
+    // Instantiate the DMU transactor.
+    //
+    ILU_EgressPEC.enq = 1'b0;
+    ILU_IngressPEC.deq = 1'b0;
+    ILU_IngressRel.enq = 1'b0;
+    ILU_IngressData.addr = 8'b0;
+
+    TLU_IngressTLP.cmd = 3'b0;
+    TLU_EgressTLP.dack = 1'b0;
+    TLU_Control.link = 1'b0;
+
+    f_DMUXtr = new( bindDMUingress, bindDMUegress );
+    f_DMUXtr.enableXtr();
+
+    //
+    // Instantiate the PEC transactor.
+    //
+    if ( !usePCIE )
+      {
+      f_PECXtrReport = new();
+      f_PECXtrReport.set_global_print_threshold( RPRT_NONMASKABLE );
+      f_PECXtrConfig = new( bindTlpIngress, bindTlpEgress, // po_pxPkt
+                            bindFcEgress, bindFcIngress,   // po_pxFC
+                            bindPecClk, bindPecClk,        // po_pxTimerClock
+                            bindXtrClk );		   // XactorClk
+
+      f_PECXtrConfig._txInitalPostedHeaderCredit = initPostHdr;
+      f_PECXtrConfig._txInitalPostedDataCredit = initPostData;
+      f_PECXtrConfig._txInitalNonPostedHeaderCredit = initNpstHdr;
+      f_PECXtrConfig._txInitalNonPostedDataCredit = initNpstData;
+      f_PECXtrConfig._txInitalCompletionHeaderCredit = initCplnHdr;
+      f_PECXtrConfig._txInitalCompletionDataCredit = initCplnData;
+
+      f_PECXtrError = new(f_PECXtrReport);
+      f_PECXtr = new( f_PECXtrError, f_PECXtrConfig );
+      f_PECXtr.enableXtr();
+      }
+
+    // Start the "LPU transactor" which combines the PEC and PCIE transactors.
+    f_LPUXtr = new( usePCIE );
+    if ( usePCIE )
+    {
+      f_LPUXtr.usePCIEX( f_PCIEXtr, f_PECXtrConfig, f_PCIEXtrError,
+                         // these may be needed to instance a new transactor
+                         this._numPhyLanes,
+                         this._numActiveLanes,
+                         this._fastTrain,
+                         this._txEnableScramble,
+                         this._rxEnableScramble,
+
+                         this._FCTxTimeOutPosted,
+                         this._FCTxTimeOutNonPosted,
+                         this._FCTxTimeOutCompletion,
+
+                         this._reset_txCycleQuantity,
+                         this._bypass_txCycleQuantity,
+                         this._detect_txCycleQuantity,
+
+                         this._polling_active_txCycles,
+                         this._polling_configuration_txCycles,
+
+                         this._configuration_linkwidth_start_txCycles,
+                         this._configuration_linkwidth_accept_txCycles,
+                         this._configuration_lanenum_wait_txCycles,
+                         this._configuration_lanenum_accept_txCycles,
+                         this._configuration_complete_txCycles,
+                         this._configuration_idle_txCycles,
+
+                         this._recovery_rcvr_lock_txCycles,
+                         this._recovery_rcvr_cfg_txCycles,
+                         this._recovery_idle_txCycles
+                        );
+    } else {
+      f_LPUXtr.usePEC( f_PECXtr, f_PECXtrConfig, f_PECXtrError );
+    }
+
+END - N2 Use the Pod to enable the Xtr's
+*/
+
+    //Instantiate the Pod here that holds the enabled 
+    // DMUXtr and FNXPCIEXactor and CSR-ring transactor
+    Pod = new( Report ); //
+
+    // Wait for reset to be asserted
+    @( posedge CLOCK );
+
+                                        /* Gotta push credit stuff into the
+                                           TLU during reset!                  */
+    //Initialize the csr's and handle reset
+    InitStrat = new ( Report,
+                      Pod.CSRXtr.CSR,
+                      Pod,
+                      Scenario );
+    
+    InitStrat.Execute();
+
+    //
+    // Fire up the environment after reset ends
+    //
+//N2    @( posedge CLOCK );
+//N2    TLU_Control.link = void;
+
+    f_env = new( Pod,
+                 Scenario,
+                 initRetry );
+    f_env.enableEnv( envIntEnable );
+
+    //Set the Denali lane skew 
+    setLaneSkew();
+
+/* N2 
+    if ( usePCIE )
+    {
+      fork
+      {
+        f_LPUXtr.collectTLP();
+      }
+      join none
+    }
+*/
+
+    // All done!
+    } /* end Execute */
+
+  task reBoot(){
+
+    //Initialize the csr's and handle reset
+    InitStrat = new ( Report,
+                      Pod.CSRXtr.CSR,
+                      Pod,
+                      Scenario );
+    InitStrat.RetrainInit();
+    InitStrat.Execute();
+
+    
+    //Enable the Interrupts
+    fork
+    f_env.monitorInt(1);
+    join none
+
+    //Set the Denali lane skew 
+    setLaneSkew();
+  }
+
+  task slowClock( bit halfSpeed )
+    {
+//N2 review    ENV_Control.slow <= halfSpeed;		// Undriven means 200Mhz
+    return;
+    } // end slowClock //
+  task setClkSkew( integer skew )
+    {
+//N2 review    ENV_Control.clkskew <= skew;
+    return;
+    } // end setClkSkew //
+  task setClkDrift( integer drift )
+    {
+//N2 review    ENV_Control.clkdrift <= drift;
+    return;
+    } // end setClkDrift //
+  task setDriftPeriod( integer period )
+    {
+//N2 review    ENV_Control.driftperiod <= period;
+    return;
+    } // end setDriftPeriod //
+
+  task setResetLength( integer clks )
+    {
+    return;
+    } 
+  task setPostedCredits( integer hdr, integer data )
+    {
+    //N2 -Don't know if I still need these set so leave alone 
+    initPostHdr = hdr;
+    initPostData = data;
+    //N2 -Also set the Scenario 
+    Scenario.denaliInitialPostedHeaderCredit = hdr;
+    Scenario.denaliInitialPostedDataCredit = data;
+    //
+    return;
+    } // end setPostedCredits //
+  task setNonpostedCredits( integer hdr, integer data )
+    {
+    //N2 -Don't know if I still need these set so leave alone 
+    initNpstHdr = hdr;
+    initNpstData = data;
+    //N2 -Also set the Scenario 
+    Scenario.denaliInitialNonPostedHeaderCredit = hdr;
+    Scenario.denaliInitialNonPostedDataCredit = data;
+    return;
+    } // end setNonpostedCredits //
+  task setCompletionCredits( integer hdr, integer data )
+    {
+    //N2 -Don't know if I still need these set so leave alone 
+    initCplnHdr = hdr;
+    initCplnData = data;
+    //N2 -Also set the Scenario 
+    Scenario.denaliInitialCompletionHeaderCredit = hdr;
+    Scenario.denaliInitialCompletionDataCredit = data;
+    return;
+    } // end setCompletionCredits //
+  task setRetryCredits( integer retry )
+    {
+    if ( retry >= 512 )
+      initRetry = retry - (retry%16);
+    return;
+    } // end setRetryCredits //
+  task disableInterrupts()
+    {
+    envIntEnable = 0;
+    return;
+    } // end disableInterrupts //
+  task setPhyConfig( integer a_numPhyLanes = 8,
+                     integer a_numActiveLanes = 8,
+                     bit a_fastTrain = 1,
+                     PECBool a_txEnableScramble = e_false,
+                     PECBool a_rxEnableScramble = e_false
+                    )
+    {
+    this._numPhyLanes      = a_numPhyLanes;
+    this._numActiveLanes   = a_numActiveLanes;
+    this._fastTrain        = a_fastTrain;
+    this._txEnableScramble = a_txEnableScramble;
+    this._rxEnableScramble = a_rxEnableScramble;
+
+    // These are the timing parameters for fast and slow training
+    this._detect_txCycleQuantity  = ( this._fastTrain ) ? 16 : 3000000;
+    this._polling_active_txCycles = ( this._fastTrain ) ? 16 : 1500;
+
+    return;
+    } // end setPhyConfig //
+  task getPhyConfig( var integer a_numPhyLanes,
+                     var integer a_numActiveLanes,
+                     var bit a_fastTrain,
+                     var PECBool a_txEnableScramble,
+                     var PECBool a_rxEnableScramble
+                    )
+    {
+    a_numPhyLanes      = this._numPhyLanes;
+    a_numActiveLanes   = this._numActiveLanes;
+    a_fastTrain        = this._fastTrain;
+    a_txEnableScramble = this._txEnableScramble;
+    a_rxEnableScramble = this._rxEnableScramble;
+    return;
+    } // end getPhyConfig //
+  /*
+   * getEnv - Return the initialized test environment
+   */
+  function PEUTestEnv getEnv()
+    {
+    getEnv = f_env;
+    } /* end getEnv */
+
+  task setLaneSkew(){
+
+     f_env.setDenaliLaneSkew( 0, 0, 0, 0,
+                              Scenario.Lane0Skew );
+     f_env.setDenaliLaneSkew( 1, 0, 0, 0,
+                              Scenario.Lane1Skew );
+     f_env.setDenaliLaneSkew( 2, 0, 0, 0,
+                              Scenario.Lane2Skew );
+     f_env.setDenaliLaneSkew( 3, 0, 0, 0,
+                              Scenario.Lane3Skew );
+     f_env.setDenaliLaneSkew( 4, 0, 0, 0,
+                              Scenario.Lane4Skew );
+     f_env.setDenaliLaneSkew( 5, 0, 0, 0,
+                              Scenario.Lane5Skew );
+     f_env.setDenaliLaneSkew( 6, 0, 0, 0,
+                              Scenario.Lane6Skew );
+     f_env.setDenaliLaneSkew( 7, 0, 0, 0,
+                              Scenario.Lane7Skew );
+  }
+
+  } /* end BootPEUStr */

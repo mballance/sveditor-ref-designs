@@ -1,0 +1,250 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: pcg_data_gen.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+task data_gen(integer type, integer seed, integer len, byte_array buf, var integer offset, bit[63:0] options,
+		pg my_root, integer tagged, integer ifedx) {
+	integer min,max,n,o,b,l;
+	bit [15:0] tmp16;
+	bit [7:0] tmp8,s;
+	integer exact_len;
+	integer	debug_dg = 1;
+
+	if(debug_dg)	printf("DEBUG: PG: data_gen: input: type: %0d (%h), len: %0d, offset: %0d, tagged: %0d, ifedx: %0d\n",
+			type,type,len,offset,tagged,ifedx);
+
+
+	exact_len = (type & DAT_LEN_EXACT) ? 1 : 0;
+	exact_len = ptr_to_first_pg.check_option(type, DAT_LEN_EXACT);
+	type = type & DAT_TYPE_MASK;
+
+	if(len<0)	exact_len = 1;
+
+	case(len) {
+	   -1:	len = 64;
+	   -2:	len = 128;
+	   -3:	len = 256;
+	   -4:	len = 512;
+	   -5:	len = 1024;
+	   -6:	len = (tagged) ? 1522 : 1518;
+	   -7:	{
+//			len = random(seed);
+			len = random();
+			min = 64;
+			max = (tagged) ? 1522 : 1518;
+			while(len<min | len>max)	len = random();
+		}
+	   -8:	len = 63-offset-4;
+	   -9:	len = 65-offset-4;
+	   -10:	len = (tagged) ? 1521 : 1517;
+	   -11:	len = (tagged) ? 1523 : 1519;
+	   }
+
+	if(exact_len)	{
+			len = len-offset-4;
+			if(ifedx)	len = len - 4;
+	} else		len = len - 2;		// Compensate for token
+
+	if(len<0) {
+		len = 0;
+		if(!quiet_on) printf("PG[%0d]: WARNING: Data length (payload) is zero.\n",my_port);
+	   }
+
+	o=offset;	// Safe offset
+	b = seed;
+
+	if( my_root != null & check_option(options, O_FRM_LEN_ERR2) )
+		len = cfg_reg[CFG_FRM_LEN] - offset -4;
+
+	if(debug_dg)	printf("DEBUG: PG: data_gen: offset: %0d, len: %0d type: %0d\n",o,len,type);
+
+	l = 1;
+	case(type) {
+	   DAT_RAND:{
+			// Do not Set Seed not required in Vera, creates problem
+//			random(seed);
+			random();
+
+			// Fill bufffer with random data
+			for(n=0;n<len;n++)	buf.val[offset++]=random();
+		   }
+
+	   DAT_SEQ:	// Fill bufffer with Sequential
+			for(n=0;n<len;n++)	{
+				//printf("Payload[%0d]=%0d\n",n,seed);
+				buf.val[offset++]=seed++;
+			   }
+
+	   DAT_W1: 	// Fill with walking ones
+			for(n=0;n<len;n++) {
+				tmp8 = 0;
+				tmp16=n;
+				if(l==1) {
+					l=0;	
+					if(b<8)	tmp8[7-b++] = 1;
+					s = tmp8;
+				   } else {
+					l=1;	
+					if( s==0 )
+						if(b>7)	tmp8[15-b++] = 1;
+				   }
+				if(b>15)        b = 0;
+				buf.val[offset++] = tmp8;
+			   }
+	   DAT_W0: 	// Fill with walking ones
+			for(n=0;n<len;n++) {
+				tmp8 = 8'hff;
+				if(l==1) {
+					l=0;	
+					if(b<8)	tmp8[7-b++] = 0;
+					s = tmp8;
+				   } else {
+					l=1;	
+					if( s==8'hff )
+						if(b>7)	tmp8[15-b++] = 0;
+				   }
+				if(b>15)        b = 0;
+				buf.val[offset++] = tmp8;
+			   }
+	   DAT_FC_PAUSE:	// Frame Control Pause Frame
+			{
+			len = 64-offset-4;
+			o = offset;
+			for(n=0;n<len;n++)	buf.val[offset++] = 0;
+			'{buf.val[o++], buf.val[o++]} = FC_PAUSE_OPCODE;
+			'{buf.val[o++], buf.val[o++]} = seed;	// Pause Time
+			}
+	   DAT_FC_PAUSE_ERR:	// Frame Control Pause Frame With opcode error
+			{
+			bit [15:0] tmp16 = cfg_reg[CFG_CRC_MASK];
+			len = 64-offset-4;
+			o = offset;
+			for(n=0;n<len;n++)	buf.val[offset++] = 0;
+			'{buf.val[o++], buf.val[o++]} = FC_PAUSE_OPCODE ^ tmp16;
+			'{buf.val[o++], buf.val[o++]} = seed;	// Pause Time
+			}
+	   default:
+		{
+			print_err();
+			printf("PG: Data Gen: invalid type (%0d)\n",type);
+		}
+	   }
+
+	if(debug_dg & 0)
+	   for(n=0;n<len;n++)
+			printf("PG: Data Gen: buf[%0d]: %h\n",o+n,buf.val[o+n]);
+   }
+
+
+function bit [31:0]  crc_gen(byte_array p, integer start, integer len) {
+	bit [31:0]  tmp0, poly;
+	integer i;
+
+printf("CRC Function is called \n");
+
+tmp0 = 32'hffff_ffff;
+
+for(i=start;i<len;i=i+1) begin  // For each byte in buffer
+        tmp0 = crc32_add( p.val[i], tmp0 );
+   end   
+tmp0 = ~tmp0;
+
+// Reverse bit and byte order ...
+for(i=0;i<32;i=i+1)
+        crc_gen[i] = tmp0[31-i];
+
+tmp0 = crc_gen;
+crc_gen[31:24] = tmp0[07:00];
+crc_gen[23:16] = tmp0[15:08];
+crc_gen[15:08] = tmp0[23:16];
+crc_gen[07:00] = tmp0[31:24];
+
+}
+
+
+local function bit [31:0] crc32_add(bit [7:0] data, bit [31:0] crc) {
+       	bit feedback;
+       	integer i;                    
+
+for(i=0;i<8;i=i+1) begin
+	// 
+	// CRC-32
+	// Polynominal = x32 + x26 + x23 +x22 + x16 + x12 + x11 + x10
+	//                   + x8 + x7 + x5 + x4 + x2 + x + 1
+	//
+	feedback    = crc[31] ^ data[i]; 
+        crc[31:27] = crc[30:26]; 
+	crc[26] = crc[25] ^ feedback;
+	crc[25] = crc[24];
+	crc[24] = crc[23];
+	crc[23] = crc[22] ^ feedback;
+	crc[22] = crc[21] ^ feedback;
+	crc[21:17] = crc[20:16];
+	crc[16] = crc[15] ^ feedback;
+	crc[15:13] = crc[14:12];
+	crc[12] = crc[11] ^ feedback;
+	crc[11] = crc[10] ^ feedback;
+	crc[10] = crc[9] ^ feedback;
+	crc[9] = crc[8];
+	crc[8] = crc[7] ^ feedback;
+	crc[7] = crc[6] ^ feedback;
+	crc[6] = crc[5];
+	crc[5] = crc[4] ^ feedback;
+	crc[4] = crc[3] ^ feedback;
+	crc[3] = crc[2];
+	crc[2] = crc[1] ^ feedback;
+	crc[1] = crc[0] ^ feedback;
+        crc[0] = feedback;
+   end
+
+crc32_add = crc;
+
+}
+
+function integer check_option(bit [63:0] option, bit [63:0] flag) {
+	if((option[63:0] & flag[63:0]) > 64'h0)	check_option = 1;
+	else					check_option = 0;
+   }
+
+
+function bit [7:0] class_mask(integer funct, bit[7:0] a, bit[7:0] b) {
+        case(funct) {
+           CLF_SRC: class_mask = a;
+           CLF_DST: class_mask = b;
+           CLF_OR:  class_mask = a && b;
+           CLF_AND: class_mask = a || b;
+           default: class_mask = 8'h00;
+           }
+   }
+
+

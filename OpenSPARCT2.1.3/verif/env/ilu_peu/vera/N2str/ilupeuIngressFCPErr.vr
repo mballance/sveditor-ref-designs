@@ -1,0 +1,218 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuIngressFCPErr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class ilupeuIngressFCPErr  extends PEUStrBase 
+  {
+  integer f_errQueue;				// A mailbox for bad pkt headers
+
+  integer nmbrFCPErrsToInject = 10;	//Total number of packets that get error injected
+  //Set the percentage weight of each type of FCP errors 
+  integer DLLP_FCP_Infinite_FC_PH_ErrWeight = 0; 
+  integer DLLP_FCP_Infinite_FC_PD_ErrWeight = 0; 
+  integer DLLP_FCP_Infinite_FC_NPH_ErrWeight = 0; 
+  integer DLLP_FCP_Infinite_FC_NPD_ErrWeight = 0; 
+  integer DLLP_FCP_Infinite_FC_CLPH_ErrWeight = 0; 
+  integer DLLP_FCP_Infinite_FC_CLPD_ErrWeight = 0; 
+
+  integer DLLP_FCP_Infinite_FC_all_P_ErrWeight = 0; 
+  integer DLLP_FCP_Infinite_FC_all_NP_ErrWeight = 0; 
+  integer DLLP_FCP_Infinite_FC_all_CLP_ErrWeight = 0; 
+
+  integer DLLP_FCP_over128_FC_PH_ErrWeight = 0; 
+  integer DLLP_FCP_over2048_FC_PD_ErrWeight = 0; 
+  integer DLLP_FCP_over128_FC_NPH_ErrWeight = 0; 
+  integer DLLP_FCP_over2048_FC_NPD_ErrWeight = 0; 
+  integer DLLP_FCP_over128_FC_CLPH_ErrWeight = 0; 
+  integer DLLP_FCP_over2048_FC_CLPD_ErrWeight = 0; 
+
+
+  denaliPcieEiTypeT DenaliErrortype; 
+  bit [FNX_PCIE_XTR_DLLP_TYPE_WIDTH-1:0] DLLPtype; 
+
+  //Only allow 1 of these strategies to be active at a time
+  static integer FCPErr_semaphore = alloc(SEMAPHORE, 0, 1, 1);
+
+  task new( PEUTestEnv a_env )
+    {
+    super.new( a_env );
+    f_errQueue = 0;
+    }
+
+  task SetErrQueue( integer a_queue )
+    {
+    f_errQueue = a_queue;
+    } /* end SetErrQueue */
+
+  task Execute()
+    {
+    integer nmbrErrs;
+    integer DLLPFCPErrsInject_freq = 100;     // freq of clock cycles to inject this error
+    integer nmbrFCPErrsInjected; 
+    
+
+    integer FC_H_random ; 
+    integer FC_D_random; 
+    integer FC_H_over128; 
+    integer FC_D_over2048; 
+    integer HdrFC; 
+    integer DataFC; 
+    string  FCtype = ""; 
+
+    //Get the semaphore when its your turn
+    semaphore_get( WAIT, FCPErr_semaphore, 1);
+
+
+
+    //Clear all the specific error trackers
+    nmbrFCPErrsInjected = 0; 
+
+   // create random number to cause Ack/Nak DLLP type
+     DLLPFCPErrsInject_freq   = (urandom() % 20) + 20;
+
+//      PCIEDllpTrans = new( Pod.FNXPCIEBldr );
+
+    //inject errors until all the errors are injected 
+     while (nmbrFCPErrsToInject > nmbrFCPErrsInjected) {
+
+       
+    // adjust FC credit  number between 1 to FFx for header, between 1 to FFFx for data  
+      FC_H_random  = (urandom() % 254) + 1;  
+      FC_D_random  = (urandom() % 4094) + 1;  
+
+      FC_H_over128  = (urandom_range(256, 129) );  
+      FC_D_over2048  = (urandom_range(4000, 2049));  
+
+       //determine the type of errors inject based on the weight specified in the testcase 
+       randcase {
+           // for infinite case.
+           DLLP_FCP_Infinite_FC_PH_ErrWeight: {f_env.FCP_inject = 1; FCtype = "PH"; HdrFC = FC_H_random; DataFC = 0 ;}
+           DLLP_FCP_Infinite_FC_PD_ErrWeight: {f_env.FCP_inject = 1; FCtype = "PD"; HdrFC = 0; DataFC = FC_D_random ;}
+           DLLP_FCP_Infinite_FC_NPH_ErrWeight: {f_env.FCP_inject = 1; FCtype = "NPH"; HdrFC = FC_H_random; DataFC = 0 ;}
+           DLLP_FCP_Infinite_FC_NPD_ErrWeight: {f_env.FCP_inject = 1; FCtype = "NPD"; HdrFC = FC_H_random; DataFC = FC_D_random ;}
+           DLLP_FCP_Infinite_FC_CLPH_ErrWeight: {f_env.FCP_inject = 1; FCtype = "CLPH"; HdrFC = FC_H_random; DataFC = 0 ;}
+           DLLP_FCP_Infinite_FC_CLPD_ErrWeight: {f_env.FCP_inject = 1; FCtype = "CLPD"; HdrFC = 0; DataFC = FC_D_random ;}
+
+           DLLP_FCP_Infinite_FC_all_P_ErrWeight: {f_env.FCP_inject = 1; FCtype = "all_P"; HdrFC = FC_H_random; DataFC = FC_D_random ;}
+           DLLP_FCP_Infinite_FC_all_NP_ErrWeight: {f_env.FCP_inject = 1; FCtype = "all_NP"; HdrFC = FC_H_random; DataFC = FC_D_random ;}
+           DLLP_FCP_Infinite_FC_all_CLP_ErrWeight: {f_env.FCP_inject = 1; FCtype = "all_CLP"; HdrFC = FC_H_random; DataFC = FC_D_random ;}
+
+           // for FC over limit case.
+//            DLLP_FCP_over128_FC_PH_ErrWeight: {f_env.FCP_inject = 1; FCtype = "PH"; HdrFC = FC_H_over128; DataFC = f_env.Scenario.denaliInitialPostedDataCredit ;}
+//            DLLP_FCP_over2048_FC_PD_ErrWeight: {f_env.FCP_inject = 1; FCtype = "PD"; HdrFC = f_env.Scenario.denaliInitialPostedHeaderCredit; DataFC = FC_D_over2048 ;}
+//            DLLP_FCP_over128_FC_NPH_ErrWeight: {f_env.FCP_inject = 1; FCtype = "NPH"; HdrFC = FC_H_over128; DataFC = f_env.Scenario.denaliInitialNonPostedDataCredit ;}
+//            DLLP_FCP_over2048_FC_NPD_ErrWeight: {f_env.FCP_inject = 1; FCtype = "NPD"; HdrFC = f_env.Scenario.denaliInitialNonPostedHeaderCredit; DataFC = FC_D_over2048 ;}
+//            DLLP_FCP_over128_FC_CLPH_ErrWeight: {f_env.FCP_inject = 1; FCtype = "CLPH"; HdrFC = FC_H_over128; DataFC = f_env.Scenario.denaliInitialCompletionDataCredit ;}
+//            DLLP_FCP_over2048_FC_CLPD_ErrWeight: {f_env.FCP_inject = 1; FCtype = "CLPD"; HdrFC = f_env.Scenario.denaliInitialCompletionHeaderCredit; DataFC = FC_D_over2048 ;}
+
+           DLLP_FCP_over128_FC_PH_ErrWeight: {f_env.FCP_P_inject = 1; FCtype = "PH"; HdrFC = FC_H_over128; DataFC = f_env.Scenario.denaliInitialPostedDataCredit ;}
+           DLLP_FCP_over2048_FC_PD_ErrWeight: {f_env.FCP_P_inject = 1; FCtype = "PD"; HdrFC = f_env.Scenario.denaliInitialPostedHeaderCredit; DataFC = FC_D_over2048 ;}
+           DLLP_FCP_over128_FC_NPH_ErrWeight: {f_env.FCP_NP_inject = 1; FCtype = "NPH"; HdrFC = FC_H_over128; DataFC = f_env.Scenario.denaliInitialNonPostedDataCredit ;}
+           DLLP_FCP_over2048_FC_NPD_ErrWeight: {f_env.FCP_NP_inject = 1; FCtype = "NPD"; HdrFC = f_env.Scenario.denaliInitialNonPostedHeaderCredit; DataFC = FC_D_over2048 ;}
+           DLLP_FCP_over128_FC_CLPH_ErrWeight: {f_env.FCP_CPL_inject = 1; FCtype = "CLPH"; HdrFC = FC_H_over128; DataFC = f_env.Scenario.denaliInitialCompletionDataCredit ;}
+           DLLP_FCP_over2048_FC_CLPD_ErrWeight: {f_env.FCP_CPL_inject = 1; FCtype = "CLPD"; HdrFC = f_env.Scenario.denaliInitialCompletionHeaderCredit; DataFC = FC_D_over2048 ;}
+
+       }
+
+     f_env.Report.report(RTYP_DEBUG_3, "AC: at time %0d, FC_type to be sent = %0s \n", get_time(LO), FCtype);  
+
+     // sending the intended FC update 
+     if (FCtype == "PH" || FCtype == "PD" || FCtype == "all_P") {
+       // DLLPtype = FNX_PCIE_XTR_DLLP_TYPE_UPDATE_FC_P;  
+       DLLPtype = {FNX_PCIE_XTR_FC_DLLP_TYPE_UPDATE_FC_P, 3'b000 };  
+     }
+     if (FCtype == "NPH" || FCtype == "NPD" || FCtype == "all_NP") {
+       // DLLPtype = FNX_PCIE_XTR_DLLP_TYPE_UPDATE_FC_NP;  
+       DLLPtype = {FNX_PCIE_XTR_FC_DLLP_TYPE_UPDATE_FC_NP, 3'b000}; 
+     }
+     if (FCtype == "CLPH" || FCtype == "CLPD" || FCtype == "all_CLP") {
+       // DLLPtype = FNX_PCIE_XTR_DLLP_TYPE_UPDATE_FC_CPL;  
+       DLLPtype = {FNX_PCIE_XTR_FC_DLLP_TYPE_UPDATE_FC_CPL, 3'b000}; 
+       
+     }
+
+
+     f_env.Endpoint_send_FC_update(DLLPtype, HdrFC, DataFC ); 
+
+     
+     f_env.Report.report( RTYP_DEBUG_3, "FCP_P_inject = %d, FCP_NP_inject = %d, FCP_CPL_inject = %d \n", f_env.FCP_P_inject, f_env.FCP_NP_inject, f_env.FCP_CPL_inject); 
+      
+     nmbrFCPErrsInjected += 1; 
+       printf("AC: ilupeuIngressFCPErr injects error:  nmbrFCPErrsInjected=%0d nmbrFCPErrsToInject=%0d \n",nmbrFCPErrsInjected, nmbrFCPErrsToInject);
+
+     repeat (DLLPFCPErrsInject_freq) @(posedge CLOCK); 
+    } 
+
+    //Delay to allow the last error to propogate before checking
+    repeat( 100 ) @(posedge CLOCK);    
+
+    //Track possible errors based on the type of errors injected 
+    nmbrErrs = 0;         // number of error type that got set.  
+
+
+    if (nmbrFCPErrsInjected == 1) {
+     nmbrErrs += 1;         // only primary error got set.
+    }
+    else if (nmbrFCPErrsInjected > 1) {
+     nmbrErrs += 2;         // both primary and secondary errors got set.
+    }
+
+    printf("AC: nmbrErrs = %d \n", nmbrErrs); 
+
+    
+
+    if( f_errQueue != 0 ){
+
+       // note: bx = no header to check 
+       //       bx0 = error above is optional.  clear it if it's set
+        
+       mailbox_put( f_errQueue, e_ERR_none );
+       mailbox_put( f_errQueue, nmbrErrs );
+
+     if (nmbrFCPErrsInjected >= 1) {
+       mailbox_put( f_errQueue, e_ERR_ue_fcp );    //  e_ERR_ue_fcp =  Flow control protocol error 
+       mailbox_put( f_errQueue, 128'bx );
+     }
+     if (nmbrFCPErrsInjected > 1) {
+       mailbox_put( f_errQueue, e_ERR_ue_fcp );    //  e_ERR_ue_fcp =  Flow control protocol error
+       mailbox_put( f_errQueue, 128'bx );
+     }
+     
+    } // f_errQueue !=0 
+
+    repeat( 10 ) @(posedge CLOCK);    
+    semaphore_put( FCPErr_semaphore, 1 );
+
+    } /* end Execute */
+
+  } /* end IngressUnsupportDLLPErr */

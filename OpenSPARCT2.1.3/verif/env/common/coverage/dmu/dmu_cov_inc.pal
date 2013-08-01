@@ -1,0 +1,69 @@
+.##########################################################################
+.#
+.# File:	dmu_cov_inc.pal
+.#
+.# Description:
+.# -----------
+.#	Common Pal header file that uses a map of the sys(tem) being
+.#	simulated 
+.#	.# $Id$
+.#
+.##########################################################################
+. $sys		= "DMU";	# default system being simulated
+// This is the dram monitor path where all signals are brought in
+.	$DMU_PATH 		= "`TOP_MOD.cpu.dmu";
+.	$DMC_PATH 		= "`TOP_MOD.cpu.dmu.dmc";
+.	$DSN_PATH 		= "`TOP_MOD.cpu.dmu.dsn";
+.	$IOMMU_PATH		= "`TOP_MOD.cpu.dmu.dmc.mmu";
+
+.###########################################################################
+.# toggle - use to generate toggle type coverage for a signal or field.
+.# just pass the number of bits in the variable. Use like this:
+.#
+.# sample variable_toggle_sample (variable[5:0]) {
+.# . &toggle(6); 
+.# }
+.#
+.##########################################################################
+.sub toggle {
+.  local($num_bits) = @_;
+.  
+.  for($i=$num_bits-1; $i >= 0; $i--) {                   
+.    printf ("  wildcard state s_bit_%02d_0 ( %d\'b", $i, $num_bits );
+.    for($j=$num_bits-1; $j >= 0; $j--) {                 
+.      if( $i == $j ) { print "0"; }                      
+.      else           { print "x"; }                      
+.    }                                                    
+.    print " );\n";                                       
+.    printf ("  wildcard state s_bit_%02d_1 ( %d\'b", $i, $num_bits );
+.    for($j=$num_bits-1; $j >= 0; $j--) {                 
+.      if( $i == $j ) { print "1"; }                      
+.      else           { print "x"; }                      
+.    }                                                    
+.    print " );\n";                                       
+.  }
+.}
+.
+.###########################################################################
+.# toggle2 - use to generate toggle type coverage for a signal or field.
+.# just pass the number of bits in the variable andn its name like this:
+.#
+.# sample variable_toggle_sample (variable[5:0]) {
+.# . &toggle2(6, "variable" ); 
+.# }
+.#
+.# &toggle uses wildcards which are said to hurt performance. This uses
+.# a different technique.
+.##########################################################################
+.#sub toggle2 {
+.#  local($num_bits,$variable) = @_;
+.#  
+.#  for($i=$num_bits-1; $i >= 0; $i--) {                   
+.#    printf("  state s_bit_%02d_0 ( %s[%d] == 1'b0 );\n", $i, $variable, $i );
+.#    printf("  state s_bit_%02d_1 ( %s[%d] == 1'b1 );\n", $i, $variable, $i );
+.#  }
+.#}
+
+
+
+

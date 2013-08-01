@@ -1,0 +1,212 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuMalCplPEUStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#define _INFO_MSG_MAL_CPL(msg) printf( "MalCpl (cyc %0d) %s\n", get_cycle(), msg )
+
+class MalCplPEUStr extends PEUStrBase
+{
+  local bit f_typeSpecified;			// Was a bad-boy type supplied?
+  local bit [1:0] f_fmt;			// The bad format
+  local bit [4:0] f_type;			// The bad type
+  local bit f_lenSpecified;			// Was a TLP length supplied?
+  local integer f_len;				// A requested TLP length
+  local integer f_cross4K;  			// By what amount do we cross 4K
+  local integer f_adjustLen;			// The delta to the true length
+  local integer f_errQueue;			// A mailbox for bad pkt headers
+  local bit f_tdSpecified;                      // Was the TD supplied?
+  local bit f_tdFieldValue;                     // The TD value
+  local integer f_solicitedCpl;
+
+  task new( PEUTestEnv a_env )
+  {
+    super.new( a_env );
+    f_typeSpecified = 0;
+    f_lenSpecified = 0;
+    f_errQueue = 0;
+    f_adjustLen = 0;
+    f_cross4K = 0;
+
+    f_tdSpecified = 0;
+    f_solicitedCpl = 1;
+  } /* end new */
+
+  function bit SetType( bit [1:0] a_fmt, bit [4:0] a_type )
+  {
+    bit isInvalid;
+  
+    f_typeSpecified = 1;
+    f_type = a_type;
+    f_fmt = a_fmt;
+
+    case ( a_fmt ) {
+      2'b00 : isInvalid = !( PEC_PCI__TYPE_VALID_00 & ( 1 << a_type ) );
+      2'b01 : isInvalid = !( PEC_PCI__TYPE_VALID_01 & ( 1 << a_type ) );
+      2'b10 : isInvalid = !( PEC_PCI__TYPE_VALID_10 & ( 1 << a_type ) );
+      2'b11 : isInvalid = !( PEC_PCI__TYPE_VALID_11 & ( 1 << a_type ) );
+    }
+
+    SetType = isInvalid;
+  } /* end SetType */
+
+  task SetLength( integer a_length )
+  {
+    f_len = a_length;
+    f_lenSpecified = 1;
+  } /* end AdjustLen */
+
+  task AdjustLen( integer a_lengthDelta )
+  {
+    f_adjustLen = a_lengthDelta;
+  } /* end AdjustLen */
+
+  task Cross4K( integer a_dwCount )
+  {
+    f_cross4K = a_dwCount;
+  } /* end AdjustLen */
+
+  task SetErrQueue( integer a_queue )
+  {
+    f_errQueue = a_queue;
+  } /* end SetErrQueue */
+
+  task SetTD( bit a_TDValue )
+  {
+    f_tdFieldValue = a_TDValue;
+    f_tdSpecified = 1;
+  } /* end SetTD */
+
+  task SetSolicited( integer a_solicited )
+  {
+    f_solicitedCpl = a_solicited;
+  }
+
+  task Execute()
+  {
+    bit [ PEC_PCI__HDR ] reqHdr;	// The request TLP's header
+    bit [ PEC_PCI__HDR ] cplHdr;	// The completion TLP's header
+    bit [ PEC_PCI__HDR ] badCplHdr;	// The corrupted completion TLP's header
+    bit [ 7:0 ] reqTag;   		// The tag for the TLP
+    integer pyld;                       // Reusable pyld variable
+
+                                        // Get in line for a PIO tag
+    if ( f_solicitedCpl )
+      f_env.allocRdTag( reqTag );
+    else
+      reqTag = urandom();
+					// Then build a TLP.
+					// Only PIO reads need completions
+    if ( f_typeSpecified ) {
+      if ( f_lenSpecified )
+	f_env.genEgressRdReq( reqTag, reqHdr, pyld, f_len, f_type );
+      else
+	f_env.genEgressRdReq( reqTag, reqHdr, pyld, *, f_type );
+    }
+    else {
+      if ( f_lenSpecified )
+	f_env.genEgressRdReq( reqTag, reqHdr, pyld, f_len, * );
+      else
+	f_env.genEgressRdReq( reqTag, reqHdr, pyld );
+    }
+                                        // make sure RequesterID is 0, since RSB
+                                        // will check that the completion has this
+                                        // field set to 0
+    reqHdr[ PEC_PCI__REQ_ID ] = 16'h0;
+                                        // adjust the Fmt field, since it
+                                        // might not be what we want
+    if( f_typeSpecified ) {
+      reqHdr[ PEC_PCI__FMT_4DW ] = f_fmt[ 0 ];
+      if ( reqHdr[ PEC_PCI__FMT_4DW ] === 1'b1 ){
+	reqHdr[ PEC_PCI__ADDR ] = {urandom(),urandom()};
+      }else{ 				//Make sure addr[1:0] = 0
+         reqHdr[33:32] = 0;
+      }
+
+    }
+
+                                        // create completion based on PIO req
+    f_env.genIngressCpl( reqHdr, cplHdr, pyld );
+    badCplHdr = cplHdr;
+                                        // corrupt the ingress completion
+    if ( f_cross4K != 0 ) {
+      // not implemented yet
+    }
+    if ( f_tdSpecified ) {
+      badCplHdr[ PEC_PCI__TD ] = f_tdFieldValue;
+    }
+
+					// Force the digest if we've got a 
+					// cpl without data and a negative 
+					// 'adjustment'.
+    if ( f_adjustLen < 0 && !badCplHdr[PEC_PCI__FMT_DATA] )
+      badCplHdr[PEC_PCI__TD] = 1;
+
+                                        // Check if cpl is supposed to be expected
+    if ( f_solicitedCpl ) {
+                                        // drive the ILU with the request
+      _INFO_MSG_MAL_CPL( psprintf("Sending PIO request (tag=%h)",reqTag) );
+      f_env.driveILU( reqHdr, 0, 0 );
+                                        // expect the request out the TLU
+      f_env.expectPCIE( reqHdr, 0 );
+                                        // drive the TLU with the bad cpl
+                                        // and free the PIO tag
+      f_env.drivePCIE( badCplHdr, pyld, f_adjustLen, *, *, f_abortErrTlp );
+      _INFO_MSG_MAL_CPL( psprintf("Sending malformed completion (tag=%h)",reqTag) );
+
+      f_env.waitIngressLatency( badCplHdr, (f_adjustLen>0) ? f_adjustLen : 0 );
+
+      if ( f_errQueue != 0 ) {
+	mailbox_put( f_errQueue, e_ERR_ue_mfp );
+	mailbox_put( f_errQueue, (f_adjustLen<0) ? 128'bx : cplHdr );
+      }
+
+      f_env.drivePCIE( cplHdr, pyld );
+
+      f_env.expectILU( cplHdr, pyld );
+
+      f_env.freePioTag( reqTag );
+    }
+    else { /* unsolicited cpl */
+      f_env.drivePCIE( badCplHdr, pyld, f_adjustLen, *, *, f_abortErrTlp );
+      _INFO_MSG_MAL_CPL( psprintf("Sending malformed completion (tag=%h)",reqTag) );
+
+      f_env.waitIngressLatency( badCplHdr, (f_adjustLen>0) ? f_adjustLen : 0 );
+
+      if( f_errQueue != 0 ) {
+	mailbox_put( f_errQueue, e_ERR_ue_mfp );
+	mailbox_put( f_errQueue, (f_adjustLen<0) ? 128'bx : cplHdr );
+      }
+    }
+  } /* end Execute */
+} /* end MalCplPEUStr */
+    

@@ -1,0 +1,1086 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: fc_coverage.vrpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "plusArgMacros.vri"
+#include "std_display_class.vrh"
+#include "std_display_defines.vri"
+#include "fc_cov.if.vrh"
+#include "fc_cov_ports_binds.vrh"
+
+////////////////////////////////////////////////////////////////////////////
+//Adding modes coverage object
+///////////////////////////////////////////////////////////////////////////
+
+class fc_modes_cov
+{
+  // for dispmon
+//  StandardDisplay dbg;
+//  local string 	  myname;
+
+
+ //PLL Control reg 
+  coverage_group N2_modes_coverage_group {
+     sample_event = @(posedge  fc_modes_cov_if.boot_done); 
+     //sample_event = wait_var(gOutOfBoot); //Global 
+     sample cmp_dr_ratio ({fc_modes_cov_if.pll_div4,
+                          fc_modes_cov_if.pll_div3,
+                          fc_modes_cov_if.pll_div2,
+                          fc_modes_cov_if.pll_div1
+                         })
+     {
+        wildcard state CMP_DR_RATIO_2_00 ({6'h8, 6'h1, 6'h7, 6'h1});
+        wildcard state CMP_DR_RATIO_2_75 ({6'hb, 6'h1, 6'ha, 6'h1});
+        wildcard state CMP_DR_RATIO_3_50 ({6'he, 6'h1, 6'hd, 6'h1});
+        wildcard state CMP_DR_RATIO_3_75 ({6'hf, 6'h1, 6'he, 6'h1});
+        wildcard state CMP_DR_RATIO_4_00 ({6'h10, 6'h1, 6'hf, 6'h1});
+        wildcard state CMP_DR_RATIO_4_25 ({6'h11, 6'h1, 6'h10, 6'h1});
+     }
+
+//System clock
+     sample system_clock_freq (fc_modes_cov_if.system_clock)
+     {
+        wildcard state system_clock_166 ({2'b00});
+        wildcard state system_clock_133 ({2'b01});
+     }
+
+//Index hashing 
+     sample index_hashing (fc_modes_cov_if.hash_enable)
+     {
+        wildcard state index_hash_ON  ({1'b1});
+        wildcard state index_hash_OFF ({1'b0});
+     } 
+//PCIE ref clock
+     sample pcie_ref_clock (fc_modes_cov_if.pcie_ref_clk)
+     {
+        wildcard state PCIE_REF_CLK_100 ({2'b00});
+        wildcard state PCIE_REF_CLK_150 ({2'b01}); //not usefull
+        wildcard state PCIE_REF_CLK_250 ({2'b10}); //not usefull
+     }
+
+//PCIE mps
+     sample pcie_mps (fc_modes_cov_if.pcie_mps)
+     {
+        wildcard state PCIE_MPS_128 ({3'b000});  //not usefull
+        wildcard state PCIE_MPS_256 ({3'b001});
+        wildcard state PCIE_MPS_512 ({3'b010});
+     }
+
+//Random efu redundancy
+     sample RANDOM_REDUNDANCY_VALUES (fc_modes_cov_if.RANDOM_REDUNDANCY_VALUES)
+     {
+        wildcard state RANDOM_REDUNDANCY_VALUES_ON ({1'b1});
+//        wildcard state RANDOM_REDUNDANCY_VALUES_OFF ({1'b0});
+     }
+
+//Denali link width
+     sample denali_link_width (fc_modes_cov_if.denali_link_width)
+     {
+       wildcard state denali_link_width_1 ({4'b0001}); //low priortiy
+       wildcard state denali_link_width_2 ({4'b0010}); //low prio
+       wildcard state denali_link_width_4 ({4'b0100}); //low prio
+       wildcard state denali_link_width_8 ({4'b1000}); //low prio
+     }
+
+//NCU clock ratio
+     sample ssi_clk_ratio (fc_modes_cov_if.ncu_clk_ratio) 
+     {
+       wildcard state SSI_CLK_RATIO_8  ({1'b0});
+       wildcard state SSI_CLK_RATIO_4  ({1'b1}); //low prior
+     }
+//RANDOM_POR_RST
+     sample RANDOM_POR_RST (fc_modes_cov_if.RANDOM_POR_RST) 
+     {
+       wildcard state RANDOM_POR_RST  ({1'b1});
+     }
+
+//RANDOM_PB_RST
+     sample RANDOM_PB_RST (fc_modes_cov_if.RANDOM_PB_RST) 
+     {
+       wildcard state RANDOM_PB_RST  ({1'b1});
+     }
+
+//AMB used
+     sample amb_used (fc_modes_cov_if.amb_used) {
+       wildcard state SUN_AMB    ({2'b00}); //low prio
+       wildcard state IDT_AMB    ({2'b01});
+       wildcard state NEC_AMB	 ({2'b11});
+     }
+//Memory Configurations
+//{SNG_CHANNEL, NO_OF_DIMMS, SIZE_512, RANK_SEL, STACK_DIMM}
+#define SNG_CHANNEL  1'b1
+#define DUAL_CHANNEL 1'b0
+
+#define FBDIMM_1     3'h1 
+#define FBDIMM_2     3'h2 
+#define FBDIMM_3     3'h3 
+#define FBDIMM_4     3'h4 
+#define FBDIMM_5     3'h5 
+#define FBDIMM_6     3'h6 
+#define FBDIMM_7     3'h7 
+#define FBDIMM_8     3'h0 
+
+#define DIMM_SIZE_1G  5'h1e
+#define DIMM_SIZE_2G  5'h1f
+#define DIMM_SIZE_512 5'h0e
+#define DIMM_SIZE_256 5'h0d
+
+#define STACK_DIMM    1'b1
+#define NO_STACK_DIMM 1'b0
+
+#define RANK_LOW      1'b1
+#define RANK_HIGH     1'b0
+
+
+   sample memory_config ({fc_modes_cov_if.single_channel, fc_modes_cov_if.no_of_dimms, fc_modes_cov_if.mem_density, fc_modes_cov_if.rank_sel, fc_modes_cov_if.stack_dimm}) {
+
+wildcard state sng_channel__1_fbdimm__dimm_size_512__rank_low        ({ SNG_CHANNEL, FBDIMM_1, DIMM_SIZE_512, RANK_LOW  ,NO_STACK_DIMM});
+wildcard state sng_channel__1_fbdimm__dimm_size_512__rank_high       ({ SNG_CHANNEL, FBDIMM_1, DIMM_SIZE_512, RANK_HIGH ,NO_STACK_DIMM});
+wildcard state sng_channel__1_fbdimm__dimm_size_1g__rank_low         ({ SNG_CHANNEL, FBDIMM_1, DIMM_SIZE_1G, RANK_LOW   ,NO_STACK_DIMM});
+wildcard state sng_channel__1_fbdimm__dimm_size_1g__rank_high        ({ SNG_CHANNEL, FBDIMM_1, DIMM_SIZE_1G, RANK_HIGH  ,NO_STACK_DIMM});
+wildcard state sng_channel__1_fbdimm__dimm_size_2g__rank_low         ({ SNG_CHANNEL, FBDIMM_1, DIMM_SIZE_2G, RANK_LOW   ,NO_STACK_DIMM});
+wildcard state sng_channel__1_fbdimm__dimm_size_2g__rank_high        ({ SNG_CHANNEL, FBDIMM_1, DIMM_SIZE_2G, RANK_HIGH  ,NO_STACK_DIMM});
+wildcard state sng_channel__2_fbdimms__dimm_size_512__rank_low       ({ SNG_CHANNEL, FBDIMM_2, DIMM_SIZE_512, RANK_LOW ,NO_STACK_DIMM});
+wildcard state sng_channel__2_fbdimms__dimm_size_512__rank_high      ({ SNG_CHANNEL, FBDIMM_2, DIMM_SIZE_512, RANK_HIGH,NO_STACK_DIMM});
+wildcard state sng_channel__2_fbdimms__dimm_size_1g__rank_low        ({ SNG_CHANNEL, FBDIMM_2, DIMM_SIZE_1G, RANK_LOW  ,NO_STACK_DIMM});
+wildcard state sng_channel__2_fbdimms__dimm_size_1g__rank_high       ({ SNG_CHANNEL, FBDIMM_2, DIMM_SIZE_1G, RANK_HIGH ,NO_STACK_DIMM});
+wildcard state sng_channel__2_fbdimms__dimm_size_2g__rank_low        ({ SNG_CHANNEL, FBDIMM_2, DIMM_SIZE_2G, RANK_LOW  ,NO_STACK_DIMM});
+wildcard state sng_channel__2_fbdimms__dimm_size_2g__rank_high       ({ SNG_CHANNEL, FBDIMM_2, DIMM_SIZE_2G, RANK_HIGH ,NO_STACK_DIMM});
+wildcard state sng_channel__4_fbdimms__dimm_size_512__rank_low       ({ SNG_CHANNEL, FBDIMM_4, DIMM_SIZE_512, RANK_LOW ,NO_STACK_DIMM});
+wildcard state sng_channel__4_fbdimms__dimm_size_512__rank_high      ({ SNG_CHANNEL, FBDIMM_4, DIMM_SIZE_512, RANK_HIGH,NO_STACK_DIMM});
+wildcard state sng_channel__4_fbdimms__dimm_size_1g__rank_low        ({ SNG_CHANNEL, FBDIMM_4, DIMM_SIZE_1G, RANK_LOW  ,NO_STACK_DIMM});
+wildcard state sng_channel__4_fbdimms__dimm_size_1g__rank_high       ({ SNG_CHANNEL, FBDIMM_4, DIMM_SIZE_1G, RANK_HIGH ,NO_STACK_DIMM});
+wildcard state sng_channel__4_fbdimms__dimm_size_2g__rank_low        ({ SNG_CHANNEL, FBDIMM_4, DIMM_SIZE_2G, RANK_LOW  ,NO_STACK_DIMM});
+wildcard state sng_channel__4_fbdimms__dimm_size_2g__rank_high       ({ SNG_CHANNEL, FBDIMM_4, DIMM_SIZE_2G, RANK_HIGH ,NO_STACK_DIMM});
+
+//2 RANKS
+wildcard state sng_channel__1_fbdimm__dimm_size_512__rank_low__stack_dimm        ({ SNG_CHANNEL, FBDIMM_1, DIMM_SIZE_512, RANK_LOW  ,STACK_DIMM});
+wildcard state sng_channel__1_fbdimm__dimm_size_512__rank_high_stack_dimm       ({ SNG_CHANNEL, FBDIMM_1, DIMM_SIZE_512, RANK_HIGH ,STACK_DIMM});
+wildcard state sng_channel__1_fbdimm__dimm_size_1g__rank_low__stack_dimm         ({ SNG_CHANNEL, FBDIMM_1, DIMM_SIZE_1G, RANK_LOW   ,STACK_DIMM});
+wildcard state sng_channel__1_fbdimm__dimm_size_1g__rank_high_stack_dimm        ({ SNG_CHANNEL, FBDIMM_1, DIMM_SIZE_1G, RANK_HIGH  ,STACK_DIMM});
+wildcard state sng_channel__1_fbdimm__dimm_size_2g__rank_low__stack_dimm         ({ SNG_CHANNEL, FBDIMM_1, DIMM_SIZE_2G, RANK_LOW   ,STACK_DIMM});
+wildcard state sng_channel__1_fbdimm__dimm_size_2g__rank_high_stack_dimm        ({ SNG_CHANNEL, FBDIMM_1, DIMM_SIZE_2G, RANK_HIGH  ,STACK_DIMM});
+wildcard state sng_channel__2_fbdimms__dimm_size_512__rank_low__stack_dimm       ({ SNG_CHANNEL, FBDIMM_2, DIMM_SIZE_512, RANK_LOW ,STACK_DIMM});
+wildcard state sng_channel__2_fbdimms__dimm_size_512__rank_high_stack_dimm      ({ SNG_CHANNEL, FBDIMM_2, DIMM_SIZE_512, RANK_HIGH,STACK_DIMM});
+wildcard state sng_channel__2_fbdimms__dimm_size_1g__rank_low__stack_dimm        ({ SNG_CHANNEL, FBDIMM_2, DIMM_SIZE_1G, RANK_LOW  ,STACK_DIMM});
+wildcard state sng_channel__2_fbdimms__dimm_size_1g__rank_high_stack_dimm       ({ SNG_CHANNEL, FBDIMM_2, DIMM_SIZE_1G, RANK_HIGH ,STACK_DIMM});
+wildcard state sng_channel__2_fbdimms__dimm_size_2g__rank_low__stack_dimm        ({ SNG_CHANNEL, FBDIMM_2, DIMM_SIZE_2G, RANK_LOW  ,STACK_DIMM});
+wildcard state sng_channel__2_fbdimms__dimm_size_2g__rank_high_stack_dimm       ({ SNG_CHANNEL, FBDIMM_2, DIMM_SIZE_2G, RANK_HIGH ,STACK_DIMM});
+wildcard state sng_channel__4_fbdimms__dimm_size_512__rank_low__stack_dimm       ({ SNG_CHANNEL, FBDIMM_4, DIMM_SIZE_512, RANK_LOW ,STACK_DIMM});
+wildcard state sng_channel__4_fbdimms__dimm_size_512__rank_high_stack_dimm      ({ SNG_CHANNEL, FBDIMM_4, DIMM_SIZE_512, RANK_HIGH,STACK_DIMM});
+wildcard state sng_channel__4_fbdimms__dimm_size_1g__rank_low__stack_dimm        ({ SNG_CHANNEL, FBDIMM_4, DIMM_SIZE_1G, RANK_LOW  ,STACK_DIMM});
+wildcard state sng_channel__4_fbdimms__dimm_size_1g__rank_high_stack_dimm       ({ SNG_CHANNEL, FBDIMM_4, DIMM_SIZE_1G, RANK_HIGH ,STACK_DIMM});
+wildcard state sng_channel__4_fbdimms__dimm_size_2g__rank_low__stack_dimm        ({ SNG_CHANNEL, FBDIMM_4, DIMM_SIZE_2G, RANK_LOW  ,STACK_DIMM});
+wildcard state sng_channel__4_fbdimms__dimm_size_2g__rank_high_stack_dimm       ({ SNG_CHANNEL, FBDIMM_4, DIMM_SIZE_2G, RANK_HIGH ,STACK_DIMM});
+
+//DUAL_CHANNEL
+wildcard state dual_channel__1_fbdimm__dimm_size_512__rank_low        ({ DUAL_CHANNEL, FBDIMM_1, DIMM_SIZE_512, RANK_LOW  ,NO_STACK_DIMM});
+wildcard state dual_channel__1_fbdimm__dimm_size_512__rank_high       ({ DUAL_CHANNEL, FBDIMM_1, DIMM_SIZE_512, RANK_HIGH ,NO_STACK_DIMM});
+wildcard state dual_channel__1_fbdimm__dimm_size_1g__rank_low         ({ DUAL_CHANNEL, FBDIMM_1, DIMM_SIZE_1G, RANK_LOW   ,NO_STACK_DIMM});
+wildcard state dual_channel__1_fbdimm__dimm_size_1g__rank_high        ({ DUAL_CHANNEL, FBDIMM_1, DIMM_SIZE_1G, RANK_HIGH  ,NO_STACK_DIMM});
+wildcard state dual_channel__1_fbdimm__dimm_size_2g__rank_low         ({ DUAL_CHANNEL, FBDIMM_1, DIMM_SIZE_2G, RANK_LOW   ,NO_STACK_DIMM});
+wildcard state dual_channel__1_fbdimm__dimm_size_2g__rank_high        ({ DUAL_CHANNEL, FBDIMM_1, DIMM_SIZE_2G, RANK_HIGH  ,NO_STACK_DIMM});
+wildcard state dual_channel__2_fbdimms__dimm_size_512__rank_low       ({ DUAL_CHANNEL, FBDIMM_2, DIMM_SIZE_512, RANK_LOW ,NO_STACK_DIMM});
+wildcard state dual_channel__2_fbdimms__dimm_size_512__rank_high      ({ DUAL_CHANNEL, FBDIMM_2, DIMM_SIZE_512, RANK_HIGH,NO_STACK_DIMM});
+wildcard state dual_channel__2_fbdimms__dimm_size_1g__rank_low        ({ DUAL_CHANNEL, FBDIMM_2, DIMM_SIZE_1G, RANK_LOW  ,NO_STACK_DIMM});
+wildcard state dual_channel__2_fbdimms__dimm_size_1g__rank_high       ({ DUAL_CHANNEL, FBDIMM_2, DIMM_SIZE_1G, RANK_HIGH ,NO_STACK_DIMM});
+wildcard state dual_channel__2_fbdimms__dimm_size_2g__rank_low        ({ DUAL_CHANNEL, FBDIMM_2, DIMM_SIZE_2G, RANK_LOW  ,NO_STACK_DIMM});
+wildcard state dual_channel__2_fbdimms__dimm_size_2g__rank_high       ({ DUAL_CHANNEL, FBDIMM_2, DIMM_SIZE_2G, RANK_HIGH ,NO_STACK_DIMM});
+wildcard state dual_channel__4_fbdimms__dimm_size_512__rank_low       ({ DUAL_CHANNEL, FBDIMM_4, DIMM_SIZE_512, RANK_LOW ,NO_STACK_DIMM});
+wildcard state dual_channel__4_fbdimms__dimm_size_512__rank_high      ({ DUAL_CHANNEL, FBDIMM_4, DIMM_SIZE_512, RANK_HIGH,NO_STACK_DIMM});
+wildcard state dual_channel__4_fbdimms__dimm_size_1g__rank_low        ({ DUAL_CHANNEL, FBDIMM_4, DIMM_SIZE_1G, RANK_LOW  ,NO_STACK_DIMM});
+wildcard state dual_channel__4_fbdimms__dimm_size_1g__rank_high       ({ DUAL_CHANNEL, FBDIMM_4, DIMM_SIZE_1G, RANK_HIGH ,NO_STACK_DIMM});
+wildcard state dual_channel__4_fbdimms__dimm_size_2g__rank_low        ({ DUAL_CHANNEL, FBDIMM_4, DIMM_SIZE_2G, RANK_LOW  ,NO_STACK_DIMM});
+wildcard state dual_channel__4_fbdimms__dimm_size_2g__rank_high       ({ DUAL_CHANNEL, FBDIMM_4, DIMM_SIZE_2G, RANK_HIGH ,NO_STACK_DIMM});
+
+//2 RANKS
+wildcard state dual_channel__1_fbdimm__dimm_size_512__rank_low__stack_dimm        ({ DUAL_CHANNEL, FBDIMM_1, DIMM_SIZE_512, RANK_LOW  ,STACK_DIMM});
+wildcard state dual_channel__1_fbdimm__dimm_size_512__rank_high_stack_dimm       ({ DUAL_CHANNEL, FBDIMM_1, DIMM_SIZE_512, RANK_HIGH ,STACK_DIMM});
+wildcard state dual_channel__1_fbdimm__dimm_size_1g__rank_low__stack_dimm         ({ DUAL_CHANNEL, FBDIMM_1, DIMM_SIZE_1G, RANK_LOW   ,STACK_DIMM});
+wildcard state dual_channel__1_fbdimm__dimm_size_1g__rank_high_stack_dimm        ({ DUAL_CHANNEL, FBDIMM_1, DIMM_SIZE_1G, RANK_HIGH  ,STACK_DIMM});
+wildcard state dual_channel__1_fbdimm__dimm_size_2g__rank_low__stack_dimm         ({ DUAL_CHANNEL, FBDIMM_1, DIMM_SIZE_2G, RANK_LOW   ,STACK_DIMM});
+wildcard state dual_channel__1_fbdimm__dimm_size_2g__rank_high_stack_dimm        ({ DUAL_CHANNEL, FBDIMM_1, DIMM_SIZE_2G, RANK_HIGH  ,STACK_DIMM});
+wildcard state dual_channel__2_fbdimms__dimm_size_512__rank_low__stack_dimm       ({ DUAL_CHANNEL, FBDIMM_2, DIMM_SIZE_512, RANK_LOW ,STACK_DIMM});
+wildcard state dual_channel__2_fbdimms__dimm_size_512__rank_high_stack_dimm      ({ DUAL_CHANNEL, FBDIMM_2, DIMM_SIZE_512, RANK_HIGH,STACK_DIMM});
+wildcard state dual_channel__2_fbdimms__dimm_size_1g__rank_low__stack_dimm        ({ DUAL_CHANNEL, FBDIMM_2, DIMM_SIZE_1G, RANK_LOW  ,STACK_DIMM});
+wildcard state dual_channel__2_fbdimms__dimm_size_1g__rank_high_stack_dimm       ({ DUAL_CHANNEL, FBDIMM_2, DIMM_SIZE_1G, RANK_HIGH ,STACK_DIMM});
+wildcard state dual_channel__2_fbdimms__dimm_size_2g__rank_low__stack_dimm        ({ DUAL_CHANNEL, FBDIMM_2, DIMM_SIZE_2G, RANK_LOW  ,STACK_DIMM});
+wildcard state dual_channel__2_fbdimms__dimm_size_2g__rank_high_stack_dimm       ({ DUAL_CHANNEL, FBDIMM_2, DIMM_SIZE_2G, RANK_HIGH ,STACK_DIMM});
+wildcard state dual_channel__4_fbdimms__dimm_size_512__rank_low__stack_dimm       ({ DUAL_CHANNEL, FBDIMM_4, DIMM_SIZE_512, RANK_LOW ,STACK_DIMM});
+wildcard state dual_channel__4_fbdimms__dimm_size_512__rank_high_stack_dimm      ({ DUAL_CHANNEL, FBDIMM_4, DIMM_SIZE_512, RANK_HIGH,STACK_DIMM});
+wildcard state dual_channel__4_fbdimms__dimm_size_1g__rank_low__stack_dimm        ({ DUAL_CHANNEL, FBDIMM_4, DIMM_SIZE_1G, RANK_LOW  ,STACK_DIMM});
+wildcard state dual_channel__4_fbdimms__dimm_size_1g__rank_high_stack_dimm       ({ DUAL_CHANNEL, FBDIMM_4, DIMM_SIZE_1G, RANK_HIGH ,STACK_DIMM});
+wildcard state dual_channel__4_fbdimms__dimm_size_2g__rank_low__stack_dimm        ({ DUAL_CHANNEL, FBDIMM_4, DIMM_SIZE_2G, RANK_LOW  ,STACK_DIMM});
+wildcard state dual_channel__4_fbdimms__dimm_size_2g__rank_high_stack_dimm       ({ DUAL_CHANNEL, FBDIMM_4, DIMM_SIZE_2G, RANK_HIGH ,STACK_DIMM});
+
+
+}
+
+//L2 cache states
+   sample l2_ctl_reg (fc_modes_cov_if.l2_ctl_reg[1:0]) {
+
+      wildcard state L2_SET_ASSOCIATIVE ({2'b00});
+      wildcard state L2_DIRECT_MAP      ({2'b10});
+      wildcard state L2_OFF             ({2'b01});
+
+   }
+
+   
+   sample l2_cache_scrub_en (fc_modes_cov_if.l2_ctl_reg[2]) {
+      wildcard state L2_SCRUB ({1'b1});
+   } 
+
+ 
+        cross_num_print_missing = (1 << 32) - 1;
+
+//Create a cross product so that we know system clocks and ratios
+    cross N2_modes_cross (system_clock_freq, cmp_dr_ratio, ssi_clk_ratio, pcie_ref_clock, index_hashing, memory_config, l2_ctl_reg, RANDOM_REDUNDANCY_VALUES)     {
+        //cross_num_print_missing = (1 << 32) - 1;
+          cov_weight = 0;
+    } 
+
+
+///////////////////////////////////////////////////////////////
+//  1 Low Rank 1G * vendor * Freq * L2_SET_ASSOCIATIVE        
+//  2 Rank     1G * vendor * Freq * L2_SET_ASSOCIATIVE        
+//  One or Two Freq * Memory configs * L2_SET                 
+//  L2_DIRECT * Freq                                          
+//  L2_OFF    * Freq                                           
+///////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////
+//Partial mode combinations
+//Core 0 w/ 2 Banks
+//Core 0 w/ 4 Banks
+//Core 1 w/ 2 Banks
+//Core 1 w/ 4 Banks
+//Core 1 w/ 8 Banks
+//Cores 1,2,5,7 w/ 4 Banks
+//
+//Now within each of these I randomize on the bank combinations.  There
+//are 4 2 Bank combinations 01, 23, 45, 67 and 6 4 Bank combinations 0123,
+//0145, 0167, 2345, 2367, 4567.
+///////////////////////////////////////////////////////////////
+ sample banks_2 ({fc_modes_cov_if.l2t_pm, fc_modes_cov_if.l2t_ba01, fc_modes_cov_if.l2t_ba23, fc_modes_cov_if.l2t_ba45, fc_modes_cov_if.l2t_ba67}) {
+
+  wildcard state bank_01  ({5'b11000});
+  wildcard state bank_23  ({5'b10100});
+  wildcard state bank_45  ({5'b10010});
+  wildcard state bank_67  ({5'b10001});
+ }
+
+ sample banks_4 ({fc_modes_cov_if.l2t_pm, fc_modes_cov_if.l2t_ba01, fc_modes_cov_if.l2t_ba23, fc_modes_cov_if.l2t_ba45, fc_modes_cov_if.l2t_ba67}) {
+
+  wildcard state bank_0123  ({5'b11100});
+  wildcard state bank_0145  ({5'b11010});
+  wildcard state bank_0167  ({5'b11001});
+  wildcard state bank_2345  ({5'b10110});
+  wildcard state bank_2367  ({5'b10101});
+  wildcard state bank_4567  ({5'b10011});
+ }
+
+ sample banks_8 ({fc_modes_cov_if.l2t_pm, fc_modes_cov_if.l2t_ba01, fc_modes_cov_if.l2t_ba23, fc_modes_cov_if.l2t_ba45, fc_modes_cov_if.l2t_ba67}) {
+
+  wildcard state bank_01234567 ({5'b01111});
+ }
+
+
+ sample core0  ({fc_modes_cov_if.spc0_core_available, fc_modes_cov_if.spc1_core_available,
+                 fc_modes_cov_if.spc2_core_available, fc_modes_cov_if.spc3_core_available,
+                 fc_modes_cov_if.spc4_core_available, fc_modes_cov_if.spc5_core_available,
+                 fc_modes_cov_if.spc6_core_available, fc_modes_cov_if.spc7_core_available}) {
+    wildcard state core0 ({8'b10000000});
+ }
+
+ sample core1  ({fc_modes_cov_if.spc0_core_available, fc_modes_cov_if.spc1_core_available,
+                 fc_modes_cov_if.spc2_core_available, fc_modes_cov_if.spc3_core_available,
+                 fc_modes_cov_if.spc4_core_available, fc_modes_cov_if.spc5_core_available,
+                 fc_modes_cov_if.spc6_core_available, fc_modes_cov_if.spc7_core_available}) {
+    wildcard state core1 ({8'b01000000});
+ }
+
+ sample core1_core2_core5_core7  ({fc_modes_cov_if.spc0_core_available, fc_modes_cov_if.spc1_core_available,
+                 fc_modes_cov_if.spc2_core_available, fc_modes_cov_if.spc3_core_available,
+                 fc_modes_cov_if.spc4_core_available, fc_modes_cov_if.spc5_core_available,
+                 fc_modes_cov_if.spc6_core_available, fc_modes_cov_if.spc7_core_available}) {
+    wildcard state core1_core2_core5_core7 ({8'b01100101});
+ }
+
+cross core0_2banks (core0, banks_2) {
+   cov_weight = 0;
+}
+cross core0_4banks (core0, banks_4) {
+   cov_weight = 0;
+}
+cross core1_2banks (core1, banks_2) {
+   cov_weight = 0;
+}
+cross core1_4banks (core1, banks_4) {
+   cov_weight = 0;
+}
+cross core1_8banks (core1, banks_8) {
+   cov_weight = 0;
+}
+
+cross core1_core2_core5_core7_banks_4 (core1_core2_core5_core7, banks_4) {
+   cov_weight = 0;
+}
+////////////////////////////////////////////////////////////////////////////////////////
+//Determine Fire modes
+////////////////////////////////////////////////////////////////////////////////////////
+sample Fire_deadlock_modes ({fc_modes_cov_if.p2d_npwr_stall_en,fc_modes_cov_if.im2crm_ilu_stall_en}) {
+   wildcard state p2d_npwr_stall_NOT_en___im2crm_ilu_stall_NOT_en ({2'b00});
+   wildcard state p2d_npwr_stall_en___im2crm_ilu_stall_NOT_en ({2'b10});
+   wildcard state p2d_npwr_stall_NOT_en___im2crm_ilu_stall_en ({2'b01});
+   wildcard state p2d_npwr_stall_en___im2crm_ilu_stall_en ({2'b11});
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////
+//Power throttle En
+/////////////////////////////////////////////////////////////////////////////////////////
+sample power_throttle_en ({fc_modes_cov_if.power_throttle_en}) {
+   wildcard state power_throttle_en ({1'b1});
+}
+//////////////////////////////////////////////////////////////////////////////////////////
+//FSRRTL used or not
+//////////////////////////////////////////////////////////////////////////////////////////
+sample FSR_RTL_or_BEHAV ({fc_modes_cov_if.FSR_RTL}) {
+   wildcard state FSR_RTL   ({1'b1});
+   wildcard state FSR_BEHAV ({1'b0});
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////
+//SCRUB happened in one of the L2 banks
+//////////////////////////////////////////////////////////////////////////////////////////
+sample scrub_happened_in_some_bank ({fc_modes_cov_if.scrub_happened}) {
+   wildcard state scrub_happened   ({1'b1});
+}
+   
+
+///////END coverage group/////////////////////////////////////////////////////////////////
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////
+//Determine Sun4v
+/////////////////////////////////////////////////////////////////////////////////////////
+coverage_group N2_modes_coverage_group_diag {
+
+sample_event = @(posedge  fc_modes_cov_if.clk);
+
+sample sun4v ({fc_modes_cov_if.sun4v_mode}) {
+   wildcard state sun4v_mode ({1'b1});
+   wildcard state sun4u_mode ({1'b0});
+}
+}
+
+
+}
+
+class fc_cov
+{	
+  // for dispmon
+  StandardDisplay dbg;
+  local string 	  myname;
+
+  event l2t0_cpx_error_ncu1_win_evnt_trig;
+  event l2t0_cpx_error_ncu2_win_evnt_trig;
+  event l2t0_cpx_error_ncu3_win_evnt_trig;
+  event ncu_cpx_error_l2t0_win_1_evnt_trig;
+  event ncu_cpx_error_l2t0_win_2_evnt_trig;
+  event l2t0_cpx_error_1_win_evnt_trig;
+  event l2t0_cpx_error_2_win_evnt_trig;
+  event l2t0_cpx_error_3_win_evnt_trig;
+  event l2t0_cpx_error_4_win_evnt_trig;
+  event l2t0_cpx_error_5_win_evnt_trig;
+  event l2t0_cpx_error_6_win_evnt_trig;
+
+  integer       counter = 0;
+  integer       counter_2 = 0;
+  integer       counter_3 = 0;
+  integer       counter_4 = 0;
+  integer       counter_5 = 0;
+  integer       err_counter = 0;
+  integer       err_counter2 = 0;
+  integer       err_counter3 = 0;
+  integer       err_counter4 = 0;
+  integer       err_counter5 = 0;
+  integer       err_counter6 = 0;
+  integer       start_count = 0;
+
+  #include "fc_cov_intf_ver_defines.vrh" 
+
+  // ----------- coverage_group ----------------
+//----------PCX -> SPC------------------- 
+  coverage_group spc_ccx_intf_cov_group 
+  {
+    const_sample_reference = 1;	// ref. to sample vars. is constant
+    sample_event           = sync (ANY, spc_ccx_intf_event);
+    #include "spc_ccx_sample.vrh"
+  } // fc_cov_group
+
+//----------L2 -> NCU------------------- 
+  coverage_group l2_ncu_intf_cov_group 
+  {
+    const_sample_reference = 1;	// ref. to sample vars. is constant
+    sample_event           = sync (ANY, l2t0_cpx_error_ncu1_win_evnt_trig, l2t0_cpx_error_ncu2_win_evnt_trig, l2t0_cpx_error_ncu3_win_evnt_trig);
+    #include "fc_err_l2_ncu_sample.vrh"
+  } // l2_ncu_intf_cov_group
+
+//----------NCU -> L2------------------- 
+  coverage_group ncu_l2_intf_cov_group 
+  {
+    const_sample_reference = 1;	// ref. to sample vars. is constant
+    sample_event           = sync (ANY, ncu_cpx_error_l2t0_win_1_evnt_trig, ncu_cpx_error_l2t0_win_2_evnt_trig );
+    #include "fc_err_ncu_l2_sample.vrh"
+  } // ncu_l2_intf_cov_group
+
+//----------L2 -> NCU------------------- 
+  coverage_group l2_ncu_intf_allerr_cov_group 
+  {
+    const_sample_reference = 1;	// ref. to sample vars. is constant
+    sample_event           = sync (ANY, l2t0_cpx_error_1_win_evnt_trig, l2t0_cpx_error_2_win_evnt_trig, l2t0_cpx_error_3_win_evnt_trig, l2t0_cpx_error_4_win_evnt_trig, l2t0_cpx_error_5_win_evnt_trig, l2t0_cpx_error_6_win_evnt_trig);
+    #include "fc_err_ncul2both_sample.vrh"
+  } // l2_ncu_intf_allerr_cov_group
+
+// *******************************************************************************************
+//    MCU RAS Coverage objects
+//    - 01/23/06 Changed some combinations to make them legal
+// *******************************************************************************************
+  // ----------- coverage_group ----------------Table 9----------------------
+        coverage_group fc_err_l2_mcu_ncu_multi
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = @(posedge fc_MCU_L2_NCU_ESR_intf.clk);
+           sample fc_err_l2_mcu_ncu_multi_sample      ({fc_MCU_L2_NCU_ESR_intf.mcu_mec_error,
+							fc_MCU_L2_NCU_ESR_intf.mcu_dac_error,
+							fc_MCU_L2_NCU_ESR_intf.mcu_fbr_error,
+							fc_MCU_L2_NCU_ESR_intf.l2_esr[62],
+							fc_MCU_L2_NCU_ESR_intf.l2_esr[53],
+							fc_MCU_L2_NCU_ESR_intf.l2_esr[51],
+							fc_MCU_L2_NCU_ESR_intf.l2_esr[49],
+							fc_MCU_L2_NCU_ESR_intf.l2_esr[45],
+							fc_MCU_L2_NCU_ESR_intf.l2_esr[42],
+							fc_MCU_L2_NCU_ESR_intf.l2_esr[40],
+							fc_MCU_L2_NCU_ESR_intf.l2_esr[38],
+							fc_MCU_L2_NCU_ESR_intf.l2_esr[34],
+							fc_MCU_L2_NCU_ESR_intf.ncu_esr[41],
+							fc_MCU_L2_NCU_ESR_intf.ncu_esr[40],
+							fc_MCU_L2_NCU_ESR_intf.ncu_esr[38],
+							fc_MCU_L2_NCU_ESR_intf.ncu_esr[37],
+							fc_MCU_L2_NCU_ESR_intf.ncu_esr[35],
+							fc_MCU_L2_NCU_ESR_intf.ncu_esr[34],
+							fc_MCU_L2_NCU_ESR_intf.ncu_esr[32],
+							fc_MCU_L2_NCU_ESR_intf.ncu_esr[31],
+							fc_MCU_L2_NCU_ESR_intf.ncu_esr[27],
+							fc_MCU_L2_NCU_ESR_intf.ncu_esr[26],
+							fc_MCU_L2_NCU_ESR_intf.ncu_esr[23],
+							fc_MCU_L2_NCU_ESR_intf.ncu_esr[10],
+							fc_MCU_L2_NCU_ESR_intf.ncu_esr[3],
+							fc_MCU_L2_NCU_ESR_intf.ncu_esr[2] 
+					               })
+           {
+                wildcard state fc_err_l2_mcu_ncu_multi_case_1      	(26'bx1x_x1xxxxxxx_xxxxxxxxxxxxx1) ;
+                wildcard state fc_err_l2_mcu_ncu_multi_case_2      	(26'bx1x_x1xxxxxxx_xxxxxxxxx1xxx1) ;
+                wildcard state fc_err_l2_mcu_ncu_multi_case_3      	(26'bx1x_x1xxxxxxx_xxxxxxxxxxxx1x) ;
+                wildcard state fc_err_l2_mcu_ncu_multi_case_4      	(26'bx1x_x1xxxxxxx_xxxxxxxxx1xx1x) ;
+                wildcard state fc_err_l2_mcu_ncu_multi_case_5      	(26'bx1x_x1xxxxxxx_xxxxxxxx11x111) ;
+                wildcard state fc_err_l2_mcu_ncu_multi_case_6      	(26'bx1x_11xxxxxxx_xxxxxxxx11x111) ;
+                wildcard state fc_err_l2_mcu_ncu_multi_case_7      	(26'b11x_11xxxxxxx_1x1x1x1xxxxx11) ;
+                wildcard state fc_err_l2_mcu_ncu_multi_case_8      	(26'bx1x_x1xxxxxxx_xxxxxxx1x1xx11) ;
+                wildcard state fc_err_l2_mcu_ncu_multi_case_9      	(26'b111_11xxxxxxx_x1x1x111x1xx11) ;
+                wildcard state fc_err_l2_mcu_ncu_multi_case_10      	(26'bx1x_xx1xxxxxx_xxxxxxxxxxxxxx) ;
+                wildcard state fc_err_l2_mcu_ncu_multi_case_11      	(26'bx1x_xxx1xxxxx_xxxxxxxxxxxx11) ;
+                wildcard state fc_err_l2_mcu_ncu_multi_case_12      	(26'bx1x_xxx1xxxxx_xxxxxx1x11x111) ;
+                wildcard state fc_err_l2_mcu_ncu_multi_case_13      	(26'bx1x_xxxxxx1xx_xxxxxxxxxxxx11) ;
+                wildcard state fc_err_l2_mcu_ncu_multi_case_14      	(26'bx1x_xxxxxx1xx_xxxxxx1x11x111) ;
+                wildcard state fc_err_l2_mcu_ncu_multi_case_15      	(26'bx1x_xxx1xxxxx_xxxxxx1x11x111) ;
+                wildcard state fc_err_l2_mcu_ncu_multi_case_16      	(26'bx11_xxxxxxxxx_xxxxxxxxxxxx11) ;
+                wildcard state fc_err_l2_mcu_ncu_multi_case_17      	(26'bx11_xxxxxxxxx_xxxxxxxx11x111) ;
+                wildcard state fc_err_l2_mcu_ncu_multi_case_18      	(26'b111_11xxxxxxx_xxxxxxxx11x111) ;
+                wildcard state fc_err_l2_mcu_ncu_multi_case_19      	(26'b111_11xxxxxxx_xxxxxxxx111111) ;
+                wildcard state fc_err_l2_mcu_ncu_multi_case_20      	(26'b11x_xxxxxxxxx_xxxxxxxx111111) ;
+                wildcard state fc_err_l2_mcu_ncu_multi_case_21      	(26'b11x_1xxxxxxx1_xxxxxxxx111111) ;
+           }
+        }
+
+// *******************************************************************************************
+
+
+  task new(string myname, StandardDisplay dbg);
+  task set_spc_pcx_cov_point (string myname, fc_cov_spc_pcx_port spp, reg [5:0] spc_idx);
+  task set_cpx_spc_cov_point (string myname, fc_cov_cpx_spc_port csp, reg [5:0] spc_id); 
+  task set_int_cnt_cov_point (string myname);
+  task set_cov_cond_bits ();
+
+
+} //class fc_cov
+
+
+/////////////////////////////////////////////////////////////////
+// Class creation 
+/////////////////////////////////////////////////////////////////
+task fc_cov::new(string myname, StandardDisplay dbg)
+{
+
+  // for dispmon
+
+  this.myname = myname;
+  this.dbg = dbg;
+  
+  spc_ccx_intf_cov_group = new();
+  l2_ncu_intf_cov_group = new();
+  ncu_l2_intf_cov_group = new();
+  l2_ncu_intf_allerr_cov_group = new();
+  fc_err_l2_mcu_ncu_multi = new();
+
+  fork
+.for($b=0; $b<=7; $b++){
+     set_spc_pcx_cov_point ({myname, ".spc${b}_pcx"}, fc_cov_spc${b}_pcx_bind, $b);
+     set_cpx_spc_cov_point ({myname, ".cpx_spc${b}"}, fc_cov_cpx_spc${b}_bind, $b);
+.}
+  join none
+
+} // fc_cov::new()
+
+
+
+
+
+task fc_cov::set_spc_pcx_cov_point (string myname, fc_cov_spc_pcx_port spp, reg [5:0] spc_idx)
+{
+reg [8:0] spc_pcx_req0 = 0;
+reg [8:0] spc_pcx_req1 = 0;
+reg [5:0] cpu_thr_id;
+
+reg [39:0]    spc_pcx_add;
+reg [4:0]     spc_pcx_type;
+reg [3:0]     spc_pcx_thr;
+reg [7:0]     spc_pcx_size;
+
+ 
+   myname = {myname, ".set_spc_pcx_cov_point"}; 
+   while (1) {
+     @ (posedge spp.\$clk);
+     spc_pcx_req1 = spc_pcx_req0;
+     spc_pcx_req0 = spp.\$req;
+     
+     //=============================
+	
+     
+     if (spc_pcx_req1[8]) {
+	   reg [39:0] tmp_add;
+           spc_pcx_add  = spp.\$data[103:64];
+           spc_pcx_type = spp.\$data[128:124];
+           spc_pcx_thr  = spp.\$data[119:117];
+           spc_pcx_size = spp.\$data[111:104];
+	   tmp_add = spc_pcx_add & 40'hff03ffffff;
+	   if ((tmp_add ==  40'h9001cc0000) &&  (spc_pcx_type == 5'b00001)) {
+		cpu_thr_id = (spc_idx*8)+spc_pcx_thr;	
+		spc_pcx_int_cpu_thr_reg[cpu_thr_id] = 1;	
+		int_des_cpu_thr_reg [cpu_thr_id] = 1;
+		int_des_clk_cnt_en = 1;
+                dbg.dispmon(myname, MON_INFO, psprintf("SPC%0d->PCX(IO): spc_pcx_int_cpu_thr_reg %0h int_des_cpu_thr_reg %0h int_des_clk_cnt %0d, cpu_thr_id %b", 
+							 spc_idx, spc_pcx_int_cpu_thr_reg,    int_des_cpu_thr_reg,    int_des_clk_cnt , cpu_thr_id));
+
+                trigger (spc_ccx_intf_event );
+	   } else {
+		spc_pcx_int_cpu_thr_reg=0;
+	   } 
+            dbg.dispmon(myname, MON_INFO, psprintf("SPC%0D->PCX(IO) :: pkt %0h", spc_idx,  spp.\$data)) ; 
+            dbg.dispmon(myname, MON_INFO, psprintf("SPC%0D->PCX(IO) :: add %0h  type %h   cpu_thr_id %h size %h  spc_idx %h",  spc_idx,  spc_pcx_add,spc_pcx_type,cpu_thr_id,  spc_pcx_size, spc_idx));
+
+	   if (spc_idx !== spp.\$data[122:120]){
+                dbg.dispmon(myname, MON_ERR, psprintf(" SPC%0D->PCX didn't send right cpu_thr_id  %0d",  spc_idx , spp.\$data[122:120]));
+	   }
+     } 
+   }
+} // task set_spc_pcx_cov_point
+
+
+
+task fc_cov::set_cpx_spc_cov_point (string myname, fc_cov_cpx_spc_port csp, reg [5:0] spc_idx )
+{
+reg  cpx_io_grant0;
+reg  cpx_io_grant1;
+reg [2:0] cpu_id;
+reg [2:0] spc_cpx_thr;
+reg [5:0] cpu_thr_id;
+
+  reg [3:0]     spc_cpx_type;
+  reg [7:0]     spc_cpx_cpu;
+  reg [1:0]     spc_cpx_err;
+
+   myname = {myname,  ".set_cpx_spc_cov_point"};
+
+   //dbg.dispmon(myname, MON_DEBUG, psprintf("Task is on"));
+   while (1) {
+        @(posedge csp.\$clk);
+  	cpx_io_grant1 = cpx_io_grant0;
+	cpx_io_grant0 = csp.\$grant;
+
+        if (cpx_io_grant1){
+            spc_cpx_type = csp.\$data[144:141];
+            spc_cpx_err  = csp.\$data[139:138];
+            spc_cpx_thr  = csp.\$data[136:134];
+
+            dbg.dispmon(myname, MON_INFO, psprintf("CPX(IO)->SPC%0d : pkt %0h",spc_idx, csp.\$data)) ; 
+            dbg.dispmon(myname, MON_INFO, psprintf("CPX(IO)->SPC%0d : type %h   %h err %0h, thr_id %0h ,", spc_idx, spc_cpx_type, spc_cpx_err, spc_cpx_thr));
+
+	    if(spc_cpx_type === 4'b0111){
+		cpu_thr_id = (spc_idx*8)+spc_cpx_thr;	
+		cpx_spc_int_cpu_thr_reg[cpu_thr_id] = 1;	
+		spc_cpx_int_vec =  csp.\$data[5:0];
+            	dbg.dispmon(myname, MON_INFO, psprintf("CPX(IO)->SCP%0d: cpu_thr_id %h, cpx_spc_int_cpu_thr_reg %0h, spc_cpx_int_vec %0h", spc_idx, cpu_thr_id, cpx_spc_int_cpu_thr_reg, spc_cpx_int_vec)) ; 
+                trigger (spc_ccx_intf_event );
+	    } else {
+		cpx_spc_int_cpu_thr_reg = 0;
+		spc_cpx_int_vec = 6'hxx;
+	    }
+        } 
+   }
+
+} 
+
+
+task fc_cov::set_int_cnt_cov_point (string myname){
+   myname = {myname,  ".set_int_cnt_cov_point"};
+   pcx_int_clk_cnt = 0;
+   while (1){
+	@(posedge fc_cov_ccx.clk); 
+	if (int_des_clk_cnt_en){
+	  if (int_des_clk_cnt <804){
+	   int_des_clk_cnt++;
+	  } else {
+		int_des_clk_cnt = 0;
+		int_des_clk_cnt_en=0;
+		int_des_cpu_thr_reg = 0;
+	  }
+	} else {
+	  int_des_clk_cnt = 0;
+	}  
+   }
+}
+
+task fc_cov:: set_cov_cond_bits ()
+{
+
+fork
+        {
+           while (1)
+           {
+                @(posedge CLOCK);
+                  if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b01 && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b00 && ( start_count == 0) )
+                   {
+                   start_count = 1 ;
+                   counter = 0 ;
+                   }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b01 &&  fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b00 && ( start_count == 1) )
+                     {
+                      if (counter === 'd10)
+                       {
+                         trigger (l2t0_cpx_error_ncu1_win_evnt_trig );
+                         start_count = 0 ;
+                         counter = 0 ;
+                       }
+                     }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && !(fc_cov_l2.l2t0_cpx_data[139:138] === 2'b01) && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && (fc_cov_ncu.ncu_cpx_data[139:138] === 2'b00) && ( start_count == 1) && (counter <=10) )
+                     {
+                      counter = counter + 1 ;
+                     }
+                  else if (( start_count == 1) && (counter > 10))
+                     {
+                      start_count = 0 ;
+                      counter = 0 ;
+                     }
+           }
+        }
+join none
+
+fork
+        {
+           while (1)
+           {
+                @(posedge CLOCK);
+                  if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b10 && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b00 && ( start_count == 0) )
+                   {
+                   start_count = 1 ;
+                   counter_2 = 0 ;
+                   }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b10 &&  fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b00 && ( start_count == 1) )
+                     {
+                      if (counter_2 === 'd10)
+                       {
+                         trigger (l2t0_cpx_error_ncu2_win_evnt_trig );
+                         start_count = 0 ;
+                         counter_2 = 0 ;
+                       }
+                     }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && !(fc_cov_l2.l2t0_cpx_data[139:138] === 2'b10) && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && (fc_cov_ncu.ncu_cpx_data[139:138] === 2'b00) && ( start_count == 1) && (counter_2 <=10) )
+                     {
+                      counter_2 = counter_2 + 1 ;
+                     }
+                  else if (( start_count == 1) && (counter_2 > 10))
+                     {
+                      start_count = 0 ;
+                      counter_2 = 0 ;
+                     }
+           }
+        }
+join none
+
+fork
+        {
+           while (1)
+           {
+                @(posedge CLOCK);
+                  if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b11 && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b00 && ( start_count == 0) )
+                   {
+                   start_count = 1 ;
+                   counter_3 = 0 ;
+                   }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b11 &&  fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b00 && ( start_count == 1) )
+                     {
+                      if (counter_3 === 'd10)
+                       {
+                         trigger (l2t0_cpx_error_ncu3_win_evnt_trig );
+                         start_count = 0 ;
+                         counter_3 = 0 ;
+                       }
+                     }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && !(fc_cov_l2.l2t0_cpx_data[139:138] === 2'b11) && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && (fc_cov_ncu.ncu_cpx_data[139:138] === 2'b00) && ( start_count == 1) && (counter_3 <=10) )
+                     {
+                      counter_3 = counter_3 + 1 ;
+                     }
+                  else if (( start_count == 1) && (counter_3 > 10))
+                     {
+                      start_count = 0 ;
+                      counter_3 = 0 ;
+                     }
+           }
+        }
+join none
+
+
+fork
+        {
+           while (1)
+           {
+                @(posedge CLOCK);
+                  if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b00 && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b01 && ( start_count == 0) )
+                   {
+                   start_count = 1 ;
+                   counter_4 = 0 ;
+                   }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b00 &&  fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b01 && ( start_count == 1) )
+                     {
+                      if (counter_4 === 'd10)
+                       {
+                         trigger (ncu_cpx_error_l2t0_win_1_evnt_trig );
+                         start_count = 0 ;
+                         counter_4 = 0 ;
+                       }
+                     }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && !(fc_cov_l2.l2t0_cpx_data[139:138] === 2'b00) && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && (fc_cov_ncu.ncu_cpx_data[139:138] === 2'b01) && ( start_count == 1) && (counter_4 <=10) )
+                     {
+                      counter_4 = counter_4 + 1 ;
+                     }
+                  else if (( start_count == 1) && (counter_4 > 10))
+                     {
+                      start_count = 0 ;
+                      counter_4 = 0 ;
+                     }
+           }
+        }
+join none
+
+/*
+fork
+        {
+           while (1)
+           {
+                @(posedge CLOCK);
+                  if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b00 && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b01 && ( start_count == 0) )
+                   {
+                   start_count = 1 ;
+                   counter_4 = 0 ;
+                   }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b00 &&  fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && (fc_cov_ncu.ncu_cpx_data[139:138] === 2'b01 && ( start_count == 1) )
+                     {
+                      if (counter_4 === 'd10)
+                       {
+                         trigger (ncu_cpx_error_l2t0_win_1_evnt_trig );
+                         start_count = 0 ;
+                         counter_4 = 0 ;
+                       }
+                     }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && !(fc_cov_l2.l2t0_cpx_data[139:138] === 2'b00) && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && !(fc_cov_ncu.ncu_cpx_data[139:138] === 2'b01) && ( start_count == 1) && (counter_4 <=10) )
+                     {
+                      counter_4 = counter_4 + 1 ;
+                     }
+                  else if (( start_count == 1) && (counter_4 > 10))
+                     {
+                      start_count = 0 ;
+                      counter_4 = 0 ;
+                     }
+           }
+        }
+join none
+*/
+
+fork
+        {
+           while (1)
+           {
+                @(posedge CLOCK);
+                  if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b00 && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b10 && ( start_count == 0) )
+                   {
+                   start_count = 1 ;
+                   counter_5 = 0 ;
+                   }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b00 &&  fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && (fc_cov_ncu.ncu_cpx_data[139:138] === 2'b10) && ( start_count == 1) )
+                     {
+                      if (counter_5 === 'd10)
+                       {
+                         trigger (ncu_cpx_error_l2t0_win_2_evnt_trig );
+                         start_count = 0 ;
+                         counter_5 = 0 ;
+                       }
+                     }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && !(fc_cov_l2.l2t0_cpx_data[139:138] === 2'b00) && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && !(fc_cov_ncu.ncu_cpx_data[139:138] === 2'b10) && ( start_count == 1) && (counter_5 <=10) )
+                     {
+                      counter_5 = counter_5 + 1 ;
+                     }
+                  else if (( start_count == 1) && (counter_5 > 10))
+                     {
+                      start_count = 0 ;
+                      counter_5 = 0 ;
+                     }
+           }
+        }
+join none
+
+fork
+        {
+           while (1)
+           {
+                @(posedge CLOCK);
+                  if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b01 && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b01 && ( start_count == 0) )
+                   {
+                   start_count = 1 ;
+                   err_counter = 0 ;
+                   }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b01 &&  fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b01 && ( start_count == 1) )
+                     {
+                      if (err_counter === 'd10)
+                       {
+                         trigger (l2t0_cpx_error_1_win_evnt_trig );
+                         start_count = 0 ;
+                         err_counter = 0 ;
+                       }
+                     }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && !(fc_cov_l2.l2t0_cpx_data[139:138] === 2'b01) && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && !(fc_cov_ncu.ncu_cpx_data[139:138] === 2'b01) && ( start_count == 1) && (err_counter <=10) )
+                     {
+                      err_counter = err_counter + 1 ;
+                     }
+                  else if (( start_count == 1) && (err_counter > 10))
+                     {
+                      start_count = 0 ;
+                      err_counter = 0 ;
+                     }
+           }
+        }
+join none
+
+fork
+        {
+           while (1)
+           {
+                @(posedge CLOCK);
+                  if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b01 && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b10 && ( start_count == 0) )
+                   {
+                   start_count = 1 ;
+                   err_counter2 = 0 ;
+                   }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b01 &&  fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b10 && ( start_count == 1) )
+                     {
+                      if (err_counter2 === 'd10)
+                       {
+                         trigger (l2t0_cpx_error_2_win_evnt_trig );
+                         start_count = 0 ;
+                         err_counter2 = 0 ;
+                       }
+                     }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && !(fc_cov_l2.l2t0_cpx_data[139:138] === 2'b01) && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && !(fc_cov_ncu.ncu_cpx_data[139:138] === 2'b10) && ( start_count == 1) && (err_counter2 <=10) )
+                     {
+                      err_counter2 = err_counter2 + 1 ;
+                     }
+                  else if (( start_count == 1) && (err_counter2 > 10))
+                     {
+                      start_count = 0 ;
+                      err_counter2 = 0 ;
+                     }
+           }
+        }
+join none
+
+fork
+        {
+           while (1)
+           {
+                @(posedge CLOCK);
+                  if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b10 && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b01 && ( start_count == 0) )
+                   {
+                   start_count = 1 ;
+                   err_counter3 = 0 ;
+                   }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b10 &&  fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b01 && ( start_count == 1) )
+                     {
+                      if (err_counter3 === 'd10)
+                       {
+                         trigger (l2t0_cpx_error_3_win_evnt_trig );
+                         start_count = 0 ;
+                         err_counter3 = 0 ;
+                       }
+                     }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && !(fc_cov_l2.l2t0_cpx_data[139:138] === 2'b10) && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && !(fc_cov_ncu.ncu_cpx_data[139:138] === 2'b01) && ( start_count == 1) && (err_counter3 <=10) )
+                     {
+                      err_counter3 = err_counter3 + 1 ;
+                     }
+                  else if (( start_count == 1) && (err_counter3 > 10))
+                     {
+                      start_count = 0 ;
+                      err_counter3 = 0 ;
+                     }
+           }
+        }
+join none
+
+fork
+        {
+           while (1)
+           {
+                @(posedge CLOCK);
+                  if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b10 && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b10 && ( start_count == 0) )
+                   {
+                   start_count = 1 ;
+                   err_counter4 = 0 ;
+                   }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b10 &&  fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b10 && ( start_count == 1) )
+                     {
+                      if (err_counter4 === 'd10)
+                       {
+                         trigger (l2t0_cpx_error_4_win_evnt_trig );
+                         start_count = 0 ;
+                         err_counter4 = 0 ;
+                       }
+                     }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && !(fc_cov_l2.l2t0_cpx_data[139:138] === 2'b10) && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && !(fc_cov_ncu.ncu_cpx_data[139:138] === 2'b10) && ( start_count == 1) && (err_counter4 <=10) )
+                     {
+                      err_counter4 = err_counter4 + 1 ;
+                     }
+                  else if (( start_count == 1) && (err_counter4 > 10))
+                     {
+                      start_count = 0 ;
+                      err_counter4 = 0 ;
+                     }
+           }
+        }
+join none
+
+fork
+        {
+           while (1)
+           {
+                @(posedge CLOCK);
+                  if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b11 && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b01 && ( start_count == 0) )
+                   {
+                   start_count = 1 ;
+                   err_counter5 = 0 ;
+                   }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b11 &&  fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b01 && ( start_count == 1) )
+                     {
+                      if (err_counter5 === 'd10)
+                       {
+                         trigger (l2t0_cpx_error_5_win_evnt_trig );
+                         start_count = 0 ;
+                         err_counter5 = 0 ;
+                       }
+                     }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && !(fc_cov_l2.l2t0_cpx_data[139:138] === 2'b11) && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && !(fc_cov_ncu.ncu_cpx_data[139:138] === 2'b01) && ( start_count == 1) && (err_counter5 <=10) )
+                     {
+                      err_counter5 = err_counter5 + 1 ;
+                     }
+                  else if (( start_count == 1) && (err_counter5 > 10))
+                     {
+                      start_count = 0 ;
+                      err_counter5 = 0 ;
+                     }
+           }
+        }
+join none
+
+fork
+        {
+           while (1)
+           {
+                @(posedge CLOCK);
+                  if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b11 && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b10 && ( start_count == 0) )
+                   {
+                   start_count = 1 ;
+                   err_counter6 = 0 ;
+                   }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && fc_cov_l2.l2t0_cpx_data[139:138] === 2'b11 &&  fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && fc_cov_ncu.ncu_cpx_data[139:138] === 2'b10 && ( start_count == 1) )
+                     {
+                      if (err_counter6 === 'd10)
+                       {
+                         trigger (l2t0_cpx_error_6_win_evnt_trig );
+                         start_count = 0 ;
+                         err_counter6 = 0 ;
+                       }
+                     }
+                  else if ( fc_cov_l2.l2t0_cpx_data[145] === 1'b1 && fc_cov_l2.l2t0_cpx_data[144:141] === 4'b0000  && !(fc_cov_l2.l2t0_cpx_data[139:138] === 2'b11) && fc_cov_ncu.ncu_cpx_data[145] === 1 &&  fc_cov_ncu.ncu_cpx_data[144:141] === 4'b1000 && !(fc_cov_ncu.ncu_cpx_data[139:138] === 2'b10) && ( start_count == 1) && (err_counter6 <=10) )
+                     {
+                      err_counter6 = err_counter6 + 1 ;
+                     }
+                  else if (( start_count == 1) && (err_counter6 > 10))
+                     {
+                      start_count = 0 ;
+                      err_counter6 = 0 ;
+                     }
+           }
+        }
+join none
+
+}

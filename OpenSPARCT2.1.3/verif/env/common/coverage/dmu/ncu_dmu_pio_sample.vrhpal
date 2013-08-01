@@ -1,0 +1,211 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ncu_dmu_pio_sample.vrhpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+coverage_goal = 100; // override default of 90%
+cross_num_print_missing = (1 << 32) - 1; // INT_MAX
+
+sample ncu_dmu_intf_PIO_CreditId_cov (ncu_pio_credit)
+{
+  m_state PIO_CREDIT 		(0:15);
+}
+
+sample ncu_dmu_intf_PIOWrMem_Cmd_cov ({ncu_pio_wr,ncu_pio_cmd})
+{
+  state PIO_WR_MEM32  (3'b010);
+  state PIO_WR_MEM64  (3'b011);
+  cov_weight = 0;
+}
+
+sample ncu_dmu_intf_PIOWrCfgIO_Cmd_cov ({ncu_pio_wr,ncu_pio_cmd})
+{
+  state PIO_WR_CONFIG (3'b000);
+  state PIO_WR_IO     (3'b001);
+  cov_weight = 0;
+}
+
+sample ncu_dmu_intf_PIORdMem_Cmd_cov ({ncu_pio_wr,ncu_pio_cmd})
+{
+  state PIO_RD_MEM32  (3'b110);
+  state PIO_RD_MEM64  (3'b111);
+  cov_weight = 0;
+}
+sample ncu_dmu_intf_PIORdCfgIO_Cmd_cov ({ncu_pio_wr,ncu_pio_cmd})
+{
+  state PIO_RD_CONFIG (3'b100);
+  state PIO_RD_IO     (3'b101);
+  cov_weight = 0;
+}
+
+sample ncu_dmu_intf_PIORd_Cmd_cov ({ncu_pio_wr,ncu_pio_cmd})
+{
+  state PIO_RD_CONFIG (3'b100);
+  state PIO_RD_IO     (3'b101);
+  state PIO_RD_MEM32  (3'b110);
+  state PIO_RD_MEM64  (3'b111);
+  cov_weight = 0;
+}
+
+// PIO Config/IO's write/read byte masks
+// Concatenate bytemask with address[3] to cover all byte & address alignments
+// Address is aligned to # of bytes and only 1,2,4,8 are legal for writes
+sample ncu_dmu_intf_PIOWrCfgIO_bmsk_cov ({ncu_pio_add[3],ncu_pio_bmsk})
+{
+  // 1 Byte
+  m_state BMsk1B_even (9'b000000001, 9'b000000010, 9'b000000100, 9'b000001000,
+                       9'b000010000, 9'b000100000, 9'b001000000, 9'b010000000) if (ncu_pio_wr == 1'b0);
+  m_state BMsk1B_odd  (9'b100000001, 9'b100000010, 9'b100000100, 9'b100001000,
+                       9'b100010000, 9'b100100000, 9'b101000000, 9'b110000000) if (ncu_pio_wr == 1'b0);
+  // 2 Byte
+  m_state BMsk2B_even (9'b000000011, 9'b000001100, 9'b000110000, 9'b011000000) if (ncu_pio_wr == 1'b0);
+  m_state BMsk2B_odd  (9'b100000011, 9'b100001100, 9'b100110000, 9'b111000000) if (ncu_pio_wr == 1'b0);
+  // 4 Byte
+  m_state BMsk4B_even (9'b000001111, 9'b011110000) if (ncu_pio_wr == 1'b0);
+  m_state BMsk4B_odd  (9'b100001111, 9'b111110000) if (ncu_pio_wr == 1'b0);
+  cov_weight = 0;
+}
+
+// PIOMemWr - 1,2,4,8 bytes + partial. Partial case covers 1,2,4,8 cases
+// Partial Store's to PIO MEM space can use and 8 bit value in byte mask
+// Concatenate bytemask with address[3] to cover all byte & address alignments
+sample ncu_dmu_intf_PIOWr_bmsk_cov ({ncu_pio_add[3], ncu_pio_bmsk})
+{
+  m_state BMsk_even (0:255)   if (ncu_pio_wr == 1'b0);
+  m_state BMsk_odd  (256:511) if (ncu_pio_wr == 1'b0);
+  cov_weight = 0;
+}
+
+// cross/sample PIO Read commands with length and address offsets
+sample ncu_dmu_intf_PIORd_addr1_cov (ncu_pio_add[3:0]) {
+  m_state Addr3to0(0:15) if (ncu_pio_wr == 1'b1);
+  cov_weight = 0;
+}
+sample ncu_dmu_intf_PIORd_size1B_cov (ncu_pio_size) {
+  state Size1B (3'b000) if (ncu_pio_wr == 1'b1);
+  cov_weight = 0;
+}
+
+sample ncu_dmu_intf_PIORd_addr2_cov (ncu_pio_add[3:1]) {
+  m_state Addr3to1(0:7) if (ncu_pio_wr == 1'b1);
+  cov_weight = 0;
+}
+sample ncu_dmu_intf_PIORd_size2B_cov (ncu_pio_size) {
+  state Size2B (3'b001) if (ncu_pio_wr == 1'b1);
+  cov_weight = 0;
+}
+
+sample ncu_dmu_intf_PIORd_addr4_cov (ncu_pio_add[3:2]) {
+  m_state Addr3to2(0:3) if (ncu_pio_wr == 1'b1);
+  cov_weight = 0;
+}
+sample ncu_dmu_intf_PIORd_size4B_cov (ncu_pio_size) {
+  state Size4B (3'b010) if (ncu_pio_wr == 1'b1);
+  cov_weight = 0;
+}
+
+sample ncu_dmu_intf_PIORd_addr8_cov (ncu_pio_add[3:3]) {
+  m_state Addr3to3(0:1) if (ncu_pio_wr == 1'b1);
+  cov_weight = 0;
+}
+sample ncu_dmu_intf_PIORd_size8B_cov (ncu_pio_size) {
+  state Size8B (3'b011) if (ncu_pio_wr == 1'b1);
+  cov_weight = 0;
+}
+
+// 16B PIO Reads are supported by DMU but not FC
+#ifndef DMU_INTF_COV
+sample ncu_dmu_intf_PIORd_addr16_cov (ncu_pio_add[3:0]) {
+  state Addr3to0 (0) if (ncu_pio_wr == 1'b1);
+  cov_weight = 0;
+}
+sample ncu_dmu_intf_PIORd_size16B_cov (ncu_pio_size) {
+  state Size16B (3'b100) if (ncu_pio_wr == 1'b1);
+  cov_weight = 0;
+}
+#endif
+
+cross ncu_dmu_intf_PIOWrCfgIO_Bmsk_cov (ncu_dmu_intf_PIOWrCfgIO_Cmd_cov,
+                                        ncu_dmu_intf_PIOWrCfgIO_bmsk_cov);
+
+cross ncu_dmu_intf_PIOWrMem_Bmsk_cov (ncu_dmu_intf_PIOWrMem_Cmd_cov,
+                                      ncu_dmu_intf_PIOWr_bmsk_cov);
+
+cross ncu_dmu_intf_PIORd_AddrSize1B_cov (ncu_dmu_intf_PIORd_Cmd_cov,
+                                         ncu_dmu_intf_PIORd_addr1_cov,
+                                         ncu_dmu_intf_PIORd_size1B_cov);
+
+cross ncu_dmu_intf_PIORd_AddrSize2B_cov (ncu_dmu_intf_PIORd_Cmd_cov,
+                                         ncu_dmu_intf_PIORd_addr2_cov,
+                                         ncu_dmu_intf_PIORd_size2B_cov);
+
+cross ncu_dmu_intf_PIORd_AddrSize4B_cov (ncu_dmu_intf_PIORd_Cmd_cov,
+                                         ncu_dmu_intf_PIORd_addr4_cov,
+                                         ncu_dmu_intf_PIORd_size4B_cov);
+
+cross ncu_dmu_intf_PIORdMem_AddrSize8B_cov (ncu_dmu_intf_PIORdMem_Cmd_cov,
+                                            ncu_dmu_intf_PIORd_addr8_cov,
+                                            ncu_dmu_intf_PIORd_size8B_cov);
+
+// 16B PIO Reads are supported by DMU but not FC
+#ifndef DMU_INTF_COV
+cross ncu_dmu_intf_PIORdMem_AddrSize16B_cov (ncu_dmu_intf_PIORdMem_Cmd_cov,
+                                             ncu_dmu_intf_PIORd_addr16_cov,
+                                             ncu_dmu_intf_PIORd_size16B_cov);
+#endif
+
+sample ncu_dmu_intf_PIO_CmdMap_cov (ncu_pio_cmap)
+{
+  m_state PIO_CMAP 		(0:3);
+}
+
+sample ncu_dmu_intf_PIO_BufId_cov (ncu_pio_bufid)
+{
+  //m_state BUFID (0:1) ; // need jtag to access BUFID == 1
+  state BUFID (0) ;
+}
+
+sample ncu_dmu_intf_PIO_CPUThread_cov (ncu_pio_cpu)
+{
+  m_state CPUThread (0:63);
+}
+
+sample ncu_dmu_intf_PIO_PA_cov (ncu_pio_add[35:3])
+{
+  state PIO_ADD		(0:33'h1ffffffff);
+  at_least = 100;
+}
+
+sample ncu_dmu_intf_PIO_b2b_cov (ncu_pio_b2b)
+{
+  m_state PIO_B2B    (2:32) ;
+}

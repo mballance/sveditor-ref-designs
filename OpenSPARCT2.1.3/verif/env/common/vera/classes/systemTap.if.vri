@@ -1,0 +1,94 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: systemTap.if.vri
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#ifndef INC_SYSTEMTAP_IF_VRI
+#define INC_SYSTEMTAP_IF_VRI
+
+#include <vera_defines.vrh>
+
+// #define OUTPUT_EDGE_N  NHOLD
+// #define INPUT_EDGE   PSAMPLE
+// #define INPUT_SKEW   #-3
+
+interface tb_top_tck { // to support on-demand TCK
+  input	  TCK                 CLOCK       verilog_node "tb_top.tck";
+  inout	  TCK2DUT   PSAMPLE   NHOLD       verilog_node "tb_top.tck2dut";
+  output  TRST_L              NHOLD       verilog_node "`CPU.TRST_L";
+}
+
+interface jtag {
+  input	  TCK                 CLOCK       verilog_node "`CPU.TCK";
+  input   TDO                 PSAMPLE #-3 verilog_node "`CPU.TDO";
+  output  TEST_MODE           NHOLD       verilog_node "`CPU.TESTMODE";
+  output  TDI                 NHOLD       verilog_node "`CPU.TDI";
+  output  TMS                 NHOLD       verilog_node "`CPU.TMS";
+  output  SSI_MISO            NHOLD       verilog_node "`CPU.SSI_MISO";
+}
+
+interface l2clk_if {
+#ifdef TCU_GATE
+  input l2clk CLOCK  verilog_node "`TCU.clkgen_tcu_cmp__cclk";
+#else
+  input l2clk CLOCK  verilog_node "`TCU.clkgen_tcu_cmp.l2clk";
+#endif
+}
+
+port tap__port {
+  tck;
+  tck2dut;
+  trst_n;
+  test_mode;
+  tms;
+  tdi;
+  tdo;
+  ssi_miso;
+  l2clk;
+}
+
+bind tap__port tap_bind {
+  tck           tb_top_tck.TCK;
+  tck2dut       tb_top_tck.TCK2DUT;
+  trst_n        tb_top_tck.TRST_L;
+  test_mode     jtag.TEST_MODE;
+  tms           jtag.TMS;
+  tdi           jtag.TDI;
+  tdo           jtag.TDO;
+  ssi_miso      jtag.SSI_MISO;
+  l2clk         l2clk_if.l2clk;
+}
+
+
+#endif
+
+

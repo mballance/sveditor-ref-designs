@@ -1,0 +1,615 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: XactorManager.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "XactorCtrl.vrh"
+#include "XactorUtilities.vrh"
+#include "XactorClk.port.vri"
+#include "XactorComponentsDefines.vri"
+
+#include "XactorDefines.vri"
+#include "XactorBasePacket.vrh"
+#include "XactorBaseManager.vrh"
+#include "XactorBaseExpectDataStruct.vrh"
+#include "XactorBaseBuilder.vrh"
+
+#include "cReport.vrh"
+
+class XactorManager extends XactorBaseManager {
+  
+  // ++++++++ Expect Manager properties ++++++++
+  // This is the Fifo structure where expected packets from the signal
+  // interface are received (a mailbox is used).
+  integer ExpectFifo;
+  // Expect Data Structures are defined in XactorBaseManager 
+
+  // ++++++++ Drive Manager properties ++++++++
+  // This is the Fifo structure where packets to be driven to the signal
+  // interface are sent (a mailbox is used).  
+  integer DriveFifo;
+  // This semaphore is used to schedule requests to drive packets
+  protected integer DriverSemaphore;
+
+  // Enable/Disable/Reset Transactor property
+  XactorCtrl _XactorCtrl;
+
+  // +++++++ Sample transaction properties ++++++++
+  // this packet is used to store the values of transactions coming from the
+  // signal interface
+  protected XactorBasePacket SampledPkt;
+  // this event is triggered when sample flag is set and a new transaction
+  // was sampled from the DUT
+  protected event NewTransaction;
+
+  // Transactor name
+  protected string XactorName;
+
+  // Transactor clock port
+  protected XactorClk ClkPort;
+
+  // MyReport declared in XactorBaseManager
+  
+  task new (XactorBaseBuilder Builder,
+	    XactorClk _ClkPort
+	    );
+
+  // --------------------------------------------------------------------------
+  // Expect and Drive Manager methods
+  // --------------------------------------------------------------------------
+  // Prints out pending expects. A packet has to be passed, since data structures
+  // store values in a "compressed way" and packets know how to decode that 
+  // information
+  virtual task DumpExpects();
+
+  // Returns 1 if an expect with the value ExpectedPacket is pending and 0 otherwise
+  virtual function bit ExpectPending(XactorBasePacket ExpectedPacket);
+
+  // Returns 1 if the expect with the value in ExpectedPacket is removed successfully 
+  // and 0 otherwise
+  virtual function bit Remove(XactorBasePacket ExpectedPacket);
+
+  // Returns the number of pending expects in all the data structures 
+  // of the transactor
+  virtual function integer NumExpects();
+
+  // Removes Packet from ExpectDataStruct. Success is 1 if 
+  // Packet is removed without problems and 0 otherwise
+  virtual protected task RemoveExpect(XactorBasePacket Packet,
+				      var bit Success
+				      );
+
+  // Same as RemoveExpect, but it will remove Packet from the XExpectDataStruct
+  virtual protected task RemoveXExpect(XactorBasePacket Packet,
+				       var bit Success
+				       );
+
+  // Same as RemoveExpect, but it will remove Packet from the XExpectDataStruct
+  // Compared to RemoveXExpect, this task will call WildCardDelete1
+  virtual protected task RemoveRefExpect(XactorBasePacket Packet,
+					 var bit Success
+					 );
+  
+  // Same as RemoveExpect, but it will remove Packet from the XExpectDataStruct
+  // Compared to RemoveXExpect, this task will call WildCardDelete1
+  virtual protected task RemoveRefXExpect(XactorBasePacket Packet,
+					  var bit Success
+					  );
+
+  // This task will wait for a maximum of Window cycles for the ExpectedPkt to be removed from 
+  // the expect data structures. Removed is an event variable that is triggered when ExpectedPkt is
+  // removed. TransactionRemoved will be 1 if ExpectedPkt was removed and 0 otherwise. Id is the
+  // id number of the expect transaction.
+  virtual task ExpectPkt(XactorBasePacket ExpectedPkt,
+			 integer Window,
+			 var bit [1:0] Status
+			 );
+
+  // This task will wait for the next transaction driven by the DUT, it will then sample it and
+  // will return the values through Pkt
+  virtual task SamplePkt(XactorBasePacket Pkt,
+			 integer Window
+			 );
+
+  // This task will be waiting for transactions coming from the DUT
+  // and match them with the pending list of expects (stored in the data structures)
+  virtual protected task ExpectConsumer();
+
+  // This task will receive DrivenPkt and will wait D clock cycles before DrivenPkt is
+  // scheduled for driving
+  virtual task DrivePkt(XactorBasePacket DrivenPkt, integer D);
+
+  // This task will disable the transactor
+  virtual task DisableManager();
+  
+  // This task will enable the transactor
+  virtual task EnableManager();
+
+  // This task will flush the Drive Fifo
+  virtual protected task FlushDriveFifo();
+
+  // This task will reset the transactor
+  virtual task ResetManager();
+
+} 
+
+  ////////////////
+ // Definitions
+////////////////
+
+task XactorManager::new (XactorBaseBuilder Builder,
+			 XactorClk _ClkPort
+			 ) {
+  // ++++++++ Expect Manager Initialization ++++++++
+  // The Builder object will be in charge of creating the proper type of
+  // objects for each property handle of this class.
+  XactorName        = Builder.CreateName();    
+  ExpectDataStruct  = Builder.CreateExpectDataStruct();
+  XExpectDataStruct = Builder.CreateXExpectDataStruct();
+  MyReport          = Builder.CreateReport();
+  ExpectFifo = alloc(MAILBOX, 0, 1);
+  if(ExpectFifo == 0) {
+    MyReport.report(RTYP_XACTOR_FMWORK_MEM_ALLOCATION_ERROR, 
+		    "$0s: Failed to allocate ExpectFifo mailbox!!",
+		    XactorName);    
+  }
+  ClkPort = _ClkPort;
+  
+  fork {
+    ExpectConsumer();
+  }
+  join none    
+  
+  // ++++++++ Drive Manager initialization +++++++++
+  DriveFifo    = alloc(MAILBOX, 0, 1);
+  if(DriveFifo == 0) {
+    MyReport.report(RTYP_XACTOR_FMWORK_MEM_ALLOCATION_ERROR, 
+		    "$0s: Failed to allocate DriveFifo mailbox!!",
+		    XactorName);    
+  }
+  DriverSemaphore = alloc(SEMAPHORE, 0, 1, 1);    
+  if(DriverSemaphore == 0) {
+    MyReport.report(RTYP_XACTOR_FMWORK_MEM_ALLOCATION_ERROR, 
+		    "$0s: Failed to allocate DriverSemaphore semaphore!!",
+		    XactorName);    
+  }
+  
+  // ++++++++ General properties initialization ++++++++++
+  _XactorCtrl = new(Builder);
+}
+
+// --------------------------------------------------------------------------
+// Expect and Drive Manager methods
+// --------------------------------------------------------------------------
+// Prints out pending expects. A packet has to be passed, since data structures
+// store values in a "compressed way" and packets know how to decode that 
+// information
+task XactorManager::DumpExpects() {
+
+  // First print nodes from the main expect data structure
+  semaphore_get(WAIT, _XactorCtrl.ExpectDataStructSemaphore, 1);    
+  MyReport.report(RTYP_INFO, "XactorManager::DumpExpects(): Dumping Expect Structure:\n");
+  ExpectDataStruct.PrintNodes();
+  semaphore_put(_XactorCtrl.ExpectDataStructSemaphore, 1);
+  
+  // Then print nodes from the expect data structure that was nodes
+  // with "wildcard" values (X's)
+  semaphore_get(WAIT, _XactorCtrl.XExpectDataStructSemaphore, 1);
+  MyReport.report(RTYP_INFO, "XactorManager::DumpExpects(): Dumping Wildcard Expect Structure:\n");
+  XExpectDataStruct.PrintNodes();
+  semaphore_put(_XactorCtrl.XExpectDataStructSemaphore, 1);
+}
+
+// Returns 1 if an expect with the value ExpectedPacket is pending and 0 otherwise
+function bit XactorManager::ExpectPending(XactorBasePacket ExpectedPacket) {    
+  bit ExpectPendingBit = 1'b0;
+  bit XExpectPendingBit = 1'b0;
+  
+  // First check if the expect is pending in the main expect data structure
+  semaphore_get(WAIT, _XactorCtrl.ExpectDataStructSemaphore, 1);
+  if((!(ExpectDataStruct.Empty())) && (!ExpectedPacket.PktUndef()))
+    ExpectPendingBit = ExpectDataStruct.InStructure(ExpectedPacket);
+  semaphore_put(_XactorCtrl.ExpectDataStructSemaphore, 1);
+
+  // Then check if the expect is in the expect data structure with "wildcards"
+  semaphore_get(WAIT, _XactorCtrl.XExpectDataStructSemaphore, 1);
+  if((!(XExpectDataStruct.Empty())) && (ExpectedPacket.PktUndef()))
+    XExpectPendingBit = XExpectDataStruct.InStructure(ExpectedPacket);
+  semaphore_put(_XactorCtrl.XExpectDataStructSemaphore, 1);
+  
+  ExpectPending = ExpectPendingBit | XExpectPendingBit;
+}
+
+// Returns 1 if the expect with the value in ExpectedPacket is removed successfully 
+// and 0 otherwise
+function bit XactorManager::Remove(XactorBasePacket ExpectedPacket) {    
+  // Success flags when an expect transaction is removed from a data
+  // structure.
+  bit SuccessWildcard = 1'b0;
+  bit Success = 1'b0;
+  
+  // First check if the expect is pending in the main expect data structure
+  RemoveRefExpect(ExpectedPacket, Success);
+  // Then check if the expect is in the expect data structure with "wildcards"
+  RemoveRefXExpect(ExpectedPacket, SuccessWildcard);
+  
+  Remove = Success | SuccessWildcard;
+}
+
+// Returns the number of pending expects in all the data structures 
+// of the transactor
+function integer XactorManager::NumExpects() {
+  integer Expects = 0;
+
+  // First count the expects pending in the main expect data structure
+  semaphore_get(WAIT, _XactorCtrl.ExpectDataStructSemaphore, 1);    
+  Expects = ExpectDataStruct.CountNodes();
+  semaphore_put(_XactorCtrl.ExpectDataStructSemaphore, 1);
+  
+  // Then count the expects pending in the expect data structure with "wildcards"
+  semaphore_get(WAIT, _XactorCtrl.XExpectDataStructSemaphore, 1);
+  Expects += XExpectDataStruct.CountNodes();
+  semaphore_put(_XactorCtrl.XExpectDataStructSemaphore, 1);
+  
+  NumExpects = Expects;
+}
+
+// Removes Packet from ExpectDataStruct. Success is 1 if 
+// Packet is removed without problems and 0 otherwise
+task XactorManager::RemoveExpect(XactorBasePacket Packet,
+				 var bit Success
+				 ) {
+  
+  semaphore_get(WAIT, _XactorCtrl.ExpectDataStructSemaphore, 1);
+  if((!(ExpectDataStruct.Empty())) && (!(Packet.PktUndef()))) {
+    ExpectDataStruct.Delete(Packet,
+			    Success
+			    );
+  }
+  else
+    Success = 1'b0;
+  semaphore_put(_XactorCtrl.ExpectDataStructSemaphore, 1);
+  
+  if (Success) {
+    Packet.PktDisplay(RTYP_DEBUG_2, "Sampled Transaction with match in ExpectDataSTtructure");      
+  }
+  else {
+    Packet.PktDisplay(RTYP_DEBUG_2, "Sampled Transaction without match in ExpectDataStructure");
+  }
+} 
+
+// Same as RemoveExpect, but it will remove Packet from the XExpectDataStruct
+task XactorManager::RemoveXExpect(XactorBasePacket Packet,
+				  var bit Success
+				  ) {
+  
+  semaphore_get(WAIT, _XactorCtrl.XExpectDataStructSemaphore, 1);	
+  if(!(XExpectDataStruct.Empty())) {
+    XExpectDataStruct.WildCardDelete1(Packet,
+				      Success
+				      );
+  }
+  else
+    Success = 1'b0;
+  semaphore_put(_XactorCtrl.XExpectDataStructSemaphore, 1);
+
+  if (Success) {
+    Packet.PktDisplay(RTYP_DEBUG_2, "Sampled Transaction with match in XExpectDataStructure");
+  }
+  else {
+    Packet.PktDisplay(RTYP_DEBUG_2, "Sampled Transaction without match in XExpectDataStructure");
+  }
+} 
+
+// Same as RemoveExpect, but it will remove Packet from the XExpectDataStruct
+// Compared to RemoveXExpect, this task will call WildCardDelete1
+task XactorManager::RemoveRefExpect(XactorBasePacket Packet,
+				    var bit Success
+				    ) {
+  
+  semaphore_get(WAIT, _XactorCtrl.ExpectDataStructSemaphore, 1);
+  if((!(ExpectDataStruct.Empty())) && (!Packet.PktUndef())) {
+    ExpectDataStruct.RefDelete(Packet,
+			       Success
+			       );
+  }
+  else
+    Success = 1'b0;
+  semaphore_put(_XactorCtrl.ExpectDataStructSemaphore, 1);
+  
+  if (Success) {
+    Packet.PktDisplay(RTYP_DEBUG_2, "%0s: Removing expect from Expect Data Structure");
+  }
+  else {
+    Packet.PktDisplay(RTYP_DEBUG_2, "%0s: Removing expect from Expect Data Structure");
+  }
+}
+
+// Same as RemoveExpect, but it will remove Packet from the XExpectDataStruct
+// Compared to RemoveXExpect, this task will call WildCardDelete1
+task XactorManager::RemoveRefXExpect(XactorBasePacket Packet,
+				     var bit Success
+				     ) {
+
+  semaphore_get(WAIT, _XactorCtrl.XExpectDataStructSemaphore, 1);    
+  if((!(XExpectDataStruct.Empty())) && (Packet.PktUndef())) {
+    XExpectDataStruct.RefDelete(Packet,
+				Success
+				);
+  }
+  else
+    Success = 1'b0;    
+  semaphore_put(_XactorCtrl.XExpectDataStructSemaphore, 1);
+
+  if (Success) {
+    Packet.PktDisplay(RTYP_DEBUG_2, "%0s: Removing expect from XExpect Data Structure");
+  }
+  else {
+    Packet.PktDisplay(RTYP_DEBUG_2, "%0s: Removing expect from XExpect Data Structure");
+  }
+}
+
+// This task will wait for a maximum of Window cycles for the ExpectedPkt to be removed from 
+// the expect data structures. Removed is an event variable that is triggered when ExpectedPkt is
+// removed. TransactionRemoved will be 1 if ExpectedPkt was removed and 0 otherwise. Id is the
+// id number of the expect transaction.
+task XactorManager::ExpectPkt(XactorBasePacket ExpectedPkt,
+			      integer Window,
+			      var bit [1:0] Status
+			      ) {
+  // Success flags when an expect transaction is removed from a data
+  // structure.
+  bit SuccessWildcard = 1'b0;
+  bit Success = 1'b0;
+  // Events used when an expect is removed
+  event RemoveEvents[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS];
+  
+  Status = 2'b00; // Status[1] = 1'b0 Expect not removed
+                  // Status[1] = 1'b1 Expect removed
+                  // Status[0] = 1'b0 Expect removed by transactor
+                  // Status[0] = 1'b1 Expect removed by user
+
+  // Check if the Expected value has "wildcards" or if it only has
+  // valid bits (0's and 1's) and store in the corresponding expect
+  // data structure.
+  if(ExpectedPkt.PktUndef()) {
+    semaphore_get(WAIT, _XactorCtrl.XExpectDataStructSemaphore, 1);
+    XExpectDataStruct.Insert(ExpectedPkt, RemoveEvents);
+    semaphore_put(_XactorCtrl.XExpectDataStructSemaphore, 1);
+  }
+  else {
+    semaphore_get(WAIT, _XactorCtrl.ExpectDataStructSemaphore, 1);
+    ExpectDataStruct.Insert(ExpectedPkt, RemoveEvents);
+    semaphore_put(_XactorCtrl.ExpectDataStructSemaphore, 1);
+  }
+  
+  // Synchronize the waiting cycle to the negative edge of the clock
+  // Two negedges have to pass to start the while loop. This restricts
+  // the minimum value of the expect Window to 1 cycle. A Window with
+  // a value of 0 is not possible since race conditions would make
+  // the code execution unpredictable.
+  repeat(2)
+    @(negedge ClkPort.$XClk);
+  
+  // Wait until the expect is satisfied or it times out.
+  while (!Status[1] && Window) {
+    if(_XactorCtrl.GetDisableFlag() === 1'b1)
+      sync(ANY, _XactorCtrl.GetEnableEvent());    
+    if (sync(CHECK, RemoveEvents[XACT_COMP_EXPECT_REMOVED_EVENT])) {
+      Status[1] = 1'b1;
+    }
+    
+    Window--;
+    if(!Status[1])
+      @(negedge ClkPort.$XClk);
+  }
+  
+  // If the pending expect transaction was not removed and it has already
+  // timed out, then there is no need for it to stay in any of the expect
+  // data structures.
+  if(Status[1] !== 1'b1) {
+    fork {
+      // Check if the Expected value has "wildcards". If it does, do not
+      // try to delete from this data structure
+      RemoveRefExpect(ExpectedPkt, Success);
+    }
+    {
+      // Check if the Expected value has "wildcards". If it does, try to
+      // delete from this data structure
+      RemoveRefXExpect(ExpectedPkt, SuccessWildcard);
+    }
+    join all 	      
+    
+    Status[0] = 1'b0; // Expect timedout and is removed by transactor
+  }
+  else {
+    // Copy all the fields for the sampled transaction, if "wildcards' are used
+    // NOTE: this is done within the data structures. Look for WildCardDelete1() method.
+//    if(ExpectedPkt.PktUndef()) {
+//      ExpectedPkt.PktCopy(SampledPkt);
+//    }
+
+    // Check who removed the expect, the transactor through the ExpectConsumer() or 
+    // the user through Remove() or Reset(). If both tried to remove the expect, give
+    // priority to the transactor.
+    if (sync(CHECK, RemoveEvents[XACT_COMP_EXPECT_REMOVED_BY_XACTOR_EVENT])) {
+      Status[0] = 1'b0;
+    }
+    else if (sync(CHECK, RemoveEvents[XACT_COMP_EXPECT_REMOVED_BY_USER_EVENT])) {
+      Status[0] = 1'b1;      
+    }
+  }
+}
+
+// This task will wait for the next transaction driven by the DUT, it will then sample it and
+// will return the values through Pkt
+// The transactor timesout when the DUT hasn't driven any transaction in "Window" cycles.
+task XactorManager::SamplePkt(XactorBasePacket Pkt,
+			      integer Window
+			      ) {
+
+  // This is a flag that is set when a new transaction is sampled
+  bit Success = 0;
+
+  fork {
+    sync(ANY, NewTransaction);
+    Pkt.PktCopy(SampledPkt);
+    Success = 1'b1;
+  }
+  {
+    while(Window && !Success) {
+      Window--;
+      @(negedge ClkPort.$XClk);
+    }
+    if(!Success) {
+      MyReport.report(RTYP_XACTOR_FMWORK_SAMPLE_TIMEOUT_ERR, 
+		      "%0s: Timeout waiting for the next transaction from the DUT",
+		      XactorName);
+    }
+    else
+      Pkt.PktDisplay(RTYP_INFO, "Transaction Sampled");
+  }
+  join any
+}
+
+// This task will be waiting for transactions coming from the DUT
+// and match them with the pending list of expects (stored in the data structures)
+task XactorManager::ExpectConsumer() {
+  
+  // This is not really used, just to receive the returned value of
+  // mailbox_get
+  integer MailVar;
+  // Success flags when an expect transaction is removed from a data
+  // structure.
+  bit SuccessWildcard;
+  bit Success;
+  
+  // Main Expect Consumer loop
+  while(1) {
+
+    // Wait for another transaction coming from the Signal Interface
+    MailVar = mailbox_get(WAIT, ExpectFifo, SampledPkt);
+    
+    // Check if sampled packet has undefined values
+    if(SampledPkt.PktUndef()) {
+      SampledPkt.PktDisplay(RTYP_XACTOR_FMWORK_SAMPLED_X_ERR, 
+			    "X values detected in transaction driven by DUT");
+    }
+    
+    // Stop the Expect Consumer if the transactor was disabled
+    if(_XactorCtrl.GetDisableFlag())
+      sync(ANY, _XactorCtrl.GetEnableEvent());
+    
+    // Trigger the event for a new transaction
+    trigger(ONE_BLAST, NewTransaction);
+    
+    Success = 1'b0;
+    SuccessWildcard = 1'b0;
+    fork {
+      RemoveExpect(SampledPkt, Success);
+    }
+    {
+      RemoveXExpect(SampledPkt, SuccessWildcard);
+    }
+    join all
+    
+    if(SuccessWildcard || Success) {
+      SampledPkt.PktDisplay(RTYP_DEBUG_1, "Expect Consumer: Match found, pending Expect removed");      
+    }
+    else {
+      MyReport.report(RTYP_INFO, "%0s: Dumping Expects since an unexpected transaction was sampled", XactorName);
+      DumpExpects();
+      SampledPkt.PktDisplay(RTYP_XACTOR_FMWORK_UNEXPECTED_XACTION_ERR, "Expect Consumer: Sampled unexpected transaction");
+    }
+  }
+}
+
+// This task will receive DrivenPkt and will wait D clock cycles before DrivenPkt is
+// scheduled for driving
+task XactorManager::DrivePkt(XactorBasePacket DrivenPkt, integer D) {
+  // Wait D cycles before DrivenPkt is scheduled for driving
+  repeat(D) @(posedge ClkPort.$XClk);
+  // Wait if transactor was disabled
+  if(_XactorCtrl.GetDisableFlag() === 1'b1)
+    sync(ANY, _XactorCtrl.GetEnableEvent());
+  // Send DrivenPkt to the Signal Interface
+  mailbox_put(DriveFifo, DrivenPkt);
+  // Wait until the packet is driven
+  DrivenPkt.SyncOnDrive();
+  DrivenPkt.PktDisplay(RTYP_DEBUG_1, "Driving Transaction");
+}
+
+// This task will disable the transactor
+task XactorManager::DisableManager() {
+  _XactorCtrl.SetDisableFlag(1'b1);
+}
+
+// This task will enable the transactor
+task XactorManager::EnableManager() {
+  _XactorCtrl.SetDisableFlag(1'b0);
+  trigger(ONE_BLAST, _XactorCtrl.GetEnableEvent());
+}
+
+// This task will flush the Drive Fifo
+task XactorManager::FlushDriveFifo() {
+  integer FifoCount;
+  XactorBasePacket JunkPacket;
+  
+  FifoCount = mailbox_get(NO_WAIT, DriveFifo);
+  while(FifoCount > 0) {
+      FifoCount = mailbox_get(NO_WAIT, DriveFifo, JunkPacket);
+  }
+}
+
+// This task will reset the transactor
+task XactorManager::ResetManager() {
+  // Reset the two data structures and flush the Drive Fifo
+  fork {
+    semaphore_get(WAIT, _XactorCtrl.ExpectDataStructSemaphore, 1);
+    ExpectDataStruct.Reset();
+    semaphore_put(_XactorCtrl.ExpectDataStructSemaphore, 1);
+  }
+  {
+    semaphore_get(WAIT, _XactorCtrl.XExpectDataStructSemaphore, 1);
+    XExpectDataStruct.Reset();   
+    semaphore_put(_XactorCtrl.XExpectDataStructSemaphore, 1);
+  }
+  {
+    semaphore_get(WAIT, _XactorCtrl.DriveFifoSemaphore, 1);
+    FlushDriveFifo();
+    semaphore_put(_XactorCtrl.DriveFifoSemaphore, 1);
+  }
+  join none
+}
+
+

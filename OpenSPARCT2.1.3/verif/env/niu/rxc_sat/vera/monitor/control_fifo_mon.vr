@@ -1,0 +1,173 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: control_fifo_mon.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+#include "control_fifo_mon.vri"
+
+class control_fifo_mon{
+
+  integer RXC_ACK_MAX_DELAY = 1;
+  integer my_port;
+
+
+  local bit        randomize_req_drv = 1'b1;  // Enabled by default ?
+  local bit [15:0] start_delay       = 16'h0; // Default is NO delay
+
+  task new(integer iport);
+
+  task drive_cfifo_port (dmc_zcp_drv_port port_bind);
+//  task show_dfifo (dmc_zcp_drv_port port_bind);
+
+}
+
+task control_fifo_mon::new( integer iport ){
+
+  static bit[7:0] ports_used = 0;
+
+
+    if(iport > 3 ) {
+        error("ERROR: FAKE DMC_RXC I/F module: Port %0d is invalid.\n", iport);
+        return;
+    }
+
+    // Check if port already in use
+    if(ports_used[iport] == 1) {
+       error("\nERROR: FAKE DMC_RXC I/F module is already attached to port %0d"
+            ,iport);
+       my_port = -1;
+       terminate;
+    }
+    else  my_port = iport;
+
+    
+     fork
+     case (my_port) {
+                      
+                 0: begin
+                       drive_cfifo_port (dmc_zcp_drv0);
+                    end	
+                 1: begin
+                       drive_cfifo_port (dmc_zcp_drv1);
+                    end
+                 }                 
+
+     join none
+}
+
+
+task control_fifo_mon::drive_cfifo_port(dmc_zcp_drv_port port_bind){
+
+integer		num_of_cycle = 0;
+ 
+    while (1) {
+        @(posedge port_bind.$clk);
+
+	if ((port_bind.$control_fifo_ack == 1'b1) && (num_of_cycle == 0)) {
+        printf("%0d: First Cycle Control fifo = %h\n",
+                {get_time(HI), get_time(LO)}, port_bind.$control_fifo_data[129:0]);
+        printf("Usr Data[39:16]	= %0h\n",  port_bind.$control_fifo_data[23:0]);
+        printf("Hash Val1      	= %0h\n",  port_bind.$control_fifo_data[43:24]);
+        printf("Hash Val2      	= %0h\n",  port_bind.$control_fifo_data[63:48]);
+        printf("Zflowid    	= %0h\n",  port_bind.$control_fifo_data[75:64]);
+        printf("SE-bit     	= %0h\n",  port_bind.$control_fifo_data[76]);
+        printf("Drop-pkt     	= %0h\n",  port_bind.$control_fifo_data[77]);
+        printf("FFLP-hw-err   	= %0h\n",  port_bind.$control_fifo_data[78]);
+        printf("MAC-promiscuous	= %0h\n",  port_bind.$control_fifo_data[79]);
+        printf("tt-err     	= %0h\n",  port_bind.$control_fifo_data[86]);
+        printf("tt-succeed    	= %0h\n",  port_bind.$control_fifo_data[87]);
+	printf("Hash-sub-index	= %0h\n",  port_bind.$control_fifo_data[90:88]);
+	printf("HZFVLD		= %0h\n",  port_bind.$control_fifo_data[91]);
+	printf("Exact		= %0h\n",  port_bind.$control_fifo_data[92]);
+	printf("Hash-hit	= %0h\n",  port_bind.$control_fifo_data[93]);
+	printf("Table-RDC[1:0]	= %0h\n",  port_bind.$control_fifo_data[95:94]);
+	printf("TCAM-M-index	= %0h\n",  port_bind.$control_fifo_data[103:96]);
+	printf("Table-RDC[4:2]	= %0h\n",  port_bind.$control_fifo_data[106:104]);
+	printf("Default-RDC	= %0h\n",  port_bind.$control_fifo_data[111:107]);
+	printf("TZFVLD		= %0h\n",  port_bind.$control_fifo_data[112]);
+	printf("TRES		= %0h\n",  port_bind.$control_fifo_data[114:113]);	
+	printf("TCAM-Hit	= %0h\n",  port_bind.$control_fifo_data[115]);
+	printf("Bad-IP		= %0h\n",  port_bind.$control_fifo_data[116]);
+	printf("No-port		= %0h\n",  port_bind.$control_fifo_data[117]);
+	printf("LLC-SNAP	= %0h\n",  port_bind.$control_fifo_data[118]);
+	printf("VLAN		= %0h\n",  port_bind.$control_fifo_data[119]);
+	printf("CLASS		= %0h\n",  port_bind.$control_fifo_data[124:120]);
+	printf("MAC-check	= %0h\n",  port_bind.$control_fifo_data[125]);
+	printf("MAC-PORT	= %0h\n",  port_bind.$control_fifo_data[127:126]);
+	printf("SOP		= %0h\n",  port_bind.$control_fifo_data[128]);
+	printf("EOP		= %0h\n",  port_bind.$control_fifo_data[129]);
+
+	num_of_cycle = num_of_cycle + 1;
+
+	}
+
+	else {
+        if (port_bind.$control_fifo_ack == 1'b1) {
+        printf("%0d: Second Cycle Control fifo = %h\n",
+                {get_time(HI), get_time(LO)}, port_bind.$control_fifo_data[129:0]);
+	printf("TCP-sequence	= %0h\n",  port_bind.$control_fifo_data[71:40]);
+	printf("TCP-hdr-len	= %0h\n",  port_bind.$control_fifo_data[75:72]);
+	printf("Ipv4-hdr-len	= %0h\n",  port_bind.$control_fifo_data[79:76]);
+	printf("L3-pkt-len	= %0h\n",  port_bind.$control_fifo_data[95:80]);
+	printf("zc-RDC		= %0h\n",  port_bind.$control_fifo_data[100:96]);
+	printf("DMAW-type	= %0h\n",  port_bind.$control_fifo_data[102:101]);
+	printf("ULP-type	= %0h\n",  port_bind.$control_fifo_data[105:104]);
+	printf("Pkt-ID		= %0h\n",  port_bind.$control_fifo_data[109:106]);
+	printf("IP-ver		= %0h\n",  port_bind.$control_fifo_data[110]);
+	printf("Usr Data[15:0]	= %0h\n",  port_bind.$control_fifo_data[127:112]);
+	printf("SOP             = %0h\n",  port_bind.$control_fifo_data[128]);
+        printf("EOP             = %0h\n",  port_bind.$control_fifo_data[129]);
+
+	num_of_cycle = 0;
+	}
+	}
+
+
+    }	// end of while
+
+}	// end of task drive_cfifo_port
+
+
+//task control_fifo_mon::show_dfifo(dmc_zcp_drv_port port_bind){
+/*
+task control_fifo_mon::show_dfifo0(){
+       printf (	"IP cksum 	= %0h", zcp_rdmc_port.$control_fifo_data[15:0],
+		"L2 option      = %0h",  zcp_rdmc_port.$control_fifo_data[41:40],
+		"L3 version     = %0h",  zcp_rdmc_port.$control_fifo_data[43:42],
+		"L4 protocol    = %0h",  zcp_rdmc_port.$control_fifo_data[49:48],
+		"Pkt Length     = %0h",  zcp_rdmc_port.$control_fifo_data[101:88]);
+}
+*/
+
+

@@ -1,0 +1,1535 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: fflp_model.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+/*###########################################################################
+#  Copyright (c) 2001 by Sun Microsystems Inc.
+#  All rights reserved. No part of this design may be reproduced, stored
+#  in a retrieval system, or transmitted, in any form or by any means,
+#  electronic, mechanical, photocopying, recording, or otherwise,
+#  without prior written permission from Sun Microsystems, Inc.
+#
+#  Sun Proprietary/Confidential
+#  File Name    :  fflp_model.vr
+#  Author       :  Saranga Pogula
+#  Date 	:  09-22-2005
+#  Description  :  FFLP Model for DMA Prediction for the end-checker based
+#		   environment for RX NIU/NEPTUNE.
+###########################################################################*/
+
+#include "pkt_configurator_defines.vri"
+#include "fflp_test_defines.vri"
+#include "pcg_defines.vri"
+#include "pcg_types.vri"
+#include "pack_db.vrh"
+#include "flow_db.vrh"
+#include "flow_db_tasks.vrh"
+#include "pg_top_pp.vrh"
+#include "pc_top_pp.vrh"
+#include "ip_util.vrh"
+#include "ip_ingress_db.vrh"
+#include "rxc_class.vrh"
+#include "pcg_token.vrh"
+#include "mbox_class.vrh"
+#define  MAX_FFLP_FLOWCHART_NODES 40
+#define  MAX_L2_PATHS 6
+#define  MAX_L3_PATHS 17
+
+extern Crxc 	  rxc_cl;
+extern mbox_class mbox_id;
+
+class tcam_key_cl {
+
+  bit tcam_disc;
+  bit tcam_sel;
+  bit tcam_ipaddr;
+  bit [4:0] pkt_class;
+
+  task new(integer class_num){
+    tcam_disc = 0;
+    tcam_sel = 0;
+    tcam_ipaddr = 0;
+    pkt_class = class_num;
+  }
+}
+
+class fflp_path {
+integer node [MAX_FFLP_FLOWCHART_NODES];
+  task new(){
+  integer i;
+    for (i=0;i<MAX_FFLP_FLOWCHART_NODES;i++)
+      node[i] = -1;
+  }
+  task print_path(integer port_id, integer pkt_id) {
+  integer i;
+    printf("PKT%0d.%0d FFLP-Path: ", port_id, pkt_id);
+    for (i=0;i<MAX_FFLP_FLOWCHART_NODES;i++)
+      if(node[i] != -1)
+	printf("%0d ",node[i]);
+    printf("\n");
+  }
+}
+
+class path_analysis {
+
+/*
+  integer standard_l2_path0[MAX_FFLP_FLOWCHART_NODES]={0,1};
+  integer standard_l2_path1[MAX_FFLP_FLOWCHART_NODES]={0,2,3};
+  integer standard_l2_path2[MAX_FFLP_FLOWCHART_NODES]={0,2,4,5};
+  integer standard_l2_path3[MAX_FFLP_FLOWCHART_NODES]={0,2,4,6,7};
+  integer standard_l2_path4[MAX_FFLP_FLOWCHART_NODES]={0,2,4,6,8,9};
+  integer standard_l2_path5[MAX_FFLP_FLOWCHART_NODES]={0,2,4,6,8,10};
+
+  integer standard_l3_path0[MAX_FFLP_FLOWCHART_NODES]={11};
+  integer standard_l3_path1[MAX_FFLP_FLOWCHART_NODES]={12,13,18,19,29};
+  integer standard_l3_path2[MAX_FFLP_FLOWCHART_NODES]={12,13,18,19,30,31};
+  integer standard_l3_path3[MAX_FFLP_FLOWCHART_NODES]={12,13,18,20,21};
+  integer standard_l3_path4[MAX_FFLP_FLOWCHART_NODES]={12,13,18,20,22,23};
+  integer standard_l3_path5[MAX_FFLP_FLOWCHART_NODES]={12,13,18,20,22,24,26};
+  integer standard_l3_path6[MAX_FFLP_FLOWCHART_NODES]={12,13,18,20,22,24,25,27};
+  integer standard_l3_path7[MAX_FFLP_FLOWCHART_NODES]={12,14,15};
+  integer standard_l3_path8[MAX_FFLP_FLOWCHART_NODES]={12,14,16,17,29};
+  integer standard_l3_path9[MAX_FFLP_FLOWCHART_NODES]={12,14,16,17,30,31};
+  integer standard_l3_path10[MAX_FFLP_FLOWCHART_NODES]={12,14,16,18,19,29};
+  integer standard_l3_path11[MAX_FFLP_FLOWCHART_NODES]={12,14,16,18,19,30,31};
+  integer standard_l3_path12[MAX_FFLP_FLOWCHART_NODES]={12,14,16,18,20,21};
+  integer standard_l3_path13[MAX_FFLP_FLOWCHART_NODES]={12,14,16,18,19,20,22,23};
+  integer standard_l3_path14[MAX_FFLP_FLOWCHART_NODES]={12,14,16,18,19,20,22,24,26};
+  integer standard_l3_path15[MAX_FFLP_FLOWCHART_NODES]={12,14,16,18,19,20,22,24,25,27};
+  integer standard_l3_path16[MAX_FFLP_FLOWCHART_NODES]={12,14,16,18,19,20,22,24,25,28,31};
+*/
+
+  integer histogram_L2_paths [MAX_L2_PATHS];
+  integer histogram_L3_paths [MAX_L3_PATHS];
+
+  task new(){
+  integer i;
+
+    for (i=0;i<MAX_L2_PATHS;i++)
+      histogram_L2_paths[i] = 0;
+    for (i=0;i<MAX_L3_PATHS;i++)
+      histogram_L3_paths[i] = 0;
+  }
+  task update_l2_histogram(fflp_path l2_path){
+    integer result;
+     
+     result = match_l2_path(l2_path);
+     if (result != -1)
+      histogram_L2_paths[result]++;
+
+     printf("matched_l2_path=%0d\n", result);
+  }
+  task update_l3_histogram(fflp_path l3_path){
+    integer result;
+     
+     result = match_l3_path(l3_path);
+     if (result != -1)
+      histogram_L3_paths[result]++;
+
+     printf("matched_l3_path=%0d\n", result);
+  }
+  function integer match_l2_path(fflp_path l2path){
+     string str0 = ""; integer i;
+     string str_tmp;
+
+     for(i=0;i<MAX_FFLP_FLOWCHART_NODES;i++)
+       if (l2path.node[i]!=-1)
+         sprintf (str0, "%s%0d,", str0,l2path.node[i]);
+
+     //printf("L2 path_string = %s\n", str0);
+
+
+     if (compare_path(str0, standard_l2_path0))
+	match_l2_path = 0;
+     else if (compare_path(str0, standard_l2_path1))
+	match_l2_path = 1;
+     else if (compare_path(str0, standard_l2_path2))
+	match_l2_path = 2;
+     else if (compare_path(str0, standard_l2_path3))
+	match_l2_path = 3;
+     else if (compare_path(str0, standard_l2_path4))
+	match_l2_path = 4;
+     else if (compare_path(str0, standard_l2_path5))
+	match_l2_path = 5;
+     else
+        match_l2_path=-1;
+
+     //printf("match_l2_path=%0d\n", match_l2_path);
+  }
+  function integer match_l3_path(fflp_path l3path){
+     string str0 = ""; integer i;
+     string str_tmp;
+
+     for(i=0;i<MAX_FFLP_FLOWCHART_NODES;i++)
+       if (l3path.node[i]!=-1)
+         sprintf (str0, "%s%0d,", str0,l3path.node[i]);
+
+     //printf("L3 path_string = %s\n", str0);
+
+     if (compare_path(str0, standard_l3_path0))
+	match_l3_path = 0;
+     else if (compare_path(str0, standard_l3_path1))
+	match_l3_path = 1;
+     else if (compare_path(str0, standard_l3_path2))
+	match_l3_path = 2;
+     else if (compare_path(str0, standard_l3_path3))
+	match_l3_path = 3;
+     else if (compare_path(str0, standard_l3_path4))
+	match_l3_path = 4;
+     else if (compare_path(str0, standard_l3_path5))
+	match_l3_path = 5;
+     else if (compare_path(str0, standard_l3_path6))
+	match_l3_path = 6;
+     else if (compare_path(str0, standard_l3_path7))
+	match_l3_path = 7;
+     else if (compare_path(str0, standard_l3_path8))
+	match_l3_path = 8;
+     else if (compare_path(str0, standard_l3_path9))
+	match_l3_path = 9;
+     else if (compare_path(str0, standard_l3_path10))
+	match_l3_path = 10;
+     else if (compare_path(str0, standard_l3_path11))
+	match_l3_path = 11;
+     else if (compare_path(str0, standard_l3_path12))
+	match_l3_path = 12;
+     else if (compare_path(str0, standard_l3_path13))
+	match_l3_path = 13;
+     else if (compare_path(str0, standard_l3_path14))
+	match_l3_path = 14;
+     else if (compare_path(str0, standard_l3_path15))
+	match_l3_path = 15;
+     else if (compare_path(str0, standard_l3_path16))
+	match_l3_path = 16;
+     else
+        match_l3_path=-1;
+
+     printf("match_l3_path=%0d\n", match_l3_path);
+  }
+  function integer compare_path(string path, string standard_path){
+    // please note 0 is returned by str.compare() if the strings are identical
+    if (path.compare(standard_path))
+      compare_path = 0; // not equal
+    else
+      compare_path = 1; // equal
+  }
+  task print_histogram_summary(){
+  integer loop;
+    printf("######### L2 paths coverage Summary #########\n");
+    printf( "-L2Path:    0    1    2    3    4    5\n-L2Hits: ");
+    for (loop=0;loop<MAX_L2_PATHS;loop++)
+     printf("%4d ", histogram_L2_paths[loop]);
+    printf("\n######### L2 paths coverage Summary #########\n");
+
+    printf("######### L3 paths coverage Summary #########\n");
+    printf( "-L3Path:    0    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15   16\n-L3Hits: ");
+    for (loop=0;loop<MAX_L3_PATHS;loop++)
+     printf("%4d ", histogram_L3_paths[loop]);
+    printf("\n######### L3 paths coverage Summary #########\n");
+  } 
+
+} // class
+
+class flow_key_cl {
+
+  bit PORT;
+  bit L2DA;
+  bit VLAN;
+  bit IPSA;
+  bit IPDA;
+  bit PROTO;
+  bit [1:0] L4_0;
+  bit [1:0] L4_1;
+  bit [4:0] pkt_class;
+
+  task new(integer class_num){
+    PORT = 0;
+    L2DA = 0;
+    VLAN = 0;
+    IPSA = 0;
+    IPDA = 0;
+    PROTO = 0;
+    L4_0 = 0;
+    L4_1 = 0;
+    pkt_class = class_num;
+  }
+}
+
+class cntl_fifo
+   {
+    integer       pkt_len;
+    integer       pkt_num;
+    bit [4:0]     final_dma_chnl;
+    bit [2:0]     final_zcp_rdc_tbl_num;
+    bit [4:0]     final_zcp_rdc_tbl_offset;
+    bit 	  tcam_key_drop;
+
+    //@@@@@@@ Control FIFO Fields  @@@@@@@@@@@
+    //@@ B0 @@@
+    bit [1:0]     port_num;
+    bit           maccheck;
+    bit [4:0]     packet_class;
+    //@@ B1 @@@
+    bit           tzfvld; 
+    bit [1:0]     tres;
+    bit           tcamhit;
+    bit           badip;
+    bit           noport;
+    bit           llcsnap;
+    bit           vlan;
+    //@@ B2 @@@
+    bit [4:0]     dma_num;
+    bit [4:0]     default_dma_num;  // {B2[2:0],B4[7:6]}
+    //@@ B3 @@@
+    bit [7:0]     tcamm_index; 
+    //@@ B4 @@@
+    bit [2:0]     hash_index;
+    bit           hzfvld;
+    bit           hash_exact_match;
+    bit           hash_hit;
+    //@@ B5 @@@ 
+    bit           tt_err;
+    bit           tt_succeed;
+    //@@ B6 @@@
+    bit [11:0]    zc_flow_id;   // {B6[3:0],B7[7:0]}
+    bit           solicited_event_bit;
+    bit           drop_pkt;
+    bit           fflp_hw_err;
+    bit           mac_promiscuous;
+    //@@ B7 @@@
+//##### if tt_succeed = 0 #####
+    //@@ B8 & B9 @@@
+    bit [15:0]     hash_value2;
+    //@@ B10 & B11 & B12 @@@
+    bit [19:0]     hash_value1;
+    //@@ B13, B14, B15, B16, B17 @@@
+    bit [39:0]     user_data;
+//##### if tt_succeed = 1 #####
+    //@@ B8, B9 @@
+    bit [15:0]     tt_hdr_len;
+    //@@ B10, B11 @@@
+    bit [15:0]     tcp_payload_len;
+    //@@ B12, B13 @@@
+    bit [15:0]     HoQ;
+    //@@ B14, B15,B16 @@@
+    bit [23:0]     first_byte_offset;
+    //@@ B17 @@@
+    bit [4:0]      win_buf_offset;
+    bit [1:0]      dmaw_type_1;
+    bit            reach_buf_end;
+//#####
+    //@@ B18 @@@
+    bit [1:0]      L4_protocol;
+    bit [3:0]      pkt_id;
+    bit            ip_version;
+    //@@ B19 @@@
+    bit [4:0]      zc_rdc;
+    bit [1:0]      dmaw_type;
+    //@@ B20, B21 @@
+    bit [15:0]     L3_pkt_len;
+    //@@ B22 @@
+    bit [3:0]      tcp_hdr_len;
+    bit [3:0]      ipv4_hdr_len;
+    //@@ B23-B26 @@
+    bit [31:0]     tcp_seq_num;
+
+    task new()
+    {
+    pkt_len = 0;
+    pkt_num = 0;
+    final_dma_chnl     = 5'h0;
+    final_zcp_rdc_tbl_num    = 3'h0;
+    final_zcp_rdc_tbl_offset = 5'h0;
+    tcam_key_drop = 0;
+    //@@@@@@@ Control FIFO Fields  @@@@@@@@@@@
+    //@@ B0 @@@
+    maccheck = 0;
+    port_num = 0;
+    packet_class = 0;
+    //@@ B1 @@@
+    tzfvld = 0; 
+    tres = 0;
+    tcamhit = 0;
+    badip = 0;
+    noport = 0;
+    llcsnap = 0;
+    vlan = 0;
+    //@@ B2 @@@
+    dma_num = 0;
+    default_dma_num = 0;  // {B2[2:0],B4[7:6]}
+    //@@ B3 @@@
+    tcamm_index = 0; 
+    //@@ B4 @@@
+    hash_index = 0;
+    hzfvld = 0;
+    hash_exact_match = 0;
+    hash_hit = 0;
+    //@@ B5 @@@ 
+    tt_err = 0;
+    tt_succeed = 0;
+    //@@ B6 @@@
+    zc_flow_id = 0;   // {B6[3:0],B7[7:0]}
+    solicited_event_bit = 0;
+    drop_pkt = 0;
+    fflp_hw_err = 0;
+    mac_promiscuous = 0;
+    //@@ B7 @@@
+//##### if tt_succeed = 0 #####
+    //@@ B8 & B9 @@@
+    hash_value2 = 0;
+    //@@ B10 & B11 & B12 @@@
+    hash_value1 = 0;
+    //@@ B13, B14, B15, B16, B17 @@@
+    user_data = 0;
+//##### if tt_succeed = 1 #####
+    //@@ B8, B9 @@
+    tt_hdr_len = 0;
+    //@@ B10, B11 @@@
+    tcp_payload_len = 0;
+    //@@ B12, B13 @@@
+    HoQ = 0;
+    //@@ B14, B15,B16 @@@
+    first_byte_offset = 0;
+    //@@ B17 @@@
+    win_buf_offset = 0;
+    dmaw_type_1 = 0;
+               reach_buf_end = 0;
+//#####
+    //@@ B18 @@@
+    L4_protocol = 0;
+    pkt_id = 0;
+               ip_version = 0;
+    //@@ B19 @@@
+    zc_rdc = 0;
+    dmaw_type = 0;
+    //@@ B20, B21 @@
+    L3_pkt_len = 0;
+    //@@ B22 @@
+    tcp_hdr_len = 0;
+    ipv4_hdr_len = 0;
+    //@@ B23-B26 @@
+    tcp_seq_num = 0;
+    }
+}
+
+
+
+
+
+class fflp_model {
+
+   bit  [51:0] mac_da_table0   	[MAX_DA_10G];       	// MACDA Shadow
+   bit  [51:0] mac_da_table1   	[MAX_DA_10G];       	// MACDA Shadow
+   bit  [51:0] mac_da_table2   	[MAX_DA_1G];        	// MACDA Shadow
+   bit  [51:0] mac_da_table3   	[MAX_DA_1G];        	// MACDA Shadow
+
+   bit  [17:0] vlan_table      	[MAX_VLAN_ENTRIES];   	// VLAN Table Shadow
+  
+   bit [199:0] tcam_entries    	[MAX_CAM_ENTRIES]; 	// TCAM Keys Shadow
+   bit [199:0] tcam_mask    	[MAX_CAM_ENTRIES]; 	// TCAM mask Shadow
+   bit   [2:0] tcam_key_cntl   	[MAX_L3_CLASSES];   	// DISC,TSEL,IPADDR bits
+   bit  [63:0] tcam_assoc_data 	[MAX_CAM_ENTRIES];      // TCAM Associated data
+
+
+   bit   [3:0] zcp_rdc_table   	[MAX_ZCP_RDC_ENTRIES];	// Shadow of ZCP RDC Table
+
+   tcam_key_cl tcam_key_reg	[MAX_L3_CLASSES]; 	// shadow of tcam_key reg for all 12 classes 4-15
+   flow_key_cl flow_cntl_reg	[MAX_L3_CLASSES]; 	// Fields to be part of Flow Key
+   Cpkt_info	control_fifo_chkr;			// Object to be sent to control fifo checker
+   cntl_fifo ctl_fifo;					// Global object, will be filled in with cntl_hdr info
+   fflp_path path_class,master_path_class;		// for coverage measurement of FFLP paths in the flowchart
+   path_analysis path_analysis;
+   integer index,master_index;
+   bit [63:0] initial_h1_poly;				// Initial value for the H1 Polynomial
+   bit [3:0] port_pkt_id[4];
+   bit [3:0] pkt_id[4];
+
+   task new() {
+     integer i;
+      for(i=0;i<MAX_L3_CLASSES;i++){
+	tcam_key_reg[i] = new(i+4);
+      }
+      for(i=0;i<MAX_L3_CLASSES;i++){
+	flow_cntl_reg[i] = new(i+4);
+      }
+      initial_h1_poly = 64'h0;
+      for(i=0;i<4;i++){
+        port_pkt_id[i] = 0;
+        pkt_id[i] = 0;
+      }
+      for(i=0;i<MAX_CAM_ENTRIES;i++){
+        tcam_mask[i] = {200{1'b1}};
+      }
+      path_analysis = new;
+   }
+   function bit [3:0] predict_mac_rdc_tblnum_pri(bit [1:0] mac_id, flow_desc flow);
+   function bit [3:0] predict_vlan_rdc_tblnum_pri(bit [1:0] mac_id, flow_desc flow);
+   function bit [2:0] predict_l2_rdc_tblnum(bit [1:0] mac_id, flow_desc flow);
+
+   // return value of predict_tcam_rdc_tblnum_offset():
+   // [10]->DISC, [9:8]->TRES, [7]->TCAM-Hit, [6:3]->RDC-Offset, [2:0]->RDC-Table
+   function bit [10:0] predict_tcam_rdc_tblnum_offset(flow_desc flow, bit [2:0] l2_rdc, bit [1:0] mac_id);
+   function bit [3:0] predict_flow_rdc_offset(flow_desc flow);
+   function cntl_fifo predict_control_fifo(bit [1:0] mac_id, flow_desc flow);
+   function bit [3:0] lookup_zcp_rdc_table(bit [2:0] rdc_tbl_num, bit [3:0] rdc_tbl_offset);
+   function bit class_matched(integer class_num);
+   function bit [4:0] find_class(integer class_num);
+   function bit [4:0] eval_hash_offset(flow_desc flow, bit [1:0] mac_id);
+   function bit [31:0] calculate_H1_hash (bit [383:0] flow_key);
+   function bit isThisPktIPFrag (integer frame_class);
+
+
+   task update_zcp_rdc_tbl_shadow(integer index, bit [3:0] dma_num);
+   task update_mac_da_shadow(bit [1:0] port_num, integer index, bit [51:0] mac_entry);
+   task update_vlan_shadow(integer index, bit [17:0] vlan_entry);
+   task update_tcam_key_shadow(integer index, bit [199:0] tcam_entry);
+   task update_tcam_mask_shadow(integer index, bit[199:0] mask);
+   task update_tcam_assoc_data_shadow(integer index, bit [63:0] assoc_data);
+   task update_tcam_reg_shadow(integer class_num, bit [2:0] cntl_info);
+   task update_flow_key_cntl_shadow(integer class_num, bit [9:0] cntl_info);
+   task update_initial_h1_poly(bit [31:0] init_h1_poly);
+ 
+   function bit [199:0] get_tcam_entry(integer index);
+   function bit[199:0] get_tcam_mask(integer index);
+}
+
+task fflp_model::update_initial_h1_poly(bit [31:0] init_h1_poly) {
+   initial_h1_poly = {32'h0,init_h1_poly};
+   printf("fflp_model::update_initial_h1_poly init_h1_poly=0x%h\n", initial_h1_poly);
+}
+
+function bit[199:0] fflp_model::get_tcam_mask(integer index) {
+   get_tcam_mask = tcam_mask[index];
+   printf("fflp_model::get_tcam_mask index=%0d tcam_mask=0x%h\n", index, tcam_mask[index]);
+}
+
+function bit [199:0] fflp_model::get_tcam_entry(integer index) {
+   get_tcam_entry = tcam_entries[index];
+   printf("fflp_model::get_tcam_entry index=%0d, tcam_entry=0x%h\n", index,tcam_entries[index]);
+}
+
+task fflp_model::update_tcam_assoc_data_shadow(integer index, bit [63:0] assoc_data) {
+   tcam_assoc_data[index] = assoc_data;
+   printf("fflp_model::update_tcam_assoc_data_shadow index=%0d, tcam_entry=0x%h\n", index,tcam_assoc_data[index]);
+}
+
+task fflp_model::update_tcam_mask_shadow(integer index, bit[199:0] mask) {
+   tcam_mask[index] = mask;
+   printf("fflp_model::update_tcam_mask_shadow index=%0d mask=0x%h\n", index, tcam_mask[index]);
+}
+
+task fflp_model::update_tcam_key_shadow(integer index, bit [199:0] tcam_entry) {
+   tcam_entries[index] = tcam_entry;
+   printf("fflp_model::update_tcam_key_shadow index=%0d, tcam_entry=0x%h\n", index,tcam_entries[index]);
+}
+
+task fflp_model::update_tcam_reg_shadow(integer class_num, bit [2:0] cntl_info) {
+    tcam_key_reg[class_num-4].tcam_disc = cntl_info[2];
+    tcam_key_reg[class_num-4].tcam_sel = cntl_info[1];
+    tcam_key_reg[class_num-4].tcam_ipaddr = cntl_info[0];
+   printf("fflp_model:: update_tcam_reg_shadow class=%0d, reg_data[2:0]=0x%h\n", class_num, cntl_info);
+}
+
+task fflp_model::update_flow_key_cntl_shadow(integer class_num, bit [9:0] cntl_info) {
+    flow_cntl_reg[class_num-4].PORT  = cntl_info[9];
+    flow_cntl_reg[class_num-4].L2DA  = cntl_info[8];
+    flow_cntl_reg[class_num-4].VLAN  = cntl_info[7];
+    flow_cntl_reg[class_num-4].IPSA  = cntl_info[6];
+    flow_cntl_reg[class_num-4].IPDA  = cntl_info[5];
+    flow_cntl_reg[class_num-4].PROTO = cntl_info[4];
+    flow_cntl_reg[class_num-4].L4_0  = cntl_info[3:2];
+    flow_cntl_reg[class_num-4].L4_1  = cntl_info[1:0];
+   printf("fflp_model:: update_flow_key_cntl_shadow class=%0d, reg_data[2:0]=0x%h\n", class_num,cntl_info);
+}
+
+function bit fflp_model::class_matched(integer class_num) {
+   if ( (class_num == CL_TCP) || (class_num==CL_TCP_FRAG) || (class_num==CL_TCP_OPT) ||
+        (class_num == CL_UDP) || (class_num==CL_UDP_FRAG) || (class_num==CL_UDP_OPT) ||
+        (class_num == CL_IP_SEC_AH) || (class_num == CL_IP_SEC_ESP) ||
+        (class_num == CL_SCTP) || (class_num==CL_SCTP_FRAG) || (class_num==CL_SCTP_OPT) ||
+        (class_num == CL_TCP_IP_V6) || (class_num == CL_TCP_FRAG_IP_V6) || (class_num == CL_TCP_OPT_IP_V6) ||
+        (class_num == CL_UDP_IP_V6) || (class_num == CL_UDP_FRAG_IP_V6) || (class_num == CL_UDP_OPT_IP_V6) ||
+        (class_num == CL_IP_V6_SEC_AH) || (class_num == CL_IP_V6_SEC_ESP) ||
+        (class_num == CL_SCTP_IP_V6) ||
+        (class_num == CL_ARP) ||
+        (class_num == CL_RARP)
+      )
+     class_matched = 1;
+    else
+     class_matched = 0;
+}
+
+function bit fflp_model::isThisPktIPFrag(integer frame_class) {
+   isThisPktIPFrag = 0;
+   if((frame_class==CL_TCP_FRAG) || (frame_class==CL_UDP_FRAG) ||
+      (frame_class==CL_SCTP_FRAG) || (frame_class==CL_IP_FRAG) )
+     isThisPktIPFrag = 1;
+}
+
+function bit [4:0] fflp_model::find_class(integer class_num) {
+  case(class_num) {
+    CL_TCP, CL_TCP_FRAG: 		find_class = 8;
+    CL_UDP, CL_UDP_FRAG:		find_class = 9;
+    CL_IP_SEC_AH,CL_IP_SEC_ESP:		find_class = 10;
+    CL_SCTP, CL_SCTP_FRAG:		find_class = 11;
+    CL_TCP_IP_V6:			find_class = 12;
+    CL_UDP_IP_V6:			find_class = 13;
+    CL_IP_V6_SEC_AH,CL_IP_V6_SEC_ESP:	find_class = 14;
+    CL_SCTP_IP_V6:			find_class = 15;
+    CL_ARP:				find_class = 16;
+    CL_RARP:				find_class =17;
+    default : { find_class = 0; }
+  }
+}
+
+function bit [2:0] fflp_model::predict_l2_rdc_tblnum(bit [1:0] mac_id, flow_desc flow) {
+bit [3:0] mac_ctl_word, vlan_ctl_word;
+bit [2:0] mac_rdc_tblnum;
+bit [2:0] vlan_rdc_tblnum;
+bit mpr, vpr;
+
+   mac_ctl_word  = predict_mac_rdc_tblnum_pri(mac_id, flow);
+   mpr = mac_ctl_word[3];
+   mac_rdc_tblnum  = mac_ctl_word[2:0];
+
+   if(flow.frame.frame_type[2]==1) { // VLAN Tagged
+     // VLAN tagged
+/*========== FFLP_Path =========*/ path_class.node[index++] = 4;
+/*@@@@@@@@ Cntl Hdr Info @@@@@@@@*/ ctl_fifo.vlan = 1;
+/*@@@@@@@@ Cntl Fifo Info @@@@@@@*/ control_fifo_chkr.vlan = 1;
+     vlan_ctl_word = predict_vlan_rdc_tblnum_pri(mac_id, flow);
+     vpr = vlan_ctl_word[3];
+     vlan_rdc_tblnum  = vlan_ctl_word[2:0];
+     case ({vpr,mpr}){
+       2'b00: {
+	    predict_l2_rdc_tblnum = mac_rdc_tblnum;
+/*========== FFLP_Path =========*/ path_class.node[index++] = 8;
+/*========== FFLP_Path =========*/ path_class.node[index++] = 10;
+       }
+       2'b01: {
+	    predict_l2_rdc_tblnum = mac_rdc_tblnum;
+/*========== FFLP_Path =========*/ path_class.node[index++] = 8;
+/*========== FFLP_Path =========*/ path_class.node[index++] = 9;
+       }
+       2'b10: {
+            predict_l2_rdc_tblnum = vlan_rdc_tblnum;
+/*========== FFLP_Path =========*/ path_class.node[index++] = 7;
+       }
+       2'b11: {
+            predict_l2_rdc_tblnum = vlan_rdc_tblnum;
+/*========== FFLP_Path =========*/ path_class.node[index++] = 7;
+       }
+       default: {}
+     }
+   }
+   else { 
+     predict_l2_rdc_tblnum = mac_rdc_tblnum;
+     // Untagged
+/*========== FFLP_Path =========*/ path_class.node[index++] = 3;
+   }
+
+   printf ("fflp_model::predict_l2_rdc_tblnum MAC=%0d mpr=%b vpr=%b mac_rdc=%0d vlan_rdc=%0d, final_l2_rdc=%0d\n",
+		mac_id, mpr, vpr, mac_rdc_tblnum, vlan_rdc_tblnum, predict_l2_rdc_tblnum);
+}
+
+function cntl_fifo fflp_model::predict_control_fifo(bit [1:0] mac_id, flow_desc flow){
+bit [2:0] l2_rdc, tcam_rdc;
+bit [10:0] tcam_result;
+bit [3:0] tcam_offset, flow_offset;
+bit [4:0] class_num;
+bit [47:0] mac_sa;
+bit [15:0] seq_id;
+bit tcam_match, ext_hash, asdata_disc;
+bit [1:0] TRES;
+bit [4:0] hash_offset;
+
+ctl_fifo = new;
+control_fifo_chkr = new;
+path_class = new; index = 0;
+master_path_class = new; master_index = 0;
+
+/*========== FFLP_Path =========*/ path_class.node[index++] = 0;
+mac_sa = flow.src_node.l2_addr;
+seq_id = mac_sa[15:0];
+
+
+#define CLASS_4TO15 ((class_num>=4)&&(class_num<=15))
+
+   l2_rdc = predict_l2_rdc_tblnum(mac_id, flow);
+
+/*@@@@@@@@ Cntl Hdr Info @@@@@@@@*/ ctl_fifo.pkt_id = port_pkt_id[mac_id];
+/*@@@@@@@@ Cntl Fifo Info @@@@@@@*/ control_fifo_chkr.pkt_id = port_pkt_id[mac_id];
+   port_pkt_id[mac_id] = (port_pkt_id[mac_id]+1)%16;
+   pkt_id[mac_id]++;
+   
+
+/*@@@@@@@@ Cntl Hdr Info @@@@@@@@*/ ctl_fifo.port_num = mac_id;
+/*@@@@@@@@ Cntl Fifo Info @@@@@@@*/ control_fifo_chkr.mac_prt = mac_id;
+   if(flow.frame.frame_type[0]==1) { // LLC/SNAP packet
+/*@@@@@@@@ Cntl Hdr Info @@@@@@@@*/ ctl_fifo.llcsnap = 1;
+/*@@@@@@@@ Cntl Fifo Info @@@@@@@*/ control_fifo_chkr.llcsnap = 1;
+   }
+
+printf("fflp_model: Algorithm: MAC%0d.%0d err code from pkt=%0d\n", mac_id, seq_id, flow.frame.error_code);
+   if( (!class_matched(flow.frame.frame_class)) || 
+       ((flow.frame.error_code&PG_L4_PROTO_USER_MODE) == PG_L4_PROTO_USER_MODE)) { // no class matched
+    	ctl_fifo.final_zcp_rdc_tbl_num = l2_rdc;
+    	ctl_fifo.final_zcp_rdc_tbl_offset = 0;
+    	ctl_fifo.final_dma_chnl = lookup_zcp_rdc_table(ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset);
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 11;
+        //printf("fflp_model: Algorithm: MAC%0d.%0d No class matched (or cksum err=%0d). l2_rdc = %0d, dma_num = %0d\n", 
+        printf("fflp_model: Algorithm: MAC%0d.%0d No class matched. l2_rdc = %0d, dma_num = %0d\n", 
+			mac_id, seq_id, ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_dma_chnl);
+   }
+   else { // class matched
+     class_num = find_class(flow.frame.frame_class);
+/*@@@@@@@@ Cntl Hdr Info @@@@@@@@*/ ctl_fifo.packet_class = class_num;
+/*@@@@@@@@ Cntl Fifo Info @@@@@@@*/ control_fifo_chkr.packet_class = class_num;
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 12;
+
+     if(CLASS_4TO15) {
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 14;
+       if (isThisPktIPFrag(flow.frame.frame_class)) { // check for FRAG packets
+/*@@@@@@@@ Cntl Hdr Info @@@@@@@@*/ ctl_fifo.noport = 1;
+/*@@@@@@@@ Cntl Fifo Info @@@@@@@*/ control_fifo_chkr.noport = 1;
+       }
+       printf("fflp_model: Algorithm: MAC%0d.%0d class is 4-15. class_num = %0d\n", mac_id, seq_id, class_num);
+       if (tcam_key_reg[class_num-4].tcam_disc) { // DISC bit set for this class
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 15;
+         ctl_fifo.tcam_key_drop = 1;
+         printf("fflp_model: Algorithm: MAC%0d.%0d DISC bit set for class_num = %0d\n", mac_id, seq_id, class_num);
+       }
+       else {                                    // DISC bit not set for this class
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 16;
+         if(tcam_key_reg[class_num-4].tcam_sel) { // tcam lookup required for this class
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 18;
+         printf ("fflp_model: Algorithm: MAC%0d.%0d tcam lookup required class_num = %0d\n", mac_id, seq_id, class_num);
+	 tcam_result = predict_tcam_rdc_tblnum_offset(flow, l2_rdc, mac_id);
+	 tcam_rdc    = tcam_result[2:0];
+	 tcam_offset = tcam_result[6:3];
+	 tcam_match  = tcam_result[7];
+	  TRES	     = tcam_result[9:8];
+	 asdata_disc = tcam_result[10];
+
+
+
+  	 if (tcam_match) {
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 20;
+
+           if (asdata_disc)
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 21;
+	   else
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 22;
+
+/*@@@@@@@@ Cntl Hdr Info @@@@@@@@*/ ctl_fifo.tcamhit = 1;
+/*@@@@@@@@ Cntl Fifo Info @@@@@@@*/ control_fifo_chkr.tcamhit = 1;
+/*@@@@@@@@ Cntl Hdr Info @@@@@@@@*/ ctl_fifo.tres = TRES;
+/*@@@@@@@@ Cntl Fifo Info @@@@@@@*/ control_fifo_chkr.tres = TRES;
+	   printf ("fflp_model: Algorithm: class %0d MAC%0d.%0d TCAM_hit=1, TRES=%b\n", class_num, mac_id, seq_id, TRES);
+    	   if (TRES[1] == 1'b0) { // take L2 RDC number despite having a TCAM-Hit
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 23;
+	    if (TRES[0] == 1'b0) { // continue to flow lookup for OFFSET
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 25;
+	     if ((class_num>=8)&&(class_num<=15)) { // L3 class match, L2_RDC taken, and Hash1/Ext_hash evaluation has to be done
+              if((flow_cntl_reg[class_num-4].PORT !== 0) ||
+	  	(flow_cntl_reg[class_num-4].L2DA !== 0) ||
+		(flow_cntl_reg[class_num-4].VLAN !== 0) ||
+		(flow_cntl_reg[class_num-4].IPSA !== 0) ||
+		(flow_cntl_reg[class_num-4].IPDA !== 0) ||
+		(flow_cntl_reg[class_num-4].PROTO !== 0) ||
+		(flow_cntl_reg[class_num-4].L4_0 !== 0) ||
+  		(flow_cntl_reg[class_num-4].L4_1 !== 0) ) {
+	        hash_offset = eval_hash_offset(flow, mac_id);
+    	        ctl_fifo.final_zcp_rdc_tbl_offset = hash_offset[3:0];
+              }
+ 	      else {
+                ctl_fifo.final_zcp_rdc_tbl_offset = 0;
+	      }
+    	      ctl_fifo.final_zcp_rdc_tbl_num = l2_rdc;
+	      ext_hash = hash_offset[4];
+    	      ctl_fifo.final_dma_chnl = lookup_zcp_rdc_table(ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset);
+              printf("fflp_model: Algorithm: class %0d MAC%0d.%0d L3 class, hash done. Ext_Hash = %b, L2_RDC = %0d, Hash Offset evaluated %0d\n", 
+				class_num, mac_id, seq_id, ext_hash, ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset);
+            }
+ 	    else { // No L3 class match, no hash required. Ending up with L2_RDC, Offset=0 despite tcam_hit=1
+    	      ctl_fifo.final_zcp_rdc_tbl_num = l2_rdc;
+    	      ctl_fifo.final_zcp_rdc_tbl_offset = 0;
+    	      ctl_fifo.final_dma_chnl = lookup_zcp_rdc_table(ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset);
+              printf ("fflp_model: Algorithm: MAC%0d.%0d class %0d No L3 class match, no hash, RDC=L2_RDC %0d, Offset=0 despite tcam_hit=1\n", 
+						mac_id, seq_id, class_num, ctl_fifo.final_zcp_rdc_tbl_num);
+	    }
+	  }
+	  else { // TRES[0]==1 terminate the flow lookup and use L2_RDC/Offset=0
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 26;
+
+            printf ("fflp_model: Algorithm: MAC%0d.%0d TRES=01, use L2_RDC despite a TCAM hit, tcam_offset, NO flow , class %0d\n", 
+	    mac_id, seq_id, class_num);
+    	    ctl_fifo.final_zcp_rdc_tbl_num = l2_rdc;
+    	    ctl_fifo.final_zcp_rdc_tbl_offset = tcam_offset;
+    	    ctl_fifo.final_dma_chnl = lookup_zcp_rdc_table(ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset);
+	  }
+         }
+	 else { // TRES[1]==1
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 24;
+	  if (TRES[0] == 1'b0) { // Take Assoc_data RDC_TBL number and continue to flow lookup for OFFSET. TRES[0]==0
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 25;
+	    if ((class_num>=8)&&(class_num<=15)) { // L3 class match, L2_RDC taken, and Hash1/Ext_hash evaluation has to be done
+              if((flow_cntl_reg[class_num-4].PORT !== 0) ||
+	  	(flow_cntl_reg[class_num-4].L2DA !== 0) ||
+		(flow_cntl_reg[class_num-4].VLAN !== 0) ||
+		(flow_cntl_reg[class_num-4].IPSA !== 0) ||
+		(flow_cntl_reg[class_num-4].IPDA !== 0) ||
+		(flow_cntl_reg[class_num-4].PROTO !== 0) ||
+		(flow_cntl_reg[class_num-4].L4_0 !== 0) ||
+  		(flow_cntl_reg[class_num-4].L4_1 !== 0) ) {
+	        hash_offset = eval_hash_offset(flow, mac_id);
+    	        ctl_fifo.final_zcp_rdc_tbl_offset = hash_offset[3:0];
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 28;
+              }
+ 	      else {
+                ctl_fifo.final_zcp_rdc_tbl_offset = 0;
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 27;
+	      }
+    	      ctl_fifo.final_zcp_rdc_tbl_num = tcam_rdc;
+	      ext_hash = hash_offset[4];
+    	      ctl_fifo.final_dma_chnl = lookup_zcp_rdc_table(ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset);
+              printf("fflp_model: Algorithm: class %0d MAC%0d.%0d L3 class, hash done. Ext_Hash = %b, L2_RDC = %0d, Hash Offset evaluated %0d\n", 
+				class_num, mac_id, seq_id, ext_hash, ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset);
+            }
+ 	    else { // No L3 class match, no hash required. Ending up with L2_RDC, Offset=0 despite tcam_hit=1
+    	      ctl_fifo.final_zcp_rdc_tbl_num = l2_rdc;
+    	      ctl_fifo.final_zcp_rdc_tbl_offset = 0;
+    	      ctl_fifo.final_dma_chnl = lookup_zcp_rdc_table(ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset);
+              printf ("fflp_model: Algorithm: MAC%0d.%0d class %0d No L3 class match, no hash, RDC=L2_RDC %0d, Offset=0 despite tcam_hit=1\n", 
+						mac_id, seq_id, class_num, ctl_fifo.final_zcp_rdc_tbl_num);
+	    }
+
+	  }
+	  else { // terminate the flow lookup and use Assoc_data RDC_TBL and OFFSET number
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 26;
+            printf ("fflp_model: Algorithm: MAC%0d.%0d TRES[1:0]=11, use Assoc_data RDC_TBL and OFFSET, NO flow lookup, class %0d\n", 
+	    mac_id, seq_id, class_num);
+    	    ctl_fifo.final_zcp_rdc_tbl_num = tcam_rdc;
+    	    ctl_fifo.final_zcp_rdc_tbl_offset = tcam_offset;
+    	    ctl_fifo.final_dma_chnl = lookup_zcp_rdc_table(ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset);
+            printf ("fflp_model: Algorithm: class %0d MAC%0d.%0d TCAM hit Found. Resulting in TCAM_rdc %0d, offset %0d dma_num %0d\n", 
+	    class_num, mac_id, seq_id, ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset, ctl_fifo.final_dma_chnl);
+	  }
+	 }
+        }
+	else { // NO TCAM MATCH
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 19;
+        if ((class_num>=8)&&(class_num<=15)) { // L3 class match, L2_RDC finalized, and Hash1/Ext_hash evaluation has to be done
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 30;
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 31;
+          if (  (flow_cntl_reg[class_num-4].PORT !== 0) ||
+	  	(flow_cntl_reg[class_num-4].L2DA !== 0) ||
+		(flow_cntl_reg[class_num-4].VLAN !== 0) ||
+		(flow_cntl_reg[class_num-4].IPSA !== 0) ||
+		(flow_cntl_reg[class_num-4].IPDA !== 0) ||
+		(flow_cntl_reg[class_num-4].PROTO !== 0) ||
+		(flow_cntl_reg[class_num-4].L4_0 !== 0) ||
+		(flow_cntl_reg[class_num-4].L4_1 !== 0) ) {
+	    hash_offset = eval_hash_offset(flow, mac_id);
+    	    ctl_fifo.final_zcp_rdc_tbl_offset = hash_offset[3:0];
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 28;
+          }
+ 	  else {
+            ctl_fifo.final_zcp_rdc_tbl_offset = 0;
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 27;
+	  }
+    	  ctl_fifo.final_zcp_rdc_tbl_num = l2_rdc;
+	  ext_hash = hash_offset[4];
+    	  ctl_fifo.final_dma_chnl = lookup_zcp_rdc_table(ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset);
+          printf("fflp_model: Algorithm: class %0d MAC%0d.%0d No tcam_hit, L3 class, hash done. Ext_Hash %b, L2_RDC %0d, Hash Offset %0d\n", 
+				class_num, mac_id, seq_id, ext_hash, ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset);
+        }
+ 	else { // No L3 class match, No TCAM key required, so no hash required. Ending up with L2_RDC, Offset=0
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 29;
+    	  ctl_fifo.final_zcp_rdc_tbl_num = l2_rdc;
+    	  ctl_fifo.final_zcp_rdc_tbl_offset = 0;
+    	  ctl_fifo.final_dma_chnl = lookup_zcp_rdc_table(ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset);
+          printf ("fflp_model: Algorithm: class %0d MAC%0d.%0d No tcam_hit, not an L3 class. Resulting in l2_rdc = %0d, dma_num = %0d\n", 
+			class_num, mac_id, seq_id, ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_dma_chnl);
+	}
+	}
+      }
+      else { // No tcam lookup required for this class
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 17;
+        printf ("fflp_model: Algorithm: MAC%0d.%0d NO tcam lookup required for class_num = %0d\n", mac_id, seq_id, class_num);
+        if ((class_num>=8)&&(class_num<=15)) { // L3 class match, L2_RDC finalized, and Hash1/Ext_hash evaluation has to be done
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 30;
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 31;
+          if (  (flow_cntl_reg[class_num-4].PORT !== 0) ||
+	  	(flow_cntl_reg[class_num-4].L2DA !== 0) ||
+		(flow_cntl_reg[class_num-4].VLAN !== 0) ||
+		(flow_cntl_reg[class_num-4].IPSA !== 0) ||
+		(flow_cntl_reg[class_num-4].IPDA !== 0) ||
+		(flow_cntl_reg[class_num-4].PROTO !== 0) ||
+		(flow_cntl_reg[class_num-4].L4_0 !== 0) ||
+		(flow_cntl_reg[class_num-4].L4_1 !== 0) ) {
+	    hash_offset = eval_hash_offset(flow, mac_id);
+    	    ctl_fifo.final_zcp_rdc_tbl_offset = hash_offset[3:0];
+          }
+ 	  else {
+            ctl_fifo.final_zcp_rdc_tbl_offset = 0;
+	  }
+    	  ctl_fifo.final_zcp_rdc_tbl_num = l2_rdc;
+	  ext_hash = hash_offset[4];
+    	  ctl_fifo.final_dma_chnl = lookup_zcp_rdc_table(ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset);
+          printf("fflp_model: Algorithm: class %0d MAC%0d.%0d L3 class, hash done. Ext_Hash = %b, L2_RDC = %0d, Hash Offset evaluated %0d\n", 
+				class_num, mac_id, seq_id, ext_hash, ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset);
+        }
+ 	else { // No L3 class match, No TCAM key required, so no hash required. Ending up with L2_RDC, Offset=0
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 29;
+    	  ctl_fifo.final_zcp_rdc_tbl_num = l2_rdc;
+    	  ctl_fifo.final_zcp_rdc_tbl_offset = 0;
+    	  ctl_fifo.final_dma_chnl = lookup_zcp_rdc_table(ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset);
+          printf("fflp_model: Algorithm: class %0d MAC%0d.%0d not an L3 class. L2_RDC = %0d, Offset = 0\n", 
+				class_num, mac_id, seq_id, ctl_fifo.final_zcp_rdc_tbl_num);
+
+	}
+      }
+    }
+   }
+   else { // classes other than (4->15) will have an unconditional tcam search (ARP,RARP and 2 programmable ETHER classes)
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 13;
+        printf("fflp_model: Algorithm: MAC%0d.%0d L2 class. Unconditional TCAM Search done for class %0d\n", 
+									mac_id, seq_id, class_num);
+	tcam_result = predict_tcam_rdc_tblnum_offset(flow, l2_rdc, mac_id);
+	tcam_rdc = tcam_result[2:0];
+	tcam_offset = tcam_result[6:3];
+	tcam_match  = tcam_result[7];
+	TRES	    = tcam_result[9:8];
+	 asdata_disc = tcam_result[10];
+
+  	if (tcam_match) {
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 20;
+
+           if (asdata_disc)
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 21;
+	   else
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 22;
+
+/*@@@@@@@@ Cntl Hdr Info @@@@@@@@*/ ctl_fifo.tcamhit = 1;
+/*@@@@@@@@ Cntl Fifo Info @@@@@@@*/ control_fifo_chkr.tcamhit = 1;
+/*@@@@@@@@ Cntl Hdr Info @@@@@@@@*/ ctl_fifo.tres = TRES;
+/*@@@@@@@@ Cntl Fifo Info @@@@@@@*/ control_fifo_chkr.tres = TRES;
+    	 if (TRES[1] == 1'b0) { // take L2 RDC number despite having a TCAM-Hit
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 23;
+	  if (TRES[0] == 1'b0) { // continue to flow lookup for OFFSET
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 25;
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 27;
+            printf ("fflp_model: Algorithm: MAC%0d.%0d TRES[1:0]=00, use L2_RDC despite having a TCAM hit, continue flow lookup, class %0d\n", 
+	    mac_id, seq_id, class_num);
+	  }
+	  else { // terminate the flow lookup and use L2_RDC/Offset=0
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 26;
+
+            printf ("fflp_model: Algorithm: MAC%0d.%0d TRES[1:0]=01, use L2_RDC despite having a TCAM hit, NO flow lookup, class %0d\n", 
+	    mac_id, seq_id, class_num);
+    	    ctl_fifo.final_zcp_rdc_tbl_num = l2_rdc;
+    	    ctl_fifo.final_zcp_rdc_tbl_offset = tcam_offset;
+    	    ctl_fifo.final_dma_chnl = lookup_zcp_rdc_table(ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset);
+	  }
+         }
+	 else { // TRES[1]==1
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 24;
+	  if (TRES[0] == 1'b0) { // Take Assoc_data RDC_TBL number and continue to flow lookup for OFFSET
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 25;
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 27;
+            printf ("fflp_model: Algorithm: MAC%0d.%0d TRES[1:0]=10, use Assoc_data RDC_TBL, continue flow lookup for OFFSET, class %0d\n", 
+							mac_id, seq_id, class_num);
+	  }
+	  else { // terminate the flow lookup and use Assoc_data RDC_TBL and OFFSET number
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 26;
+            printf ("fflp_model: Algorithm: MAC%0d.%0d TRES[1:0]=11, use Assoc_data RDC_TBL and OFFSET, NO flow lookup, class %0d\n", 
+	    mac_id, seq_id, class_num);
+    	    ctl_fifo.final_zcp_rdc_tbl_num = tcam_rdc;
+    	    ctl_fifo.final_zcp_rdc_tbl_offset = tcam_offset;
+    	    ctl_fifo.final_dma_chnl = lookup_zcp_rdc_table(ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset);
+            printf ("fflp_model: Algorithm: class %0d MAC%0d.%0d TCAM hit Found. Resulting in TCAM_rdc %0d, offset %0d dma_num %0d\n", 
+	    class_num, mac_id, seq_id, ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset, ctl_fifo.final_dma_chnl);
+	  }
+	 }
+        }
+	else {
+/*========== FFLP_Path =========*/ master_path_class.node[master_index++] = 19;
+    	ctl_fifo.final_zcp_rdc_tbl_num = l2_rdc;
+    	ctl_fifo.final_zcp_rdc_tbl_offset = 0;
+    	ctl_fifo.final_dma_chnl = lookup_zcp_rdc_table(ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset);
+        printf ("fflp_model: Algorithm: class %0d MAC%0d.%0d No tcam_hit. Resulting in l2_rdc = %0d, dma_num = %0d\n", 
+			class_num, mac_id, seq_id, ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_dma_chnl);
+	}
+
+   } // No L3 class match
+   }
+   if(flow.frame.error_code==PG_CHKSUM_ERR) {
+     ctl_fifo.final_zcp_rdc_tbl_offset = 0;
+     ctl_fifo.final_dma_chnl = lookup_zcp_rdc_table(ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_zcp_rdc_tbl_offset);
+     printf("fflp_model: Algorithm: MAC%0d.%0d  cksum err=%0d. offset=0 l2_rdc = %0d, dma_num = %0d\n", 
+			mac_id, seq_id, flow.frame.error_code, ctl_fifo.final_zcp_rdc_tbl_num, ctl_fifo.final_dma_chnl);
+   }
+
+   predict_control_fifo = ctl_fifo.object_copy();
+
+path_class.print_path(mac_id, pkt_id[mac_id]);
+master_path_class.print_path(mac_id, pkt_id[mac_id]);
+
+path_analysis.update_l2_histogram(path_class);
+path_analysis.update_l3_histogram(master_path_class);
+
+   // Send the modeled classification result to "control fifo checker", if enabled
+   if (get_plus_arg(CHECK, "ENABLE_CTRL_FIFO_CHKR"))
+     mailbox_put(mbox_id.cntl_chkr_mbox[mac_id], control_fifo_chkr);
+ 
+}
+
+function bit [4:0] fflp_model::eval_hash_offset(flow_desc flow, bit [1:0] mac_id) {
+bit [383:0] flow_entry, reverse_flow;
+bit [4:0] class_num;
+bit [31:0] hash1;
+bit [31:0] serial_hash1;
+bit [15:0] udp_length, ah_length;
+integer i;
+Cpkt_info packet_info;
+
+/*
+   eval_hash_offset[4] = 0; // now, ext hash is not done.
+   // do we need ext lookup? 
+   if (yes) {
+   }
+
+   else {
+*/
+   class_num = find_class(flow.frame.frame_class);
+   flow_entry = 384'h0; // Fields not found in the pkt will be 0
+
+   if (flow_cntl_reg[class_num-4].PORT)
+    flow_entry[FLOW_KEY_PORT]  		= mac_id;
+   if (flow_cntl_reg[class_num-4].L2DA)
+    flow_entry[FLOW_KEY_MAC_DA]  	= flow.dst_node.l2_addr;
+   if (flow.frame.frame_type[2] & flow_cntl_reg[class_num-4].VLAN) {
+     flow_entry[FLOW_KEY_VLAN_ID] 	= flow.src_node.tci;
+     flow_entry[FLOW_KEY_VLAN_VALID]	= 4'b1111;
+   }
+
+   if (flow.frame.frame_type[3] && flow.frame.frame_type[1]) { // IPV6
+    if (flow_cntl_reg[class_num-4].IPSA)
+     flow_entry[FLOW_KEY_IPV6_SA] 	= flow.src_node.ipv6_addr;
+    if (flow_cntl_reg[class_num-4].IPDA)
+     flow_entry[FLOW_KEY_IPV6_DA]	= flow.dst_node.ipv6_addr;
+   }
+   else if (!flow.frame.frame_type[3] && flow.frame.frame_type[1]) { // IPV4
+    if (flow_cntl_reg[class_num-4].IPSA)
+     flow_entry[FLOW_KEY_IPV4_SA]	= flow.src_node.ip_addr; 
+    if (flow_cntl_reg[class_num-4].IPDA)
+     flow_entry[FLOW_KEY_IPV4_DA]	= flow.dst_node.ip_addr;
+   }
+
+
+   if ((flow.frame.frame_class == CL_UDP) || (flow.frame.frame_class==CL_UDP_FRAG) || (flow.frame.frame_class == CL_UDP_IP_V6)) {
+    if (flow_cntl_reg[class_num-4].PROTO)
+     flow_entry[FLOW_KEY_PID] = 8'h11;
+     udp_length = 0; // TODO need to calculate exact UDP length
+     case (flow_cntl_reg[class_num-4].L4_0) {
+   	2'b00: {}
+	2'b10: flow_entry[FLOW_KEY_L4_0] = flow.tup.src_tcp_udp_port;
+	//2'b11: flow_entry[FLOW_KEY_L4_0] = flow.tup.udp_length;
+	default: printf("fflp_model::eval_hash_offset ERROR invalid programming into flow_cntl_reg[L4_0] - 0x%h class %0d",
+					flow_cntl_reg[class_num-4].L4_0, class_num);
+     }
+     case (flow_cntl_reg[class_num-4].L4_1) {
+   	2'b00: {}
+	2'b10: flow_entry[FLOW_KEY_L4_1] = flow.tup.dst_tcp_udp_port;
+	//2'b11: flow_entry[FLOW_KEY_L4_1] = flow.tup.udp_checksum; // TODO It is very tough to do match on checksum
+	default: printf("fflp_model::eval_hash_offset ERROR invalid programming into flow_cntl_reg[L4_1] - 0x%h class %0d",
+					flow_cntl_reg[class_num-4].L4_1, class_num);
+     }
+   }
+   else if ((flow.frame.frame_class == CL_TCP) || (flow.frame.frame_class==CL_TCP_FRAG) || (flow.frame.frame_class == CL_TCP_IP_V6)) {
+    if (flow_cntl_reg[class_num-4].PROTO)
+     flow_entry[FLOW_KEY_PID] = 8'h06;
+     case (flow_cntl_reg[class_num-4].L4_0) {
+   	2'b00: {}
+	2'b10: flow_entry[FLOW_KEY_L4_0] = flow.tup.src_tcp_udp_port;
+	2'b11: flow_entry[FLOW_KEY_L4_0] = flow.tup.tcp_seq_no[31:16];
+	default: printf("fflp_model::eval_hash_offset ERROR invalid programming into flow_cntl_reg[L4_0] - 0x%h class %0d",
+					flow_cntl_reg[class_num-4].L4_0, class_num);
+     }
+     case (flow_cntl_reg[class_num-4].L4_1) {
+   	2'b00: {}
+	2'b10: flow_entry[FLOW_KEY_L4_1] = flow.tup.dst_tcp_udp_port;
+	2'b11: flow_entry[FLOW_KEY_L4_1] = flow.tup.tcp_seq_no[15:0];
+	default: printf("fflp_model::eval_hash_offset ERROR invalid programming into flow_cntl_reg[L4_1] - 0x%h class %0d",
+					flow_cntl_reg[class_num-4].L4_1, class_num);
+     }
+   }
+   else if ((flow.frame.frame_class == CL_IP_SEC_AH) || (flow.frame.frame_class == CL_IP_V6_SEC_AH)) { //TODO
+    if (flow_cntl_reg[class_num-4].PROTO)
+     flow_entry[FLOW_KEY_PID] = 8'h33;
+     ah_length = 0; // TODO need to calculate exact AH length
+     case (flow_cntl_reg[class_num-4].L4_0) {
+   	2'b00: {}
+	//2'b10: flow_entry[FLOW_KEY_L4_0] = {ah_length, flow.src_node.nxthdr};
+	2'b11: flow_entry[FLOW_KEY_L4_0] = flow.src_node.spi[31:16];
+	default: printf("fflp_model::eval_hash_offset ERROR invalid programming into flow_cntl_reg[L4_0] - 0x%h class %0d",
+					flow_cntl_reg[class_num-4].L4_0, class_num);
+     }
+     case (flow_cntl_reg[class_num-4].L4_1) {
+   	2'b00: {}
+	2'b10: flow_entry[FLOW_KEY_L4_1] = 0;
+	2'b11: flow_entry[FLOW_KEY_L4_1] = flow.src_node.spi[15:0];
+	default: printf("fflp_model::eval_hash_offset ERROR invalid programming into flow_cntl_reg[L4_1] - 0x%h class %0d",
+					flow_cntl_reg[class_num-4].L4_1, class_num);
+     }
+   }
+   else if ((flow.frame.frame_class == CL_IP_SEC_ESP) || (flow.frame.frame_class == CL_IP_V6_SEC_ESP)) { //TODO
+    if (flow_cntl_reg[class_num-4].PROTO)
+     flow_entry[FLOW_KEY_PID] = 8'h32;
+     case (flow_cntl_reg[class_num-4].L4_0) {
+   	2'b00: {}
+	2'b10: flow_entry[FLOW_KEY_L4_0] = flow.src_node.spi[31:16];
+	2'b11: flow_entry[FLOW_KEY_L4_0] = flow.src_node.esp_ah_seq_no[31:16];
+	default: printf("fflp_model::eval_hash_offset ERROR invalid programming into flow_cntl_reg[L4_0] - 0x%h class %0d",
+					flow_cntl_reg[class_num-4].L4_0, class_num);
+     }
+     case (flow_cntl_reg[class_num-4].L4_1) {
+   	2'b00: {}
+	2'b10: flow_entry[FLOW_KEY_L4_1] = flow.src_node.spi[15:0];
+	2'b11: flow_entry[FLOW_KEY_L4_1] = flow.src_node.esp_ah_seq_no[15:0];
+	default: printf("fflp_model::eval_hash_offset ERROR invalid programming into flow_cntl_reg[L4_1] - 0x%h class %0d",
+					flow_cntl_reg[class_num-4].L4_1, class_num);
+     }
+   }
+   else if ((flow.frame.frame_class == CL_SCTP) || (flow.frame.frame_class==CL_SCTP_FRAG) || (flow.frame.frame_class == CL_SCTP_IP_V6) ) { //TODO
+    if (flow_cntl_reg[class_num-4].PROTO)
+     flow_entry[FLOW_KEY_PID] = 8'h84;
+     case (flow_cntl_reg[class_num-4].L4_0) {
+   	2'b00: {}
+	2'b10: flow_entry[FLOW_KEY_L4_0] = flow.sctp.src_sctp_port;
+	2'b11: flow_entry[FLOW_KEY_L4_0] = flow.sctp.sctp_vtag[31:16];
+	default: printf("fflp_model::eval_hash_offset ERROR invalid programming into flow_cntl_reg[L4_0] - 0x%h class %0d",
+					flow_cntl_reg[class_num-4].L4_0, class_num);
+     }
+     case (flow_cntl_reg[class_num-4].L4_1) {
+   	2'b00: {}
+	2'b10: flow_entry[FLOW_KEY_L4_1] = flow.sctp.dst_sctp_port;
+	2'b11: flow_entry[FLOW_KEY_L4_1] = flow.sctp.sctp_vtag[15:0];
+	default: printf("fflp_model::eval_hash_offset ERROR invalid programming into flow_cntl_reg[L4_1] - 0x%h class %0d",
+					flow_cntl_reg[class_num-4].L4_1, class_num);
+     }
+   }
+   else { // NO L3 class match
+   flow_entry[FLOW_KEY_L4_0] = 0;
+   flow_entry[FLOW_KEY_L4_1] = 0;
+   flow_entry[FLOW_KEY_PID] = 0;
+   }
+
+  // At this point, we have extracted all the fields of FLOW from the incoming Packet
+  // Now, calculate the Hash1 (CRC-32) function for this 384 bit flow key
+  //serial_hash1 = rxc_cl.setup_cam_ram_fcram_cl.calculate_H1(0, 3'h0, packet_info);
+
+  hash1 = calculate_H1_hash(flow_entry);
+
+  eval_hash_offset = {1'b0, hash1[3:0]}; // external hash is not supported now, 12/21/2005
+  printf("fflp_model::eval_hash_offset flow_entry=0x%h, hash1=0x%h, offset=0x%h\n", flow_entry, hash1, eval_hash_offset[3:0]);
+
+
+  printf("Model FLOW_KEY: VLAN_VALID=0x%h DA=0x%h VLAN_ID=0x%h IPSA=0x%h IPDA=0x%h L4_0=0x%h L4_1=0x%h PID=0x%h PORT=%h\n", 
+	flow_entry[FLOW_KEY_VLAN_VALID],
+	flow_entry[FLOW_KEY_MAC_DA],
+	flow_entry[FLOW_KEY_VLAN_ID],
+	flow_entry[FLOW_KEY_IPV4_SA],
+	flow_entry[FLOW_KEY_IPV4_DA],
+	flow_entry[FLOW_KEY_L4_0],
+	flow_entry[FLOW_KEY_L4_1],
+	flow_entry[FLOW_KEY_PID],
+	flow_entry[FLOW_KEY_PORT]);
+
+}
+
+function bit [10:0] fflp_model::predict_tcam_rdc_tblnum_offset(flow_desc flow, bit [2:0] l2_rdc, bit [1:0] mac_id) {
+   bit [199:0] pkt_tcam_key;
+   bit [2:0] tcam_key_register;
+   bit [4:0] fflp_class;
+   bit [63:0] matched_assoc_data;
+   integer i;
+   bit [47:0] mac_sa;
+   bit [15:0] seq_id;
+
+predict_tcam_rdc_tblnum_offset[7] = 0; // set the tcam_hit bit to 0 first. If there's a hit, it will be set to 1.
+predict_tcam_rdc_tblnum_offset[9:8] = 2'b11; // set the TRES to 2'b11 first, TCAM-Hit will overwrite it.
+predict_tcam_rdc_tblnum_offset[10] = 0; // DISC bit from assoc data in case of TCAM-Hit
+
+mac_sa = flow.src_node.l2_addr;
+seq_id = mac_sa[15:0];
+
+   pkt_tcam_key[TCAM_CLS_CODE] = find_class(flow.frame.frame_class);
+   printf ("fflp_model::predict_tcam_rdc_tblnum_offset  pkt_tcam_key[TCAM_CLS_CODE] = %0d\n", pkt_tcam_key[TCAM_CLS_CODE]);
+   case (pkt_tcam_key[TCAM_CLS_CODE]) {
+    8,9,10,11: {
+     pkt_tcam_key[194:192] = 0;		// RESERVED
+     pkt_tcam_key[185:112] = 0;		// RESERVED
+
+     pkt_tcam_key[IPV4_CAM_L2RDC_TBL_NUM] = l2_rdc;
+     if(flow.frame.frame_class==CL_TCP_FRAG || flow.frame.frame_class==CL_UDP_FRAG || flow.frame.frame_class==CL_SCTP_FRAG)
+          pkt_tcam_key[IPV4_CAM_NOPORT] = 1;
+     else pkt_tcam_key[IPV4_CAM_NOPORT] = 0;
+     pkt_tcam_key[IPV4_CAM_TOS] = flow.src_node.tos;
+
+     if (pkt_tcam_key[TCAM_CLS_CODE] == 8)			// TCP
+	pkt_tcam_key[IPV4_CAM_PID] = 6;
+     else if (pkt_tcam_key[TCAM_CLS_CODE] == 9)			// UDP
+	pkt_tcam_key[IPV4_CAM_PID] = 17;
+     else if (pkt_tcam_key[TCAM_CLS_CODE] == 10) 		
+     {
+	if (flow.frame.frame_class == CL_IP_SEC_ESP)		// ESP
+	  pkt_tcam_key[IPV4_CAM_PID] = 50;
+        else if (flow.frame.frame_class == CL_IP_SEC_AH)	// AH
+	  pkt_tcam_key[IPV4_CAM_PID] = 51;
+     }
+     else if (pkt_tcam_key[TCAM_CLS_CODE] == 11)		// SCTP
+	pkt_tcam_key[IPV4_CAM_PID] = 132;
+
+     if((pkt_tcam_key[TCAM_CLS_CODE]==8)||(pkt_tcam_key[TCAM_CLS_CODE]==9)||(pkt_tcam_key[TCAM_CLS_CODE]==12)||(pkt_tcam_key[TCAM_CLS_CODE]==13)){ // TCP, UDP
+       pkt_tcam_key[IPV4_CAM_L4_SRC_PORT] = flow.tup.src_tcp_udp_port;
+       pkt_tcam_key[IPV4_CAM_L4_DST_PORT] = flow.tup.dst_tcp_udp_port;
+     }
+     else if ((pkt_tcam_key[TCAM_CLS_CODE]==11)||(pkt_tcam_key[TCAM_CLS_CODE]==15)){ // SCTP
+       pkt_tcam_key[IPV4_CAM_L4_SRC_PORT] = flow.sctp.src_sctp_port;
+       pkt_tcam_key[IPV4_CAM_L4_DST_PORT] = flow.sctp.dst_sctp_port;
+     }
+     else if ((pkt_tcam_key[TCAM_CLS_CODE]==10)||(pkt_tcam_key[TCAM_CLS_CODE]==14)){ // AH, ESP
+       pkt_tcam_key[IPV4_CAM_L4PT_SPI] = flow.src_node.spi;
+     }
+
+     pkt_tcam_key[IPV4_CAM_IP_ADDR_SA] = flow.src_node.ip_addr;
+     pkt_tcam_key[IPV4_CAM_IP_ADDR_DA] = flow.dst_node.ip_addr;
+
+     printf("predict_tcam_rdc V4: MAC%0d.%0d class 0x%h l2_rdc 0x%h noport %b tos 0x%h pid 0x%h L4_src 0x%h L4_dst 0x%h IPSA 0x%h IPDA 0x%h \n",
+	   mac_id, seq_id, pkt_tcam_key[TCAM_CLS_CODE],l2_rdc,pkt_tcam_key[IPV4_CAM_NOPORT],flow.src_node.tos,
+ 	   pkt_tcam_key[IPV4_CAM_PID], flow.tup.src_tcp_udp_port,flow.tup.dst_tcp_udp_port, 
+	   pkt_tcam_key[IPV4_CAM_IP_ADDR_SA], pkt_tcam_key[IPV4_CAM_IP_ADDR_DA]);
+   printf ("fflp_model::predict_tcam_rdc class %0d IPV4-TCAM entry prepared from PKT 0x%h\n", pkt_tcam_key[TCAM_CLS_CODE], pkt_tcam_key);
+    }
+    12,13,14,15: {
+     pkt_tcam_key[194:192] = 0;		// RESERVED
+     pkt_tcam_key[186:176] = 0;		// RESERVED
+
+     pkt_tcam_key[IPV6_CAM_L2RDC_TBL_NUM] = l2_rdc;
+     pkt_tcam_key[IPV6_CAM_TOS] = flow.src_node.tos;
+
+     if (pkt_tcam_key[TCAM_CLS_CODE] == 12)			// TCP
+	pkt_tcam_key[IPV6_CAM_NXT_HDR] = 6;
+     else if (pkt_tcam_key[TCAM_CLS_CODE] == 13)		// UDP
+	pkt_tcam_key[IPV6_CAM_NXT_HDR] = 17;
+     else if (pkt_tcam_key[TCAM_CLS_CODE] == 14)		
+     {
+	if (flow.frame.frame_class == CL_IP_V6_SEC_ESP)		// ESP
+	  pkt_tcam_key[IPV6_CAM_NXT_HDR] = 50;
+        else if (flow.frame.frame_class == CL_IP_V6_SEC_AH)	// AH
+	  pkt_tcam_key[IPV6_CAM_NXT_HDR] = 51;
+     }
+     else if (pkt_tcam_key[TCAM_CLS_CODE] == 15) 		// SCTP
+	pkt_tcam_key[IPV6_CAM_NXT_HDR] = 132;
+
+     fflp_class = find_class(flow.frame.frame_class);
+     tcam_key_register = tcam_key_reg[fflp_class-4].tcam_ipaddr;
+     pkt_tcam_key[IPV6_CAM_L4_SRC_PORT] = flow.tup.src_tcp_udp_port;
+     pkt_tcam_key[IPV6_CAM_L4_DST_PORT] = flow.tup.dst_tcp_udp_port;
+     if (tcam_key_register[0]) // tcam_ipaddr
+       pkt_tcam_key[IPV6_CAM_IP_ADDR] = flow.src_node.ipv6_addr;
+     else
+       pkt_tcam_key[IPV6_CAM_IP_ADDR] = flow.dst_node.ipv6_addr;
+
+     printf("predict_tcam_rdc V6: MAC%0d.%0d class 0x%h l2_rdc 0x%h tos 0x%h next_hdr 0x%h L4_src 0x%h L4_dst 0x%h IPADDR 0x%h\n",
+	   mac_id, seq_id, pkt_tcam_key[TCAM_CLS_CODE],l2_rdc,flow.src_node.tos,pkt_tcam_key[IPV6_CAM_NXT_HDR],
+	   flow.tup.src_tcp_udp_port,flow.tup.dst_tcp_udp_port, pkt_tcam_key[IPV6_CAM_IP_ADDR]);
+   printf ("fflp_model::predict_tcam_rdc class %0d IPV6-TCAM entry prepared from PKT 0x%h\n", pkt_tcam_key[TCAM_CLS_CODE], pkt_tcam_key);
+    }
+    16,17: {
+
+/*  // For reference of the field locations
+    flow[n].arp.hw_type = 1;
+    flow[n].arp.proto_type = 16'h0800;
+    flow[n].arp.hlen = 6;
+    flow[n].arp.plen = 4;
+    flow[n].arp.operation = 1;
+    flow[n].arp.src_hw_addr = 48'habcdef000000+n;
+    flow[n].arp.src_proto_addr = 32'hcafe0000+n;
+    flow[n].arp.dst_hw_addr = 48'h123456000000+n;
+    flow[n].arp.dst_proto_addr = 32'h56780000+n;
+
+    bit [15:0]  hw_type=1;           // Hardware type (e.g., Ethernet-0x0001, Packet Radio Net.)
+    bit [15:0]  proto_type=16'h0800; // Protocol type (e.g., IP - 0x0800)
+    bit [7:0]   hlen=6;              // byte length of each hardware address
+    bit [7:0]   plen=4;              // byte length of each protocol address
+    bit [15:0]  operation=1;         // opcode (e.g. REQ or REPLY)
+    bit [47:0]  src_hw_addr=0;       // Hardware address of sender of this packet
+    bit [31:0]  src_proto_addr=0;    // Protocol address of the sender
+    bit [47:0]  dst_hw_addr=0;       // Hardware address of target of this packet (if known)
+    bit [31:0]  dst_proto_addr=0;    // Protocol address of the target
+*/
+     pkt_tcam_key[103:0] = 0; // initialize all reserved fields to 0
+     pkt_tcam_key[194:192] = 0; // initialize all reserved fields to 0
+     pkt_tcam_key[ETHERTYPE_EFRAME] = { flow.arp.src_hw_addr[31:24],
+					flow.arp.src_hw_addr[39:32],
+					flow.arp.src_hw_addr[47:40],
+					flow.arp.operation[7:0],
+					flow.arp.operation[15:8],
+					flow.arp.plen,
+					flow.arp.hlen,
+					flow.arp.proto_type[7:0],
+					flow.arp.proto_type[15:8],
+					flow.arp.hw_type[7:0],
+					flow.arp.hw_type[15:8] 
+				      };
+     printf ("fflp_model::predict_tcam_rdc class %0d ETHER-TCAM entry prepared from PKT 0x%h\n", pkt_tcam_key[TCAM_CLS_CODE], pkt_tcam_key);
+    }
+   }
+   
+   for (i=0;i<MAX_CAM_ENTRIES;i++){
+     //printf("fflp_model i=%0d p_key&mask=0x%h t_key&mask=0x%h\n", i, pkt_tcam_key&tcam_mask[i], tcam_entries[i]&tcam_mask[i]);
+     if((pkt_tcam_key&tcam_mask[i]) == (tcam_entries[i]&tcam_mask[i])) {
+        matched_assoc_data = tcam_assoc_data[i];
+       predict_tcam_rdc_tblnum_offset[2:0] = matched_assoc_data[9:7]; // Resulting RDC-Table
+       predict_tcam_rdc_tblnum_offset[6:3] = matched_assoc_data[5:2]; // Resulting RDC-Offset
+       predict_tcam_rdc_tblnum_offset[9:8] = matched_assoc_data[11:10]; // Resulting TRES: Tcam RESult
+       predict_tcam_rdc_tblnum_offset[10]  = matched_assoc_data[12]; // DISC bit from assoc data
+       printf("fflp_model::predict_tcam_rdc class %0d Found a TCAM Hit! At Index %0d, RDC %0d, Offset %0d\n",
+		pkt_tcam_key[TCAM_CLS_CODE], i, predict_tcam_rdc_tblnum_offset[2:0], predict_tcam_rdc_tblnum_offset[6:3]);
+       predict_tcam_rdc_tblnum_offset[7] = 1;
+       return;
+     }
+   }
+}
+
+
+
+function bit [3:0] fflp_model::predict_mac_rdc_tblnum_pri(bit [1:0] mac_id, flow_desc flow) {
+integer i;
+bit [51:0] mac_entry;
+
+printf ("fflp_model::predict_mac_rdc_tblnum_pri mac_id=%0d, mac_da=0x%h\n", mac_id, flow.dst_node.l2_addr);
+
+   case (mac_id) {
+   0: {
+	for(i=0;i<MAX_DA_10G;i++){
+ 	  mac_entry = mac_da_table0[i];
+	  if (mac_entry[47:0]==flow.dst_node.l2_addr) {
+/*@@@@@@@@ Cntl Hdr Info @@@@@@@@*/ ctl_fifo.maccheck = 1;
+/*@@@@@@@@ Cntl Fifo Info @@@@@@@*/ control_fifo_chkr.maccheck = 1;
+	    predict_mac_rdc_tblnum_pri = mac_entry[51:48];
+	// DA matched
+/*========== FFLP_Path =========*/ path_class.node[index++] = 2;
+ 	    return;
+	  }
+	}
+	// At this point, no DA matched. This pkt must have come to FFLP because of promisc mode
+/*========== FFLP_Path =========*/ path_class.node[index++] = 1;
+      }
+   1: {
+	for(i=0;i<MAX_DA_10G;i++){
+ 	  mac_entry = mac_da_table1[i];
+	  if (mac_entry[47:0]==flow.dst_node.l2_addr) {
+/*@@@@@@@@ Cntl Hdr Info @@@@@@@@*/ ctl_fifo.maccheck = 1;
+/*@@@@@@@@ Cntl Fifo Info @@@@@@@*/ control_fifo_chkr.maccheck = 1;
+	    predict_mac_rdc_tblnum_pri = mac_entry[51:48];
+	// DA matched
+/*========== FFLP_Path =========*/ path_class.node[index++] = 2;
+ 	    return;
+	  }
+	}
+	// At this point, no DA matched. This pkt must have come to FFLP because of promisc mode
+/*========== FFLP_Path =========*/ path_class.node[index++] = 1;
+      }
+   2: {
+	for(i=0;i<MAX_DA_1G;i++){
+ 	  mac_entry = mac_da_table2[i];
+	  if (mac_entry[47:0]==flow.dst_node.l2_addr) {
+/*@@@@@@@@ Cntl Hdr Info @@@@@@@@*/ ctl_fifo.maccheck = 1;
+/*@@@@@@@@ Cntl Fifo Info @@@@@@@*/ control_fifo_chkr.maccheck = 1;
+	    predict_mac_rdc_tblnum_pri = mac_entry[51:48];
+	// DA matched
+/*========== FFLP_Path =========*/ path_class.node[index++] = 2;
+ 	    return;
+	  }
+	}
+	// At this point, no DA matched. This pkt must have come to FFLP because of promisc mode
+/*========== FFLP_Path =========*/ path_class.node[index++] = 1;
+      }
+   3: {
+	for(i=0;i<MAX_DA_1G;i++){
+ 	  mac_entry = mac_da_table3[i];
+	  if (mac_entry[47:0]==flow.dst_node.l2_addr) {
+/*@@@@@@@@ Cntl Hdr Info @@@@@@@@*/ ctl_fifo.maccheck = 1;
+/*@@@@@@@@ Cntl Fifo Info @@@@@@@*/ control_fifo_chkr.maccheck = 1;
+	    predict_mac_rdc_tblnum_pri = mac_entry[51:48];
+	// DA matched
+/*========== FFLP_Path =========*/ path_class.node[index++] = 2;
+ 	    return;
+	  }
+	}
+	// At this point, no DA matched. This pkt must have come to FFLP because of promisc mode
+/*========== FFLP_Path =========*/ path_class.node[index++] = 1;
+      }
+   default: {
+	printf ("ERROR: fflp_model::predict_mac_rdc_tblnum_pri(): Invalid mac_id = %0d\n", mac_id);
+        return;
+      }
+   }
+   printf("fflp_model::predict_mac_rdc_tblnum_pri  mac_rdc_tblnum_pri=%h\n", predict_mac_rdc_tblnum_pri);
+   
+}
+
+function bit [3:0] fflp_model:: predict_vlan_rdc_tblnum_pri(bit [1:0] mac_id, flow_desc flow) {
+integer i;
+bit [17:0] vlan_entry;
+bit [15:0] vlan_id;
+
+printf ("fflp_model:: predict_vlan_rdc_tblnum_pri Detected a VLAN tagged pkt. mac_id %0d, vlan_id=0x%h\n", 
+	mac_id, flow.src_node.tci);
+
+	for(i=0;i<MAX_VLAN_ENTRIES;i++){
+	  vlan_id = flow.src_node.tci;
+	  if (vlan_id[11:0] == i) {
+ 	    vlan_entry = vlan_table[i];
+            printf("fflp_model::predict_vlan_rdc_tblnum_pri Found a VLAN-Hit! vlan_id=0x%h, entry=0x%h\n", i, vlan_entry);
+	    if (get_plus_arg(CHECK,"PKT_CFG_VLAN_PARITY_ERR")) {
+	// This means VLAN Table is programmed with wrong parity in all 4096 entries. RTL sees a parity error for this
+/*========== FFLP_Path =========*/ path_class.node[index++] = 5;
+	    }	       
+	    else {
+	// This means VLAN entry has NO parity error
+/*========== FFLP_Path =========*/ path_class.node[index++] = 6;
+	    }
+	    case(mac_id) {
+	     0: predict_vlan_rdc_tblnum_pri = vlan_entry[3:0];
+	     1: predict_vlan_rdc_tblnum_pri = vlan_entry[7:4];
+	     2: predict_vlan_rdc_tblnum_pri = vlan_entry[11:8];
+	     3: predict_vlan_rdc_tblnum_pri = vlan_entry[15:12];
+   	     default: {
+		printf ("ERROR: fflp_model::predict_vlan_rdc_tblnum_pri(): Invalid mac_id = %0d\n", mac_id);
+        	return;
+    	     }
+	
+            }
+            return;
+	  }
+	}
+   printf("fflp_model::predict_vlan_rdc_tblnum_pri  vlan_rdc_tblnum_pri=%h\n", predict_vlan_rdc_tblnum_pri);
+   
+}
+
+task fflp_model::update_vlan_shadow (integer index, bit [17:0] vlan_entry) {
+   vlan_table[index] = vlan_entry;
+   //printf ("fflp_model:update_vlan_shadow  index=%0d, entry=0x%h\n", index,vlan_table[index]);
+}
+
+task fflp_model::update_mac_da_shadow(bit [1:0] port_num, integer index, bit [51:0] mac_entry){
+  
+   case (port_num) {
+   0: mac_da_table0[index]= mac_entry;
+   1: mac_da_table1[index]= mac_entry;
+   2: mac_da_table2[index]= mac_entry;
+   3: mac_da_table3[index]= mac_entry;
+   default: {
+	printf ("ERROR: fflp_model::update_mac_da_shadow: Invalid mac_id = %0d\n", port_num);
+	return;
+      }
+   }  
+   printf ("fflp_model:update_mac_da_shadow  index=%0d, entry=0x%h\n", index,mac_entry);
+}
+
+task fflp_model::update_zcp_rdc_tbl_shadow(integer index, bit [3:0] dma_num){
+   zcp_rdc_table[index] = dma_num;
+   printf ("fflp_model::update_zcp_rdc_tbl_shadow index=%0d, entry=0x%h\n", index, dma_num);
+}
+
+function bit [3:0] fflp_model::lookup_zcp_rdc_table(bit [2:0] rdc_tbl_num, bit [3:0] rdc_tbl_offset) {
+   printf("fflp_model::lookup_zcp_rdc_table lookedup ZCP_RDC_TBL rdc_tbl_num=%0d, rdc_tbl_offset=%0d \n",
+	 rdc_tbl_num, rdc_tbl_offset);
+   lookup_zcp_rdc_table = zcp_rdc_table[16*rdc_tbl_num + rdc_tbl_offset];
+   printf(" dma=%0d\n", lookup_zcp_rdc_table);
+}
+
+function bit [31:0] fflp_model:: calculate_H1_hash (bit [383:0] flow_key) {
+
+  bit [39:0]  rd_addr;
+  bit [63:0]  initial_h1_poly_tmp;
+
+  bit [32:0]  shtol_h1poly = 33'h0;
+  bit [63:0]  flow_keyb[6];
+  bit [63:0]  flow_keyb_tmp;
+  integer i, j;
+ 
+  initial_h1_poly_tmp = initial_h1_poly;
+
+  shtol_h1poly    = initial_h1_poly_tmp[32:0];
+
+  flow_keyb[0] = flow_key[63:0];
+  flow_keyb[1] = flow_key[127:64];
+  flow_keyb[2] = flow_key[191:128];
+  flow_keyb[3] = flow_key[255:192];
+  flow_keyb[4] = flow_key[319:256];
+  flow_keyb[5] = flow_key[383:320];
+
+  for (i=0;i<6;i++)
+     {
+      for (j=63;j>=0;j--)
+         {
+          if (j === 63)
+            {
+             flow_keyb_tmp = flow_keyb[i];
+            }
+          else
+            {
+             flow_keyb_tmp = flow_keyb_tmp;
+            }
+          shtol_h1poly = shtol_h1poly << 1;
+          if (shtol_h1poly[32] ^ flow_keyb_tmp[j])
+            {
+             shtol_h1poly = {1'b0,(shtol_h1poly[31:0] ^ H1_CRC_32C_POLY)};
+            }
+          else
+            {
+             shtol_h1poly = {1'b0, shtol_h1poly[31:0]};
+            }
+         }
+     }
+
+  calculate_H1_hash = shtol_h1poly[31:0];
+  printf("fflp_model::calculate_H1_hash() CALCULATED H1 HASH = %h.\n",calculate_H1_hash);
+  
+}
+

@@ -1,0 +1,340 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: irritator.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <std_display_defines.vri>
+#include <ccxDevicesDefines.vri>
+
+#include <globals.vri>
+
+#include <baseParamsClass.vrh>
+#include <sparcParams.vrh>
+#include <baseUtilsClass.vrh>
+#include <sparcBenchUtils.vrh>
+#include <std_display_class.vrh>
+#include <basePktClass.vrh>
+#include <cpxPktClass.vrh>
+#include <pcxPktClass.vrh>
+#include <ccxDevBaseBFM.vrh>
+#include <ccxDevMemBFM.vrh>
+#include <ccxDevSpcBFM.vrh>
+#include <memArray.vrh>
+#include <ccx_tag_class.vrh>
+#include <baseCCXtrans.vrh>
+
+#define CLASSNAME Irritator
+#define CLASSNAMEQ "Irritator"
+
+
+//gCcxDevice[] 0-16 !== null
+  
+class CLASSNAME extends BaseCCXtrans {
+  
+  local string className = "Irritator";
+  
+  // rands
+
+  // end rands
+
+  
+  task new(StandardDisplay dbgHndl, reg l2BFMs);
+  task decker();
+  task evictFlood();
+  task bufferFlood();
+  task randStores();
+  task  randStLd();
+  task  randLoads();
+}
+
+
+task CLASSNAME::new(StandardDisplay dbgHndl, reg l2BFMs) {
+  super.new(dbgHndl, l2BFMs);
+  srandom(gSeed,this);
+  
+  // void = randomize();
+
+  anyMemPort = gCpxPort[0];
+  anySpcPort = gPcxPort[0];
+
+  fork {
+    evictFlood();
+    bufferFlood();
+    randStores();
+    randStLd();
+    randLoads();
+  } join none
+  
+}
+
+
+
+//////////////////////////////////////////////////////
+// higher level tasks
+//////////////////////////////////////////////////////
+
+// enqueue a bunch of noop evictions for directed coverage.
+// every source sends to every FloodTarget. No checking.
+// +evictFloodAmount, +evictFloodFreq, +evictFloodTargets
+task CLASSNAME::evictFlood()
+{
+
+  integer amount;
+
+  if (! gParam.evictFloodFreq ||
+      ! gParam.evictFloodAmount ||
+      ! gParam.evictFloodTargets) return;
+
+  if (gCcxDevice[8] == null || gCcxDevice[16] == null)
+    PR_ERROR(CLASSNAMEQ, MON_ERROR,
+             psprintf ("evictFlood task needs L2 BFMs and NCU BFM!"));
+  
+  amount = gParam.evictFloodAmount;
+  repeat (500) @(posedge anyMemPort.$clk);
+  while (amount) {
+    repeat (gParam.evictFloodFreq) @(posedge anyMemPort.$clk);
+    repeat (2) bogusEvict(gParam.evictFloodTargets, 8'hff);
+    repeat (2) super.sendIntr(0, 3, 0);
+    amount--;
+  }
+}
+
+
+// For CCX coverage activity. 2 ifill resp followed by 1 eviction. (ncu does 3 interrupts)
+// Will enqueue a bunch of ifill responses and noop evictions for directed coverage.
+// Every source sends to ONE FloodTarget, all at once. No checking.
+//
+//   bufferFloodFreq = getParam(DEC, "bufferFloodFreq", 0, 100000, 0);
+//   bufferFloodAmount = getParam(DEC, "bufferFloodAmount", 1, 100, 10);
+//   bufferFloodTarget = getParam(HEX, "bufferFloodTarget", 1, 7, 7);
+task CLASSNAME::bufferFlood()
+{
+
+  integer amount;
+
+  if (! gParam.bufferFloodFreq ||
+      ! gParam.bufferFloodAmount ||
+      ! gParam.bufferFloodTarget) return;
+
+  if (gCcxDevice[8] == null || gCcxDevice[16] == null)
+    PR_ERROR(CLASSNAMEQ, MON_ERROR,
+             psprintf ("bufferFlood task needs L2 BFMs and NCU BFM!"));
+  
+  amount = gParam.bufferFloodAmount;
+  repeat (500) @(posedge anyMemPort.$clk);
+  while (amount) {
+    repeat (gParam.bufferFloodFreq) @(posedge anyMemPort.$clk);
+    bogusEvict(1<<gParam.bufferFloodTarget, 8'h0C);
+    @(posedge anyMemPort.$clk);   
+    bogusEvict(1<<gParam.bufferFloodTarget, 8'h30);
+    super.sendIntr(gParam.bufferFloodTarget<<3, 3, 0);
+    @(posedge anyMemPort.$clk);    
+    super.sendIntr(gParam.bufferFloodTarget<<3, 3, 0);
+    super.sendIntr(gParam.bufferFloodTarget<<3, 3, 0);
+    // pre pkt
+    ifillPair(gParam.bufferFloodTarget, 8'hff,
+              {urandom(),urandom()},{urandom(),urandom()});
+    bogusEvict(1<<gParam.bufferFloodTarget, 8'hff);
+    bogusEvict(1<<gParam.bufferFloodTarget, 8'hff);
+    amount--;
+  }
+}
+
+
+
+
+// From all L2 ports, broadcast 1 eviction packet (with unique signature
+// for each source) to every core. All core targets should have the exact
+// packet stream coming out at the exact same time. Each send packet will
+// go to 8 cores, each core will receive 8 packets. Will be 64 destination
+// packets from 8 source packets.
+task CLASSNAME::decker() {
+
+  CpxPkt sndPkt[8];
+  CpxPkt recvPkt[8][8];
+  CpxPkt finalOrder[8][8];
+  integer startTime;
+  shadow integer sp,rp;
+  reg [127:0] rand128, tmp128;
+  
+
+  // create array of 8 unique source packets
+  for (sp=0;sp<8;sp++) {
+    sndPkt[sp] = new();
+    rand128 = {urandom(),urandom(),urandom(),urandom()};
+    sndPkt[sp].tid = rand128[2:0];
+    sndPkt[sp].sendPorts = 1 << 8+sp;
+    sndPkt[sp].rtntyp = CPX_EVICT;
+    sndPkt[sp].rtntypU = U_CPX_EVICT;     
+    sndPkt[sp].addr = rand128[39:0];
+    sndPkt[sp].targetPorts = 8'hff;
+    sndPkt[sp].data = rand128;
+  }
+
+  // register the 8 unique source packets
+  // at each destination. 64 total.
+  for (sp=0;sp<8;sp++) {
+    for (rp=0;rp<8;rp++) {
+      recvPkt[sp][rp] = new();
+      recvPkt[sp][rp].signature = sndPkt[sp].makeSignature();
+      recvPkt[sp][rp].targetPorts = 1<<rp;
+      recvPkt[sp][rp].recv(); // register arrival w/ BFM
+    }
+  }
+
+
+  // initiator, 8 unique packets
+  for (sp=0;sp<8;sp++) {
+    sndPkt[sp].send(1); // let fly     
+    PR_NORMAL(CLASSNAMEQ, MON_NORMAL,
+              psprintf ("Sending random EVICTION pkt from 0b%b to 0b%b, vec=0x%h",
+                        sndPkt[sp].sendPorts, sndPkt[sp].targetPorts,
+                        sndPkt[sp].getVector()));
+  }
+
+  // for checker. Collect packets at destination.
+  // for each send port, collect 8 destination pkts.
+  for (sp=0;sp<8;sp++) { // for each send port
+    for (rp=0;rp<8;rp++) { // wait on/collect 8 packets in a row
+      fork {
+        wait_var(recvPkt[sp][rp].pktArrived); // 64 of these
+        // compare sndPkt[sp] to recvPkt[sp][rp]
+        if (recvPkt[sp][rp].makeSignature() !== sndPkt[sp].makeSignature())
+          PR_ERROR(CLASSNAMEQ, MON_ERROR,
+                   psprintf ("mismatch error,  pkt from port %0d, to port %0d", sp, rp));
+        finalOrder[sp][rp] = recvPkt[sp][rp];
+      } join none
+    }
+  }
+  wait_child(); // wait for 64 pkts to arrive
+
+
+  // now make sure that every recv port got the same packets in
+  // the same order at the same time. Order is implied in the finalOrder array.
+  // Time is stored in the recieved packets. Compare time along with order.
+  for (rp=0;rp<8;rp++) { // for each recv port
+    for (sp=0;sp<7;sp++) { // make sure all packest are same for that clock
+
+      // arrivial times (as loaded into finalOrder array) must inc by one,
+      // or dec by one depending on arb direction.
+      if (sp == 0 && rp == 0) startTime = finalOrder[rp][sp].arrivalTime;
+      
+      if (finalOrder[rp][sp].getVector() !== finalOrder[rp][sp+1].getVector() ||
+          finalOrder[rp][sp].arrivalTime !== finalOrder[rp][sp+1].arrivalTime ||
+          (finalOrder[rp][sp].arrivalTime !== startTime+rp && finalOrder[rp][sp].arrivalTime !== startTime-rp))
+          PR_ERROR(CLASSNAMEQ, MON_ERROR,
+                   psprintf ("decker ORDER/TIME mismatch error,  [%0d][%0d] not == to [%0d][%0d]", rp, sp, rp, sp+1));
+      printf("pkt sp=%0d,rp=%0d: vec=%h, time=%0d\n", rp, sp, finalOrder[rp][sp].getVector(), finalOrder[rp][sp].arrivalTime);
+    }
+    printf("pkt sp=%0d,rp=%0d: vec=%h, time=%0d\n", rp, sp, finalOrder[rp][sp].getVector(), finalOrder[rp][sp].arrivalTime);
+  }
+
+}
+
+
+// send a bunch of store packets
+// irritStFreq
+// irritStAdr1
+// irritStAdr2
+task CLASSNAME::randStores() {
+
+  integer i;
+
+//   if (! gParam.irritStFreq) return;
+//  spcCheck("randStores");
+
+  
+}
+
+
+// send a bunch of load packets. This will mess up a real
+// L2/core if the packet core is incorrect (same as real core)!
+// irritLdFreq
+// irritLdAdr1
+// irritLdAdr2
+task CLASSNAME::randLoads() {
+
+  integer i;
+  PcxPkt    pkt;
+  reg [31:0] rnd;
+
+  
+// //   if (! gParam.irritLdFreq) return;
+//   spcCheck("randLoads");
+// 
+//   rnd = urandom();
+//   
+//   // create load pkt
+//   pkt = new();
+// 
+//   pickCore(pkt.cpuId, pkt.sendPorts);   
+//   pkt.nc = 0;
+//   pkt.inv = 0;
+//   pkt.pf = 0;
+//   pkt.l1wayBis = rnd[2:0];
+//   pkt.l1wayMMUid = rnd[5:3];
+//   pkt.size = ;
+//   pkt.tid = random();
+//   pkt.rqtyp = 
+//   pkt.rqtypU =    
+//   pkt.addr = 
+//   pkt.targetPorts = 
+// 
+//   // end to end checking
+//   // pktRecv.signature = pkt.makeSignature();
+//   // pktRecv.targetPorts = 
+//   // pktRecv.recv();
+// 
+//   
+//   pkt.send(1); // doit
+//     
+//   PR_NORMAL(CLASSNAMEQ, MON_NORMAL,
+//             psprintf ("Sending bogus EVICTION pkt to targets=0b%b, a=0x%h, vec=0x%h",
+//                       pkt.targetPorts,0,0));
+
+}
+
+
+// send a bunch of checked st -> ld packet pairs
+// irritLdStFreq
+// irritLdStAdr1
+// irritLdStAdr2
+task CLASSNAME::randStLd() {
+
+  integer i;
+
+//   if (! gParam.irritLdStFreq) return;
+//  spcCheck("randStLd");
+
+
+}

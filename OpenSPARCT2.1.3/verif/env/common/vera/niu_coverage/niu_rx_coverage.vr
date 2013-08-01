@@ -1,0 +1,546 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_rx_coverage.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "niu_rx_cov_if.vri"
+
+enum PortNum {Port0, Port1, Port2, Port3};
+
+class niu_intf_coverage
+{	
+  integer     txc_p0_ro_ram_size = 0;
+  integer     txc_p0_ro_ram_rd_b2b = 0;
+  integer     txc_p0_ro_ram_wr_b2b = 0;
+  bit [4:0]   txc_p0_ro_ram_rd_addr = 0;
+  bit [4:0]   txc_p0_ro_ram_wr_addr = 0;
+  bit         txc_p0_ro_ram_trig = 0;
+  reg [129:0] control_fifo_data;
+  bit         control_fifo_data_port0_1st_cycle_cov = 0;
+  bit         control_fifo_data_port0_2nd_cycle_cov = 0;
+  bit         control_fifo_data_port1_1st_cycle_cov = 0;
+  bit         control_fifo_data_port1_2nd_cycle_cov = 0;
+  bit         control_fifo_data_port2_1st_cycle_cov = 0;
+  bit         control_fifo_data_port2_2nd_cycle_cov = 0;
+  bit         control_fifo_data_port3_1st_cycle_cov = 0;
+  bit         control_fifo_data_port3_2nd_cycle_cov = 0;
+  event       niu_coverage_err_trig;
+  event       niu_rx_control_fifo_trig;
+
+  // 1st cycle:
+  reg         se_bit;
+  reg         drop_pkt;
+  reg         fflp_hw_err;
+  reg         mac_promiscuous;
+  reg         tt_err;
+  reg         tt_succeed;
+  reg [2:0]   hash_sub_index;
+  reg         hzfvld;
+  reg         exact;
+  reg         hash_hit;
+  reg [4:0]   table_rdc;
+  reg [7:0]   tcam_m_index;
+  reg [4:0]   default_rdc;
+  reg         tzfvld;
+  reg [1:0]   tres;
+  reg         tcam_hit;
+  reg         bad_ip;
+  reg         no_port;
+  reg         llc_snap;
+  reg         vlan;
+  reg [4:0]   classs;
+  reg         mac_check;
+  reg         sop;
+  reg [1:0]   mac_port;
+  reg         eop;
+  // 2nd cycle:
+  reg [31:0]  tcp_seq;
+  reg [3:0]   tcp_hdr_len;
+  reg [3:0]   ipv4_hdr_len;
+  reg [15:0]  l3_pkt_len;
+  reg [4:0]   zc_rdc;
+  reg [1:0]   dmaw_type;
+  reg [1:0]   ulp_type;
+  reg [3:0]   pkt_id;
+  reg         ip_ver;
+  reg [5:0]   usr_data;
+  reg         sop_2;
+  reg         eop_2;
+
+  coverage_group niu_rx_control_fifo_group_1st_cycle_port0
+  {
+   //sample_event = wait_var(control_fifo_data_port0_1st_cycle_cov);
+     sample_event = wait_var(control_fifo_data_port0_2nd_cycle_cov); // use 2nd cycle for now to get eop
+                                                                     // and not add a new coverage group
+
+     sample drop_pkt        { state fifo_data_drop_pkt(0:1)
+                                if (drop_pkt == 1); }
+     sample fflp_hw_err     { state fifo_data_fflp_hw_err(0:1)
+                                if (fflp_hw_err == 1); }
+     sample mac_promiscuous { state fifo_data_mac_promiscuous(0:1)
+                                if (mac_promiscuous == 1); }
+     sample tcam_hit        { state fifo_data_tcam_hit(0:1)
+                                if (tcam_hit == 1); }
+   //No test yet for bad_ip so comment out to confirm remaining coverage to 100%
+   //sample bad_ip          { state fifo_data_bad_ip(0:1)
+   //                           if (bad_ip == 1); }
+     sample no_port         { state fifo_data_no_port(0:1)
+                                if (no_port == 1); }
+     sample llc_snap        { state fifo_data_llc_snap(0:1)
+                                if (llc_snap == 1); }
+     sample vlan            { state fifo_data_vlan(0:1)
+                                if (vlan == 1); }
+     sample mac_check       { state fifo_data_mac_check(0:1)
+                                if (mac_check == 1); }
+     sample sop             { state fifo_data_sop(0:1)
+                                if (sop == 1); }
+     sample eop             { state fifo_data_eop(0:1) // eop is asserted only
+                                if (eop == 1); }       // in the second cycle
+  }
+
+#ifdef DISABLE_FOR_NOW
+  coverage_group niu_rx_control_fifo_group_2nd_cycle_port0
+  {
+     sample_event = wait_var(control_fifo_data_port0_2nd_cycle_cov);
+
+  }
+#endif
+
+#ifdef DISABLE_FOR_NOW
+  coverage_group niu_rx_control_fifo_group_1st_cycle_port1
+  {
+     sample_event = wait_var(control_fifo_data_port1_1st_cycle_cov);
+
+     sample drop_pkt        { state fifo_data_drop_pkt(0:1)
+                                if (drop_pkt == 1); }
+     sample fflp_hw_err     { state fifo_data_fflp_hw_err(0:1)
+                                if (fflp_hw_err == 1); }
+     sample mac_promiscuous { state fifo_data_mac_promiscuous(0:1)
+                                if (mac_promiscuous == 1); }
+     sample tcam_hit        { state fifo_data_tcam_hit(0:1)
+                                if (tcam_hit == 1); }
+     sample bad_ip          { state fifo_data_bad_ip(0:1)
+                                if (bad_ip == 1); }
+     sample no_port         { state fifo_data_no_port(0:1)
+                                if (no_port == 1); }
+     sample llc_snap        { state fifo_data_llc_snap(0:1)
+                                if (llc_snap == 1); }
+     sample vlan            { state fifo_data_vlan(0:1)
+                                if (vlan == 1); }
+     sample mac_check       { state fifo_data_mac_check(0:1)
+                                if (mac_check == 1); }
+     sample sop             { state fifo_data_sop(0:1)
+                                if (sop == 1); }
+     sample eop             { state fifo_data_eop(0:1)
+                                if (eop == 1); }
+  }
+
+  coverage_group niu_rx_control_fifo_group_2nd_cycle_port1
+  {
+     sample_event = wait_var(control_fifo_data_port1_2nd_cycle_cov);
+
+  }
+#endif
+
+  coverage_group niu_coverage_mac_xpcs_state_group
+  {
+     const_sample_reference  = 1;
+     sample_event            = @(posedge  niu_coverage_mac_xpcs_state_machine.clk);
+     #include "niu_mac_xpcs_sm.vri"
+  }
+
+  coverage_group niu_coverage_err_group
+  {
+     const_sample_reference      = 1;
+     cross_auto_bin_max          = 0;
+
+     sample_event = sync (ANY, niu_coverage_err_trig);
+
+     sample niu_coverage_err_det.control_fifo_err0;
+     sample niu_coverage_err_det.control_fifo_err1;
+
+     cross niu_coverage_err_cross_cov(niu_coverage_err_det.control_fifo_err1,
+                                      niu_coverage_err_det.control_fifo_err0)
+     {
+       state err_0_1(niu_coverage_err_det.control_fifo_err1==0 &&
+                     niu_coverage_err_det.control_fifo_err0==1);
+       state err_1_0(niu_coverage_err_det.control_fifo_err1==1 &&
+                     niu_coverage_err_det.control_fifo_err0==0);
+       // Currently not checking for both errors happening simultaneously.
+     }
+  }
+
+  coverage_group niu_tx_coverage_txc_fifo_rd_group
+  {
+  //sample_event = wait_var(txc_p0_ro_ram_rd_addr);
+  //sample_event = @(posedge  niu_coverage_txc_1024_port0_RO_RAM.clk);
+    sample_event = wait_var(txc_p0_ro_ram_trig);
+
+    sample niu_coverage_txc_1024_port0_RO_RAM.read_ptr
+    {
+        state s_TXC_P0_RO_RAM_EMPTY(0:63)
+          if (txc_p0_ro_ram_size == 0);
+
+        state s_TXC_P0_RO_RAM_RD(0:63)
+          if (niu_coverage_txc_1024_port0_RO_RAM.read_sig === 1'b1);
+
+        state s_TXC_P0_RO_RAM_BACK_TO_BACK_RD(0:63)
+          if (txc_p0_ro_ram_rd_b2b == 1);
+
+        state s_TXC_P0_RAM_RD_AND_WR(0:1023)
+          if (niu_coverage_txc_1024_port0_RO_RAM.write_sig);
+
+        bad_state s_TXC_P0_RAM_RD_AND_WR_SAME_ADDR(0:1023)
+          if (niu_coverage_txc_1024_port0_RO_RAM.write_sig
+          &&  niu_coverage_txc_1024_port0_RO_RAM.read_sig
+          &&  niu_coverage_txc_1024_port0_RO_RAM.read_ptr==niu_coverage_txc_1024_port0_RO_RAM.write_ptr);
+
+        state s_TXC_P0_RAM_RD_AND_WR_NOT_SAME_ADDR(0:1023)
+          if (niu_coverage_txc_1024_port0_RO_RAM.write_sig
+          &&  niu_coverage_txc_1024_port0_RO_RAM.read_sig
+          &&  niu_coverage_txc_1024_port0_RO_RAM.read_ptr != niu_coverage_txc_1024_port0_RO_RAM.write_ptr);
+
+        trans t_TXC_P0_RO_RAM_RPTR_00       ( 0 ->  1);
+        trans t_TXC_P0_RO_RAM_RPTR_01       ( 1 ->  2);
+        trans t_TXC_P0_RO_RAM_RPTR_02       ( 2 ->  3);
+        trans t_TXC_P0_RO_RAM_RPTR_03       ( 3 ->  4);
+        trans t_TXC_P0_RO_RAM_RPTR_04       ( 4 ->  5);
+        trans t_TXC_P0_RO_RAM_RPTR_05       ( 5 ->  6);
+        trans t_TXC_P0_RO_RAM_RPTR_06       ( 6 ->  7);
+        trans t_TXC_P0_RO_RAM_RPTR_07       ( 7 ->  8);
+        trans t_TXC_P0_RO_RAM_RPTR_08       ( 8 ->  9);
+        trans t_TXC_P0_RO_RAM_RPTR_09       ( 9 -> 10);
+        trans t_TXC_P0_RO_RAM_RPTR_10       (10 -> 11);
+        trans t_TXC_P0_RO_RAM_RPTR_11       (11 -> 12);
+        trans t_TXC_P0_RO_RAM_RPTR_12       (12 -> 13);
+        trans t_TXC_P0_RO_RAM_RPTR_13       (13 -> 14);
+        trans t_TXC_P0_RO_RAM_RPTR_14       (14 -> 15);
+        trans t_TXC_P0_RO_RAM_RPTR_15       (15 -> 16);
+        trans t_TXC_P0_RO_RAM_RPTR_16       (16 -> 17);
+        trans t_TXC_P0_RO_RAM_RPTR_17       (17 -> 18);
+        trans t_TXC_P0_RO_RAM_RPTR_18       (18 -> 19);
+        trans t_TXC_P0_RO_RAM_RPTR_19       (19 -> 20);
+        trans t_TXC_P0_RO_RAM_RPTR_20       (20 -> 21);
+        trans t_TXC_P0_RO_RAM_RPTR_21       (21 -> 22);
+        trans t_TXC_P0_RO_RAM_RPTR_22       (22 -> 23);
+        trans t_TXC_P0_RO_RAM_RPTR_23       (23 -> 24);
+        trans t_TXC_P0_RO_RAM_RPTR_24       (24 -> 25);
+        trans t_TXC_P0_RO_RAM_RPTR_25       (25 -> 26);
+        trans t_TXC_P0_RO_RAM_RPTR_26       (26 -> 27);
+        trans t_TXC_P0_RO_RAM_RPTR_27       (27 -> 28);
+        trans t_TXC_P0_RO_RAM_RPTR_28       (28 -> 29);
+        trans t_TXC_P0_RO_RAM_RPTR_29       (29 -> 30);
+        trans t_TXC_P0_RO_RAM_RPTR_30       (30 -> 31);
+        trans t_TXC_P0_RO_RAM_RPTR_31       (31 -> 32);
+        trans t_TXC_P0_RO_RAM_RPTR_32       (32 -> 33);
+        trans t_TXC_P0_RO_RAM_RPTR_33       (33 -> 34);
+        trans t_TXC_P0_RO_RAM_RPTR_34       (34 -> 35);
+        trans t_TXC_P0_RO_RAM_RPTR_35       (35 -> 36);
+        trans t_TXC_P0_RO_RAM_RPTR_36       (36 -> 37);
+        trans t_TXC_P0_RO_RAM_RPTR_37       (37 -> 38);
+        trans t_TXC_P0_RO_RAM_RPTR_38       (38 -> 39);
+        trans t_TXC_P0_RO_RAM_RPTR_39       (39 -> 40);
+        trans t_TXC_P0_RO_RAM_RPTR_40       (40 -> 41);
+        trans t_TXC_P0_RO_RAM_RPTR_41       (41 -> 42);
+        trans t_TXC_P0_RO_RAM_RPTR_42       (42 -> 43);
+        trans t_TXC_P0_RO_RAM_RPTR_43       (43 -> 44);
+        trans t_TXC_P0_RO_RAM_RPTR_44       (44 -> 45);
+        trans t_TXC_P0_RO_RAM_RPTR_45       (45 -> 46);
+        trans t_TXC_P0_RO_RAM_RPTR_46       (46 -> 47);
+        trans t_TXC_P0_RO_RAM_RPTR_47       (47 -> 48);
+        trans t_TXC_P0_RO_RAM_RPTR_48       (48 -> 49);
+        trans t_TXC_P0_RO_RAM_RPTR_49       (49 -> 50);
+        trans t_TXC_P0_RO_RAM_RPTR_50       (50 -> 51);
+        trans t_TXC_P0_RO_RAM_RPTR_51       (51 -> 52);
+        trans t_TXC_P0_RO_RAM_RPTR_52       (52 -> 53);
+        trans t_TXC_P0_RO_RAM_RPTR_53       (53 -> 54);
+        trans t_TXC_P0_RO_RAM_RPTR_54       (54 -> 55);
+        trans t_TXC_P0_RO_RAM_RPTR_55       (55 -> 56);
+        trans t_TXC_P0_RO_RAM_RPTR_56       (56 -> 57);
+        trans t_TXC_P0_RO_RAM_RPTR_57       (57 -> 58);
+        trans t_TXC_P0_RO_RAM_RPTR_58       (58 -> 59);
+        trans t_TXC_P0_RO_RAM_RPTR_59       (59 -> 60);
+        trans t_TXC_P0_RO_RAM_RPTR_60       (60 -> 61);
+        trans t_TXC_P0_RO_RAM_RPTR_61       (61 -> 62);
+        trans t_TXC_P0_RO_RAM_RPTR_62       (62 -> 63);
+        trans t_TXC_P0_RO_RAM_RPTR_63       (63 ->  0);
+    }
+  }
+
+  coverage_group niu_tx_coverage_txc_fifo_wr_group
+  {
+    sample_event = @(posedge  niu_coverage_txc_1024_port0_RO_RAM.clk);
+  //sample_event = wait_var(txc_p0_ro_ram_wr_addr);
+
+    sample niu_coverage_txc_1024_port0_RO_RAM.write_ptr
+    {
+        state s_TXC_P0_RO_RAM_FULL(0:63)
+          if (txc_p0_ro_ram_size == 64);
+
+        state s_TXC_P0_RO_RAM_WR(0:63)
+          if (niu_coverage_txc_1024_port0_RO_RAM.write_sig === 1'b1);
+
+        state s_TXC_P0_RO_RAM_BACK_TO_BACK_WR(0:63)
+          if (txc_p0_ro_ram_wr_b2b == 1);
+
+        trans t_TXC_P0_RO_RAM_WPTR_00       ( 0 ->  1);
+        trans t_TXC_P0_RO_RAM_WPTR_01       ( 1 ->  2);
+        trans t_TXC_P0_RO_RAM_WPTR_02       ( 2 ->  3);
+        trans t_TXC_P0_RO_RAM_WPTR_03       ( 3 ->  4);
+        trans t_TXC_P0_RO_RAM_WPTR_04       ( 4 ->  5);
+        trans t_TXC_P0_RO_RAM_WPTR_05       ( 5 ->  6);
+        trans t_TXC_P0_RO_RAM_WPTR_06       ( 6 ->  7);
+        trans t_TXC_P0_RO_RAM_WPTR_07       ( 7 ->  8);
+        trans t_TXC_P0_RO_RAM_WPTR_08       ( 8 ->  9);
+        trans t_TXC_P0_RO_RAM_WPTR_09       ( 9 -> 10);
+        trans t_TXC_P0_RO_RAM_WPTR_10       (10 -> 11);
+        trans t_TXC_P0_RO_RAM_WPTR_11       (11 -> 12);
+        trans t_TXC_P0_RO_RAM_WPTR_12       (12 -> 13);
+        trans t_TXC_P0_RO_RAM_WPTR_13       (13 -> 14);
+        trans t_TXC_P0_RO_RAM_WPTR_14       (14 -> 15);
+        trans t_TXC_P0_RO_RAM_WPTR_15       (15 -> 16);
+        trans t_TXC_P0_RO_RAM_WPTR_16       (16 -> 17);
+        trans t_TXC_P0_RO_RAM_WPTR_17       (17 -> 18);
+        trans t_TXC_P0_RO_RAM_WPTR_18       (18 -> 19);
+        trans t_TXC_P0_RO_RAM_WPTR_19       (19 -> 20);
+        trans t_TXC_P0_RO_RAM_WPTR_20       (20 -> 21);
+        trans t_TXC_P0_RO_RAM_WPTR_21       (21 -> 22);
+        trans t_TXC_P0_RO_RAM_WPTR_22       (22 -> 23);
+        trans t_TXC_P0_RO_RAM_WPTR_23       (23 -> 24);
+        trans t_TXC_P0_RO_RAM_WPTR_24       (24 -> 25);
+        trans t_TXC_P0_RO_RAM_WPTR_25       (25 -> 26);
+        trans t_TXC_P0_RO_RAM_WPTR_26       (26 -> 27);
+        trans t_TXC_P0_RO_RAM_WPTR_27       (27 -> 28);
+        trans t_TXC_P0_RO_RAM_WPTR_28       (28 -> 29);
+        trans t_TXC_P0_RO_RAM_WPTR_29       (29 -> 30);
+        trans t_TXC_P0_RO_RAM_WPTR_30       (30 -> 31);
+        trans t_TXC_P0_RO_RAM_WPTR_31       (31 -> 32);
+        trans t_TXC_P0_RO_RAM_WPTR_32       (32 -> 33);
+        trans t_TXC_P0_RO_RAM_WPTR_33       (33 -> 34);
+        trans t_TXC_P0_RO_RAM_WPTR_34       (34 -> 35);
+        trans t_TXC_P0_RO_RAM_WPTR_35       (35 -> 36);
+        trans t_TXC_P0_RO_RAM_WPTR_36       (36 -> 37);
+        trans t_TXC_P0_RO_RAM_WPTR_37       (37 -> 38);
+        trans t_TXC_P0_RO_RAM_WPTR_38       (38 -> 39);
+        trans t_TXC_P0_RO_RAM_WPTR_39       (39 -> 40);
+        trans t_TXC_P0_RO_RAM_WPTR_40       (40 -> 41);
+        trans t_TXC_P0_RO_RAM_WPTR_41       (41 -> 42);
+        trans t_TXC_P0_RO_RAM_WPTR_42       (42 -> 43);
+        trans t_TXC_P0_RO_RAM_WPTR_43       (43 -> 44);
+        trans t_TXC_P0_RO_RAM_WPTR_44       (44 -> 45);
+        trans t_TXC_P0_RO_RAM_WPTR_45       (45 -> 46);
+        trans t_TXC_P0_RO_RAM_WPTR_46       (46 -> 47);
+        trans t_TXC_P0_RO_RAM_WPTR_47       (47 -> 48);
+        trans t_TXC_P0_RO_RAM_WPTR_48       (48 -> 49);
+        trans t_TXC_P0_RO_RAM_WPTR_49       (49 -> 50);
+        trans t_TXC_P0_RO_RAM_WPTR_50       (50 -> 51);
+        trans t_TXC_P0_RO_RAM_WPTR_51       (51 -> 52);
+        trans t_TXC_P0_RO_RAM_WPTR_52       (52 -> 53);
+        trans t_TXC_P0_RO_RAM_WPTR_53       (53 -> 54);
+        trans t_TXC_P0_RO_RAM_WPTR_54       (54 -> 55);
+        trans t_TXC_P0_RO_RAM_WPTR_55       (55 -> 56);
+        trans t_TXC_P0_RO_RAM_WPTR_56       (56 -> 57);
+        trans t_TXC_P0_RO_RAM_WPTR_57       (57 -> 58);
+        trans t_TXC_P0_RO_RAM_WPTR_58       (58 -> 59);
+        trans t_TXC_P0_RO_RAM_WPTR_59       (59 -> 60);
+        trans t_TXC_P0_RO_RAM_WPTR_60       (60 -> 61);
+        trans t_TXC_P0_RO_RAM_WPTR_61       (61 -> 62);
+        trans t_TXC_P0_RO_RAM_WPTR_62       (62 -> 63);
+        trans t_TXC_P0_RO_RAM_WPTR_63       (63 ->  0);
+    }
+  }
+
+  task new();
+  task niu_rx_control_fifo_cond(control_fifo_cov_port port_bind, integer port_num);
+  task niu_txc_p0_ro_ram_cond();
+  task niu_rx_err_cond();
+} //class niu_intf_coverage
+
+task niu_intf_coverage::new()
+{
+  printf("COVERAGE OBJECT in NEW\n");
+  niu_rx_control_fifo_group_1st_cycle_port0 = new();
+#ifdef DISABLE_FOR_NOW
+  niu_rx_control_fifo_group_2nd_cycle_port0 = new();
+  niu_rx_control_fifo_group_1st_cycle_port1 = new();
+  niu_rx_control_fifo_group_2nd_cycle_port1 = new();
+#endif
+
+  niu_coverage_err_group = new();
+  niu_tx_coverage_txc_fifo_rd_group = new();
+  niu_tx_coverage_txc_fifo_wr_group = new();
+  niu_coverage_mac_xpcs_state_group = new();
+
+  fork
+    niu_rx_err_cond();
+    niu_rx_control_fifo_cond(control_fifo_p0, Port0);
+    niu_rx_control_fifo_cond(control_fifo_p1, Port1);
+    niu_txc_p0_ro_ram_cond();
+  join none
+}
+
+task niu_intf_coverage::niu_rx_control_fifo_cond(control_fifo_cov_port port_bind, integer port_num)
+{
+  integer num_of_cycle = 0;
+
+  while (1)
+  {
+     @ (posedge port_bind.$clk);
+
+     if (port_bind.$control_fifo_ack==1'b1 && num_of_cycle==0)
+     {
+        printf("%0d: Coverage : 1st Cycle Control fifo = %h\n",
+                {get_time(HI), get_time(LO)}, port_bind.$control_fifo_data[129:0]);
+
+        control_fifo_data = port_bind.$control_fifo_data[129:0];
+
+         se_bit            = control_fifo_data[76];
+        drop_pkt          = control_fifo_data[77];
+        fflp_hw_err       = control_fifo_data[78];
+        mac_promiscuous   = control_fifo_data[79];
+        tt_err            = control_fifo_data[86];
+        tt_succeed        = control_fifo_data[87];
+         hash_sub_index    = control_fifo_data[90:88];
+        hzfvld            = control_fifo_data[91];
+        exact             = control_fifo_data[92];
+         hash_hit          = control_fifo_data[93];
+         table_rdc[1:0]    = control_fifo_data[95:94];
+         tcam_m_index      = control_fifo_data[103:96];
+         table_rdc[4:2]    = control_fifo_data[106:104];
+         default_rdc       = control_fifo_data[111:107];
+        tzfvld            = control_fifo_data[112];
+         tres              = control_fifo_data[114:113];
+        tcam_hit          = control_fifo_data[115];
+        bad_ip            = control_fifo_data[116];
+        no_port           = control_fifo_data[117];
+        llc_snap          = control_fifo_data[118];
+        vlan              = control_fifo_data[119];
+         classs            = control_fifo_data[124:120];
+        mac_check         = control_fifo_data[125];
+        sop               = control_fifo_data[128];
+         mac_port          = control_fifo_data[127:126];
+        eop               = control_fifo_data[129];
+
+      //if (port_num == Port0)
+      //  control_fifo_data_port0_1st_cycle_cov = !control_fifo_data_port0_1st_cycle_cov;
+      //if (port_num == Port1)
+      //  control_fifo_data_port1_1st_cycle_cov = !control_fifo_data_port1_1st_cycle_cov;
+      //if (port_num == Port2)
+      //  control_fifo_data_port2_1st_cycle_cov = !control_fifo_data_port2_1st_cycle_cov;
+      //if (port_num == Port3)
+      //  control_fifo_data_port3_1st_cycle_cov = !control_fifo_data_port3_1st_cycle_cov;
+
+        num_of_cycle      = num_of_cycle + 1;
+     }
+     else 
+     {
+        if (port_bind.$control_fifo_ack == 1'b1) 
+        {
+           printf("%0d: Coverage : 2nd Cycle Control fifo = %h\n",
+                {get_time(HI), get_time(LO)}, port_bind.$control_fifo_data[129:0]);
+
+           control_fifo_data = port_bind.$control_fifo_data[129:0];
+
+           tcp_seq         = control_fifo_data[71:40];
+           tcp_hdr_len     = control_fifo_data[75:72];
+           ipv4_hdr_len    = control_fifo_data[79:76];
+           l3_pkt_len      = control_fifo_data[95:80];
+           zc_rdc          = control_fifo_data[100:96];
+           dmaw_type       = control_fifo_data[102:101];
+           ulp_type        = control_fifo_data[105:104];
+           pkt_id          = control_fifo_data[109:106];
+           ip_ver          = control_fifo_data[110];
+           usr_data        = control_fifo_data[127:112];
+           sop_2           = control_fifo_data[128];
+           eop_2           = control_fifo_data[129];
+           eop             = control_fifo_data[129];
+
+           num_of_cycle = 0; // reset
+
+           if (port_num == Port0)
+             control_fifo_data_port0_2nd_cycle_cov = !control_fifo_data_port0_2nd_cycle_cov;
+           if (port_num == Port1)
+             control_fifo_data_port1_2nd_cycle_cov = !control_fifo_data_port1_2nd_cycle_cov;
+           if (port_num == Port2)
+             control_fifo_data_port2_2nd_cycle_cov = !control_fifo_data_port2_2nd_cycle_cov;
+           if (port_num == Port3)
+             control_fifo_data_port3_2nd_cycle_cov = !control_fifo_data_port3_2nd_cycle_cov;
+        }
+     }
+  }   // end of while
+}
+
+task niu_intf_coverage::niu_txc_p0_ro_ram_cond()
+{
+  while(1) {
+     @ (posedge niu_coverage_txc_1024_port0_RO_RAM.clk);
+     if (niu_coverage_txc_1024_port0_RO_RAM.write_sig == 1'b1)
+     {
+          txc_p0_ro_ram_size++;
+     }
+     if (niu_coverage_txc_1024_port0_RO_RAM.read_sig == 1'b1)
+     {
+          txc_p0_ro_ram_size--;
+     }
+
+     if (niu_coverage_txc_1024_port0_RO_RAM.write_sig
+     &&  niu_coverage_txc_1024_port0_RO_RAM.read_sig
+     &&  niu_coverage_txc_1024_port0_RO_RAM.read_ptr==niu_coverage_txc_1024_port0_RO_RAM.write_ptr)
+     {
+       printf("ROB: (%x)read_ptr==write_ptr(%x) at %d\n",
+        niu_coverage_txc_1024_port0_RO_RAM.read_ptr,
+        niu_coverage_txc_1024_port0_RO_RAM.write_ptr,
+        {get_time(HI), get_time(LO)});
+     }
+
+     txc_p0_ro_ram_trig = !txc_p0_ro_ram_trig;
+  }
+}
+
+task niu_intf_coverage::niu_rx_err_cond()
+{
+  @ (posedge niu_coverage_err_det.clk);
+
+  while(1) {
+     @ (posedge niu_coverage_err_det.clk);
+
+     if (niu_coverage_err_det.control_fifo_err0 == 1'b1
+     ||  niu_coverage_err_det.control_fifo_err1 == 1'b1)
+     {
+        if (niu_coverage_err_det.control_fifo_err0) printf("ROB: Triggering fifo_err0\n");
+        if (niu_coverage_err_det.control_fifo_err1) printf("ROB: Triggering fifo_err1\n");
+
+        trigger(niu_coverage_err_trig);
+     }
+  }
+}

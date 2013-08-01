@@ -1,0 +1,1419 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_tx_port.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "niu_tx_descp.vrh"
+#include "dmc_memory_map.vri"
+#include "txc_memory_map.vri"
+extern niu_gen_pio gen_pio_drv;
+// tmp only
+// #include "txc_drr_chk_if.vri"
+#include "tx_port_drr_if.vri"
+extern mbox_class mbox_id;
+#include "cMesg.vrh"
+extern Mesg            be_msg;
+extern event TX_rvcd_allpkts[4];
+extern mac_pio_cl mac_pio_class;
+extern mac_util_class mac_util;
+
+// To Support MAC Loop back mode
+#include "niu_rxtoken.vrh"
+#include "niu_txport_cb.vrh"
+
+#define  TIME {get_time(HI), get_time(LO)}
+
+class CMacTxPort {
+
+  integer id; // port id
+  DMAChannel dma[32]; // a max of 32 dma channels per port can be bound
+  integer port_speed;
+  integer USE_CALL_BACKS = 0;
+
+  bit[31:0] DMAActiveList;
+  bit[31:0] OrigDMAActiveList;
+  bit [11:0] port_offset;
+  bit [3:0] MAC_LOOP_BACK_MODE;
+  integer EXT_LOOPBACK_DST=-1;
+
+  CTxPortCbMgr  TxPortCbMgr;
+
+  task new(integer i=0);
+  task add_channels( integer i);
+  task delete_channels( integer i);
+  task BindDmaIntrDev( DMAChannel TxDma, integer i );
+  task SetActive (integer list, (integer rebind = 0));
+  task DRR(/*TMPONLY*/txc_port_drr port_bind);
+  task pollLatchActive(txc_port_drr port_bind);
+  function integer check_active (  integer j, integer activeList);
+
+  task check_exit_status();
+  task check_pkt_cnt (integer no_of_pkts, (integer timeout_count= 100),(integer chk_type = 0));
+  task check_randompkt_cnt (integer no_of_pkts[24], (integer timeout_count = 100));
+  task check_pkt_cnt_perdma (integer no_of_pkts); 
+  function integer get_allpkts_toport (integer no_of_pkts);
+  function integer get_allpkts_toport_random (integer no_of_pkts[24]);
+
+  task SetActive_NoOfDMAs (integer list) ; 
+  task Inj_ReEcc_Error(bit [63:0] data, (integer fifo_sel = 0));
+  task Rd_ReEcc_St(var bit [63:0] r_data);
+  task Rd_ReEcc_UE();
+  task Rd_ReEcc_CE();
+  task Enb_Watermark_Reg(bit [63:0] data);
+  task Wr_TXC_RO_CTL(bit [63:0] data);
+  task Rd_TXC_RO_CTL(var bit [63:0] rd_data);
+  task SnapShotDMAs( bit[31:0] ActiveListSnapShot);
+  task LoadDMAStates( bit[31:0] ActiveListSnapShot);
+  task PullTokensBack( bit[31:0]  list);
+  function integer wait_for_addcredit(txc_port_drr port_bind);
+
+  task Wr_Txc_max_reoder(bit[63:0] wr_data);
+  task Wr_Txc_Port_Ctl(bit[63:0] wr_data);
+  task Wr_Txc_Pkt_stuffed(bit[63:0] wr_data);
+  task Wr_Txc_Pkt_Xmitted(bit[63:0] wr_data);
+  task Rd_Txc_Pkt_stuffed(var bit[63:0] rd_data);
+  task Rd_Txc_Pkt_Xmitted(var bit[63:0] rd_data);
+
+  // add tasks to read & write RO ECC
+
+  task Wr_Txc_ROECC_ST(bit [63:0] wr_data);
+  task Rd_Txc_ROECC_ST(var bit [63:0] rd_data);
+
+  task Rd_Txc_RO_Data0(var bit [63:0] rd_data);
+  task Rd_Txc_RO_Data1(var bit [63:0] rd_data);
+  task Rd_Txc_RO_Data2(var bit [63:0] rd_data);
+  task Rd_Txc_RO_Data3(var bit [63:0] rd_data);
+  task Rd_Txc_RO_Data4(var bit [63:0] rd_data);
+
+  // add tasks to read & write SF ECC
+
+  task Wr_Txc_SFECC_ST(bit [63:0] wr_data);
+  task Rd_Txc_SFECC_ST(var bit [63:0] rd_data);
+
+  task Rd_Txc_SF_Data0(var bit [63:0] rd_data);
+  task Rd_Txc_SF_Data1(var bit [63:0] rd_data);
+  task Rd_Txc_SF_Data2(var bit [63:0] rd_data);
+  task Rd_Txc_SF_Data3(var bit [63:0] rd_data);
+  task Rd_Txc_SF_Data4(var bit [63:0] rd_data);
+
+  // add rds & wr to txc-tid regs
+
+  task Wr_Txc_RO_Tids(bit [63:0] wr_data);
+  task Wr_Txc_RO_State0(bit [63:0] wr_data);
+  task Wr_Txc_RO_State1(bit [63:0] wr_data);
+  task Wr_Txc_RO_State2(bit [63:0] wr_data);
+  task Wr_Txc_RO_State3(bit [63:0] wr_data);
+
+  task Rd_Txc_RO_Tids(var bit [63:0] rd_data);
+  task Rd_Txc_RO_State0(var bit [63:0] rd_data);
+  task Rd_Txc_RO_State1(var bit [63:0] rd_data);
+  task Rd_Txc_RO_State2(var bit [63:0] rd_data);
+  task Rd_Txc_RO_State3(var bit [63:0] rd_data);
+
+  task DeActivate_channel(integer i);
+
+  task check_bytes_txmitted();
+  task check_pkts_stuffed(integer no_of_pkts);
+  task Wr_Txc_Intr_Mask(bit[63:0] data);
+  task Rd_Txc_Intr_Stat(var bit[63:0] rd_data);
+  task Wr_Txc_Intr_Stat(bit [63:0] data);
+
+  task check_mac_txfrmcnt(integer no_of_pkts); 
+
+}
+
+function integer  CMacTxPort::check_active (  integer j, integer activeList) {
+  // returns 1 if jth bit in the ActiveList is set else returns 0
+  integer tmp;
+  tmp =  1 <<j;
+  if(activeList & tmp) check_active = (1);
+  else  check_active = (0);
+
+}
+
+task CMacTxPort::new (integer i = 0) {
+
+  string init_loopback,temp_port;
+  bit [31:0] loopback;
+  integer j;
+
+printf("MacTxPort %0d newed\n", this.id);
+  id = i; 
+  trigger(OFF,TX_rvcd_allpkts[id]);
+  DMAActiveList = 0; // none of the DMAs active
+  OrigDMAActiveList = DMAActiveList;
+  port_offset = 256*i;
+  MAC_LOOP_BACK_MODE = 0; 
+  if(get_plus_arg(CHECK, "rx0_txloopback_src"))
+    if(get_plus_arg(NUM, "rx0_txloopback_src=") == this.id) {
+      EXT_LOOPBACK_DST = 0;
+      printf("MacTxPort %0d EXT_LOOPBACK_DST=%0d\n", this.id, EXT_LOOPBACK_DST);
+    }
+  if(get_plus_arg(CHECK, "rx1_txloopback_src"))
+    if(get_plus_arg(NUM, "rx1_txloopback_src=") == this.id) {
+      EXT_LOOPBACK_DST = 1;
+      printf("MacTxPort %0d EXT_LOOPBACK_DST=%0d\n", this.id, EXT_LOOPBACK_DST);
+    }
+  if(get_plus_arg(CHECK, "rx2_txloopback_src"))
+    if(get_plus_arg(NUM, "rx2_txloopback_src=") == this.id) {
+      EXT_LOOPBACK_DST = 2;
+      printf("MacTxPort %0d EXT_LOOPBACK_DST=%0d\n", this.id, EXT_LOOPBACK_DST);
+    }
+  if(get_plus_arg(CHECK, "rx3_txloopback_src"))
+    if(get_plus_arg(NUM, "rx3_txloopback_src=") == this.id) {
+      EXT_LOOPBACK_DST = 3;
+      printf("MacTxPort %0d EXT_LOOPBACK_DST=%0d\n", this.id, EXT_LOOPBACK_DST);
+    }
+
+  TxPortCbMgr = new(i);
+  for(j=0;j<4;j++) {
+        if(mbox_id.niu_tx_cb[j] == -1) {
+        // Alocate Mailbox
+        mbox_id.niu_tx_cb[j] = alloc(MAILBOX,0,1);
+        // Check if we were succesfull allocating the mailbox
+        if(mbox_id.niu_tx_cb[j] == 0) {
+          printf("ERROR  Could not allocate the outgoing mailbox port %d \n",j);
+          mbox_id.niu_tx_cb[j] = -1;
+         return;
+        }
+      }
+  }
+
+  for(j=0;j<4;j++) {
+        if(mbox_id.niu_txdrr[j] == -1) {
+        // Alocate Mailbox
+        mbox_id.niu_txdrr[j] = alloc(MAILBOX,0,1);
+        // Check if we were succesfull allocating the mailbox
+        if(mbox_id.niu_txdrr[j] == 0) {
+          printf("ERROR  Could not allocate the outgoing mailbox port %d \n",j);
+          mbox_id.niu_txdrr[j] = -1;
+         return;
+        }
+      }
+  }
+  if( get_plus_arg( CHECK, "NW_DRR_MODEL")) {
+    USE_CALL_BACKS = 1;
+  }
+
+  if( get_plus_arg( CHECK, "MAC_LOOP_BACK=")) {
+     loopback = get_plus_arg( STR, "MAC_LOOP_BACK=");
+     init_loopback.bittostr(loopback);
+     for (j=0; j<init_loopback.len();j++)
+     {
+        temp_port =init_loopback.substr(j,j);
+        MAC_LOOP_BACK_MODE = MAC_LOOP_BACK_MODE | ( 1<<temp_port.atoi());
+     }
+       printf(" MAC LOOP BACK ENABLED!! LoopBack Configuration - %b \n",MAC_LOOP_BACK_MODE);
+ } else MAC_LOOP_BACK_MODE = 0;
+
+
+  fork 
+	case(id)  {
+	0: DRR(txc_port0_drr_bind) ;
+	1: DRR(txc_port1_drr_bind) ;
+	default: printf("ERROR Incorrect port id set for CMacTxPort got id=%0d\n",id);
+        }
+  join none
+
+}
+
+task  CMacTxPort::BindDmaIntrDev( DMAChannel TxDma, integer i ) {
+/* For binding interruptable dma devices */
+ dma[i] = TxDma;
+ dma[i].bind_to_txport(id/*port_id*/);
+ printf(" CMacTxPort::BindDmaIntrDevTRxDMA Channel - %d Bound as Logical DeviceId - %d \n",i,dma[i].dev_id);
+
+}
+task CMacTxPort::add_channels( integer i) {
+   dma[i] = null;
+   dma[i] = new(i,"TX");
+   dma[i].bind_to_txport(id/*port_id*/); 
+}
+
+task CMacTxPort:: delete_channels( integer i) {
+   dma[i].unbind_from_txport(id);
+   dma[i] = null;
+}
+
+task CMacTxPort::SetActive( integer list, (integer rebind = 0)) {
+
+ bit [39:0] address;
+ bit [63:0] w_data;
+ bit [63:0] rd_data;
+
+ DMAActiveList = list;
+ OrigDMAActiveList = DMAActiveList;
+
+ if(!rebind) {
+
+   address = TXC_FZC_BASE+ (TXC_PORT0_DMA_ENBALE +  port_offset);
+   w_data = {random(),DMAActiveList} ; //
+   gen_pio_drv.pio_wr(address,w_data);
+
+ } else {
+ 
+   // do a read modify write while trying to rebind
+
+   address = TXC_FZC_BASE+ (TXC_PORT0_DMA_ENBALE +  port_offset);
+   // first read the data
+   gen_pio_drv.pio_rd(address,rd_data);
+
+   w_data = rd_data | {random(),DMAActiveList} ; //
+   gen_pio_drv.pio_wr(address,w_data);
+
+   DMAActiveList = w_data;
+	OrigDMAActiveList = w_data;
+ }
+
+}
+
+task CMacTxPort :: DeActivate_channel(integer list) {
+
+  integer i;
+  bit [31:0] delete_list;
+  bit [39:0] address;
+  bit [63:0] w_data = 64'h0;
+  bit [63:0] rd_data;
+
+  delete_list = list;
+
+  address = TXC_FZC_BASE+ (TXC_PORT0_DMA_ENBALE +  port_offset);
+  gen_pio_drv.pio_rd(address,rd_data);
+
+  for(i=0;i<32;i++) {
+	if(delete_list[i] & rd_data[i])
+	w_data[i] = 0;
+    else
+	w_data[i] = rd_data[i];
+  }
+
+  gen_pio_drv.pio_wr(address,w_data);
+}
+
+
+//temp task for Set Active based on the number of DMAs tied to the ports
+
+task CMacTxPort :: SetActive_NoOfDMAs (integer list) {
+
+ bit [39:0] address;
+ bit [63:0] w_data;
+
+ DMAActiveList = (1 << list) - 1;
+ OrigDMAActiveList = DMAActiveList;
+
+ address = TXC_FZC_BASE+ (TXC_PORT0_DMA_ENBALE +  port_offset);
+ w_data = {random(),DMAActiveList} ; //
+ gen_pio_drv.pio_wr(address,w_data);
+
+}
+
+//-- progranmme the watermark register -----//
+
+task CMacTxPort :: Enb_Watermark_Reg(bit [63:0] data) {
+
+ bit [39:0] address;
+
+ address = TXC_FZC_BASE + (TXC_RO_STATE3 + port_offset);
+ gen_pio_drv.pio_wr(address,data);
+}
+
+//-- write to TXC_RO_st_ctl
+
+task CMacTxPort :: Wr_TXC_RO_CTL(bit [63:0] data) 
+{
+
+ bit [39:0] address;
+
+ address = TXC_FZC_BASE + (TXC_RO_CTL + port_offset);
+ gen_pio_drv.pio_wr(address,data);
+}
+
+//-- write to TXC_RO_st_ctl
+
+task CMacTxPort :: Rd_TXC_RO_CTL(var bit [63:0] rd_data)
+{
+
+ bit [39:0] address;
+
+ address = TXC_FZC_BASE + (TXC_RO_CTL + port_offset);
+ gen_pio_drv.pio_rd(address,rd_data);
+}
+
+
+// task to inject ECC errors
+
+task CMacTxPort :: Inj_ReEcc_Error(bit [63:0] data, (integer fifo_sel = 0))
+{
+  bit [39:0] address;
+ 
+  if(fifo_sel == 0) {
+    // ecc error RO fifo 
+    address = TXC_FZC_BASE + (TXC_ROECC_CTL + port_offset);
+    gen_pio_drv.pio_wr(address,data);
+  } else if(fifo_sel == 1) {
+    // ecc error SO fifo
+    address = TXC_FZC_BASE + (TXC_SFECC_CTL + port_offset);
+    gen_pio_drv.pio_wr(address,data);
+  }
+}
+
+// task to read ecc status register 
+
+task CMacTxPort :: Rd_ReEcc_St(var bit [63:0] r_data)
+{
+  bit [39:0] address;
+
+  address = TXC_FZC_BASE + (TXC_ROECC_ST + port_offset);
+  gen_pio_drv.pio_rd(address,r_data);
+}
+
+// Task to read correct able err
+
+task CMacTxPort :: Rd_ReEcc_CE()
+{
+  bit [63:0] rd_data;
+
+  Rd_ReEcc_St(rd_data);
+
+  if(rd_data[17]) 
+   be_msg.print(e_mesg_info,"niu_tx_port","Rd_ReEcc_Ce","Detected CE at address %0h\n",rd_data[9:0]);
+ else 
+   be_msg.print(e_mesg_error,"niu_tx_port","Rd_ReEcc_Ce","No CE detected at address %0h\n",rd_data[9:0]);
+ }
+
+// Task to read correct able err
+
+task CMacTxPort :: Rd_ReEcc_UE()
+{
+  bit [63:0] rd_data;
+
+  Rd_ReEcc_St(rd_data);
+
+  if(rd_data[16]) 
+   be_msg.print(e_mesg_info,"niu_tx_port","Rd_ReEcc_UE","Detected UE at address %0h\n",rd_data[9:0]);
+ else 
+   be_msg.print(e_mesg_error,"niu_tx_port","Rd_ReEcc_UE","No UE detected at address %0h\n",rd_data[9:0]);
+}
+
+
+// task to read modify write to TXC_MAX_REORDER
+
+task CMacTxPort :: Wr_Txc_max_reoder(bit[63:0] wr_data) {
+
+ bit [39:0] address;
+ bit [63:0] rd_data;
+ bit [63:0] ac_wrdata;
+
+ address = TXC_FZC_BASE + (TXC_MAX_REORDER);
+ gen_pio_drv.pio_rd(address,rd_data);
+ ac_wrdata = rd_data | wr_data; 
+
+ address = TXC_FZC_BASE + (TXC_MAX_REORDER);
+ gen_pio_drv.pio_wr(address,ac_wrdata);
+
+}
+ 
+
+
+// task to write to txc_port_ctl
+
+task CMacTxPort :: Wr_Txc_Port_Ctl(bit[63:0] wr_data) {
+
+ bit [39:0] address;
+
+ address = TXC_FZC_BASE + (TXC_PORT0_CONTROL + port_offset);
+ gen_pio_drv.pio_wr(address,wr_data);
+}
+
+
+// task to rd & wr pkts stuffed & pkts_xmitted
+
+task CMacTxPort :: Wr_Txc_Pkt_stuffed(bit[63:0] wr_data) {
+
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_PKT_STUFFED + port_offset);
+  gen_pio_drv.pio_wr(address,wr_data);
+
+}
+
+task CMacTxPort :: Wr_Txc_Pkt_Xmitted(bit[63:0] wr_data) {
+
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_PKT_XMIT + port_offset);
+  gen_pio_drv.pio_wr(address,wr_data);
+}
+
+task CMacTxPort :: Rd_Txc_Pkt_stuffed(var bit[63:0] rd_data) {
+
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_PKT_STUFFED + port_offset);
+  gen_pio_drv.pio_rd(address, rd_data);
+}
+
+task CMacTxPort :: Rd_Txc_Pkt_Xmitted(var bit[63:0] rd_data) {
+
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_PKT_XMIT + port_offset);
+  gen_pio_drv.pio_rd(address, rd_data);
+}
+
+// tasks to rd & write RO based regs
+
+task CMacTxPort :: Wr_Txc_ROECC_ST(bit [63:0] wr_data) {
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_ROECC_ST + port_offset);
+  gen_pio_drv.pio_wr(address,wr_data);
+}
+
+task CMacTxPort :: Rd_Txc_ROECC_ST(var bit [63:0] rd_data) {
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_ROECC_ST + port_offset);
+  gen_pio_drv.pio_rd(address, rd_data);
+}
+
+
+task CMacTxPort :: Rd_Txc_RO_Data0(var bit [63:0] rd_data) {
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_RO_DATA0 + port_offset);
+  gen_pio_drv.pio_rd(address, rd_data);
+}
+
+task CMacTxPort :: Rd_Txc_RO_Data1(var bit [63:0] rd_data) {
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_RO_DATA1 + port_offset);
+  gen_pio_drv.pio_rd(address, rd_data);
+}
+
+task CMacTxPort :: Rd_Txc_RO_Data2(var bit [63:0] rd_data) {
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_RO_DATA2 + port_offset);
+  gen_pio_drv.pio_rd(address, rd_data);
+}
+
+task CMacTxPort :: Rd_Txc_RO_Data3(var bit [63:0] rd_data) {
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_RO_DATA3 + port_offset);
+  gen_pio_drv.pio_rd(address, rd_data);
+}
+
+task CMacTxPort :: Rd_Txc_RO_Data4(var bit [63:0] rd_data) {
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_RO_DATA4 + port_offset);
+  gen_pio_drv.pio_rd(address, rd_data);
+}
+
+
+// tasks to rd & write SF based regs
+
+task CMacTxPort :: Wr_Txc_SFECC_ST(bit [63:0] wr_data) {
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_SFECC_ST + port_offset);
+  gen_pio_drv.pio_wr(address,wr_data);
+}
+
+task CMacTxPort :: Rd_Txc_SFECC_ST(var bit [63:0] rd_data) {
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_SFECC_ST + port_offset);
+  gen_pio_drv.pio_rd(address, rd_data);
+}
+
+task CMacTxPort :: Rd_Txc_SF_Data0(var bit [63:0] rd_data) {
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_SF_DATA0 + port_offset);
+  gen_pio_drv.pio_rd(address, rd_data);
+}
+
+task CMacTxPort :: Rd_Txc_SF_Data1(var bit [63:0] rd_data) {
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_SF_DATA1 + port_offset);
+  gen_pio_drv.pio_rd(address, rd_data);
+}
+
+task CMacTxPort :: Rd_Txc_SF_Data2(var bit [63:0] rd_data) {
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_SF_DATA2 + port_offset);
+  gen_pio_drv.pio_rd(address, rd_data);
+}
+
+task CMacTxPort :: Rd_Txc_SF_Data3(var bit [63:0] rd_data) {
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_SF_DATA3 + port_offset);
+  gen_pio_drv.pio_rd(address, rd_data);
+}
+
+task CMacTxPort :: Rd_Txc_SF_Data4(var bit [63:0] rd_data) {
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_SF_DATA4 + port_offset);
+  gen_pio_drv.pio_rd(address, rd_data);
+}
+
+//### txc tid register read & write
+
+task CMacTxPort :: Wr_Txc_RO_Tids(bit [63:0] wr_data) {
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_RO_TIDS + port_offset);
+  gen_pio_drv.pio_wr(address,wr_data);
+}
+
+task CMacTxPort :: Wr_Txc_RO_State0(bit [63:0] wr_data){
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_RO_STATE0 + port_offset);
+  gen_pio_drv.pio_wr(address,wr_data);
+}
+
+task CMacTxPort :: Wr_Txc_RO_State1(bit [63:0] wr_data){
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_RO_STATE1 + port_offset);
+  gen_pio_drv.pio_wr(address,wr_data);
+}
+
+task CMacTxPort :: Wr_Txc_RO_State2(bit [63:0] wr_data){
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_RO_STATE2 + port_offset);
+  gen_pio_drv.pio_wr(address,wr_data);
+}
+
+task CMacTxPort :: Wr_Txc_RO_State3(bit [63:0] wr_data){
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_RO_STATE3 + port_offset);
+  gen_pio_drv.pio_wr(address,wr_data);
+}
+
+task CMacTxPort :: Rd_Txc_RO_Tids(var bit [63:0] rd_data) {
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_RO_TIDS + port_offset);
+  gen_pio_drv.pio_rd(address, rd_data);
+}
+
+task CMacTxPort :: Rd_Txc_RO_State0(var bit [63:0] rd_data) {
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_RO_STATE0 + port_offset);
+  gen_pio_drv.pio_rd(address, rd_data);
+}
+
+task CMacTxPort :: Rd_Txc_RO_State1(var bit [63:0] rd_data) {
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_RO_STATE1 + port_offset);
+  gen_pio_drv.pio_rd(address, rd_data);
+}
+
+task CMacTxPort :: Rd_Txc_RO_State2(var bit [63:0] rd_data) {
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_RO_STATE2 + port_offset);
+  gen_pio_drv.pio_rd(address, rd_data);
+}
+
+task CMacTxPort :: Rd_Txc_RO_State3(var bit [63:0] rd_data) {
+  bit [39:0] address;
+  address = TXC_FZC_BASE + (TXC_RO_STATE3 + port_offset);
+  gen_pio_drv.pio_rd(address, rd_data);
+}
+
+task CMacTxPort :: Wr_Txc_Intr_Mask(bit[63:0] data) {
+    bit [63:0] address;
+    address = TXC_FZC_BASE + TXC_INT_MASK;
+    gen_pio_drv.pio_wr(address, data);
+}
+
+task CMacTxPort :: Rd_Txc_Intr_Stat(var bit[63:0] rd_data) {
+
+ bit [63:0] address;
+
+ address = TXC_FZC_BASE + TXC_INT_STAT;
+ gen_pio_drv.pio_rd(address, rd_data);
+}
+
+task CMacTxPort :: Wr_Txc_Intr_Stat(bit [63:0] data) {
+
+ bit [63:0] address;
+
+ address = TXC_FZC_BASE + TXC_INT_STAT;
+ gen_pio_drv.pio_wr(address, data);
+}
+
+
+
+
+task CMacTxPort::pollLatchActive(txc_port_drr port_bind) {
+ CTxDrrTr drr_trigger;
+
+ #ifndef RXC_SAT
+  while(1) {
+        while(~port_bind.$latch_activedma){
+	 @(posedge port_bind.$clk);
+	}
+ @(posedge port_bind.$clk);
+  drr_trigger = new();
+  drr_trigger.LatchActiveSeen = 1;
+  drr_trigger.activeList = port_bind.$activeListDMA;
+  mailbox_put(mbox_id.niu_txdrr[id] , drr_trigger);
+ @(posedge port_bind.$clk);
+  
+ }
+ #endif
+}
+task CMacTxPort::SnapShotDMAs( bit[31:0] ActiveListSnapShot) {
+integer i;
+integer status;
+
+ for(i=0;i<32;i++) {
+	if(ActiveListSnapShot[i]) {
+	dma[i].SnapShotDRRState();
+
+        if (get_plus_arg(CHECK,"RAND_KMCD")) {
+          if(dma[i].list_empty) {
+           status = dma[i].enableTokens(dma[i].lkick_data);
+           dma[i].start = 0;
+          }
+        }
+    }
+  }
+}
+
+task CMacTxPort::LoadDMAStates( bit[31:0] ActiveListSnapShot) {
+integer i;
+ for(i=0;i<32;i++) {
+	if(ActiveListSnapShot[i])
+	dma[i].LoadDRRState();
+ }
+}
+task CMacTxPort::PullTokensBack( bit[31:0]  list) {
+ integer i;
+ integer empty;
+ CTxToken TxToken;
+ integer dmas_updated[32];
+ bit[31:0] dmas_touched;
+
+
+ dmas_touched = 0;
+
+ printf("CMacTxPort::PullTokensBack Start - Time - %d \n",TIME);
+  empty = TxPortCbMgr.PullPortTokenList(TxToken);
+  while(empty==1) {
+   if ( ( list[TxToken.dma_num] ==1)) {
+	dmas_updated[TxToken.dma_num] = TxToken.current_deficit;
+	dmas_touched[TxToken.dma_num] = 1;
+	printf("DEBUG trans_id PullTokensBack DMA- %d Address - %x Deficit - %d \n",TxToken.dma_num,TxToken.xlate_gather_address[0],TxToken.current_deficit);
+   }
+   dma[TxToken.dma_num].push_back_token(TxToken);
+   empty = TxPortCbMgr.PullPortTokenList(TxToken);
+   //@(posedge CLOCK);
+  }
+ printf("CMacTxPort::PullTokensBack End - Time - %d \n",TIME);
+ for(i=0;i<32;i++) {
+  if(list[i] & dmas_touched[i]) {
+   printf("Setting DMA - %d defict to %d \n",i,dmas_updated[i]);
+   dma[i].current_deficit = dmas_updated[i];
+  }
+ }
+
+}
+task CMacTxPort::DRR(txc_port_drr port_bind) {
+
+
+// from a list of active DMAs sort through the TxTokenList - and generate appropriate 
+// tokens for the packet checker
+
+integer arb_id,old_arb_id;
+integer dmas_active;
+integer total_dmas_active;
+integer i,match_found;
+integer iter;
+integer status;
+integer maintain_active_state;
+integer dma_id,length;
+CTxToken TxToken;
+CRxToken RxToken; // FOR MAC LOOP BACK MODE
+integer debug_count;
+bit [31:0] ActiveListFromHardware;
+bit [31:0] ActiveListFromHardware_old = 32'h0;
+bit [31:0] deficit_list = 32'h0;
+integer dma_deficit_list =0;
+integer all_dmas_deficit = 1;
+bit start_sim = 0;
+
+// For Random Kicks
+bit [31:0] ActiveListSnapShot;
+integer old_arb_idSnapShot;
+CTxDrrTr drr_trigger;
+integer no_of_entries;
+integer NewKickDMA;
+integer NewKickSeen;
+integer LatchActiveSeen;
+integer LatchActiveSeenFirstTime;
+integer no_of_dmas_eoflist;
+integer got_new_kick;
+LatchActiveSeenFirstTime = 0;
+
+// allocate memory for port0 mailbox
+ if(mbox_id.mac_opp[this.id] == -1) {
+      // Alocate Mailbox
+      mbox_id.mac_opp[this.id] = alloc(MAILBOX,0,1);
+      // Check if we were succesfull allocating the mailbox
+      if(mbox_id.mac_opp[this.id] == 0) {
+        printf("ERROR  Could not allocate the outgoing mailbox port %d \n",this.id);
+        mbox_id.mac_opp[this.id] = -1;
+       return;
+      }
+  }
+
+
+	 @(posedge port_bind.$clk);
+	 @(posedge port_bind.$clk);
+	 @(posedge port_bind.$clk);
+	 @(posedge port_bind.$clk);
+	old_arb_id = 0;	
+	debug_count = 0;
+
+ fork {
+	pollLatchActive(port_bind);
+ } join none
+
+while(1) {
+	debug_count ++;
+
+	// wait for some conditions - initial version look for latch enable
+ 	// for all active DMAs, add credits 
+
+       /*
+	There are two ways to evaluate this
+	1. LatchActive is Seen
+	2. New Kick is Set
+	  If both happens at the same time, LatchActive takes precedence for now
+	3. Any Kicks before the first LatchActive will also not trigger this
+
+  	*/
+	
+	printf(" Before mailbox_get Time - %d \n",TIME);
+	no_of_entries = mailbox_get(WAIT,mbox_id.niu_txdrr[id],drr_trigger);	
+	printf(" After mailbox_get Time - %d \n",TIME);
+	LatchActiveSeen = drr_trigger.LatchActiveSeen;
+	NewKickSeen = drr_trigger.NewKickSeen;
+	NewKickDMA =  drr_trigger.NewKickDMA;
+	ActiveListFromHardware = drr_trigger.activeList;
+
+	if(NewKickSeen & LatchActiveSeenFirstTime & (LatchActiveSeen==0)) {
+	printf("LOCK Time - %d \n",TIME);
+           trigger(OFF,TxPortCbMgr.lock_port_queue);
+	}
+	if(LatchActiveSeen) {
+	  // Take SnapShot of the current State and Store this
+         	printf("DRR DEBUG  ActiveList from Hardware - %x From Verif Model - %x \n",ActiveListFromHardware,OrigDMAActiveList);
+         	ActiveListSnapShot = ActiveListFromHardware;
+         	printf("DRR DEBUG  ActiveListSnapShot - %x From Verif Model - %x \n",ActiveListSnapShot,OrigDMAActiveList);
+		// SnapShot All the Contexts
+		old_arb_idSnapShot = old_arb_id;
+		SnapShotDMAs(ActiveListSnapShot);
+		LatchActiveSeenFirstTime = 1;
+		TxPortCbMgr.FreezeCurrentTokenList();	
+
+               ActiveListFromHardware_old = ActiveListFromHardware;
+	} else if(NewKickSeen & LatchActiveSeenFirstTime) {
+	 	ActiveListFromHardware = ActiveListSnapShot;
+		printf("New KICK Seen\n");
+	 	// StoreBack All the old Contexts
+		old_arb_id= old_arb_idSnapShot;
+		// LoadDMAStates(ActiveListSnapShot);
+         	printf("DRR DEBUG  ActiveListSnapShot - %x From Verif Model - %x \n",ActiveListSnapShot,OrigDMAActiveList);
+		PullTokensBack(ActiveListSnapShot);
+		printf("DRR DEBUG Restart DRR - Time - %d \n",TIME);
+
+		
+	}
+	
+	if(LatchActiveSeenFirstTime==0) {
+		ActiveListFromHardware = 0;
+		printf("First KICK Seen\n");
+        }
+	 //@(posedge port_bind.$clk);
+
+
+        if(ActiveListFromHardware!==OrigDMAActiveList) {
+	  printf(" DRR DEBUG - Warning - Changing Verif List to - %d !! \n",ActiveListFromHardware);
+        } else {
+          printf(" DRR DEBUG - Active Lists Match -!! \n");
+        }
+	DMAActiveList = ActiveListFromHardware;
+
+	dmas_active = 0;
+
+        
+	for(i = 0; i < 32; i ++) {
+	   if(DMAActiveList[i] ) {
+             // added code for using cache model
+             // checktoken_valid
+   
+             if (get_plus_arg(CHECK,"WCACHE_MODEL")) {
+             if(dma[i].checkTokenHeadValid_from_Mcache()) {
+		dmas_active = ( dmas_active | ( 1<< i ));
+	        if(NewKickSeen & LatchActiveSeenFirstTime) {
+		 printf("SKIP CREDITS ADDITIONS at time %d\n",{get_time(HI), get_time(LO)});
+                } else {
+		 if(all_dmas_deficit) {
+		  dma[i].add_drr_credits();
+		  printf("DRR_DEBUG ADDED CREDITS at time %d\n",{get_time(HI), get_time(LO)});
+		 }
+		}
+		} else printf(" WCACHE_MODEL TokenList Empty\n");
+             } else {
+	     if(dma[i].checkTokenHeadValid()) {
+	       dmas_active = ( dmas_active | ( 1<< i )); 
+	        if(NewKickSeen & LatchActiveSeenFirstTime) {
+		 printf("SKIP CREDITS ADDITIONS at time %d\n",{get_time(HI), get_time(LO)});
+                } else {
+		 if(all_dmas_deficit) {
+		   dma[i].add_drr_credits();
+		   printf("DRR_DEBUG ADDED CREDITS at time %d\n",{get_time(HI), get_time(LO)});
+		 }
+		}
+	     } else printf("TokenList Empty\n");
+	   }
+          }
+	}
+	
+	
+	printf("DRR DEBUG  -Active list - %x Time - %d \n",dmas_active,{get_time(HI), get_time(LO)});
+      while(dmas_active) {
+
+		printf("DRR DEBUG Restart DRR - Time - %d \n",TIME);
+       arb_id = old_arb_id ;
+
+      dma_id = -1;
+      match_found =0;
+      iter =0;
+
+      while( (iter <32 /*MAX_NO_OF_DMAS*/) & ( !match_found)) {
+	// printf(" DRR DEBUG arb_id - %x dmas_active - %x \n",arb_id,dmas_active);
+        if(check_active(arb_id,dmas_active)) {
+	printf(" DRR DEBUG MATCHED arb_id - %x dmas_active - %x \n",arb_id,dmas_active);
+          dma_id = arb_id;
+          match_found = 1;
+        }
+        arb_id = (arb_id + 1)%32;
+        iter++;
+      } // At the end of this there should be at least one dma_id selected
+
+      if( (dma_id == -1) ) {
+        printf("DRR DEBUG  Error in the code -- FIX IT \n");
+        return;
+      }
+
+
+      if (get_plus_arg(CHECK,"WCACHE_MODEL"))
+         status = dma[dma_id].get_current_token_from_Mcache(TxToken);
+      else 
+         status = dma[dma_id].get_current_token(TxToken);
+
+      /* TODO
+        if the token is valid then only send it across, else do nothing
+       
+	The status above indicates the following
+	  - EOL reached or not
+	  - any error associated with this packet
+	  - if the dma hasnt been kicked
+	
+      */
+
+      maintain_active_state = 1;
+      if(status == -1) {
+        printf(" DRR DEBUG descriptor either not initialised or packet in the descriptor not kicked DMA = %d \n",dma_id);
+        maintain_active_state = 0;
+      } else {
+        if(dma[dma_id].current_deficit > 0) {
+          length = TxToken.pkt_length + 16;
+	  TxToken.current_deficit = dma[dma_id].current_deficit;
+
+          maintain_active_state  = dma[dma_id].update_deficit(length); // 
+          printf("DRR DEBUG  Sending data for channel #%d length = %d New Deficit = %d \n",dma_id,length,dma[dma_id].current_deficit);
+          printf("DRR DEBUG  Sending Token %d for channel #%d length = %d descriptor address - %x \n",TxToken.id,dma_id,length,TxToken.descriptor_address);
+          printf("DEBUG trans_id Sending Token %d for channel #%d length = %d packet_Addres - %x Deficit - %d \n",TxToken.id,dma_id,length,TxToken.xlate_gather_address[0],TxToken.current_deficit);
+
+          if (get_plus_arg(CHECK,"WCACHE_MODEL"))
+            dma[dma_id].M_TxTokenList.pop_front();
+          else 
+            dma[dma_id].TxTokenList.pop_front();
+
+          if(dma[dma_id].conf_part_err_seen) {
+	    printf(" Tx Token id - %d Error Set - Packet to be dropped !!!! \n",TxToken.id);
+          } else if((TxToken.error_info.hosterrors.packet_errors == PKT_PART_ERROR)|(dma[dma_id].pkt_part_err_seen )){
+            dma[dma_id].pkt_part_err_seen = 1;
+	    
+	    printf(" Tx Token id - %d Error Set - Packet to be dropped !!!! \n",TxToken.id);
+	  } else {
+	    dma[dma_id].incPktCnt();
+            if(USE_CALL_BACKS) {
+	       TxPortCbMgr.CheckReqCbs(TxToken);
+	       TxPortCbMgr.pushToPortTokenList(TxToken);
+            } else {
+	      TxPortCbMgr.CheckReqCbs(TxToken);
+              mailbox_put(mbox_id.mac_opp[this.id],TxToken.pgToken);
+            }
+	    printf("DRR_DEBUG Token_id %0d sent to end_chkr at time %d\n",TxToken.id,{get_time(HI),get_time(LO)});
+
+            if(MAC_LOOP_BACK_MODE[this.id]) {
+	    // Send the packet to Rx Token List
+	 	RxToken = new();
+                RxToken.id=TxToken.pgToken.gId;
+     	        RxToken.pkt_length = TxToken.pkt_length + 4 ;
+     	        RxToken.pgToken = TxToken.pgToken.object_copy();
+		RxToken.pgToken.pack_db.flow.partial_chksum = 0;
+     	        RxToken.dma_num=TxToken.loop_back_rxdma_num;
+     	        RxToken.last_packet=TxToken.loop_back_rx_lastpacket;
+     	        RxToken.port_num=this.id;
+	        mailbox_put(mbox_id.niu_rxpath_mb[RxToken.port_num],RxToken);
+	        printf("Tx DRR_DEBUG Token_id %0d sent to Rx DRR Loop Back Mode at time %d\n",TxToken.id,{get_time(HI),get_time(LO)});
+	  } else if(EXT_LOOPBACK_DST != -1 ) {
+	    // Send the packet to Rx Token List
+	 	RxToken = new();
+                RxToken.id=TxToken.pgToken.gId;
+     	        RxToken.pkt_length = TxToken.pkt_length + 4 ;
+     	        RxToken.pgToken = TxToken.pgToken.object_copy();
+		RxToken.pgToken.pack_db.flow.partial_chksum = 0;
+     	        RxToken.dma_num= EXT_LOOPBACK_DST;
+     	        //RxToken.dma_num=TxToken.loop_back_rxdma_num;
+     	        RxToken.last_packet=TxToken.loop_back_rx_lastpacket;
+     	        RxToken.port_num= EXT_LOOPBACK_DST;
+	        mailbox_put(mbox_id.niu_rxpath_mb[RxToken.port_num], RxToken);
+	        printf("MaxTxPort%0d Token_id=%0d sent to Rx Ext loopback port=%0d dma=%0d time=%0d\n", this.id, TxToken.id, RxToken.port_num, RxToken.dma_num, TIME);
+           
+          }
+	} // end elseif error_set
+
+	} else {
+	 maintain_active_state = 0;
+	 printf("DRR DEBUG DMA# %d In deficit Need more credit  \n",dma_id);
+	} 
+      }
+
+      // int status = DMA[dma_id]->update_descriptor();
+      
+
+      if (get_plus_arg(CHECK,"WCACHE_MODEL"))
+         status = dma[dma_id].get_current_token_from_Mcache(TxToken);
+      else 
+         status = dma[dma_id].get_current_token(TxToken);
+
+      if(status == -1) {
+	// EOL Reached 
+        // dma[dma_id].current_deficit_old = dma[dma_id].current_deficit;
+	// dma[dma_id].current_deficit = 0;
+        // deficit_list[dma_id] = 1'b1;
+      }
+
+      status = 1;
+      if(status==0) { // delete the DMA from the active list 
+        dmas_active = dmas_active ^ ( 1 << dma_id );
+	maintain_active_state = 0;
+        printf("DRR DEBUG Deleting Channel #%d from Active List due to descriptor errors \n",dma_id);
+      }
+
+      if(maintain_active_state==0) {
+        printf(" DRR DEBUG - Before deleting dmas_active = %x \n",dmas_active);
+        dmas_active = dmas_active ^  ( 1 << dma_id );
+        printf("DRR DEBUG  Deleting Channel #%d from Active List: Channel Id %d has -ve Deficit= %d   \n",dma_id,dma_id,dma[dma_id].current_deficit);
+        // deficit_list[dma_id] = 1'b1;
+        printf(" DRR DEBUG - After deleting dmas_active = %x \n",dmas_active);
+        old_arb_id =   (dma_id + 1) %32 ;
+      }
+    }
+	// @(posedge CLOCK);
+	 // @(posedge port_bind.$clk);
+
+	printf(" DRR DEBUG  Resetting old_arb_id to 0 Time - %d \n",{get_time(HI), get_time(LO)});
+	old_arb_id = 0;
+	printf(" DRR DEBUG done with DRR Time - %d list - %x  \n", {get_time(HI), get_time(LO)},dmas_active);
+
+
+        dma_deficit_list=0;
+	total_dmas_active = 0;
+	deficit_list = 0;	
+        for(i=0;i<32;i++) {
+	     if(ActiveListFromHardware[i] && (dma[i]!=null)) {
+	        total_dmas_active++;
+		if(dma[i].current_deficit <=0) {
+		dma_deficit_list++;
+		deficit_list[i] = 1'b1;
+		printf("DRR DEBUG Before Add Credit - dma - %d in defict, Total - %d \n",i,dma_deficit_list);
+		}
+	     }
+	}
+
+
+
+        no_of_dmas_eoflist=0;
+
+	if(NewKickSeen & LatchActiveSeenFirstTime & (LatchActiveSeen==0)) {
+		// unlock the queue
+	printf("UNLOCK Time - %d \n",TIME);
+           trigger(ON,TxPortCbMgr.lock_port_queue);
+	}
+
+	if(1){
+	// All of these gets processed when clr_eoflist signal comes
+	// if a new kick is seen then this need not be executed
+          got_new_kick = wait_for_addcredit(port_bind);
+          if(got_new_kick) {
+	   printf("Exiting wait_for_addcredit because of new kick Time - %d \n",TIME);
+          } else {
+          for(i=0;i<32;i++) {
+	         if(OrigDMAActiveList[i]) {
+		   if(( total_dmas_active==1)&& ( port_bind.$eoflist[i] )) {
+                    dma[i].current_deficit = 0;
+		    if(deficit_list[i]==1'b0) {
+		     no_of_dmas_eoflist++;
+		    }
+		    dma[i].add_drr_credits();
+                    printf("Resetting the deficit for DMA_ID %d total_dmas = %d \n",i,total_dmas_active);
+		   /*FIX } else if(port_bind.$eoflist[i] && (dma[i].current_deficit <0) ){*/
+		   /* Seems like RTL clears defict regardless of the current defict.. Check with Rahoul*/
+		   } else if(port_bind.$eoflist[i] ){
+                    dma[i].current_deficit = 0;
+		    if(deficit_list[i]==1'b0) {
+		     no_of_dmas_eoflist++;
+		    }
+		    dma[i].add_drr_credits();
+                    printf("Resetting the deficit for DMA_ID %d total_dmas = %d \n",i,total_dmas_active);
+                 }
+                }
+          }
+         dma_deficit_list = dma_deficit_list+no_of_dmas_eoflist;
+	 all_dmas_deficit = ((dma_deficit_list>=total_dmas_active)|| ( total_dmas_active==1)) ;
+         printf("DRR DEBUG : val of dma_deficit_list %0d\n",dma_deficit_list);
+         printf("DRR DEBUG : val of total_dmas_active %0d at time 0%d\n",total_dmas_active,{get_time(HI),get_time(LO)});
+	  }
+	 }
+	
+        
+}
+
+}
+
+function integer CMacTxPort :: wait_for_addcredit(txc_port_drr port_bind)
+{
+
+  integer no_of_entries,got_new_kick;
+   CTxDrrTr drr_trigger;
+
+   got_new_kick =0;
+   fork {
+      no_of_entries = mailbox_get(COPY_WAIT,mbox_id.niu_txdrr[id],drr_trigger);
+      if(drr_trigger.NewKickSeen) {
+	got_new_kick = 1;
+      } else got_new_kick = 0;
+   }
+   { 
+     @(posedge port_bind.$clr_eoflist);
+     printf("GOT TXC_ADD_CREDIT\n");
+     got_new_kick = 0;
+   }
+   join any
+   wait_for_addcredit = got_new_kick;
+}
+
+task CMacTxPort :: check_pkt_cnt (integer no_of_pkts, (integer timeout_count = 100),(integer chk_type = 0)) {
+
+integer no_ofpkts_toprt = 0;
+integer rtl_tot_pkcnt;
+integer all_pkts_done = 0;
+integer timeout_cnt = 0;
+integer prev_rtl_pkt_cnt = 0;
+
+bit [39:0] address;
+bit [63:0] r_data;
+
+ address = TXC_FZC_BASE+ (TXC_PKT_XMIT +  port_offset);
+ no_ofpkts_toprt = get_allpkts_toport(no_of_pkts);
+ printf("Total_expected_pkts %d from Port %d\n",no_ofpkts_toprt,this.id);
+ 
+ while(!all_pkts_done) {
+  repeat (timeout_count) @(posedge CLOCK);
+  gen_pio_drv.pio_rd(address,r_data);
+  rtl_tot_pkcnt = r_data[15:0];
+
+  if(chk_type == 0) {
+   if(rtl_tot_pkcnt == no_ofpkts_toprt) {
+      all_pkts_done = 1;
+      trigger(ON,TX_rvcd_allpkts[id]);
+      be_msg.print(e_mesg_info,"niu_tx_port","chk_pkt_cnt","All pkts_rvcd at Port %0d\n", id);
+   } else {
+     if((timeout_cnt > 1000) && (prev_rtl_pkt_cnt == rtl_tot_pkcnt)) {
+         all_pkts_done = 1;
+         trigger(ON,TX_rvcd_allpkts[id]);
+         be_msg.print(e_mesg_error,"niu_tx_port","chk_pkt_cnt","No change In pkt_cnt for 10000 clocks for Port %0d\n", id);
+      } else {
+          if(prev_rtl_pkt_cnt == rtl_tot_pkcnt) {
+                timeout_cnt++;
+          } else {
+                timeout_cnt = 0;
+          }
+           prev_rtl_pkt_cnt = rtl_tot_pkcnt;
+           }
+                 
+       }
+    } else {
+        if(rtl_tot_pkcnt >= no_ofpkts_toprt) {
+	all_pkts_done = 1;
+	trigger(ON,TX_rvcd_allpkts[id]);
+	be_msg.print(e_mesg_info,"niu_tx_port","chk_pkt_cnt","All pkts_rvcd at Port %0d\n", id);
+   } else {
+     if((timeout_cnt > 100) && (prev_rtl_pkt_cnt == rtl_tot_pkcnt)) {
+	 all_pkts_done = 1;
+         trigger(ON,TX_rvcd_allpkts[id]);
+   	 be_msg.print(e_mesg_error,"niu_tx_port","chk_pkt_cnt","No change In pkt_cnt for 10000 clocks for Port %0d\n", id);
+      } else {
+   	  if(prev_rtl_pkt_cnt == rtl_tot_pkcnt) {
+   		timeout_cnt++;
+   	  } else {
+   		timeout_cnt = 0;
+   	  }
+          	prev_rtl_pkt_cnt = rtl_tot_pkcnt;
+           }
+           	
+       }
+    }
+ }
+
+ if(get_plus_arg (CHECK, "MAC_SPEED0=100"))
+    repeat (10000) @(posedge CLOCK);
+ else if(get_plus_arg (CHECK, "MAC_SPEED0=10"))
+    repeat (60000) @(posedge CLOCK);
+ else
+    repeat (2000) @(posedge CLOCK);
+
+ // using a plus arg to turn this on
+
+ if( get_plus_arg(CHECK,"ENB_TXEXIT_RT")) {
+
+ // check for pks stuffed in RE-ORDER fifo & Packets proccessed in PKT_ASSEMBLY
+    check_pkts_stuffed(no_of_pkts);
+
+ // check pkt count for each DMA
+    check_pkt_cnt_perdma(no_of_pkts);
+
+ // check mac tx frame cnt 
+    check_mac_txfrmcnt(no_ofpkts_toprt);  
+ }  
+
+}
+
+//--- task to get check number of pkts on each port
+//--- random number of pkts per DMA channel
+
+task CMacTxPort :: check_randompkt_cnt (integer no_of_pkts[24], (integer timeout_count = 100)) {
+
+integer no_ofpkts_toprt = 0;
+integer rtl_tot_pkcnt;
+integer all_pkts_done = 0;
+integer timeout_cnt = 0;
+integer prev_rtl_pkt_cnt = 0;
+
+bit [39:0] address;
+bit [63:0] r_data;
+
+ address = TXC_FZC_BASE+ (TXC_PKT_XMIT +  port_offset);
+ no_ofpkts_toprt = get_allpkts_toport_random(no_of_pkts);
+ // printf("TOT_PKT_CNT %0d\n",no_ofpkts_toprt);
+ printf("Total_expected_pkts %d from Port %d\n",no_ofpkts_toprt,this.id);
+
+ while(!all_pkts_done) {
+  repeat (timeout_count) @(posedge CLOCK);
+  gen_pio_drv.pio_rd(address,r_data);
+  rtl_tot_pkcnt = r_data[15:0];
+
+   if(rtl_tot_pkcnt == no_ofpkts_toprt) {
+	all_pkts_done = 1;
+        trigger(ON,TX_rvcd_allpkts[id]);
+	be_msg.print(e_mesg_info,"niu_tx_port","chk_pkt_cnt","All pkts_rvcd at Port %0d\n", id);
+   } else {
+     if((timeout_cnt > 100) && (prev_rtl_pkt_cnt == rtl_tot_pkcnt)) {
+	 all_pkts_done = 1;
+         trigger(ON,TX_rvcd_allpkts[id]);
+	 be_msg.print(e_mesg_error,"niu_tx_port","chk_pkt_cnt","No change In pkt_cnt for 10000 clocks for Port %0d\n", id);
+ 	} else {
+          if(prev_rtl_pkt_cnt == rtl_tot_pkcnt) {
+		timeout_cnt++;
+	  } else {
+                timeout_cnt = 0;
+	  }
+          	prev_rtl_pkt_cnt = rtl_tot_pkcnt;
+	   }
+           	
+	}
+ }
+
+	repeat (2000) @(posedge CLOCK);
+
+} 
+  
+ 
+//-- Calculte the number of pkts to port
+//-- Number of pkts per DMA are same
+
+function integer CMacTxPort :: get_allpkts_toport (integer no_of_pkts) {
+
+integer i;
+integer t_no_of_pkts = 0;
+
+  for(i = 0; i < 24; i ++) {
+    if(OrigDMAActiveList[i]) {
+      t_no_of_pkts = t_no_of_pkts + no_of_pkts;
+      // printf("TOT_PKTS %0d\n",t_no_of_pkts);
+      }
+    }
+
+  get_allpkts_toport = t_no_of_pkts;
+}
+
+
+//-- Calculte the number of pkts to port
+//-- Number of pkts per DMA are same
+
+function integer CMacTxPort :: get_allpkts_toport_random (integer no_of_pkts[24]) {
+
+integer i;
+integer t_no_of_pkts = 0;
+
+  for(i = 0; i < 24; i ++) {
+    if(OrigDMAActiveList[i]) {
+	t_no_of_pkts = t_no_of_pkts + no_of_pkts[i];
+	// printf("TOT_PKTS %0d\n",t_no_of_pkts);
+	}
+    }
+
+  get_allpkts_toport_random = t_no_of_pkts;
+}
+
+
+task CMacTxPort::check_pkt_cnt_perdma (integer no_of_pkts) {
+
+  integer i = 0;
+  bit [63:0] rd_data;
+  bit [63:0] hd_ptr; 
+  bit [63:0] tail_ptr;
+  
+  for(i = 0; i < 24; i ++) {
+    if(OrigDMAActiveList[i]) {
+        dma[i].Read_TxCs(rd_data);
+        if(rd_data[59:48] != no_of_pkts) {
+          be_msg.print(e_mesg_error,"niu_tx_port","check_pkt_cnt_perdma","PKT_CNT MISMATCH for DMA_ID %d\n",i);
+        }
+        // read the head and tail and compare they should be equal
+        dma[i].RdTxRngHDL(hd_ptr);
+        @(posedge CLOCK);
+        dma[i].RdTxRngKick(tail_ptr);  
+        if(hd_ptr[19:0] != tail_ptr[19:0]) {
+         be_msg.print(e_mesg_error,"niu_tx_port","check_pkt_cnt_perdma","HD & TAIL PTRs MISMATCH for DMA_ID %d\n",i);
+        }
+    }
+  }
+}
+
+
+task CMacTxPort::check_exit_status() {
+
+
+// Tasks to look at the remaining tokens in the mailbox and determine the appropriate 
+// action to be taken
+
+  integer no_of_tokens_remaining;
+  CpgToken pgToken;
+  integer i;
+
+  if( get_plus_arg(CHECK,"BYPASS_TXDRR")) {
+    // do no checks of the mailbox, drr byppassed in this mode
+  } else {
+  printf(" DEBUG- Checking exit status for Tx port %d \n",id);
+  no_of_tokens_remaining =  mailbox_get(NO_WAIT,mbox_id.mac_opp[id], pgToken);
+  if(no_of_tokens_remaining >0) {
+	 printf("ERROR Not all tokens received by packetchecker at port %d \n",id);
+	 printf("Pending Tokens not received by Packet Checker= %d \n",no_of_tokens_remaining);
+         be_msg.print(e_mesg_error, "","","ERROR Not all tokens received by packetchecker at port = %d\n",id);
+
+  }
+  
+ for(i = 0; i < 32; i ++) {
+   if(OrigDMAActiveList[i]) {
+       if(dma[i].checkTokenHeadValid()) {
+	printf("ERROR Not all tokens sent to packetchecker at port %d for DMA # %d \n",id,i);
+        be_msg.print(e_mesg_error, "","","ERROR Not all tokens sent to packetchecker from DRR at port = %d\n",id);
+       }
+   }
+  }
+ }
+}
+
+task CMacTxPort :: check_pkts_stuffed(integer no_of_pkts) {
+
+ integer ro_pkts_num = 0;
+ integer pkt_ass_pkts_num = 0;
+ integer  num_pkts_sent = 0;
+
+ bit [39:0] address;
+ bit [63:0] r_data;
+
+ address = TXC_FZC_BASE+ (TXC_PKT_STUFFED +  port_offset);
+ gen_pio_drv.pio_rd(address,r_data);
+
+ ro_pkts_num = r_data[31:16];
+ pkt_ass_pkts_num = r_data[15:0];
+
+ num_pkts_sent = get_allpkts_toport(no_of_pkts);
+
+ if(ro_pkts_num != num_pkts_sent)
+   be_msg.print(e_mesg_error,"CMacTxPort","check_pkts_stuffed","RO_fifo pkts stuffed check failed for port_id %d\n",this.id);
+ else
+   be_msg.print(e_mesg_info,"CMacTxPort","check_pkts_stuffed","RO_fifo pkts stuffed check passed for port_id %d\n",this.id);
+
+ if( pkt_ass_pkts_num != num_pkts_sent)
+   be_msg.print(e_mesg_error,"CMacTxPort","check_pkts_stuffed","Pktassem_fifo pkts stuffed check failed for port_id %d\n",this.id);
+ else
+   be_msg.print(e_mesg_info,"CMacTxPort","check_pkts_stuffed","Pktassem_fifo pkts stuffed check passed for port_id %d\n",this.id);
+
+}
+
+task CMacTxPort :: check_mac_txfrmcnt(integer no_of_pkts) {
+
+ bit [39:0] base_addr;
+ bit[31:0] rd_data, rd_status, rd_mask;
+
+ base_addr = mac_util.get_mac_reg_base(this.id);
+ if((this.id == 0) || (this.id == 1))
+   mac_pio_class.xmac_pio_rd(base_addr + TxMAC_FRM_CNT, rd_status, 1'b0);
+ else 
+   mac_pio_class.xmac_pio_rd(base_addr + BTxMAC_FRM_CNT, rd_status, 1'b0);
+
+ if(rd_data[20:0] != no_of_pkts)
+   be_msg.print(e_mesg_error,"CMacTxPort","check_mac_txfrmcnt","MAC Tx_frame_cnt chk failed for port_id %d\n",this.id);
+ else 
+   be_msg.print(e_mesg_info,"CMacTxPort","check_mac_txfrmcnt","MAC Tx_frame_cnt chk passed for port_id %d\n",this.id);
+  
+}

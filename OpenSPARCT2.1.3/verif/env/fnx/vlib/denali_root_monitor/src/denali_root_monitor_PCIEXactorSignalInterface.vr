@@ -1,0 +1,1357 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: denali_root_monitor_PCIEXactorSignalInterface.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+// XactorFmwork and XactorComponents libraries
+#include "XactorBasePacket.vrh"
+#include "XactorBaseSignalInterface.vrh"
+#include "XactorCtrl.vrh"
+#include "XactorUtilities.vrh"
+#include "XactorDefines.vri"
+#include "XactorClk.port.vri"
+
+// DenaliPCIE libary
+#include "DenaliPCIE.vri"
+
+// FNXPCIEXactor library
+#include "FNXPCIEXactorDefines.vri" 
+// #include "FNXPCIEXactorPorts.vri" 
+#include "denali_root_monitor_PCIEXactorPorts.vri" 
+
+// report library 
+#include "cReport.vrh" 
+#include "FNXPCIEXactorReportMacros.vri" 
+class denali_root_monitor_PCIEXactorSignalInterface extends XactorBaseSignalInterface {
+  // Inherited Members
+  // MyReport declared in XactorBaseSignalInterface
+  
+  // Base Class and Method Names For QR Macros
+  local string ClassName  = "denali_root_monitor_PCIEXtrSgnlIntf";
+  local string MethodName = null;
+  
+  local string XactorName;  // Name of transactor
+  local integer PortNum;    // PCIE Port Number
+  
+  local FNXPCIEXactorUtilities Util; // Xactor Utilities
+
+  local FNXPCIEXactorAssertCovDatabase AssertCovDatabase; // Assertion Coverage Database
+  local FNXPCIEXactorStatsDatabase StatsDatabase; // Statistics Database
+  local FNXPCIEXactorReplayMonitor ReplayMonitor; // Replay Buffer Monitor
+
+  local XactorCtrl                 xtrCtrl;
+  local XactorClk                  ClkPort;         // Clock port
+//   local FNXPCIEXactorDenaliClkPort DenaliClkPort;   // Denali PCIE Clock Port
+//   local FNXPCIEXactorDenaliDevice  PCIEDevice;      // Denali PCIE Device Reference For This Transactor
+// 3/4/04
+  local denali_root_monitor_PCIEXactorDenaliClkPort DenaliClkPort;   // Denali PCIE Clock Port
+  local denali_root_monitor_PCIEXactorDenaliDevice  PCIEDevice;      // Denali PCIE Device Reference For This Transactor
+  local denali_root_monitor_PCIEXactorMiscPort      MiscPort;        // 3/4/04
+  local integer                    mToLinks;        // To Links Mailbox
+  local integer                    mTLPsFromLinks;  // TLPs From Links Mailbox
+  local integer                    mDLLPsFromLinks; // DLLPs From Links Mailbox
+  local integer                    mRetryExpectPipe; // Mailbox: Pipeline to Pass Retry Expects From Denali Callbacks to Xactor Builder
+
+  local bit      sampleDllpToLink = 0;
+  local integer  mDLLPsToLinks; // DLLPs To Links Mailbox
+
+  local event eLinkUp;
+  local event eDLLActive;                      
+  local event eDLLPToLink;                      
+  local FNXPCIEXactorPacket sampledDllpPktToLink;
+  
+  // public members
+  bit ExpectOn;        // Boolean: Enable/Disable Passing Sampled Packets to Expect Manager
+  bit TlpDiscardOn;    // Boolean: Enable/Disable Auto-Denali Generated TLP Discarding       
+  bit ReplayMonitorOn; // Boolean: Enable/Disable Passing Packets to Replay Monitor
+  bit AckDiscardOn;    // Boolean: Enable/Disable Auto-Denali Generated ACK Discarding       
+  
+  task new( integer                        ExpectFifo,         // incoming TLP transactions Fifo
+	    integer                        DllpExpectFifo,     // incoming DLLP transactions Fifo
+	    integer                        DriveFifo,          // outgoing TLP/DLLP transactions Fifo
+	    integer                        RetryPktFifo,       // retried TLP transactions Fifo
+	    ReportClass                    _MyReport,          // Reference to report object
+	    string                         _XactorName,        // Name of transactor
+	    XactorCtrl                     _XactorCtrl,        // Used to support disable/enable/reset Xactor
+	    XactorClk                      _ClkPort,           // Clock port
+// 	    FNXPCIEXactorDenaliClkPort     _DenaliClkPort,     // Denali PCIE Clock Port
+// 	    FNXPCIEXactorDenaliDevice      _PCIEDevice,        // Denali PCIE Device reference
+//             FNXPCIEXactorMiscPort          _MiscPort,          // Port for Denali reset and Receive Detect signals
+	    denali_root_monitor_PCIEXactorDenaliClkPort     _DenaliClkPort,     // Denali PCIE Clock Port
+	    denali_root_monitor_PCIEXactorDenaliDevice      _PCIEDevice,        // Denali PCIE Device reference
+            denali_root_monitor_PCIEXactorMiscPort          _MiscPort,          // Port for Denali reset and Receive Detect signals
+	    FNXPCIEXactorUtilities         _Util,              // Xactor Utilities
+	    FNXPCIEXactorAssertCovDatabase _AssertCovDatabase, // Assertion Coverage Database
+	    integer                        _PortNum            // PCIE Port Number
+	    );
+
+  // public methods
+  task WriteDenaliReg( integer iDenReg, bit [FNX_PCIE_XTR_REG_DEN_WIDTH-1:0] data );
+  function bit [FNX_PCIE_XTR_REG_DEN_WIDTH-1:0] ReadDenaliReg( integer iDenReg );
+  task SetupBAR32( integer denReg,
+		   integer addrWidth,
+		   bit [FNX_PCIE_XTR_PCI_BAR_WIDTH-1:0] baseAddr );
+  task SetupBAR64( integer denRegLower,
+		   integer denRegUpper,
+		   integer addrWidth,
+		   bit [FNX_PCIE_XTR_PCI_BAR_WIDTH*2-1:0] baseAddr );
+  task SetReqID( bit [FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH-1:0]    busNum,
+		 bit [FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH-1:0] devNum,
+		 bit [FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH-1:0]   funcNum,
+		 integer                                     regOffset = 0 );
+  task SuppressDenaliErr( denaliPcieErrorTypeT denErr );
+  task tempSuppressDenaliErr( denaliPcieErrorTypeT denErr );
+  task unSuppressDenaliErr( denaliPcieErrorTypeT denErr );
+  task WaitLinkUp();
+  task WaitDLLActive();
+  function string GetEpilogueStr();
+//   task SetRcvDetMode( bit _rcvDetMode );
+//   task SetRcvDetLanes( bit[FNX_PCIE_XTR_RCV_DET_LANES_WIDTH-1:0] _rcvDetLanes );
+  task SetDenaliReset( bit _denaliReset );
+  task ResetReplayMonitor();
+  task EnableSampleDllpToLink();
+  task DisableSampleDllpToLink();
+  task SampleDllpPktToLink( XactorBasePacket Pkt, integer Window );
+
+  //////////////////////////////////////////////////////////////
+  // Begin -> private methods
+  //
+  local task DrivePackets();
+  local task ProcessRegCbs();
+  local task ProcessPktCbs();
+
+  // assertion coverage processiong methods
+  local task ProcessPktCb_assert_pass( FNXPCIEXactorPktCbRecord pktCbRecord );
+
+  // xmit callback processing methods
+  local task ProcessPktCb_TL_user_queue_enter( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_TL_user_queue_exit( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_TL_transmit_queue_enter( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_TL_transmit_queue_exit( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_TL_to_DL( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_DL_TX_queue_enter( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_DL_TX_queue_exit( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_DL_to_PL( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_PL_TX_start_packet( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_PL_TX_end_packet( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_TX_trans_done( FNXPCIEXactorPktCbRecord pktCbRecord );
+
+  // xmit replay buffer callback processing methods
+  local task ProcessPktCb_DL_TX_retry_buffer_enter( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_DL_TX_retry_buffer_exit( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_DL_TX_retry_buffer_purge( FNXPCIEXactorPktCbRecord pktCbRecord );
+
+  // receive callback processing methods
+  local task ProcessPktCb_PL_RX_start_packet( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_PL_RX_end_packet( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_DL_RX_queue_enter( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_DL_RX_queue_exit( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_PL_to_DL( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_DL_to_TL( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_TL_RX_packet( FNXPCIEXactorPktCbRecord pktCbRecord );
+
+  // completion callback processing methods
+  local task ProcessPktCb_TL_TX_completion_queue_enter( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_TL_TX_completion_queue_exit( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_TL_RX_completion_queue_enter( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_TL_RX_completion_queue_exit( FNXPCIEXactorPktCbRecord pktCbRecord );
+
+  // error callback processing methods
+  local task ProcessPktCb_TX_error( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_RX_error( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_error( FNXPCIEXactorPktCbRecord pktCbRecord );
+  local task ProcessPktCb_unknown( FNXPCIEXactorPktCbRecord pktCbRecord );
+
+  // register callback processing methods
+  local task ProcessRegCbLTSSMState( FNXPCIEXactorRegCbRecord regCbRecord );
+  local task ProcessRegCbDLCMSMState( FNXPCIEXactorRegCbRecord regCbRecord );
+  local task ProcessRegCbTLPortState( FNXPCIEXactorRegCbRecord regCbRecord );
+  local task ProcessRegCbDevCtrl( FNXPCIEXactorRegCbRecord regCbRecord );
+  local task ProcessRegCbLinkState( FNXPCIEXactorRegCbRecord regCbRecord );
+  //
+  // End -> private methods
+  //////////////////////////////////////////////////////////////
+  
+} // end of signal interface sub-class  
+
+// constructor
+task denali_root_monitor_PCIEXactorSignalInterface::new( integer                        ExpectFifo,         // incoming TLP transactions Fifo
+					integer                        DllpExpectFifo,     // incoming DLLP transactions Fifo
+					integer                        DriveFifo,          // outgoing TLP/DLLP transactions Fifo
+					integer                        RetryPktFifo,       // retried TLP transactions Fifo
+					ReportClass                    _MyReport,          // Reference to report object
+					string                         _XactorName,        // Name of transactor
+					XactorCtrl                     _XactorCtrl,        // Used to support disable/enable/reset Xactor
+					XactorClk                      _ClkPort,           // Clock port
+// 					FNXPCIEXactorDenaliClkPort     _DenaliClkPort,     // Denali PCIE Clock Port
+// 					FNXPCIEXactorDenaliDevice      _PCIEDevice,        // Denali PCIE Device reference
+// 					FNXPCIEXactorMiscPort          _MiscPort,          // Port for Denali reset and Receive Detect signals
+					denali_root_monitor_PCIEXactorDenaliClkPort     _DenaliClkPort,     // Denali PCIE Clock Port
+					denali_root_monitor_PCIEXactorDenaliDevice      _PCIEDevice,        // Denali PCIE Device reference
+					denali_root_monitor_PCIEXactorMiscPort          _MiscPort,          // Port for Denali reset and Receive Detect signals
+					FNXPCIEXactorUtilities         _Util,              // Xactor Utilities
+					FNXPCIEXactorAssertCovDatabase _AssertCovDatabase, // Assertion Coverage Database
+					integer                        _PortNum            // PCIE Port Number
+					)
+{
+  MyReport          = _MyReport;
+  XactorName        = _XactorName;
+  xtrCtrl           = _XactorCtrl;
+  ClkPort           = _ClkPort;
+  DenaliClkPort     = _DenaliClkPort;
+  PCIEDevice        = _PCIEDevice;
+  Util              = _Util;
+  AssertCovDatabase = _AssertCovDatabase;
+  PortNum           = _PortNum;
+  MiscPort          = _MiscPort;
+
+  mToLinks         = DriveFifo;
+  mTLPsFromLinks   = ExpectFifo;
+  mDLLPsFromLinks  = DllpExpectFifo;
+  mRetryExpectPipe = RetryPktFifo;
+
+//N2 DMT Bypass Link Train  ExpectOn = 0;
+  ExpectOn = 1;
+  TlpDiscardOn = 1;
+  ReplayMonitorOn = 1;
+  sampleDllpToLink = 0;
+  AckDiscardOn = 0;
+
+  StatsDatabase = new( MyReport, XactorName );
+  ReplayMonitor = new( MyReport, XactorName, Util, PortNum );
+// 9/16/04 Not sure why ReplayMonitor instantiated twice here - could have been a clearcase merge problem
+//  ReplayMonitor = new( MyReport, XactorName, Util, PortNum );
+
+  //Drive the rcvDetMode to fast simulation  and rcvDetLanes to all 8 lanes as default
+//   MiscPort.$rcvDetMode = 1'b0;		//0 = 20nSec , 1 = 100 uSec
+//   MiscPort.$rcvDetLanes = 8'hzz;	//1 bit for each of the 8 lanes, 1 means a receiver is detected on that lane
+//   MiscPort.$denaliReset = 1'b0;		//Default to not driven 
+  
+  fork 
+    { DrivePackets(); }
+    { ProcessPktCbs(); }
+    { ProcessRegCbs(); }
+  join none
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::DrivePackets()
+{
+  denaliPciePacket      denPkt;
+  FNXPCIEXactorPacket   fnxPkt;
+  FNXPCIEXactorUserData userData;
+  bit cast_ok;  
+  integer status;
+  string MethodName = "DrivePackets";
+
+  while (1) { // continously process packets to be driven
+    
+    if (xtrCtrl.GetDisableFlag() === 1'b0 ) { // ensure xactor is enabled
+
+      @(posedge ClkPort.$XClk);
+      
+      // retreive next packet to be driven
+      mailbox_get( WAIT, mToLinks, fnxPkt );
+
+      // Create Denali Packet To Be Driven From FNX PCIE Packet
+      denPkt = fnxPkt.CreateDenaliPkt();
+      
+      // Place FNX PCIE Packet Into User Data of Denali Packet
+      userData = new();
+      userData.SetPkt( fnxPkt );
+      denPkt.setUserData( userData );
+      
+      // Add Denali Packet to Denali's User Queue
+//      status = PCIEDevice.transAdd( denPkt, 0 );
+      if( !fnxPkt.DriveImmediately ){
+         status = PCIEDevice.transAdd( denPkt, 0, DENALI_ARG_trans_append );
+      }
+      else{
+         status = PCIEDevice.transAdd( denPkt, 0, DENALI_ARG_trans_prepend );
+      }
+
+      // UNCOMMENT FOR DENALI DEBUG
+      // printf("<><>DENALI<><> Added to User Queue:\n");
+      // denPkt.printInfo();
+      
+      if(status != 0){
+	PCIEX_QR_ERR( "%s-> Failed to Add Packet to Denali User Queue:\n%s",
+		      XactorName, Util.DenaliPktToStr(denPkt,PortNum) );
+      }
+      else if( fnxPkt.DriveImmediately ){
+	PCIEX_QR_D3( "%s-> Added Packet to Beginning of Denali User Queue:\n%s",
+		     XactorName, Util.DenaliPktToStr(denPkt,PortNum) );	
+
+
+      }
+      else{
+	PCIEX_QR_D3( "%s-> Added Packet to End of Denali User Queue:\n%s",
+		     XactorName, Util.DenaliPktToStr(denPkt,PortNum) );	
+      }
+    }
+    else // advance edge, then re-check enable
+      @(posedge ClkPort.$XClk);
+  }
+}
+
+// process register callbacks received from Denali Xactor
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessRegCbs()
+{  
+  FNXPCIEXactorRegCbRecord regCbRecord;
+  string MethodName = "ProcessRegCbs";
+  
+  while (1) {
+    
+    if (xtrCtrl.GetDisableFlag() === 1'b0 ) { // ensure xactor is enabled
+
+      // blocks until next callback record is popped from malibox
+      regCbRecord = PCIEDevice.PopRegCbRecord();
+
+      PCIEX_QR_D2( "%s-> Callback Dequeued:\n  %s", 
+		   XactorName, regCbRecord.GetStr() );
+
+      case (regCbRecord.Reg) {
+	PCIE_REG_DEN_LTSSM_STATE  : ProcessRegCbLTSSMState( regCbRecord );
+	PCIE_REG_DEN_DLCMSM_STATE : ProcessRegCbDLCMSMState( regCbRecord );
+	PCIE_REG_DEN_LINK_ST      : ProcessRegCbLinkState( regCbRecord );
+	PCIE_REG_DEN_TLPORT_STATE : ProcessRegCbTLPortState( regCbRecord );
+	PCIE_REG_DEN_DEV_CTRL     : ProcessRegCbDevCtrl( regCbRecord );
+	default : PCIEX_QR_D3( "%s-> Register Callback Has No Handler:\n %s",
+			       XactorName, regCbRecord.GetStr() );
+      }
+      
+      // Signal Callback Has Been Processed
+      regCbRecord.MarkProcessed();
+    }
+    else // advance edge, then re-check enable
+      @(posedge ClkPort.$XClk);
+  }
+}
+
+
+// process packet callbacks received from Denali Xactor
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCbs()
+{  
+  FNXPCIEXactorPktCbRecord pktCbRecord;
+  string MethodName = "ProcessPktCbs";
+  
+  while (1) {
+    
+    if (xtrCtrl.GetDisableFlag() === 1'b0 ) { // ensure xactor is enabled
+
+      // blocks until next callback record is popped from malibox
+      pktCbRecord = PCIEDevice.PopPktCbRecord();
+
+      PCIEX_QR_D2( "%s-> Callback Dequeued:\n  %s | Denali Packet Contents:\n%s", 
+		   XactorName, pktCbRecord.GetStr(), Util.DenaliPktToStr(pktCbRecord.Pkt,PortNum) );
+      
+      // UNCOMMENT FOR DENALI DEBUG
+      // printf("<><>DENALI<><> Callback Packet:\n");
+      // pktCbRecord.Pkt.printInfo();
+
+      case (pktCbRecord.Rsn) {
+	// assertion coverage callbacks
+	PCIE_CB_assert_pass : ProcessPktCb_assert_pass( pktCbRecord );
+	// xmit callbacks
+	PCIE_CB_TL_user_queue_enter     : ProcessPktCb_TL_user_queue_enter( pktCbRecord );
+	PCIE_CB_TL_user_queue_exit      : ProcessPktCb_TL_user_queue_exit( pktCbRecord );
+	PCIE_CB_TL_transmit_queue_enter : ProcessPktCb_TL_transmit_queue_enter( pktCbRecord );
+	PCIE_CB_TL_transmit_queue_exit  : ProcessPktCb_TL_transmit_queue_exit( pktCbRecord );
+	PCIE_CB_TL_to_DL                : ProcessPktCb_TL_to_DL( pktCbRecord );
+	PCIE_CB_DL_TX_queue_enter       : ProcessPktCb_DL_TX_queue_enter( pktCbRecord );
+	PCIE_CB_DL_TX_queue_exit        : ProcessPktCb_DL_TX_queue_exit( pktCbRecord );
+	PCIE_CB_DL_to_PL                : ProcessPktCb_DL_to_PL( pktCbRecord );
+	PCIE_CB_PL_TX_start_packet      : ProcessPktCb_PL_TX_start_packet( pktCbRecord );
+	PCIE_CB_PL_TX_end_packet        : ProcessPktCb_PL_TX_end_packet( pktCbRecord );
+	PCIE_CB_TX_trans_done           : ProcessPktCb_TX_trans_done( pktCbRecord );
+	// replay callbacks
+	PCIE_CB_DL_TX_retry_buffer_enter : ProcessPktCb_DL_TX_retry_buffer_enter( pktCbRecord );
+	PCIE_CB_DL_TX_retry_buffer_exit  : ProcessPktCb_DL_TX_retry_buffer_exit( pktCbRecord );
+	PCIE_CB_DL_TX_retry_buffer_purge : ProcessPktCb_DL_TX_retry_buffer_purge( pktCbRecord );
+	// receive callbacks
+	PCIE_CB_PL_RX_start_packet : ProcessPktCb_PL_RX_start_packet( pktCbRecord );
+	PCIE_CB_PL_RX_end_packet   : ProcessPktCb_PL_RX_end_packet( pktCbRecord );
+	PCIE_CB_DL_RX_queue_enter  : ProcessPktCb_DL_RX_queue_enter( pktCbRecord );
+	PCIE_CB_DL_RX_queue_exit   : ProcessPktCb_DL_RX_queue_exit( pktCbRecord );
+	PCIE_CB_PL_to_DL           : ProcessPktCb_PL_to_DL( pktCbRecord );
+	PCIE_CB_DL_to_TL           : ProcessPktCb_DL_to_TL( pktCbRecord );
+	PCIE_CB_TL_RX_packet       : ProcessPktCb_TL_RX_packet( pktCbRecord );
+	// completion callbacks
+	PCIE_CB_TL_TX_completion_queue_enter : ProcessPktCb_TL_TX_completion_queue_enter( pktCbRecord );
+	PCIE_CB_TL_TX_completion_queue_exit  : ProcessPktCb_TL_TX_completion_queue_exit( pktCbRecord );
+	PCIE_CB_TL_RX_completion_queue_enter : ProcessPktCb_TL_RX_completion_queue_enter( pktCbRecord );
+	PCIE_CB_TL_RX_completion_queue_exit  : ProcessPktCb_TL_RX_completion_queue_exit( pktCbRecord );
+	// error callbacks
+	PCIE_CB_TX_error : ProcessPktCb_TX_error( pktCbRecord );
+	PCIE_CB_RX_error : ProcessPktCb_RX_error( pktCbRecord );
+	PCIE_CB_error    : ProcessPktCb_error( pktCbRecord );
+	PCIE_CB_unknown  : ProcessPktCb_unknown( pktCbRecord );
+	// default -> no handler
+	default : PCIEX_QR_D3( "%s-> Callback Has No Handler:\n  %s",
+			       XactorName, pktCbRecord.GetStr() );
+      }
+      
+      // Signal Callback Has Been Processed
+      pktCbRecord.MarkProcessed();
+    }
+    else // advance edge, then re-check enable
+      @(posedge ClkPort.$XClk);
+  }
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_assert_pass( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  string MethodName = "PPktCb_assert_pass";
+  
+  AssertCovDatabase.Add( pktCbRecord.covPt );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_TL_user_queue_enter( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  FNXPCIEXactorUserData userData;
+  denaliPcieTlpPacket tlpPkt;
+  integer status;
+  string MethodName = "PPktCb_TL_user_queue_enter";
+  
+  // Discard Any TLPs Internally Generated By Denali Transactor (Excluding Replays)
+  if (cast_assign( tlpPkt, pktCbRecord.Pkt, CHECK) ) { // is a Denali TLP
+    
+    if (TlpDiscardOn) {
+
+      // Mark TLP Packet to Be Discarded
+      userData = new();
+      userData.SetDiscard();
+      tlpPkt.setUserData( userData );
+      tlpPkt.setErrInject( PCIE_EI_DISCARD ); // Set TLP to Be Discarded
+      status = tlpPkt.transSet();     // Pass Changes to Denali C Model
+      
+      if (status != 0)
+	PCIEX_QR_ERR( "%s-> transSet() Failed(%0d) For Callback:\n  %s\n  Denali Packet Contents:\n%s",
+		    XactorName, status, pktCbRecord.GetStr(), Util.DenaliPktToStr(pktCbRecord.Pkt,PortNum) );
+      else
+	PCIEX_QR_D1( "%s-> Flagged Denali Generated TLP to be Discarded:\n%s",
+		     XactorName, pktCbRecord.GetStr() );
+    }
+  }
+
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_TL_user_queue_exit( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  FNXPCIEXactorPacket    fnxPkt;
+  FNXPCIEXactorUserData  userData;
+  denaliPciePacket       denPkt;
+  denaliPcieDllpPacket   dllpPkt;
+  integer status;
+  string MethodName = "PPktCb_TL_user_queue_exit";
+
+  if ( pktCbRecord.Pkt.getUserData() != null ) { // packet was driven by FNX Xactor
+    
+    // Retrieve FNX PCIE Packet From Denali Packet's User Data
+    cast_assign( userData, pktCbRecord.Pkt.getUserData() );
+    fnxPkt = userData.GetPkt();
+
+    if (fnxPkt != null) {
+      
+      // Set Denali Error Injection Type If Not NONE (After RELAX_CHK Is Cleared)
+      if (fnxPkt.DenaliErr !== PCIE_EI_NONE) {
+	if (cast_assign( denPkt, pktCbRecord.Pkt, CHECK ) )
+	  denPkt.setErrInject( fnxPkt.DenaliErr );
+      }
+    }
+  }
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_TL_transmit_queue_enter( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  string MethodName = "PPktCb_TL_transmit_queue_enter";
+
+  PCIEX_QR_D3( "%s-> Callback Handler Is Empty:\n  %s",
+	       XactorName, pktCbRecord.GetStr() );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_TL_transmit_queue_exit( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  string MethodName = "PPktCb_TL_transmit_queue_exit";
+
+  PCIEX_QR_D3( "%s-> Callback Handler Is Empty:\n  %s",
+	       XactorName, pktCbRecord.GetStr() );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_TL_to_DL( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  denaliPcieTlpPacket   tlpPkt;
+  FNXPCIEXactorPacket   fnxPkt;
+  FNXPCIEXactorUserData userData;
+  string MethodName = "PPktCb_TL_to_DL";
+
+  if ( pktCbRecord.Pkt.getUserData() != null ) { // packet was driven by FNX Xactor
+
+    // Retrieve FNX PCIE Packet From Denali Packet's User Data
+    cast_assign( userData, pktCbRecord.Pkt.getUserData() );
+    fnxPkt = userData.GetPkt();
+
+    if (fnxPkt != null) {
+
+      // Retrieve Tag and ECRC for TLPs if Set to be Generated
+      if (cast_assign( tlpPkt, pktCbRecord.Pkt, CHECK)) {
+	
+	if ( fnxPkt.GenTag )  // Retrieve Tag
+	  fnxPkt.ReqTag = tlpPkt.getTransactionIdTag();
+	
+	if ( fnxPkt.GenECRC ) // Retrieve ECRC
+	  fnxPkt.ECRC = tlpPkt.getEcrc();
+	
+	fnxPkt.PktDisplay( RTYP_FNX_PCIE_XTR_DEBUG_2, psprintf("%s %s-> Packet Updated:", PCIEX_QR_PREFIX, XactorName ));
+      }
+    }
+  }
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_DL_TX_queue_enter( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+
+  string MethodName = "PPktCb_DL_TX_queue_enter";
+
+  PCIEX_QR_D3( "%s-> Callback Handler Is Empty:\n  %s",
+	       XactorName, pktCbRecord.GetStr() );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_DL_TX_queue_exit( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  string MethodName = "PPktCb_DL_TX_queue_exit";
+  
+  PCIEX_QR_D3( "%s-> Callback Handler Is Empty:\n  %s",
+	       XactorName, pktCbRecord.GetStr() );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_DL_to_PL( FNXPCIEXactorPktCbRecord pktCbRecord )
+{ 
+  denaliPcieDlpPacket    dlpPkt;
+  denaliPcieDllpPacket   dllpPkt;
+  denaliPcieDllpTypeT    dllpType;
+  FNXPCIEXactorPacket    fnxPkt;
+  FNXPCIEXactorUserData  userData;
+  integer status;
+  string MethodName = "PPktCb_DL_to_PL";
+
+  if ( pktCbRecord.Pkt.getUserData() != null ) { // packet was driven by FNX Xactor
+    
+    // Retrieve FNX PCIE Packet From Denali Packet's User Data
+    cast_assign( userData, pktCbRecord.Pkt.getUserData() );
+    fnxPkt = userData.GetPkt();
+
+    if (fnxPkt != null) {
+
+      ///////////////////////////////////////////////////////
+      // Begin -> Update TLP
+      //
+      // Retrieve DLL Framing Fields From Denali and Place in FNXPCIEXactorPacket
+      if (fnxPkt.isTlp()) {
+	if (cast_assign(dlpPkt, pktCbRecord.Pkt, CHECK)) {
+	  
+	  if ( fnxPkt.GenLCRC32 ) // Retrieve 32-bit LCRC
+	    fnxPkt.DLLFrmLCRC32 = dlpPkt.getLcrc();
+	  
+	  if ( fnxPkt.GenSeqNum ) // Retrieve Seq Number
+	    fnxPkt.DLLFrmSeqNum = dlpPkt.getTlpSeqNum();
+	  
+	  fnxPkt.PktDisplay( RTYP_FNX_PCIE_XTR_DEBUG_2, psprintf("%s %s-> Packet Updated:", PCIEX_QR_PREFIX, XactorName ));
+	}
+      }
+      // End -> Update TLP
+      ///////////////////////////////////////////////////////
+      
+      ///////////////////////////////////////////////////////
+      // Begin -> Update DLLP
+      //
+      // Retrieve DLL Generated Fields From Denali and Place in FNXPCIEXactorPacket
+      if (fnxPkt.isDllp()) {
+	if (cast_assign(dllpPkt, pktCbRecord.Pkt, CHECK)) {
+	  
+	  if (fnxPkt.GenLCRC16)
+	    fnxPkt.DllpLCRC16 = dllpPkt.getLcrc();
+        }
+      }
+      // End -> Update DLLP
+      ///////////////////////////////////////////////////////
+
+    }
+  }else{		//// packet was generated by Denali 
+    if (cast_assign(dllpPkt, pktCbRecord.Pkt, CHECK)) {
+
+        // Discard Any Dllp ACKs Internally Generated By Denali Transactor
+        dllpType = dllpPkt.getDllpType();
+        if( AckDiscardOn && ( dllpType == DENALI_PCIE_DL_ACK) ){
+
+           dllpPkt.setErrInject( PCIE_EI_DISCARD ); // Set DLLP to Be Discarded
+           status = dllpPkt.transSet();     // Pass Changes to Denali C Model
+           if (status != 0)
+              PCIEX_QR_ERR( "%s:ProcessPktCb_DL_to_PL-> transSet() Failed(%0d) For Callback:\n  %s\n Denali Packet Contents:\n%s", XactorName, status, pktCbRecord.GetStr(), Util.DenaliPktToStr(pktCbRecord.Pkt,PortNum) );
+           else
+              PCIEX_QR_D1( "%s-> Flagged Denali Generated Dllp ACK to be Discarded:\n%s", XactorName, pktCbRecord.GetStr() );
+        }
+    }
+  }
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_PL_TX_start_packet( FNXPCIEXactorPktCbRecord pktCbRecord )
+{  
+  string MethodName = "PPktCb_PL_TX_start_packet";
+  FNXPCIEXactorPacket    fnxPkt;
+  FNXPCIEXactorUserData  userData;
+
+  if ( pktCbRecord.Pkt.getUserData() != null ) { // packet was driven by FNX Xactor
+    
+    // Retrieve FNX PCIE Packet From Denali Packet's User Data
+    cast_assign( userData, pktCbRecord.Pkt.getUserData() );
+    fnxPkt = userData.GetPkt();
+    
+    // Mark Packet As Starting To Be Driven
+    fnxPkt.TriggerDriveStart();
+  }
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_PL_TX_end_packet( FNXPCIEXactorPktCbRecord pktCbRecord )
+{  
+  FNXPCIEXactorPacket    fnxPkt;
+  FNXPCIEXactorUserData  userData;
+  denaliPcieDllpPacket   dllpPkt;
+  denaliPciePllpPacket   pllpPkt;
+  denaliPcieDllpTypeT    dllpType;
+  bit [8:0] pktData[*], dllpData[*];
+  string tmpStr;
+  integer i;
+  
+  string MethodName = "PPktCb_PL_TX_end_packet";
+  
+  if ( pktCbRecord.Pkt.getUserData() != null ) { // packet was driven by FNX Xactor
+    
+    // Retrieve FNX PCIE Packet From Denali Packet's User Data
+    cast_assign( userData, pktCbRecord.Pkt.getUserData() );
+    fnxPkt = userData.GetPkt();
+    
+    // Mark Packet As Done Being Driven and Update Statistics Database
+    if (fnxPkt != null) {
+      fnxPkt.TriggerDriveEnd();
+      StatsDatabase.UpdatePkt( fnxPkt, FNX_PCIE_XTR_STAT_DIR_XMIT );
+    }
+
+
+    //Need to know when testbench has driven specific packets
+    // especially NAKs
+    if( sampleDllpToLink ){
+       if (cast_assign( pllpPkt, pktCbRecord.Pkt, CHECK)) {
+
+         // Retrieve Raw DLLP Packet Byte Stream
+         fnxPkt = new( MyReport, XactorName, Util, PortNum );
+         pllpPkt.getPktData( pktData );
+      
+         // Create DLLP Data Stream From PL Data Stream
+         dllpData = new[FNX_PCIE_XTR_NUM_DLLP_BYTES];
+         for (i=1; i <= FNX_PCIE_XTR_NUM_DLLP_BYTES; i++)
+            dllpData[i-1] = pktData[i];
+         
+         // Pass Raw Byte Stream to FNX PCIE Packet for Parsing in Packet Fields
+         fnxPkt.ParseDLLPByteStream( dllpData );
+   
+         //Add packet to fifo that upper level testbench can get access to
+         if( sampleDllpToLink ){
+            //Make sure packet starts off clean
+            sampledDllpPktToLink.PktReset();
+            //Copy the packet so it can be passed 
+            sampledDllpPktToLink.PktCopy( fnxPkt );
+   
+            //Trigger event to notify a dllp packet has been sent to the DUT
+            trigger( ONE_BLAST, eDLLPToLink );
+         }
+      }
+    }
+  }
+  else { // packet was driven by Denali
+    // If Denali Packet is DLLP Print Contents at Debug Level 1
+    if (cast_assign( pllpPkt, pktCbRecord.Pkt, CHECK)) {
+
+      // Retrieve Raw DLLP Packet Byte Stream
+      fnxPkt = new( MyReport, XactorName, Util, PortNum );
+      pllpPkt.getPktData( pktData );
+      
+      // Create DLLP Data Stream From PL Data Stream
+      dllpData = new[FNX_PCIE_XTR_NUM_DLLP_BYTES];
+      for (i=1; i <= FNX_PCIE_XTR_NUM_DLLP_BYTES; i++)
+	dllpData[i-1] = pktData[i];
+      
+      // Pass Raw Byte Stream to FNX PCIE Packet for Parsing in Packet Fields
+      fnxPkt.ParseDLLPByteStream( dllpData );
+
+      //Add packet to fifo that upper level testbench can get access to
+      if( sampleDllpToLink ){
+         //Make sure packet starts off clean
+         sampledDllpPktToLink.PktReset();
+         //Copy the packet so it can be passed 
+         sampledDllpPktToLink.PktCopy( fnxPkt );
+
+         //Trigger event to notify a dllp packet has been sent to the DUT
+         trigger( ONE_BLAST, eDLLPToLink );
+      }
+
+      StatsDatabase.UpdatePkt( fnxPkt, FNX_PCIE_XTR_STAT_DIR_XMIT );
+      
+      PCIEX_QR_D2( "%s-> Denali DLLP Driven.\n%s", XactorName, fnxPkt.PktToStr() );
+    }
+  }
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_TX_trans_done( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  string MethodName = "PPktCb_TX_trans_done";
+  
+  PCIEX_QR_D3( "%s-> Callback Handler Is Empty:\n  %s",
+	       XactorName, pktCbRecord.GetStr() );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_DL_TX_retry_buffer_enter( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  string MethodName = "PPktCb_DL_TX_retry_buffer_enter";
+
+  PCIEX_QR_D3( "%s-> Callback Handler Is Empty:\n  %s",
+	       XactorName, pktCbRecord.GetStr() );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_DL_TX_retry_buffer_exit( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  FNXPCIEXactorPacket    fnxPkt;
+  FNXPCIEXactorUserData  userData;
+  string MethodName = "PPktCb_DL_TX_retry_buffer_exit";
+  
+  if ( pktCbRecord.Pkt.getUserData() != null ) { // packet was driven by FNX Xactor
+    
+    // Retrieve FNX PCIE Packet From Denali Packet's User Data
+    cast_assign( userData, pktCbRecord.Pkt.getUserData() );
+    fnxPkt = userData.GetPkt();
+    
+    if (fnxPkt != null)
+      fnxPkt.PktDisplay( RTYP_FNX_PCIE_XTR_INFO, psprintf("%s %s-> Retrying Packet:", PCIEX_QR_PREFIX, XactorName ));
+  }
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_DL_TX_retry_buffer_purge( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  string MethodName = "PPktCb_DL_TX_retry_buffer_purge";
+  
+  PCIEX_QR_D3( "%s-> Callback Handler Is Empty:\n  %s",
+	       XactorName, pktCbRecord.GetStr() );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_PL_RX_start_packet( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  string MethodName = "PPktCb_PL_RX_start_packet";
+  
+  PCIEX_QR_D3( "%s-> Callback Handler Is Empty:\n  %s",
+	       XactorName, pktCbRecord.GetStr() );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_PL_RX_end_packet( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  string MethodName = "PPktCb_PL_RX_end_packet";
+  
+  PCIEX_QR_D3( "%s-> Callback Handler Is Empty:\n  %s",
+	       XactorName, pktCbRecord.GetStr() );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_DL_RX_queue_enter( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  denaliPcieRawPacket rawPkt;
+  FNXPCIEXactorPacket fnxPkt;
+  bit [8:0] pktData[*];
+  string MethodName = "PPktCb_DL_RX_queue_enter";
+
+  if (cast_assign(rawPkt, pktCbRecord.Pkt, CHECK)) { // packet is a Raw
+
+    if (rawPkt.getPktType() == DENALI_PCIE__RawDllp) { // packet is a RawDllp
+    
+      // Retrieve Raw DLLP Packet Byte Stream
+      fnxPkt = new( MyReport, XactorName, Util, PortNum );
+      rawPkt.getPktData( pktData );
+    
+      // Pass Raw Byte Stream to FNX PCIE Packet for Parsing in Packet Fields
+      fnxPkt.ParseDLLPByteStream( pktData );
+
+      PCIEX_QR_D2( "%s-> Received RAW DLLP:\n%s",
+		   XactorName, Util.ByteStreamToStr( pktData, fnxPkt.GetPktPrefixStr(), "Byte Stream" ) );
+
+      // Place Received & Parsed DLLP Packet Into mDLLPsFromLinks Mailbox
+      if (ExpectOn) mailbox_put( mDLLPsFromLinks, fnxPkt );
+
+      // Update Statistics Database
+      StatsDatabase.UpdatePkt( fnxPkt, FNX_PCIE_XTR_STAT_DIR_RCV );
+    }
+  }
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_DL_RX_queue_exit( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  // NOTE: In Denali Release pcie,v3.1_11122003 RAW TLPs Do NOT Propagate to
+  //       The DL_to_TL Callback Point, So Pick TLPs Off at RX_queue_exit Cbk Point
+  denaliPcieRawDlpPacket rawDlpPkt;
+  FNXPCIEXactorPacket    fnxPkt;
+  bit [8:0] pktData[*];
+  string MethodName = "PPktCb_DL_RX_queue_exit";
+  
+//N2 DMT Bypass Link Train
+//  return;
+
+  if (cast_assign(rawDlpPkt, pktCbRecord.Pkt, CHECK)) { // packet is a RawDLP
+    
+    // Retrieve Raw TLP Packet Byte Stream (includes DLL Framing Fields)
+    fnxPkt = new( MyReport, XactorName, Util, PortNum );
+    rawDlpPkt.getPktData( pktData );  
+    
+    // Pass Raw Byte Stream to FNX PCIE Packet for Parsing in Packet Fields
+    fnxPkt.ParseTLPByteStream( pktData );
+    
+    PCIEX_QR_D2( "%s-> Received RAW TLP:\n%s",
+		 XactorName, Util.ByteStreamToStr(pktData, fnxPkt.GetPktPrefixStr(), "Byte Stream" ) );
+    
+    // Place Received & Parsed TLP Packet Into mTLPsFromLinks Mailbox
+    if (ExpectOn) mailbox_put( mTLPsFromLinks, fnxPkt );
+    
+    // Update Statistics Database
+    StatsDatabase.UpdatePkt( fnxPkt, FNX_PCIE_XTR_STAT_DIR_RCV );
+  }
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_PL_to_DL( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  denaliPcieRawDlpPacket rawDlpPkt;
+  FNXPCIEXactorPacket    fnxPkt;
+  bit [8:0] pktData[*];
+  string MethodName = "PPktCb_PL_to_DL";
+
+//N2 DMT Bypass Link Train
+//  return;
+  
+  if (cast_assign(rawDlpPkt, pktCbRecord.Pkt, CHECK)) { // packet is a RawDLP
+    
+    // Retrieve Raw TLP Packet Byte Stream (includes DLL Framing Fields)
+    fnxPkt = new( MyReport, XactorName, Util, PortNum );
+    rawDlpPkt.getPktData( pktData );  
+    
+    // Pass Raw Byte Stream to FNX PCIE Packet for Parsing in Packet Fields
+    fnxPkt.ParseTLPByteStream( pktData );
+    
+    // Pass Received TLP to Replay Monitor
+    if (ReplayMonitorOn)
+      ReplayMonitor.UpdateTlp( fnxPkt );
+  }
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_DL_to_TL( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  string MethodName = "PPktCb_DL_to_TL";
+  
+  PCIEX_QR_D3( "%s-> Callback Handler Is Empty:\n  %s",
+	       XactorName, pktCbRecord.GetStr() );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_TL_RX_packet( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  string MethodName = "PPktCb_TL_RX_packet";
+  
+  PCIEX_QR_D3( "%s-> Callback Handler Is Empty:\n  %s",
+	       XactorName, pktCbRecord.GetStr() );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_TX_error( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  string MethodName = "PPktCb_TX_error";
+
+  PCIEX_QR_ERR( "%s-> Error Callback %s Received",
+		XactorName, pktCbRecord.GetStr() );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_RX_error( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  string MethodName = "PPktCb_RX_error";
+  
+  PCIEX_QR_ERR( "%s-> Error Callback %s Received",
+		XactorName, pktCbRecord.GetStr() );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_error( FNXPCIEXactorPktCbRecord pktCbRecord )
+{  
+  string MethodName = "PPktCb_error";
+  
+  PCIEX_QR_ERR( "%s-> Error Callback %s Received",
+		XactorName, pktCbRecord.GetStr() );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_unknown( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  string MethodName = "PPktCb_unknown";
+  
+  PCIEX_QR_ERR( "%s-> Error Callback %s Received",
+		XactorName, pktCbRecord.GetStr() );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessRegCbLTSSMState( FNXPCIEXactorRegCbRecord regCbRecord )
+{
+  string MethodName = "ProcessRegCbLTSSMState";
+  denaliPcieLtssmStateT oldSt, newSt;
+  integer iOldSt, iNewSt;
+  
+  iOldSt = regCbRecord.Data[FNX_PCIE_XTR_REG_DEN_LTSSM_STATE_OLD_SLC];
+  iNewSt = regCbRecord.Data[FNX_PCIE_XTR_REG_DEN_LTSSM_STATE_NEW_SLC];
+  cast_assign( oldSt, iOldSt );
+  cast_assign( newSt, iNewSt );
+  PCIEX_QR_I( "%s-> Denali LTSSM State Updated:\n New=%s  Old=%s",
+	      XactorName, newSt, oldSt );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessRegCbDLCMSMState( FNXPCIEXactorRegCbRecord regCbRecord )
+{
+  string MethodName = "ProcessRegCbDLCMSMState";
+  denaliPcieDlcmsmStateT oldSt, newSt;
+  integer iOldSt, iNewSt;
+  
+  iOldSt = regCbRecord.Data[FNX_PCIE_XTR_REG_DEN_DLCMSM_STATE_OLD_SLC];
+  iNewSt = regCbRecord.Data[FNX_PCIE_XTR_REG_DEN_DLCMSM_STATE_NEW_SLC];
+  cast_assign( oldSt, iOldSt );
+  cast_assign( newSt, iNewSt );
+  
+  // Trigger eDLLActive Event if DLCMSM State is Active
+  if (newSt === PCIE_DLCMSM_STATE_DL_Active)
+    trigger( ONE_BLAST, eDLLActive );
+  
+  PCIEX_QR_I( "%s-> Denali DLCMSM State Updated:\n New=%s  Old=%s",
+	      XactorName, newSt, oldSt );  
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessRegCbTLPortState( FNXPCIEXactorRegCbRecord regCbRecord )
+{
+  string MethodName = "ProcessRegCbTLPortState";
+  denaliPciePortStateT oldSt, newSt;
+  integer iOldSt, iNewSt;
+  
+  iOldSt = regCbRecord.Data[FNX_PCIE_XTR_REG_DEN_TLPORT_STATE_OLD_SLC];
+  iNewSt = regCbRecord.Data[FNX_PCIE_XTR_REG_DEN_TLPORT_STATE_NEW_SLC];
+  cast_assign( oldSt, iOldSt );
+  cast_assign( newSt, iNewSt );
+  PCIEX_QR_I( "%s-> Denali TLPORT State Updated:\n New=%s  Old=%s",
+	      XactorName, newSt, oldSt );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessRegCbDevCtrl( FNXPCIEXactorRegCbRecord regCbRecord )
+{
+  string MethodName = "ProcessRegCbDevCtrl";
+  PCIEX_QR_I( "%s-> Denali Device Control Updated:\n BusNum=%0d'h%h  DeviceNum=%0d'h%h  FuncNum=%0d'h%h",
+	      XactorName, FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH, regCbRecord.Data[FNX_PCIE_XTR_REG_DEN_DEV_CTRL_BUS_NUM_SLC],
+	      FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH, regCbRecord.Data[FNX_PCIE_XTR_REG_DEN_DEV_CTRL_DEVICE_NUM_SLC],
+	      FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH, regCbRecord.Data[FNX_PCIE_XTR_REG_DEN_DEV_CTRL_FUNC_NUM_SLC] );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessRegCbLinkState( FNXPCIEXactorRegCbRecord regCbRecord )
+{
+  string MethodName = "ProcessRegCbLinkState";
+  string tmp1, tmp2;
+
+  // Trigger eLinkUp Event if Bit is Set
+  if (regCbRecord.Data[FNX_PCIE_XTR_REG_DEN_LINK_ST_LINK_UP_SLC] === 1'b1)
+    trigger( ONE_BLAST, eLinkUp );
+  
+  sprintf( tmp1, "LinkUp=%b  LinkWidth=%0d'h%h  LinkNum=%0d'h%h  LaneNum=%0d'h%h",
+	   regCbRecord.Data[FNX_PCIE_XTR_REG_DEN_LINK_ST_LINK_UP_SLC],
+	   FNX_PCIE_XTR_REG_DEN_LINK_ST_LINK_WIDTH, regCbRecord.Data[FNX_PCIE_XTR_REG_DEN_LINK_ST_LINK_WIDTH_SLC],
+	   FNX_PCIE_XTR_REG_DEN_LINK_ST_LINK_NUM_WIDTH, regCbRecord.Data[FNX_PCIE_XTR_REG_DEN_LINK_ST_LINK_NUM_SLC],
+	   FNX_PCIE_XTR_REG_DEN_LINK_ST_LANE_NUM_WIDTH, regCbRecord.Data[FNX_PCIE_XTR_REG_DEN_LINK_ST_LANE_NUM_SLC] );
+  sprintf( tmp2, "LanesReversed=%b  Scrambling=%b  LinkToSucc: LO=%b LOs=%b L1=%b L2=%b",
+	   regCbRecord.Data[FNX_PCIE_XTR_REG_DEN_LINK_ST_LANES_REVERSED_SLC],
+	   regCbRecord.Data[FNX_PCIE_XTR_REG_DEN_LINK_ST_SCRAMBLING_SLC],
+	   regCbRecord.Data[FNX_PCIE_XTR_REG_DEN_LINK_ST_LINK_TO_LO_SUCC_SLC],
+	   regCbRecord.Data[FNX_PCIE_XTR_REG_DEN_LINK_ST_LINK_TO_LOS_SUCC_SLC],
+	   regCbRecord.Data[FNX_PCIE_XTR_REG_DEN_LINK_ST_LINK_TO_L1_SUCC_SLC],
+	   regCbRecord.Data[FNX_PCIE_XTR_REG_DEN_LINK_ST_LINK_TO_L2_SUCC_SLC] );
+  PCIEX_QR_I( "%s-> Denali Link State Updated:\n %s\n %s",
+	      XactorName, tmp1, tmp2 );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::WaitLinkUp()
+{
+  string MethodName = "WaitLinkUp";
+  bit[FNX_PCIE_XTR_REG_DEN_WIDTH-1:0] lnkStData;
+  
+  PCIEX_QR_I( "%s-> Start.", XactorName );
+  
+  // Read Denali Reg And Check If Link Is Already Up, If Not Wait For eLinkUp 
+  // Trigger by Link State Callback Handler
+  lnkStData = ReadDenaliReg( PCIE_REG_DEN_LINK_ST );
+  if (lnkStData[FNX_PCIE_XTR_REG_DEN_LINK_ST_LINK_UP_SLC] !== 1)
+    sync( ANY, eLinkUp );
+  
+  PCIEX_QR_I( "%s-> Done. Link is Up.  REG_DEN_LINK_ST=%0h", XactorName,lnkStData );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::WaitDLLActive()
+{
+  string MethodName = "WaitDLLActive";
+  bit[FNX_PCIE_XTR_REG_DEN_WIDTH-1:0] dlcmsmStData;
+  
+  PCIEX_QR_I( "%s-> Start.", XactorName );
+  
+  // Read Denali Reg And Check If Link Is Already Up, If Not Wait For eDLLActive 
+  // Trigger by DLCMSMS State Callback Handler
+  dlcmsmStData = ReadDenaliReg( PCIE_REG_DEN_DLCMSM_STATE );
+  if (dlcmsmStData[FNX_PCIE_XTR_REG_DEN_DLCMSM_STATE_NEW_SLC] !== PCIE_DLCMSM_STATE_DL_Active)
+    sync( ANY, eDLLActive );
+  
+  PCIEX_QR_I( "%s-> Done. DLL is Active.", XactorName );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::WriteDenaliReg( integer iDenReg, bit [FNX_PCIE_XTR_REG_DEN_WIDTH-1:0] data )
+{
+  string MethodName = "WriteDenaliReg";
+  integer id;
+
+  // Get Denali Device Id Used in Register DDV Operations to Configuration Space
+  void = DenaliDDVgetIdByName( {PCIEDevice.getInstName(),"(cfg_0_0)"}, id );
+  
+  if (DenaliDDVwrite( id, iDenReg, data ) == 0)
+    PCIEX_QR_D2( "%s-> Updated Reg=%s Data=32'h%h",
+		 XactorName, Util.denaliRegNumToStr(iDenReg), data );
+  else
+    PCIEX_QR_ERR( "%s-> Update for Reg=%s Data=32'h%h Failed.",
+		  XactorName, Util.denaliRegNumToStr(iDenReg), data );
+}
+
+function bit [FNX_PCIE_XTR_REG_DEN_WIDTH-1:0] denali_root_monitor_PCIEXactorSignalInterface::ReadDenaliReg( integer iDenReg )
+{
+  string MethodName = "ReadDenaliReg";
+  integer id;
+
+  // Get Denali Device Id Used in Register DDV Operations to Configuration Space
+  void = DenaliDDVgetIdByName( {PCIEDevice.getInstName(),"(cfg_0_0)"}, id );
+  
+  if (DenaliDDVread( id, iDenReg, ReadDenaliReg) == 0)
+    PCIEX_QR_D3( "%s-> Reg=%s Read Data=32'h%h",
+		 XactorName, Util.denaliRegNumToStr(iDenReg), ReadDenaliReg );
+  else
+    PCIEX_QR_ERR( "%s-> Read of Reg=%s Failed.",
+		  XactorName, Util.denaliRegNumToStr(iDenReg) );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::SetupBAR32( integer denReg,
+					       integer addrWidth,
+					       bit [FNX_PCIE_XTR_PCI_BAR_WIDTH-1:0] baseAddr )
+{  
+  string MethodName = "SetupBAR32";
+  bit [FNX_PCIE_XTR_PCI_BAR_WIDTH-1:0] barLowerData;
+  bit [FNX_PCIE_XTR_PCI_BAR_LOWER_ADDR_WIDTH-1:0] lowerAddr;
+  integer i;
+  
+  // 32-bit BAR is For a 32-bit Non-Prefecthable Memory Decoder
+  // NOTE: 32-bit BAR's by PCI Definition Must NOT be Prefecthable
+  barLowerData[ FNX_PCIE_XTR_PCI_BAR_DECODER_TYPE_SLC ] = FNX_PCIE_XTR_PCI_BAR_DECODER_TYPE_MEM;
+  barLowerData[ FNX_PCIE_XTR_PCI_BAR_TYPE_SLC ]         = FNX_PCIE_XTR_PCI_BAR_TYPE_32_BIT;
+  barLowerData[ FNX_PCIE_XTR_PCI_BAR_PREFETCHABLE_SLC ] = FNX_PCIE_XTR_PCI_BAR_NOT_PREFETCHABLE;
+  
+  // Ensure Address Width is In Valid Range
+  if ((addrWidth < 8) || (addrWidth > FNX_PCIE_XTR_PCI_BAR_WIDTH)) {
+    PCIEX_QR_ERR( "%s-> Invalid 32-bit addrWidth=%0d Specified.",
+		  XactorName, addrWidth );
+    return;
+  }
+
+  // Ensure Base Address Doesn't Have Lowest 4 Bits Set
+  if (baseAddr[3:0] !== 4'h0) {
+    PCIEX_QR_ERR( "%s-> Invalid 32-bit BaseAddr=%h Specified.",
+		  XactorName, baseAddr );
+    return;
+  }
+  
+  // Pass Size of 32-bit BAR to Denali Device
+  lowerAddr = { FNX_PCIE_XTR_PCI_BAR_LOWER_ADDR_WIDTH {1'b0} };
+  for (i=0; i < (FNX_PCIE_XTR_PCI_BAR_WIDTH - addrWidth); i++)
+    lowerAddr[FNX_PCIE_XTR_PCI_BAR_LOWER_ADDR_WIDTH-i-1] = 1'b1;
+  barLowerData[ FNX_PCIE_XTR_PCI_BAR_LOWER_ADDR_SLC ] = lowerAddr;
+  WriteDenaliReg( denReg, barLowerData );
+
+  // Pass Base Address of 32-bit BAR to Denali Device
+  barLowerData[ FNX_PCIE_XTR_PCI_BAR_LOWER_ADDR_SLC ] = baseAddr[ FNX_PCIE_XTR_PCI_BAR_LOWER_ADDR_SLC ];
+  WriteDenaliReg( denReg, barLowerData );
+  
+  PCIEX_QR_I( "%s-> Setup 32-bit BAR=%s: Width=%0d Base=%h",
+	      XactorName, Util.denaliRegNumToStr(denReg), addrWidth, baseAddr );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::SetupBAR64( integer denRegLower,
+					       integer denRegUpper,
+					       integer addrWidth,
+					       bit [FNX_PCIE_XTR_PCI_BAR_WIDTH*2-1:0] baseAddr )
+{  
+  string MethodName = "SetupBAR64";
+  bit [FNX_PCIE_XTR_PCI_BAR_WIDTH-1:0] barLowerData, barUpperData;
+  bit [FNX_PCIE_XTR_PCI_BAR_LOWER_ADDR_WIDTH-1:0] lowerAddr;
+  bit [FNX_PCIE_XTR_PCI_BAR_UPPER_ADDR_WIDTH-1:0] upperAddr;
+  integer i;
+
+  // 64-bit BAR is For a 64-bit Prefecthable Memory Decoder
+  barLowerData[ FNX_PCIE_XTR_PCI_BAR_DECODER_TYPE_SLC ] = FNX_PCIE_XTR_PCI_BAR_DECODER_TYPE_MEM;
+  barLowerData[ FNX_PCIE_XTR_PCI_BAR_TYPE_SLC ]         = FNX_PCIE_XTR_PCI_BAR_TYPE_64_BIT;
+  barLowerData[ FNX_PCIE_XTR_PCI_BAR_PREFETCHABLE_SLC ] = FNX_PCIE_XTR_PCI_BAR_PREFETCHABLE;
+  
+  // Ensure Address Width is In Valid Range
+  // NOTE: PCIE Requires 64-bit Addresses Are Beyond 4GB Memory Space
+  if ((addrWidth <= FNX_PCIE_XTR_PCI_BAR_WIDTH) || (addrWidth > FNX_PCIE_XTR_PCI_BAR_WIDTH*2)) {
+    PCIEX_QR_ERR( "%s-> Invalid 64-bit AddrWidth=%0d Specified.",
+		  XactorName, addrWidth );
+    return;
+  }
+  
+  // Ensure Base Address Doesn't Have Lowest 32 Bits Set
+  // NOTE: PCIE Requires 64-bit Addresses Are Beyond 4GB Memory Space
+  if (baseAddr[FNX_PCIE_XTR_PCI_BAR_WIDTH-1:0] !== {FNX_PCIE_XTR_PCI_BAR_WIDTH {1'b0}} ) {
+    PCIEX_QR_ERR( "%s-> Invalid 64-bit BaseAddr=%h Specified.",
+		  XactorName, baseAddr );
+    return;
+  }
+  
+  // Pass Size of 64-bit BAR to Denali Device
+  lowerAddr = {FNX_PCIE_XTR_PCI_BAR_LOWER_ADDR_WIDTH {1'b0}};
+  upperAddr = { FNX_PCIE_XTR_PCI_BAR_UPPER_ADDR_WIDTH {1'b0} };
+  for (i=0; i < (FNX_PCIE_XTR_PCI_BAR_WIDTH*2 - addrWidth); i++)
+    upperAddr[FNX_PCIE_XTR_PCI_BAR_UPPER_ADDR_WIDTH-i-1] = 1'b1;
+  barLowerData[ FNX_PCIE_XTR_PCI_BAR_LOWER_ADDR_SLC ] = lowerAddr;
+  barUpperData[ FNX_PCIE_XTR_PCI_BAR_UPPER_ADDR_SLC ] = upperAddr;
+  WriteDenaliReg( denRegLower, barLowerData );
+  WriteDenaliReg( denRegUpper, barUpperData );
+
+  // Pass Base Address of 64-bit BAR to Denali Device 
+  barLowerData[ FNX_PCIE_XTR_PCI_BAR_LOWER_ADDR_SLC ] = baseAddr[ FNX_PCIE_XTR_PCI_BAR_LOWER_ADDR_SLC ];
+  barUpperData[ FNX_PCIE_XTR_PCI_BAR_UPPER_ADDR_SLC ] = baseAddr[ FNX_PCIE_XTR_PCI_BAR_WIDTH*2-1:FNX_PCIE_XTR_PCI_BAR_WIDTH ];
+  WriteDenaliReg( denRegLower, barLowerData );
+  WriteDenaliReg( denRegUpper, barUpperData );
+  
+  PCIEX_QR_I( "%s-> Setup 64-bit BAR={%s,%s} : Width=%0d Base=%h",
+	      XactorName, Util.denaliRegNumToStr(denRegLower), Util.denaliRegNumToStr(denRegUpper), addrWidth, baseAddr );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::SetReqID( bit [FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH-1:0]    busNum,
+					     bit [FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH-1:0] devNum,
+					     bit [FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH-1:0]   funcNum,
+					     integer                                     regOffset = 0 )
+{
+  string MethodName = "SetReqID";
+  bit [FNX_PCIE_XTR_REG_DEN_WIDTH-1:0] data;
+
+  data = 0;
+  data[ FNX_PCIE_XTR_REG_DEN_DEV_CTRL_BUS_NUM_SLC ]    = busNum;
+  data[ FNX_PCIE_XTR_REG_DEN_DEV_CTRL_DEVICE_NUM_SLC ] = devNum;
+  data[ FNX_PCIE_XTR_REG_DEN_DEV_CTRL_FUNC_NUM_SLC ]   = funcNum;
+
+  // Ensure Register Offset is Multiple of PCIE_REG_NUM_MAXIMUM
+  if ((regOffset%PCIE_REG_NUM_MAXIMUM) != 0) {
+    PCIEX_QR_ERR( "%s-> Invalid regOffset=%0d Specified.",
+		  XactorName, regOffset );
+    return;
+  }
+
+  WriteDenaliReg( PCIE_REG_DEN_DEV_CTRL+regOffset, data );
+
+  PCIEX_QR_I( "%s-> Set ReqID: BusNum=%0d'h%h  DeviceNum=%0d'h%h  FuncNum=%0d'h%h",
+	      XactorName, FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH, busNum,
+	      FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH, devNum,
+	      FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH, funcNum );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::SuppressDenaliErr( denaliPcieErrorTypeT denErr )
+{
+  string MethodName = "SuppressDenaliErr";
+  bit [FNX_PCIE_XTR_REG_DEN_WIDTH-1:0] data;
+  bit [FNX_PCIE_XTR_REG_DEN_ERROR_CTRL_ERR_ID_WIDTH-1:0] errId;
+  
+  // Suppress Specified Error and Disable Callbacks and Assertion Coverage on Both Xmit and Recv Side
+  errId = denErr;
+  data[FNX_PCIE_XTR_REG_DEN_ERROR_CTRL_ERR_ID_SLC]      = errId;
+  data[FNX_PCIE_XTR_REG_DEN_ERROR_CTRL_CBK_CTRL_SLC]    = PCIE_ERR_CONFIG_disable_callback; 
+  data[FNX_PCIE_XTR_REG_DEN_ERROR_CTRL_ASSERT_CTRL_SLC] = PCIE_ERR_CONFIG_disable_coverage;
+  data[FNX_PCIE_XTR_REG_DEN_ERROR_CTRL_DIRECTION_SLC]   = PCIE_ERR_CONFIG_DIRECTION_TRX;
+  data[FNX_PCIE_XTR_REG_DEN_ERROR_CTRL_SEV_SLC]         = PCIE_ERR_CONFIG_FORMAT_SILENT;
+  
+  // Write Data to Denali ERROR_CTRL Register 
+  WriteDenaliReg( PCIE_REG_DEN_ERROR_CTRL, data);
+  
+  PCIEX_QR_I( "%s -> Suppressed Err=%s", XactorName, denErr );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::tempSuppressDenaliErr( denaliPcieErrorTypeT denErr )
+{
+  string MethodName = "tempSuppressDenaliErr";
+  bit [FNX_PCIE_XTR_REG_DEN_WIDTH-1:0] data;
+  bit [FNX_PCIE_XTR_REG_DEN_ERROR_CTRL_ERR_ID_WIDTH-1:0] errId;
+ 
+  // Suppress Specified Error and Disable Callbacks 
+  // BUT leave Assertion Coverage enabled 
+  errId = denErr;
+  data[FNX_PCIE_XTR_REG_DEN_ERROR_CTRL_ERR_ID_SLC]      = errId;
+  data[FNX_PCIE_XTR_REG_DEN_ERROR_CTRL_CBK_CTRL_SLC]    = PCIE_ERR_CONFIG_disable_callback;
+  data[FNX_PCIE_XTR_REG_DEN_ERROR_CTRL_ASSERT_CTRL_SLC] = PCIE_ERR_CONFIG_enable_coverage;
+  data[FNX_PCIE_XTR_REG_DEN_ERROR_CTRL_DIRECTION_SLC]   = PCIE_ERR_CONFIG_DIRECTION_TRX;
+  data[FNX_PCIE_XTR_REG_DEN_ERROR_CTRL_SEV_SLC]         = PCIE_ERR_CONFIG_FORMAT_INFO;
+ 
+  // Write Data to Denali ERROR_CTRL Register
+  WriteDenaliReg( PCIE_REG_DEN_ERROR_CTRL, data);
+ 
+  PCIEX_QR_I( "%s -> Suppressed Err=%s", XactorName, denErr );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::unSuppressDenaliErr( denaliPcieErrorTypeT denErr )
+{
+  string MethodName = "unSuppressDenaliErr";
+  bit [FNX_PCIE_XTR_REG_DEN_WIDTH-1:0] data;
+  bit [FNX_PCIE_XTR_REG_DEN_ERROR_CTRL_ERR_ID_WIDTH-1:0] errId;
+ 
+  // Suppress Specified Error and Disable Callbacks 
+  // BUT leave Assertion Coverage enabled 
+  errId = denErr;
+  data[FNX_PCIE_XTR_REG_DEN_ERROR_CTRL_ERR_ID_SLC]      = errId;
+  data[FNX_PCIE_XTR_REG_DEN_ERROR_CTRL_CBK_CTRL_SLC]    = PCIE_ERR_CONFIG_enable_callback;
+  data[FNX_PCIE_XTR_REG_DEN_ERROR_CTRL_ASSERT_CTRL_SLC] = PCIE_ERR_CONFIG_enable_coverage;
+  data[FNX_PCIE_XTR_REG_DEN_ERROR_CTRL_DIRECTION_SLC]   = PCIE_ERR_CONFIG_DIRECTION_TRX;
+  data[FNX_PCIE_XTR_REG_DEN_ERROR_CTRL_SEV_SLC]         = PCIE_ERR_CONFIG_FORMAT_ERROR;
+
+  // Write Data to Denali ERROR_CTRL Register
+  WriteDenaliReg( PCIE_REG_DEN_ERROR_CTRL, data);
+
+  PCIEX_QR_I( "%s -> Suppressed Err=%s", XactorName, denErr );
+}
+
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_TL_TX_completion_queue_enter( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  string MethodName = "PPktCb_TL_TX_completion_queue_enter";
+  
+  PCIEX_QR_D3( "%s-> Callback Handler Is Empty:\n  %s",
+	       XactorName, pktCbRecord.GetStr() );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_TL_TX_completion_queue_exit( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  string MethodName = "PPktCb_TL_TX_completion_queue_exit";
+  
+  PCIEX_QR_D3( "%s-> Callback Handler Is Empty:\n  %s",
+	       XactorName, pktCbRecord.GetStr() );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_TL_RX_completion_queue_enter( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  string MethodName = "PPktCb_TL_RX_completion_queue_enter";
+  
+  PCIEX_QR_D3( "%s-> Callback Handler Is Empty:\n  %s",
+	       XactorName, pktCbRecord.GetStr() );
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ProcessPktCb_TL_RX_completion_queue_exit( FNXPCIEXactorPktCbRecord pktCbRecord )
+{
+  string MethodName = "PPktCb_TL_RX_completion_queue_exit";
+  
+  PCIEX_QR_D3( "%s-> Callback Handler Is Empty:\n  %s",
+	       XactorName, pktCbRecord.GetStr() );
+}
+
+function string denali_root_monitor_PCIEXactorSignalInterface::GetEpilogueStr()
+{
+  ReplayMonitor.UpdateStats();
+  GetEpilogueStr =  { StatsDatabase.GetStr(), "\n", ReplayMonitor.GetStr() };
+}
+
+// task denali_root_monitor_PCIEXactorSignalInterface::SetRcvDetMode( bit _rcvDetMode )
+// {
+//   MiscPort.$rcvDetMode = _rcvDetMode;
+// }
+// 
+// task denali_root_monitor_PCIEXactorSignalInterface::SetRcvDetLanes( bit[FNX_PCIE_XTR_RCV_DET_LANES_WIDTH-1:0] _rcvDetLanes )
+// {
+//   MiscPort.$rcvDetLanes = _rcvDetLanes;
+// }
+
+task denali_root_monitor_PCIEXactorSignalInterface::SetDenaliReset( bit _denaliReset )
+{
+  MiscPort.$denaliReset = _denaliReset;
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::ResetReplayMonitor( )
+{
+  ReplayMonitor.Reset(); 
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::EnableSampleDllpToLink( )
+{
+  //Enable sampling and create the packet object if it doesn't exist already
+  sampleDllpToLink = 1; 
+  if( sampledDllpPktToLink == null ){
+     sampledDllpPktToLink = new( MyReport, XactorName, Util, PortNum );
+  }
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::DisableSampleDllpToLink( )
+{
+  sampleDllpToLink = 0; 
+}
+
+task denali_root_monitor_PCIEXactorSignalInterface::SampleDllpPktToLink( XactorBasePacket Pkt,
+                                                        integer Window )
+{ 
+
+  string MethodName = "SampleDllpPktToLink";
+  bit Success = 0;
+
+  fork {
+    sync(ANY, eDLLPToLink);
+    Pkt.PktCopy(sampledDllpPktToLink);
+    Success = 1'b1;
+  }
+  {
+    while (Window && !Success) {
+      Window--;
+      @(negedge ClkPort.$XClk);
+    }
+    if (!Success)
+      PCIEX_QR_ERR( "%s-> Timeout. No DLLP Transmitted to the DUT.", XactorName );
+    else
+      Pkt.PktDisplay( RTYP_INFO, psprintf("%s %s -> Transaction Sampled", PCIEX_QR_PREFIX, XactorName ) );
+  }
+  join any
+}
+
+
+

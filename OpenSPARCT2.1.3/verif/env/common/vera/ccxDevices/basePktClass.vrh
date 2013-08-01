@@ -1,0 +1,90 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: basePktClass.vrh
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#ifndef INC__TMP_BASEPKTCLASS_VRH
+#define INC__TMP_BASEPKTCLASS_VRH
+
+extern virtual class BasePkt { 
+  protected string name;
+
+  public reg [16:0] sendPorts;   // pkt will be sent from this/these ports (start at)
+  public reg [16:0] targetPorts; // pkt is going to these ports (end at)
+  public integer senderPort;     // initiating port for this arriving pkt
+  public integer arrivalPort;    // this packet arrived at this port
+  public integer arrivalTime;
+  public reg pktArrived;        // set by BFM when the anticipated pkt arrives.
+  
+//   public reg [8:0] recvPorts;
+//   public integer recvPort;
+  
+  public integer decGntTarget; // serviceSends task uses this for multicast gnt tracking
+  public reg ccxSourced;
+  public reg ccxSourced2;  
+  public reg [2:0]   tid;
+  public reg [3:0]   rtntyp;
+  public reg [4:0]   rqtyp;
+  public integer rtntypU;
+  public integer rqtypU;  
+  public reg [39:0]  addr;    // holds request pkt addr when applicable. (for ld st sync)
+  public reg CASstore;        // holds true when a CAS request stores to L2. (for ld st sync)
+  public reg [2:0] atomic; // tell bfm to assert atomic wire
+  public reg [8:0] atm_wire;
+  public reg [8:0] req_wire;
+  public integer reqTime;
+  public integer reqId;
+  public reg [3:0] lineWay;
+  public reg [28:0] tag;
+  public reg [127:0] signature;
+
+  virtual task print(integer atPort);
+  virtual task loadPkt (
+    reg [145:0] data,
+    integer atPort
+  );
+  virtual task send (
+    integer fastResp = 0
+  );
+  virtual task recv (
+  );
+  virtual function reg [145:0] makeSignature (
+  );
+  virtual function reg [145:0] getVector (
+  );
+
+  protected function integer manyHot(reg [63:0] vec);
+  protected function integer whichHot(reg [63:0] vec, reg check=0);
+
+}
+
+#endif

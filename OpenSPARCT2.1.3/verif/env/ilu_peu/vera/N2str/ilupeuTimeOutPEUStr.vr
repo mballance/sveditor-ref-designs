@@ -1,0 +1,154 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuTimeOutPEUStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class TimeOutPEUStr extends PEUStrBase 
+  {
+  integer f_errQueue;				// A mailbox for bad pkt headers
+  integer f_len;				// The packet's payload length
+  bit f_lenSpecified;				// Was a length specified?
+  bit f_write;
+  bit[4:0] f_type;				// The packet's type
+  bit f_typeSpecified;				// Was a type specified?
+
+  task new( PEUTestEnv a_env )
+    {
+    super.new( a_env );
+    f_errQueue = 0;
+    f_lenSpecified = 0;
+    f_typeSpecified = 0;
+    }
+
+  task SetErrQueue( integer a_queue )
+    {
+    f_errQueue = a_queue;
+    } /* end SetErrQueue */
+
+  task SetLength( integer a_len )
+    {
+    f_len = a_len;
+    f_lenSpecified = 1;
+    } /* end SetLength */
+
+  task SetType( integer a_type, (bit is_write=0) )
+    {
+    f_type = a_type;
+    f_typeSpecified = 1;
+    f_write = is_write;
+    } /* end SetType */
+
+  task Execute()
+    {
+    bit[PEC_PCI__HDR] egressHdr;		// The egress TLP's header
+    integer egressData;				// A payload descriptor
+    bit[7:0] tlpTag;				// The tag for the TLP
+    bit[7:0] egressAddr;			// The DOU starting address
+    bit[PEC_PCI__HDR] ingressHdr;		// The ingress TLP's header
+    integer ingressData;			// A payload descriptor
+    bit[63:0] tluCtl;
+
+
+					// Build a TLP, using the specified
+					// type and length, if any.
+    if ( !f_typeSpecified )
+      {
+      if ( urandom()%2 )
+        {
+        f_write = 0;
+        randcase
+          {
+          4 : { f_type = PEC_PCI__TYPE_MEM; f_len = urandom()%4 + 1; }
+          1 : { f_type = PEC_PCI__TYPE_CFG0; f_len = 1; }
+          1 : { f_type = PEC_PCI__TYPE_CFG1; f_len = 1; }
+          1 : { f_type = PEC_PCI__TYPE_IO; f_len = 1; }
+          }
+        }
+      else
+        {
+        f_write = 1;
+        randcase
+          {
+//N2 review         1 : { f_type = PEC_PCI__TYPE_CFG0; f_len = 1; }
+          1 : { f_type = PEC_PCI__TYPE_CFG1; f_len = 1; }
+          1 : { f_type = PEC_PCI__TYPE_IO; f_len = 1; }
+          }
+        }
+      }
+
+    if ( !f_lenSpecified ) 
+      {
+      if ( f_type == PEC_PCI__TYPE_MEM ){
+        if( f_write )
+           f_len = urandom()%2 + 1;
+        else
+           f_len = urandom()%4 + 1;
+      }
+      else
+        f_len = 1;
+      }
+
+					// Set the time-out value to "small"
+					// if it isn't already set.
+    f_env.setPioTimeOut(-1); 
+
+    if ( f_write )
+      {
+      f_env.allocWrTag( tlpTag, egressAddr );
+      f_env.genEgressWrReq( tlpTag, egressHdr, egressData, f_len, f_type );
+      }
+    else
+      {
+      f_env.allocRdTag( tlpTag );
+      f_env.genEgressRdReq( tlpTag, egressHdr, egressData, f_len, f_type );
+      }
+
+    
+
+    f_env.driveILU( egressHdr, egressAddr, egressData );
+    f_env.expectPCIE( egressHdr, egressData );
+    f_env.expectTimeoutCpl( egressHdr );
+
+    if ( f_errQueue != 0 )
+      {
+      mailbox_put( f_errQueue, e_ERR_none );
+      mailbox_put( f_errQueue, 2 );
+      mailbox_put( f_errQueue, e_ERR_ue_cto );
+      mailbox_put( f_errQueue, egressHdr );
+      mailbox_put( f_errQueue, e_ERR_oe_cto );
+      mailbox_put( f_errQueue, egressHdr );
+      }
+
+    f_env.freePioTag( tlpTag );
+    
+    } /* end Execute */
+  } /* end TimeOutPEUStr */

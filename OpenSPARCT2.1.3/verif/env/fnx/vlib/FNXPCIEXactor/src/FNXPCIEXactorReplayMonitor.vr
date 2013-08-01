@@ -1,0 +1,205 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: FNXPCIEXactorReplayMonitor.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "DenaliPCIE.vri"
+
+// FNXPCIEXactor library
+#include "FNXPCIEXactorDefines.vri"
+
+// report library
+#include "cReport.vrh"
+#include "FNXPCIEXactorReportMacros.vri"
+
+class FNXPCIEXactorReplayMonitor {
+
+  // Base Class and Method Names For QR Macros
+  local string ClassName  = "FNXPCIEXactorReplayMonitor";
+  local string MethodName = null;
+  
+  local ReportClass MyReport;
+  local string XactorName;
+  local FNXPCIEXactorUtilities Util;
+  local integer PortNum;
+
+  integer StartNextPurgeSeqNum;
+
+  // Replay Buffer Contents
+  local FNXPCIEXactorPacket ReplayBuffer[ FNX_PCIE_XTR_MAX_REPLAY_ENTRIES ];
+
+  // Replay Statistics Tracking
+  local integer TotalNumReplays;
+  local integer TotalBytesReplayed;
+  local integer PktCntPerTimesReplayed[FNX_PCIE_XTR_MAX_NUM_RETRIES_PER_PKT];
+  local integer NumUnpurgedTLPs;
+
+  local integer CurrReplayCnt; // Count of Ongoing Replay (0 == Not Replaying)
+
+  // constructor
+  task new( ReportClass            _Report,
+	    string                 _XactorName,
+	    FNXPCIEXactorUtilities _Util,
+	    integer                _PortNum );
+
+  // public methods
+  task Reset();
+  task UpdateTlp( FNXPCIEXactorPacket tlpPkt );
+  function string GetStr();
+  task UpdateStats();
+}
+
+task FNXPCIEXactorReplayMonitor::new( ReportClass            _Report,
+				      string                 _XactorName,
+				      FNXPCIEXactorUtilities _Util,
+				      integer                _PortNum )
+{
+  string MethodName = "new";
+  
+  MyReport   = _Report;
+  XactorName = _XactorName;
+  Util       = _Util;
+  PortNum    = _PortNum;
+  Reset();
+}
+
+task FNXPCIEXactorReplayMonitor::Reset()
+{ 
+  string MethodName = "Reset";
+  integer i;
+  
+  NumUnpurgedTLPs = 0;
+  StartNextPurgeSeqNum = -1;
+
+  for (i=0; i < FNX_PCIE_XTR_MAX_REPLAY_ENTRIES; i++)
+    ReplayBuffer[i] = null;
+  TotalNumReplays = 0;
+  TotalBytesReplayed = 0;
+  for (i=0; i < FNX_PCIE_XTR_MAX_NUM_RETRIES_PER_PKT; i++)
+    PktCntPerTimesReplayed[i] = 0;
+  CurrReplayCnt = 0;
+}
+
+task FNXPCIEXactorReplayMonitor::UpdateTlp( FNXPCIEXactorPacket tlpPkt )
+{
+  string MethodName = "UpdateTlp";
+  bit [FNX_PCIE_XTR_DLL_FRM_SEQ_NUM_WIDTH-1:0] seqNum;
+  bit [FNX_PCIE_XTR_DLL_FRM_SEQ_NUM_WIDTH-1:0] endSeqNum, iSeqNum;
+  
+  seqNum = tlpPkt.DLLFrmSeqNum;
+
+  // Packet Has Been Replayed
+  if (ReplayBuffer[seqNum] !== null) {
+
+    // Ensure Packet Contents Match Previously Transmitted Packet
+    if (ReplayBuffer[seqNum].PktCompare( "===", tlpPkt )) {
+      PCIEX_QR_I( "%s -> Received Replay TLP Match for SeqNum=%h", XactorName, seqNum );
+
+      // Update Replay Statistics on Replay Match
+      ReplayBuffer[seqNum].ReplayCnt++;
+      if (CurrReplayCnt !== ReplayBuffer[seqNum].ReplayCnt) {
+	TotalNumReplays++;
+	CurrReplayCnt = ReplayBuffer[seqNum].ReplayCnt;
+      }
+      TotalBytesReplayed += ReplayBuffer[seqNum].NumBytes();
+    }                               
+    else {
+      PCIEX_QR_ERR( "%s -> Received Replay TLP Mismatch.\n Original TLP Contents:\n%s\n Replayed TLP Contents:\n%s",
+		    XactorName, ReplayBuffer[seqNum].PktToStr(), tlpPkt.PktToStr() );
+    }
+  }
+  else { // Packet Is Newly Transmitted So Place in Replay Buffer
+    ReplayBuffer[seqNum] = new( MyReport, XactorName, Util, PortNum );
+    ReplayBuffer[seqNum].PktCopy( tlpPkt );
+
+    // Increment Number of TLPs Not Purged From Replay Buffer
+    NumUnpurgedTLPs++;
+    
+    // Initialize Sequence Number to Start First Purge At
+    if (StartNextPurgeSeqNum < 0)
+      StartNextPurgeSeqNum = seqNum;
+
+    // Once 512 TLPs are in Replay Buffer, Purge 256 Oldest TLPs
+    if (NumUnpurgedTLPs > 512) {
+      iSeqNum = StartNextPurgeSeqNum;
+      endSeqNum = iSeqNum + 256;
+
+      // Cycle Through Replay Buffer, Purge TLPs and Update Statistics
+      while (iSeqNum !== endSeqNum) {
+	// Update Replay Count Statistics For TLP Being Purged
+	if (ReplayBuffer[iSeqNum].ReplayCnt > 0)
+	  PktCntPerTimesReplayed[ReplayBuffer[iSeqNum].ReplayCnt-1]++;
+
+	// Purge the TLP from the Replay Buffer
+	ReplayBuffer[iSeqNum] = null;
+	
+	PCIEX_QR_D2( "%s -> Purged TLP w/ SeqNum=%h", XactorName, iSeqNum );
+	iSeqNum++;
+	NumUnpurgedTLPs--;
+      }
+      StartNextPurgeSeqNum = endSeqNum;
+    }
+    CurrReplayCnt = 0;
+    PCIEX_QR_D3( "%s -> Added TLP w/ SeqNum=%h to Replay Buffer. Contents:\n%s", XactorName, seqNum, ReplayBuffer[seqNum].PktToStr() );
+  }
+}
+
+function string FNXPCIEXactorReplayMonitor::GetStr()
+{
+  string MethodName = "GetStr";
+  string tmp;
+  integer i;
+  
+  sprintf( GetStr, "Replay Statisitcs\n" );
+  sprintf( tmp, "  Total Num Replays:  %0d", TotalNumReplays );
+  GetStr = { GetStr, tmp };
+  sprintf( tmp, "\n  Total Bytes Replayed: %0d", TotalBytesReplayed );
+  GetStr = { GetStr, tmp };
+  for (i=0; i < FNX_PCIE_XTR_MAX_NUM_RETRIES_PER_PKT; i++) {
+    sprintf( tmp, "\n  Total Num Pkts Replayed %0d Time(s):  %0d",
+	     i+1, PktCntPerTimesReplayed[i] );
+    GetStr = { GetStr, tmp };
+  }
+}
+
+task FNXPCIEXactorReplayMonitor::UpdateStats()
+{
+  integer i;
+
+  for (i=0; i < FNX_PCIE_XTR_MAX_REPLAY_ENTRIES; i++) {
+    if (ReplayBuffer[i] !== null) {
+      // Update Replay Count Statistics Per Unpurged TLP
+      if (ReplayBuffer[i].ReplayCnt > 0)
+	PktCntPerTimesReplayed[ReplayBuffer[i].ReplayCnt-1]++;
+    }
+  }
+}

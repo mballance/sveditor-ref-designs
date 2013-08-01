@@ -1,0 +1,388 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: cMesg.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+enum Mesg_level =
+    e_mesg_error,
+    e_mesg_warning,
+    e_mesg_info,
+    e_mesg_debug1,
+    e_mesg_debug2,
+    e_mesg_debug3,
+    e_mesg_debug4;
+
+class Mesg {
+  local Mesg_level f_debug_level;
+  
+  static local integer f_error_count;
+  static local integer f_warning_count;
+
+  function Mesg_level get_debug_level ();
+  function integer get_error_count ();
+  function integer get_warning_count ();
+  
+  task new(Mesg_level level = e_mesg_info);
+  task set_debug_level (Mesg_level level);
+  
+  task print(Mesg_level level,
+             string id = "",
+             string src,
+             string fmt,
+             (bit [511:0] fmt_arg0 = 0,
+              bit [511:0] fmt_arg1 = 0,
+              bit [511:0] fmt_arg2 = 0,
+              bit [511:0] fmt_arg3 = 0,
+              bit [511:0] fmt_arg4 = 0,
+              bit [511:0] fmt_arg5 = 0,
+              bit [511:0] fmt_arg6 = 0,
+              bit [511:0] fmt_arg7 = 0,
+              bit [511:0] fmt_arg8 = 0,
+              bit [511:0] fmt_arg9 = 0)
+             );
+
+  task print_test_complete();
+}
+
+task Mesg::new(Mesg_level level = e_mesg_info) {
+  f_error_count = 0;
+  f_warning_count = 0;
+  f_debug_level = e_mesg_info;
+
+  set_debug_level (level);
+}
+
+/*
+ * error count
+ */
+function integer Mesg::get_error_count () {
+  get_error_count = f_error_count;
+}
+
+/*
+ * warning count
+ */
+function integer Mesg::get_warning_count () {
+  get_warning_count = f_warning_count;
+}
+
+/*
+ * I wish we could make this callable only ONCE, no ??
+ */
+task Mesg::set_debug_level (Mesg_level level) {
+  string level_str;
+  
+  if (level < e_mesg_warning)
+    print(e_mesg_error,
+          *,
+          "Mesg::set_debug_level",
+          "Can not set debug level < e_mesg_warning");
+  else {
+    sprintf(level_str, "Set debug level to %s", level);
+    print(e_mesg_info,
+          *,
+          "Mesg::set_debug_level",
+          level_str);
+  }
+  
+  f_debug_level = level;
+}
+
+/*
+ * Return debug level
+ */
+function Mesg_level Mesg::get_debug_level () {
+  get_debug_level = f_debug_level;
+}  
+
+/*
+ * print(level, id_string, src_string, fmt_string, [int] ...10... [int]);
+ *
+ * Input:
+ *         level:
+ *         e_mesg_error   (increments error count)
+ *         e_mesg_warning (increments warning count)
+ *         e_mesg_info
+ *         e_mesg_debug1
+ *         e_mesg_debug2
+ *         e_mesg_debug3
+ *
+ *         id_string:
+ *         eg, "xtr1"
+ *
+ *         src_string:
+ *         eg, "class::method"
+ *
+ *         fmt_string:
+ *         Formatted output: string (%s %S)
+ *                           bin (%b %B)
+ *                           dec (%d %D),
+ *                           hex (%h %H %x %X)
+ *                           oct (%o %O)
+ *         Field width specifiers ignored (eg, %2d).
+ *
+ *         Up to 10 optional arguments, int or castable to int, or string.
+ *
+ * Output:
+ *         Error, warning and info messages cannot be turned off.
+ *
+ *         Debug statements output only if mesg_debug_level <= set_debug_level, otherwise
+ *         absolutely nothing happens.
+ *
+ *         Minimum field widths used.
+ *
+ *         Format type letter follows argument, except integers, eg: 20, 110001b, 32fah, 7403o
+ *
+ *         Newline automaticly inserted, but additional ones are acceptable.
+ *
+ *         e_mesg_error:
+ *         *** ERROR [hi_time][lo_time]<id_str><src_str> formatted_message_str
+ *
+ *         e_mesg_warning:
+ *         WARNING [hi_time][lo_time]<id_str><src_str> formatted_message_str
+ *
+ *         e_mesg_info, e_mesg_debug#:
+ *         [hi_time][lo_time]<id_str><src_str> formatted_message_str
+ */
+task Mesg::print (Mesg_level level,
+                  string id_str = "",
+                  string src_str,
+                  string fmt_str,
+                  (bit [511:0] fmt_arg0 = 0,
+                   bit [511:0] fmt_arg1 = 0,
+                   bit [511:0] fmt_arg2 = 0,
+                   bit [511:0] fmt_arg3 = 0,
+                   bit [511:0] fmt_arg4 = 0,
+                   bit [511:0] fmt_arg5 = 0,
+                   bit [511:0] fmt_arg6 = 0,
+                   bit [511:0] fmt_arg7 = 0,
+                   bit [511:0] fmt_arg8 = 0,
+                   bit [511:0] fmt_arg9 = 0)
+                  ) {
+  integer time_lo, time_hi;
+  integer i, fmt_char, next_char, fmt_arg_idx = 0, mesg_idx = 0, j, pad_cnt, got_cnt;
+  bit is_x;
+  bit [511:0] fmt_args[10];
+  string pre_mesg_str, mesg_str, tmp_str;
+
+  /*
+   * If level is less than the specified debug level,
+   * we want to process this thing, else do absolutely nothing.
+   */
+  if (level <= f_debug_level) {
+    /*
+     * Put the args in the arg array
+     */
+    fmt_args[0] = fmt_arg0;
+    fmt_args[1] = fmt_arg1;
+    fmt_args[2] = fmt_arg2;
+    fmt_args[3] = fmt_arg3;
+    fmt_args[4] = fmt_arg4;
+    fmt_args[5] = fmt_arg5;
+    fmt_args[6] = fmt_arg6;
+    fmt_args[7] = fmt_arg7;
+    fmt_args[8] = fmt_arg8;
+    fmt_args[9] = fmt_arg9;
+
+    /*
+     * Get the verilog time
+     */
+    time_lo = get_time(LO);
+    time_hi = get_time(HI);
+    
+    /*
+     * Assemble pre_mesg
+     */
+    
+    // verilog time
+    if (time_hi == 0)
+      sprintf(pre_mesg_str, "%0d  ", time_lo);
+    else
+      sprintf(pre_mesg_str, "%0d%0d  ", time_hi, time_lo);
+
+    // message level
+    if (level == e_mesg_error) {
+      tmp_str = "ERROR    ";
+      f_error_count++;
+    }
+    else if (level == e_mesg_warning) {
+      tmp_str = "WARNING  ";
+      f_warning_count++;
+    }
+    else if (level == e_mesg_info)
+      tmp_str = "INFO     ";
+    else if (level == e_mesg_debug1)
+      tmp_str = "DEBUG1   ";
+    else if (level == e_mesg_debug2)
+      tmp_str = "DEBUG2   ";
+    else if (level == e_mesg_debug3)
+      tmp_str = "DEBUG3   ";
+    else if (level == e_mesg_debug4)
+      tmp_str = "DEBUG4   ";
+
+    // put message level in pre-mesg
+    pre_mesg_str = { pre_mesg_str, tmp_str };
+
+    // source
+    if (id_str.len() == 0)
+      sprintf(tmp_str, "%s  ", src_str);
+    else
+      sprintf(tmp_str, "%s  %s  ", id_str, src_str);
+
+    // put source in pre-mesg
+    pre_mesg_str = { pre_mesg_str, tmp_str };
+    
+    /*
+     * Now process the format (fmt_str).
+     * Assemble the message (mesg_str).
+     */
+    for (i = 0; i < fmt_str.len(); i++, mesg_idx++) {
+      next_char = fmt_str.getc(i);
+      
+      // If the char is anything but %, we want to print it to the mesg
+      if (next_char != 37)
+        sprintf(tmp_str, "%c", next_char);
+  
+      // If the char is %, then print the next arg to the mesg
+      else {
+        got_cnt = 0;  //tells if a pad count was received -- acts as a Boolean
+        // The next fmt_char may have the format
+        fmt_char = fmt_str.getc(++i);
+
+        // If the fmt_char is an integer, then this is a case s.a. %2d, so
+        // save the number 
+	
+        if ( (fmt_char >= 32'h30) && (fmt_char <= 32'h39) ){
+         // j = the number of spaces wanted
+	  j = fmt_char - 32'h30;
+	 // Save this number of spaces and then increment to the next character 
+	 // which will be the type. 
+          fmt_char = fmt_str.getc(++i);
+	  got_cnt = 1; 
+        }
+        // If the fmt arg has any x's, we must print %b format, so override fmt_arg
+        is_x = ^fmt_args[fmt_arg_idx];
+        if (is_x === 1'bx)
+          fmt_char = 32'h42;
+        
+        case (fmt_char) {
+          // %b
+          32'h42, 32'h62:{
+            sprintf(tmp_str, "%0bb", fmt_args[fmt_arg_idx++]);
+	    pad_cnt = ( j + 1 - tmp_str.len() );
+	  }
+          // %c
+          32'h43, 32'h63:{
+            sprintf(tmp_str, "%0c", fmt_args[fmt_arg_idx++]);
+            pad_cnt = ( j - tmp_str.len() );
+	  } 
+          // %d
+          32'h44, 32'h64:{
+            sprintf(tmp_str, "%0d", fmt_args[fmt_arg_idx++]);
+            pad_cnt = ( j - tmp_str.len() );
+	  }  
+          // %h, %x
+          32'h48, 32'h58, 32'h68, 32'h78:{
+            sprintf(tmp_str, "%0hh", fmt_args[fmt_arg_idx++]);
+            pad_cnt = ( j + 1 - tmp_str.len() );
+          }
+	  // %o
+          32'h4f, 32'h6f:{
+            sprintf(tmp_str, "%0oo", fmt_args[fmt_arg_idx++]);
+            pad_cnt = ( j + 1 - tmp_str.len() );
+          }
+	  // %s
+          32'h53, 32'h73:{
+            sprintf(tmp_str, "%0s", fmt_args[fmt_arg_idx++]);
+            pad_cnt = ( j - tmp_str.len() ); 
+          }
+	  // something is wrong
+          default: {
+            sprintf(tmp_str, "NO_FMT");
+            fmt_arg_idx++;
+          }
+        }
+        
+	// If user requested a field width and the argument didn't take up
+        // the whole field, pad with zeroes for nums, and spaces for strings.
+	if (( got_cnt == 1 ) && ( pad_cnt > 0 )) {
+          if ((fmt_char == 32'h53) || (fmt_char == 32'h73))
+            tmp_str = { {pad_cnt {" "} }, tmp_str };
+          else
+            tmp_str = { {pad_cnt {"0"} }, tmp_str };
+        }
+      }
+      
+      // Concatenate the arg, or the next char in fmt, either way it is in
+      // tmp_str, to the message str
+      mesg_str = { mesg_str, tmp_str };
+    }
+
+    // Finally, print the freakin message!
+    printf("%s%s\n", pre_mesg_str, mesg_str);
+  }
+}   
+
+/*
+ * Test complete standard format.
+ */
+task Mesg::print_test_complete() {
+  // Change the debug level to info in case it is currently < info, in whic
+  // case this TEST COMPLETE message won't be printed.  Also, save the current
+  // level and restore it, just in case someone is calling this within a 
+  // test for some reason, I can't necessarily assume this will only be called
+  // when the test exits.
+  Mesg_level prev = f_debug_level;
+  f_debug_level = e_mesg_info;
+  printf("\n");
+        if (  get_error_count() == 0 ) {
+  		print(e_mesg_info,
+        	" ",
+        	" ",
+        	"Simulation reach GOOD End\n");
+		os_command("banner PASS");
+        }
+	else
+	{
+  	print(e_mesg_info,
+        	" ",
+       		" ",
+        	"TEST COMPLETE.  TOTAL ERRORS: %d  TOTAL WARNINGS: %d\n",
+       		 get_error_count(), get_warning_count());
+		os_command("banner FAIL");
+	}
+
+  f_debug_level = prev;
+
+}

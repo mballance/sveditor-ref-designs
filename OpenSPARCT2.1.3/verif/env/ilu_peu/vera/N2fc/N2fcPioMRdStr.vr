@@ -1,0 +1,295 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: N2fcPioMRdStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class N2fcPioMRdStr extends PioMRdPEUStr {
+
+  local string          cmd;
+  local bit [63:0]      addr;
+  local bit [31:0]      length;
+  local bit [31:0]      dat;
+  local bit [63:0]      base;
+  local bit [63:0]      offset;
+  local integer         pio_error; // 0 = no error, 1 = timeout, 2 = uc
+  
+  public task new(PEUTestEnv a_env,
+                  string     a_cmd,
+                  bit [63:0] a_addr,
+                  bit [31:0] a_length,
+                  bit [31:0] a_dat,
+                  bit [63:0] a_baseaddr,
+                  (bit[63:0] a_offset = 0),
+                  (integer   a_err = 0)
+                  );
+  
+  public task Execute();  
+
+  local task SetCplHdr ();
+  local task SetupParms ();
+}
+
+
+
+//-------------------------------------------------------------------
+// Method Name: 
+// Description: 
+//-------------------------------------------------------------------
+task N2fcPioMRdStr::new(PEUTestEnv a_env,
+                        string     a_cmd,
+                        bit [63:0] a_addr,
+                        bit [31:0] a_length,
+                        bit [31:0] a_dat,
+                        bit [63:0] a_baseaddr,
+                        (bit[63:0] a_offset = 0),
+                        (integer   a_err = 0)
+                        )
+{  
+  super.new(a_env);
+
+  if ( a_err == 3 ) {
+    return; // don't set up an expect or a completion
+  }
+  
+  this._env      = a_env;  
+  this.cmd       = a_cmd;
+  this.addr      = a_addr;
+  this.length    = a_length;
+  this.dat       = a_dat;
+  this.base      = a_baseaddr;
+  this.offset    = a_offset;
+  this.pio_error = a_err;
+
+  this.SetupParms ();
+  this.Execute ();
+}
+
+
+
+task N2fcPioMRdStr::Execute() {
+
+  SetPacketParams();
+  
+  // Set up the Reqest ID bits from the CSR
+  reqHdr[PEC_PCI__REQ_ID]      = PiuCsrs.piuREQ_ID;
+  cplHdr[PEC_PCI__CPL_REQ_ID]  = PiuCsrs.piuREQ_ID;
+  
+  this._env.expectPCIE(reqHdr, 0, 1);
+  non_posted_read_cmpl_outstanding++;
+
+  SetCplHdr (); // gets the Request Id
+
+  if ( this.pio_error == 1 ) {
+    printf ("\nDEBUG : N2fcPioMRdStr::Execute pio timeout requested, so no completion generated\n");
+    return; // timeout - don't send a completion
+  }
+  
+  fork { // don't block other expects
+    
+    sync( ALL, _env.ev_StallPioCpl);   // stall the completion if event is OFF
+    
+  if ( (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD1) ||
+      (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD2) ||
+      (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD3) ||
+      (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD4)) {
+      this._env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlCplSt ); //Malformed Completion TLP - Reserved completion status (%u).
+  }
+
+  //if ( this._ep_cpl && super.f_abortErrTlp )
+  if (this.pio_error == 2) {
+    this._cpl_status = PEC_PCI__CPL_STATUS_UR;
+    cplHdr [PEC_PCI__CPL_STATUS] = PEC_PCI__CPL_STATUS_UR;
+    cplHdr [PEC_PCI__FMT]        = PEC_PCI__FMT_NO_DATA_3DW;
+    cplHdr [PEC_PCI__LEN]        = 0;
+    this._env.drivePCIE(cplHdr, this._data, *, *, *, 1);
+  }
+  else {
+    this._env.drivePCIE(cplHdr, this._data);
+  }
+  
+  if ((this._cpl_status === PEC_PCI__CPL_STATUS_CA)    ||
+      (this._cpl_status === PEC_PCI__CPL_STATUS_UR)    ||
+      (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD1) ||
+      (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD2) ||
+      (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD3) ||
+      (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD4)) {
+    
+    ////    this._env.expectILU(urHdr, this._data);
+    //mailbox_put(this._errQueue, e_ERR_oe_ruc);
+    //mailbox_put(this._errQueue, cplHdr );
+  }
+
+  else if (this._cpl_status === PEC_PCI__CPL_STATUS_CRS) {
+
+    // Nothing pops out here.
+    this._env.waitIngressLatency(cplHdr);
+    //mailbox_put(this._errQueue, e_ERR_ue_mfp);
+    //mailbox_put(this._errQueue, cplHdr );
+  }
+    
+  else if (this._ep_cpl === 1'b_1) {
+    
+    repeat(2) @(posedge CLOCK);
+    cplHdr [PEC_PCI__EP] = 0;
+    
+    SetCplHdr ();
+    this._env.drivePCIE(cplHdr, this._data);
+    ////    this._env.expectILU(cplHdr, this._data);
+//    if ( this._errQueue != 0 )
+//      {
+//      //N2 - Add checking of request header
+//      mailbox_put( this._errQueue, e_ERR_none );
+//      mailbox_put( this._errQueue, -1 );
+//      mailbox_put( this._errQueue, reqHdr );
+//      mailbox_put( this._errQueue, e_ERR_ue_pp );
+//      cplHdr [PEC_PCI__EP] = 1;
+//      mailbox_put(this._errQueue, cplHdr);
+//      }
+  }
+  
+  else { 
+    ////    this._env.expectILU(cplHdr, this._data);
+  }
+  
+  this._env.freePioTag(this._tag);
+  non_posted_read_cmpl_outstanding--;  
+  } join none
+  
+}
+
+
+task N2fcPioMRdStr::SetupParms() {
+
+  bit [63:0] tmpAddr;
+
+  tmpAddr                    = this.addr - (this.base + 64'hc0_0000_0000) | this.offset;
+
+  _addr_msb_min              = tmpAddr[63:32];
+  _addr_msb_max              = tmpAddr[63:32];
+  
+  _addr_lsb_min              = tmpAddr[31:0];
+  _addr_lsb_max              = tmpAddr[31:0];
+
+  if(tmpAddr[63:32]) {
+    _format_req_prob_3dw     = 0;
+    _format_req_prob_4dw     = 100;
+  }
+  else {
+    _format_req_prob_3dw     = 100;
+    _format_req_prob_4dw     = 0;
+  }
+
+  _data_min                 = dat;
+  _data_max                 = dat;
+
+  _ep_cpl_prob_false        = 100; 
+  _ep_cpl_prob_true         = 0;
+
+  _td_cpl_prob_false        = 100;
+  _td_cpl_prob_true         = 0;
+  
+  _cpl_status_prob_sc       = 100;
+  _cpl_status_prob_ur       = 0;
+  _cpl_status_prob_crs      = 0;
+  _cpl_status_prob_ca       = 0;
+  _cpl_status_prob_rsvd1    = 0;
+  _cpl_status_prob_rsvd2    = 0;
+  _cpl_status_prob_rsvd3    = 0;
+  _cpl_status_prob_rsvd4    = 0;
+
+  _bcm_prob_false           = 100;
+  _bcm_prob_true            = 0;
+
+
+  
+  // Select DWBE based on address, length combination
+  //
+  _first_dwbe_min            = 4'b0000;
+  _last_dwbe_min             = 4'b0000;
+
+
+  _len_min                  = 1;
+
+  
+  case (length) {
+    32'd1    :
+      case (addr[1:0]) {
+      2'b00    : _first_dwbe_min            = 4'b0001;
+      2'b01    : _first_dwbe_min            = 4'b0010;
+      2'b10    : _first_dwbe_min            = 4'b0100;
+      2'b11    : _first_dwbe_min            = 4'b1000;
+      default  :
+        error ("\n N2fcPioMRdStr::SetupParms size ERROR A = %0h L = %0d\n", addr[3:0], length);
+    }
+
+    32'd2    :
+      case (addr[1:0]) {
+      2'b00    : _first_dwbe_min            = 4'b0011;
+      2'b10    : _first_dwbe_min            = 4'b1100;
+      default  :
+        error ("\n N2fcPioMRdStr::SetupParms size ERROR A = %0h L = %0d\n", addr[3:0], length);
+    }
+
+    32'd4    : {
+      _first_dwbe_min            = 4'b1111;
+    }
+
+    32'd8    : {
+      _first_dwbe_min            = 4'b1111;
+      _last_dwbe_min             = 4'b1111;
+      _len_min                   = 2;
+    }
+
+    32'd16    : {
+      _first_dwbe_min            = 4'b1111;
+      _last_dwbe_min             = 4'b1111;
+      _len_min                   = 4;
+    }
+
+    default  :
+      error ("\n N2fcPioMRdStr::SetupParms ERROR Illegal Size = %0d\n", length);
+  }
+  
+  _first_dwbe_max            = _first_dwbe_min;
+  _last_dwbe_max             = _last_dwbe_min;
+  _len_max                   = _len_min;
+
+  printf ("UDEBUG :N2fcPioMRdStr _first_dwbe = %0h _last_dwbe = %0h _len = %0d\n\t_addr_msb_min %h _addr_lsb_min %h addr %h base %h offset %h\n", _first_dwbe_max, _last_dwbe_max, _len_max, _addr_msb_min, _addr_lsb_min, addr, base, offset );  
+}
+
+
+
+task N2fcPioMRdStr::SetCplHdr () {
+  //printf ("UDEBUG : N2fcPioMRdStr::SetCplHdr Got a Req Tag of %0h\n", this._env.ReceivedReqTag);
+  cplHdr[PEC_PCI__CPL_TAG] = this._env.ReceivedReqTag;
+}
+

@@ -1,0 +1,108 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_txtoken.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "pcg_token.vrh"
+#include "niu_errclass.vrh"
+
+class CTxToken { // This should be extended from the main token ..
+   integer id;
+   integer dma_num;
+   integer port_num;
+   integer pkt_length;
+   integer valid;
+   integer err_pkt;
+   integer port_data_valid;
+   bit [63:0] xlate_gather_address[15];
+   integer gather_pkt_length[15];
+   integer NoofGathers;
+   integer current_deficit;
+   integer CannotTouch;
+   CpgToken pgToken;
+   CNiuErrors error_info;
+
+
+   bit [63:0] descriptor_address;
+   bit [63:0] xlate_desc_addr;
+   bit [63:0] last_descriptor_address;
+   bit [63:0] packet_start_address;
+   bit [63:0] xlate_mb_addr;
+   integer call_back_set;
+    integer CallBackPending;	
+
+  // Rx Loop back related variables
+  integer loop_back_rx_lastpacket;
+  integer loop_back_rxdma_num;
+
+   task new(integer i = -1) {
+	 id = i;
+	 valid = 0;
+	 call_back_set = 0;
+	 CannotTouch = 0;
+	 CallBackPending = 0;
+	 NoofGathers = 0;
+         err_pkt = 0;
+	 port_data_valid = 0;
+         pgToken = new(id);
+	 error_info = new();
+   }
+
+   task print() {
+    printf(" TOKEN DEBUG id - %d descriptor_addr = %x packet_start_addr = %x \n",id,descriptor_address,packet_start_address);
+   }
+
+   task update_exp_err() {
+   pgToken.exp_err = err_pkt;
+   printf("Niu_txtoken: value of err_bit %d\n",pgToken.exp_err);
+   }
+}
+
+MakeVeraList(CTxToken) // list of tokens for DRR
+
+// Used for TxDRR Sync Cup
+
+class CTxDrrTr {
+         integer LatchActiveSeen ;
+         integer NewKickSeen;
+         integer NewKickDMA ;
+	 bit[31:0] activeList;
+
+	task new() {
+		LatchActiveSeen = 0;
+		NewKickSeen = 0;
+		NewKickDMA = 0;
+		activeList= 0;
+	}
+
+}

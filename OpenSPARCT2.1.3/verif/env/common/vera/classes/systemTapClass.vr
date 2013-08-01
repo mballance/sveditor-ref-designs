@@ -1,0 +1,839 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: systemTapClass.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <std_display_class.vrh>
+
+// TAP specific defines
+#include <systemTapDefines.vri>
+
+// jtag interface
+#include <systemTap.if.vri>
+
+#define CLASSNAME BaseSystemTap
+
+extern hdl_task force_tlrState();
+extern hdl_task release_tlrState();
+
+class CLASSNAME {
+  protected bit [3:0]   tap_state_reg;
+  protected string      dispmonScope;
+  protected StandardDisplay dbg;
+  public    tap__port     tap_port;
+  protected bit genTlrGlitch;
+ 
+  task new (
+    StandardDisplay dbgIn
+    );
+  function string BinToChar (
+    bit inbit
+    );
+  function string cnv2str (
+    bit [127:0] data,
+    integer w
+    );
+  function string cnv_instr_2_text (
+    string instr
+    );
+  function string state_id_2_text (
+    bit [3:0] id
+    );
+  function string cnv_domain_2_string (
+    bit [2:0] domain
+    );
+  function bit [3:0] advance_tap_state_reg (
+    bit tms
+    );
+  function bit [15:0] ieeeTap (
+    bit [3:0] current_state
+    );
+  task TapDrive_test_mode (
+    bit test_mode
+    );
+  task TapDrive_trst_n (
+    bit trst_n
+    );
+  task TapDrive_tms (
+    bit tms
+    );
+  task TapDrive_tdi (
+    bit tdi
+    );
+  task TapDriveAdvance_tms (
+    bit tms
+    );
+  task TapResetType1 (
+    );
+  task TapResetType2 (
+    );
+  task check_tck_state (
+    );
+  task TapGoto (
+    bit [3:0] next_state
+    );
+  function bit TapNext (
+    bit [3:0] advance,
+    bit tdi
+    );
+  task TapCaptureData (
+    );
+  function string TapIRLoad (
+    string instr,
+    integer len=8,
+    bit check=1
+    );
+  function bit TapShiftDR_tdi_advance (
+    bit tdi
+    );
+  function string TapDRLoad (
+    string TapIn
+    );
+  function string TapDRGet (
+    integer w
+    );
+  function integer TapWait4DataRdy (
+    integer time_out_limit
+    );
+  function integer TapWait4L2DataRdy (
+    integer time_out_limit
+    );
+  function integer loadUndef (
+    string aUndef
+    );
+  function integer loadBypass (
+    string aBypass
+    );
+  function integer loadIdcode (
+    string aIdcode
+    );
+  function integer loadExtest (
+    string aExtest
+    );
+  function integer checkIdcode (
+    );
+  task Delay (
+    integer count
+    );
+  task toggleDutTck (
+    );
+  task posedge2Dut (
+    );
+  task negedge2Dut (
+    );
+
+  task waitVeraRefTapStateRegChange (   // wait for the variable tap_state_reg changed
+    );
+  function bit [3:0] getVeraRefTapStateReg () { getVeraRefTapStateReg = tap_state_reg; }
+  task enableTlrStateGlitch(
+  );
+  task disableTlrStateGlitch(
+  );
+}
+
+task CLASSNAME::new(StandardDisplay dbgIn) {
+  dispmonScope = "SystemTap";
+  tap_port = tap_bind;  
+  dbg = dbgIn;
+  dbg.dispmon(dispmonScope, MON_INFO, "$Id: systemTapClass.vr,v 1.1.1.1 2007/02/13 22:21:19 drp Exp $");
+
+  tap_state_reg            = 4'bx;
+  tap_port.$test_mode      = 1'b0 soft async; // JTAG debug mode unless told to goto manufacturing test
+  tap_port.$trst_n         = 1'bx soft async;
+  tap_port.$tdi            = 1'bx soft async;
+  tap_port.$tck2dut        = 1'b0 soft async;
+  tap_port.$tms            = 1'b1 soft async;
+  dbg.dispmon(dispmonScope, MON_INFO, "WARNING: systemTapClass.vr will not reset the TAP. runRstSequence method of sys_reset.vr class needs to be called to properly reset N2 as per PRM spec");
+  if (!get_plus_arg(CHECK, "noJtagTapReset")) {
+    dbg.dispmon(dispmonScope, MON_INFO, "WARNING: systemTapClass.vr : skip calling TapResetType1() to reset TAP");
+    // Drive TRST_L 0
+    // TRST_L will be de-asserted by sys_reset.vr reset sequence task
+    // TapDrive_trst_n(1'b0);
+  }
+  if (get_plus_arg(CHECK, "disableTlrGlitch")) {
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("Monitoring for glitch-generating transitions on jtag tap_state") );
+    genTlrGlitch = 1'b0;
+  }
+  else {
+    genTlrGlitch = 1'b1;
+  }
+}
+
+function string CLASSNAME::BinToChar(bit inbit) {
+  if(inbit === 1'b1) BinToChar = "1";
+  if(inbit === 1'b0) BinToChar = "0";
+  if(inbit === 1'bx) BinToChar = "x";
+  if(inbit === 1'bz) BinToChar = "z";
+}
+
+//
+//// Should we improve this? This must be slow esp. on long chains -csr
+//// These should use string function...
+function string CLASSNAME::cnv2str(bit [127:0] data, integer w) {
+  integer i; 
+  string  s = "";
+  
+  for ( i=0; i<w; i++ ){ 
+    if (data[i] == 0) 
+      sprintf (s,  "%s%s", "0", s); 
+    else if (data[i] == 1) 
+      sprintf (s,  "%s%s", "1", s); 
+    else 
+      sprintf (s, "%s%s",  "x", s); 
+  }      
+  cnv2str = s; 
+}
+
+function string CLASSNAME::cnv_instr_2_text(string instr) {
+  case (instr) {
+
+    // JTAG Public
+    TAP_BYPASS_INST : cnv_instr_2_text = "TAP_BYPASS_INST";
+    TAP_EXTEST_INST : cnv_instr_2_text = "TAP_EXTEST_INST";
+    TAP_IDCODE_INST : cnv_instr_2_text = "TAP_IDCODE_INST";
+    TAP_SAMPLE_INST : cnv_instr_2_text = "TAP_SAMPLE_INST";
+    TAP_HIGHZ_INST  : cnv_instr_2_text = "TAP_HIGHZ_INST";
+    TAP_CLAMP_INST  : cnv_instr_2_text = "TAP_CLAMP_INST";
+
+    // JTAG Private UCB
+    TAP_CREG_ADDR    : cnv_instr_2_text = "TAP_CREG_ADDR";
+    TAP_CREG_WDATA   : cnv_instr_2_text = "TAP_CREG_WDATA";
+    TAP_CREG_RDATA   : cnv_instr_2_text = "TAP_CREG_RDATA";
+    TAP_CREG_SCRATCH : cnv_instr_2_text = "TAP_CREG_SCRATCH";
+    TAP_NCU_WRITE    : cnv_instr_2_text = "TAP_NCU_WRITE";
+    TAP_NCU_READ     : cnv_instr_2_text = "TAP_NCU_READ";
+    TAP_NCU_WADDR    : cnv_instr_2_text = "TAP_NCU_WADDR";
+    TAP_NCU_WDATA    : cnv_instr_2_text = "TAP_NCU_WDATA";
+    TAP_NCU_RADDR    : cnv_instr_2_text = "TAP_NCU_RADDR";
+
+    // JTAG Private L2 access
+    TAP_L2_ADDR      : cnv_instr_2_text = "TAP_L2_ADDR";
+    TAP_L2_WRDATA    : cnv_instr_2_text = "TAP_L2_WRDATA";
+    TAP_L2_WR        : cnv_instr_2_text = "TAP_L2_WR";
+    TAP_L2_RD        : cnv_instr_2_text = "TAP_L2_RD";
+
+    // JTAG Private MBIST
+    TAP_MBIST_BYPASS  : cnv_instr_2_text = "TAP_MBIST_BYPASS";
+    TAP_MBIST_MODE    : cnv_instr_2_text = "TAP_MBIST_MODE";
+    TAP_MBIST_START   : cnv_instr_2_text = "TAP_MBIST_START";      
+    TAP_MBIST_RESULT  : cnv_instr_2_text = "TAP_MBIST_RESULT";      
+    TAP_MBIST_DIAG    : cnv_instr_2_text = "TAP_MBIST_DIAG";      
+    TAP_MBIST_GETDONE : cnv_instr_2_text = "TAP_MBIST_GETDONE";      
+    TAP_MBIST_GETFAIL : cnv_instr_2_text = "TAP_MBIST_GETFAIL";      
+    TAP_MBIST_ABORT   : cnv_instr_2_text = "TAP_MBIST_ABORT";      
+    
+    // JTAG Private Shadow SCAN
+    TAP_SPCTHR0_SHSCAN : cnv_instr_2_text = "TAP_SPCTHR0_SHSCAN";
+    TAP_SPCTHR1_SHSCAN : cnv_instr_2_text = "TAP_SPCTHR1_SHSCAN";
+    TAP_SPCTHR2_SHSCAN : cnv_instr_2_text = "TAP_SPCTHR2_SHSCAN";
+    TAP_SPCTHR3_SHSCAN : cnv_instr_2_text = "TAP_SPCTHR3_SHSCAN";
+    TAP_SPCTHR4_SHSCAN : cnv_instr_2_text = "TAP_SPCTHR4_SHSCAN";
+    TAP_SPCTHR5_SHSCAN : cnv_instr_2_text = "TAP_SPCTHR5_SHSCAN";
+    TAP_SPCTHR6_SHSCAN : cnv_instr_2_text = "TAP_SPCTHR6_SHSCAN";
+    TAP_SPCTHR7_SHSCAN : cnv_instr_2_text = "TAP_SPCTHR7_SHSCAN";
+
+    // JTAG Private Clock Stop
+    TAP_CLOCK_SSTOP     : cnv_instr_2_text = "TAP_CLOCK_SSTOP";
+    TAP_CLOCK_HSTOP     : cnv_instr_2_text = "TAP_CLOCK_HSTOP";
+    TAP_CLOCK_START     : cnv_instr_2_text = "TAP_CLOCK_START";
+    TAP_CLOCK_DOMAIN    : cnv_instr_2_text = "TAP_CLOCK_DOMAIN";
+    TAP_CLOCK_STATUS    : cnv_instr_2_text = "TAP_CLOCK_STATUS";
+    TAP_CLKSTP_DELAY    : cnv_instr_2_text = "TAP_CLKSTP_DELAY";
+    TAP_CORE_SEL        : cnv_instr_2_text = "TAP_CORE_SEL";
+    TAP_DE_COUNT        : cnv_instr_2_text = "TAP_DE_COUNT";
+    TAP_CYCLE_COUNT     : cnv_instr_2_text = "TAP_CYCLE_COUNT";
+    TAP_TCU_DCR         : cnv_instr_2_text = "TAP_TCU_DCR";
+    TAP_CORE_RUN_STATUS : cnv_instr_2_text = "TAP_CORE_RUN_STATUS";
+
+    // JTAG Private SCAN
+    TAP_SERSCAN         : cnv_instr_2_text = "TAP_SERSCAN";
+    TAP_CHAINSEL        : cnv_instr_2_text = "TAP_CHAINSEL";
+    TAP_SCAN_SERIAL     : cnv_instr_2_text = "TAP_SCAN_SERIAL";
+    TAP_SCAN_SERIAL_SEL : cnv_instr_2_text = "TAP_SCAN_SERIAL_SEL";
+
+    // JTAG Private EFUSE
+    TAP_FUSE_READ        : cnv_instr_2_text = "TAP_FUSE_READ";
+    TAP_FUSE_BYPASS_DATA : cnv_instr_2_text = "TAP_FUSE_BYPASS_DATA";
+    TAP_FUSE_BYPASS      : cnv_instr_2_text = "TAP_FUSE_BYPASS";
+    TAP_FUSE_ROW_ADDR    : cnv_instr_2_text = "TAP_FUSE_ROW_ADDR";
+    TAP_FUSE_COL_ADDR    : cnv_instr_2_text = "TAP_FUSE_COL_ADDR";
+    TAP_FUSE_READ_MODE   : cnv_instr_2_text = "TAP_FUSE_READ_MODE";
+    TAP_FUSE_DEST_SAMPLE : cnv_instr_2_text = "TAP_FUSE_DEST_SAMPLE";
+
+    default : cnv_instr_2_text = "*** UNDEFINED ***";
+  }
+}
+
+function string CLASSNAME::state_id_2_text (bit [3:0] id) {
+  case (id) {
+    TAP_RESET :	state_id_2_text = "Test-Logic-Reset";
+    TAP_CAPTURE_IR :	state_id_2_text = "Capture-IR";
+    TAP_UPDATE_IR :	state_id_2_text = "Update-IR";
+    TAP_IDLE :	state_id_2_text = "Run-Test-Idle";
+    TAP_PAUSE_IR :	state_id_2_text = "Pause-IR";
+    TAP_SHIFT_IR :	state_id_2_text = "Shift-IR";
+    TAP_EXIT1_IR :	state_id_2_text = "Exit1-IR";
+    TAP_EXIT2_IR :	state_id_2_text = "Exit2-IR";
+    TAP_SELECT_DR :	state_id_2_text = "Select-DR-Scan";
+    TAP_CAPTURE_DR :	state_id_2_text = "Capture-DR";
+    TAP_UPDATE_DR :	state_id_2_text = "Update-DR";
+    TAP_SELECT_IR :	state_id_2_text = "Select-IR-Scan";
+    TAP_PAUSE_DR :	state_id_2_text = "Pause-DR";
+    TAP_SHIFT_DR :	state_id_2_text = "Shift-DR";
+    TAP_EXIT1_DR :	state_id_2_text = "Exit1-DR";
+    TAP_EXIT2_DR :	state_id_2_text = "Exit2-DR";
+    default :		state_id_2_text = "*** Unknown ***";
+  }
+}
+
+function string CLASSNAME::cnv_domain_2_string ( bit [2:0] domain ) {
+  if (domain[0])			cnv_domain_2_string = "Application";
+  else if (domain[1:0] == 2'b00)	cnv_domain_2_string = "Multi-Step ";
+  else if (domain == 3'b010)		cnv_domain_2_string = "PLL Bypass ";
+  else if (domain == 3'b110)		cnv_domain_2_string = "Test/TCK   ";
+}
+
+//-------- Show where we are going given next TMS ----------
+function bit [3:0] CLASSNAME::advance_tap_state_reg (bit tms) {
+  case (tap_state_reg) {
+    TAP_RESET:       advance_tap_state_reg = tms ? TAP_RESET     : TAP_IDLE; 
+    TAP_CAPTURE_IR:  advance_tap_state_reg = tms ? TAP_EXIT1_IR  : TAP_SHIFT_IR; 
+    TAP_UPDATE_IR: 
+    {
+                    if (tms)  {
+                     if (genTlrGlitch) {
+                      fork
+                      {
+                        dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("Glitching tlr tap_state, tap_state: %s", state_id_2_text(tap_state_reg)) );
+                        force_tlrState();
+                      }
+                      join none
+                     }
+                     advance_tap_state_reg = TAP_SELECT_DR;
+                    }
+                    else  {
+                     advance_tap_state_reg = TAP_IDLE;
+                    }
+    }
+    TAP_IDLE:
+    {
+                    if (tms)  {
+                     if (genTlrGlitch) {
+                      fork
+                      {
+                        dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("Glitching tlr tap_state, tap_state: %s", state_id_2_text(tap_state_reg)) );
+                        force_tlrState();
+                      }
+                      join none
+                     }
+        	     advance_tap_state_reg = TAP_SELECT_DR; 
+                    }
+                    else  {
+        	     advance_tap_state_reg = TAP_IDLE; 
+                    }
+    }
+    TAP_PAUSE_IR:    advance_tap_state_reg = tms ? TAP_EXIT2_IR  : TAP_PAUSE_IR; 
+    TAP_SHIFT_IR:    advance_tap_state_reg = tms ? TAP_EXIT1_IR  : TAP_SHIFT_IR; 
+    TAP_EXIT1_IR:    advance_tap_state_reg = tms ? TAP_UPDATE_IR : TAP_PAUSE_IR; 
+    TAP_EXIT2_IR:    advance_tap_state_reg = tms ? TAP_UPDATE_IR : TAP_SHIFT_IR; 
+    TAP_SELECT_DR:   advance_tap_state_reg = tms ? TAP_SELECT_IR : TAP_CAPTURE_DR; 
+    TAP_CAPTURE_DR:  advance_tap_state_reg = tms ? TAP_EXIT1_DR  : TAP_SHIFT_DR; 
+    TAP_UPDATE_DR:   advance_tap_state_reg = tms ? TAP_SELECT_DR : TAP_IDLE; 
+    TAP_SELECT_IR:   advance_tap_state_reg = tms ? TAP_RESET     : TAP_CAPTURE_IR; 
+    TAP_PAUSE_DR:    advance_tap_state_reg = tms ? TAP_EXIT2_DR  : TAP_PAUSE_DR; 
+    TAP_SHIFT_DR:    advance_tap_state_reg = tms ? TAP_EXIT1_DR  : TAP_SHIFT_DR; 
+    TAP_EXIT1_DR:    advance_tap_state_reg = tms ? TAP_UPDATE_DR : TAP_PAUSE_DR; 
+    TAP_EXIT2_DR:    advance_tap_state_reg = tms ? TAP_UPDATE_DR : TAP_SHIFT_DR; 
+    default:
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("TAP register invalid/out of range: 4'b%4b", tap_state_reg));
+  }
+}
+
+//-------- Walk over the IEEE 1149.1.2001 state machine ----------
+function bit [15:0] CLASSNAME::ieeeTap(bit [3:0] current_state) {
+  case (current_state) {
+    //  N2: 111111
+    //  N2: 5432109876543210
+    TAP_RESET:        ieeeTap = 16'b1000000000000000; // 15
+    TAP_CAPTURE_IR:	ieeeTap = 16'b1x11101111111111; // 14
+    TAP_UPDATE_IR:	ieeeTap = 16'b11x0111111111111; // 13
+    TAP_IDLE:		ieeeTap = 16'b1110111111111111; // 12
+    TAP_PAUSE_IR:	ieeeTap = 16'b1111011111111111; // 11
+    TAP_SHIFT_IR:	ieeeTap = 16'b1111101111111111; // 10
+    TAP_EXIT1_IR:	ieeeTap = 16'b111100x011111111; // 9
+    TAP_EXIT2_IR:	ieeeTap = 16'b1111000x11111111; // 8
+    TAP_SELECT_DR:	ieeeTap = 16'b11111111x0010000; // 7
+    TAP_CAPTURE_DR:	ieeeTap = 16'b111111111x111011; // 6
+    TAP_UPDATE_DR:	ieeeTap = 16'b1110111111x11111; // 5
+    TAP_SELECT_IR:	ieeeTap = 16'b10010000111x1111; // 4
+    TAP_PAUSE_DR:	ieeeTap = 16'b1111111111110111; // 3
+    TAP_SHIFT_DR:	ieeeTap = 16'b1111111111111011; // 2
+    TAP_EXIT1_DR:	ieeeTap = 16'b11111111111100x0; // 1
+    TAP_EXIT2_DR:	ieeeTap = 16'b111111111111000x; // 0
+  }
+}
+
+task CLASSNAME::TapDrive_test_mode(bit test_mode) {
+  dbg.dispmon(dispmonScope, MON_INFO, psprintf("TAP test_mode=%0d", test_mode));
+  fork
+   {
+    tap_port.$test_mode = test_mode;
+   }
+   {
+    toggleDutTck();
+   }
+  join
+  terminate; 
+}
+
+//-------- The function should not do any @posedge ----------
+task CLASSNAME::TapDrive_trst_n(bit trst_n) {
+  dbg.dispmon(dispmonScope, MON_INFO, psprintf("TAP trst_n=%0d", trst_n));
+  // Make TRST_L asyncronous
+  delay(32'hffff & random());      // Pick a random time unit wait
+   fork
+   {
+    tap_port.$trst_n = trst_n async; // Drive the TRST_L
+   }
+  join
+  terminate; 
+  tap_state_reg = TAP_RESET;
+}
+
+//-------- The function should not do any @posedge ----------
+task CLASSNAME::TapDrive_tms(bit tms) {
+  dbg.dispmon(dispmonScope, MON_INFO, psprintf("TAP tms=%0d", tms));
+  fork
+   {
+    tap_port.$tms = tms;
+   }
+   {
+    tap_port.$tdi = 1'bx;
+   }
+   {
+    toggleDutTck();
+   }
+  join
+  terminate; 
+}
+
+task CLASSNAME::TapDriveAdvance_tms(bit tms) {
+  TapDrive_tms(tms);
+  toggleDutTck();
+  tap_state_reg = advance_tap_state_reg(tms);
+}
+
+task CLASSNAME::TapDrive_tdi(bit tdi) {
+  dbg.dispmon(dispmonScope, MON_INFO, psprintf("TAP tdi=%0d", tdi));
+  fork
+   {
+    tap_port.$tdi = tdi;
+   }
+   {
+    toggleDutTck();
+   }
+  join
+  terminate; 
+}
+
+task CLASSNAME::TapResetType1() {
+  dbg.dispmon(dispmonScope, MON_INFO, "TAP Resetting (default PLL values) ...");
+  TapDrive_trst_n(1'b0);
+  TapDrive_tms(1'b1); // Remain in test-logic-reset after trst_n deassert
+  tap_state_reg = 4'hx;
+  TapDrive_trst_n(1'b1);
+  tap_state_reg = TAP_RESET;
+}
+
+task CLASSNAME::TapResetType2() {
+  // Potential here to randomize -csr
+  // Give ourselves some arbitrary TAP state
+  tap_state_reg = TAP_PAUSE_IR;
+  TapDrive_trst_n(1'b1); // Disable the trst_n pin
+  repeat (5) TapDriveAdvance_tms(1'b1); // IEEE 1149.1.2001; 5 cycle to reset
+}  
+
+task CLASSNAME::check_tck_state() {
+  if (tap_port.$tck2dut != 1'b1) {
+    case (tap_state_reg) {
+      TAP_RESET, TAP_IDLE :
+      {       
+        dbg.dispmon(dispmonScope, MON_INFO, "Advancing tck");
+        toggleDutTck();
+      }
+      default :
+        dbg.dispmon(dispmonScope, MON_ERR, psprintf("Unable to correct tck state: 4'b%4b", tap_state_reg));
+    }
+  }
+}
+
+task CLASSNAME::TapGoto (bit [3:0] next_state) {
+  bit [15:0] datatemp;
+  bit 	  tms;
+
+  dbg.dispmon(dispmonScope, MON_INFO, psprintf("TAP CURRENT: [%s], GOTO: [%s]"
+                                               , state_id_2_text(tap_state_reg)
+                                               , state_id_2_text(next_state)));
+  if (tap_state_reg === 4'hx) dbg.dispmon(dispmonScope, MON_ERR, "Unknown TAP state!");
+
+  check_tck_state();
+  while (tap_state_reg != next_state) {
+    datatemp = ieeeTap(tap_state_reg);
+    tms      = datatemp[next_state];
+    fork
+     {
+      tap_port.$tms   = tms;
+     }
+     {
+      toggleDutTck();
+     }
+    join
+    terminate;
+    tap_state_reg   = advance_tap_state_reg(tms);
+    dbg.dispmon(dispmonScope, MON_DEBUG, psprintf("(%0d) %s", tms, state_id_2_text(tap_state_reg)));
+  }
+  case (next_state) { 
+    TAP_PAUSE_IR, TAP_PAUSE_DR :
+    {
+      dbg.dispmon(dispmonScope, MON_INFO, psprintf("RANDOM DELAY in TAP state: %s", state_id_2_text(next_state)));
+      Delay(random()%6); // stay in pause state random intervals
+    }
+    TAP_SHIFT_IR, TAP_SHIFT_DR :
+     tap_port.$tdi <= 1'b0 async;
+  }
+}
+
+function bit CLASSNAME::TapNext(bit [3:0] advance, bit tdi) {
+  bit tms;
+  bit tdo_out;
+  check_tck_state();
+
+  if (advance == TAP_NEXT_ADVANCE)
+    case (tap_state_reg) {
+      TAP_SHIFT_DR :	tms = 1'b1;
+      TAP_PAUSE_DR :	tms = 1'b1;
+      TAP_SHIFT_IR :	tms = 1'b1;
+      TAP_PAUSE_IR :	tms = 1'b1;
+      default : dbg.dispmon(dispmonScope, MON_ERR, psprintf("Doesn't know where to advance to (%s)", state_id_2_text(tap_state_reg)));
+    }
+  else
+    // remain in current state
+    case (tap_state_reg) {
+      TAP_SHIFT_DR :	tms = 1'b0;
+      TAP_PAUSE_DR :	tms = 1'b0;
+      TAP_SHIFT_IR :	tms = 1'b0;
+      TAP_PAUSE_IR :	tms = 1'b0;
+      default :
+      {
+        dbg.dispmon(dispmonScope, MON_ERR, psprintf("Cannot remain in current state (%s)", state_id_2_text(tap_state_reg)));
+      }
+    }
+  fork
+  { 
+   tap_port.$tdi = tdi;
+  }
+  {
+   tap_port.$tms = tms;
+  }
+  {
+   tdo_out = tap_port.$tdo;
+  }
+  {
+   toggleDutTck();
+  }
+  join
+  terminate; 
+  tap_state_reg  = advance_tap_state_reg(tms);
+  TapNext = tdo_out;
+}
+
+task CLASSNAME::TapCaptureData () {
+  dbg.dispmon(dispmonScope, MON_INFO, "TapCaptureData");
+  TapGoto(TAP_EXIT1_DR);
+  TapGoto(TAP_PAUSE_DR);
+  dbg.dispmon(dispmonScope, MON_INFO, "... Done TapCaptureData");
+}
+
+function string CLASSNAME::TapIRLoad(string instr, integer len=8, bit check=1) {
+  integer i;
+  integer remain;
+  string TapOut          = "";
+  bit [1:0] lsbMandatory = 2'b01;
+  bit [127:0] b;
+  bit tdo_out;
+ 
+  if (len != 8) { 
+   len = instr.len();
+  }
+  b = instr.atobin();
+  dbg.dispmon(dispmonScope, MON_INFO, psprintf("8'b%8b (%s) ==> IR", b, cnv_instr_2_text(instr)));    
+
+  remain = random()%len;
+
+  if (! get_plus_arg(CHECK, "skip_tap_random_pause")) {
+    if (remain) {
+      TapGoto(TAP_PAUSE_IR);
+    }
+  }
+
+  if (tap_state_reg != TAP_SHIFT_IR) TapGoto(TAP_SHIFT_IR);
+  for (i=0; i<len; i++) {
+    tdo_out = TapNext((i == len-1) ? TAP_NEXT_ADVANCE : TAP_NEXT_REMAIN, b[i]);
+    sprintf(TapOut, "%s%s", BinToChar(tdo_out), TapOut);
+  }
+  tap_port.$tdi <= 1'bx;
+  TapGoto(TAP_PAUSE_IR);
+
+  if (check) {
+    // Check that the LSB after the IR capture equals the mandatory 2'b01 -csr
+    b = TapOut.atobin();
+    dbg.dispmon(dispmonScope, MON_INFO, psprintf("IR ==> 'b%0b", b));    
+    if (b[1:0] != lsbMandatory) {
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("LSB of scanned IR ('b%0b) does not match mandatory 2'b01", b));    
+    }
+  }
+  TapIRLoad = TapOut;
+}
+
+function bit CLASSNAME::TapShiftDR_tdi_advance(bit tdi) {
+  bit tdo_out;
+
+  dbg.dispmon(dispmonScope, MON_INFO, psprintf("Shifting TDI: %0b", tdi));
+  if (tap_state_reg != TAP_SHIFT_DR) TapGoto(TAP_SHIFT_DR);
+  tdo_out = TapNext(TAP_NEXT_ADVANCE, tdi);
+  TapShiftDR_tdi_advance = tdo_out;
+}
+
+function string CLASSNAME::TapDRLoad(string TapIn) {
+  integer i, len, index, from, to, numDiv, remain;
+  string outbit, tmpStr;
+  string tdo_data = "";
+  bit tdo_out;
+  bit [127:0] b;
+  
+  len = TapIn.len();
+  numDiv = len/128;
+  remain = len%128;
+  dbg.dispmon(dispmonScope, MON_INFO, psprintf("'b%0b ==> DR", TapIn));
+
+  if (! get_plus_arg(CHECK, "skip_tap_random_pause")) {
+    if (random()%len) {
+      TapGoto(TAP_PAUSE_DR);
+    }
+  }
+
+  if (tap_state_reg != TAP_SHIFT_DR) TapGoto(TAP_SHIFT_DR);
+  if (numDiv != 0) {
+    for(index=0; index<numDiv; index++) {
+      // TDO - TDI order last bit shifted-in first (TapIn[len])
+      to = len-((index*128)+1);
+      from = to-127;
+      tmpStr = TapIn.substr(from, to);
+      b = tmpStr.atobin();
+      if (tap_state_reg != TAP_SHIFT_DR) TapGoto(TAP_SHIFT_DR);
+      for(i=0; i<128; i++) {
+        tdo_out = TapNext((i == 127) ? TAP_NEXT_ADVANCE : TAP_NEXT_REMAIN, b[i]);
+        sprintf(tdo_data ,"%s%s", BinToChar(tdo_out), tdo_data);
+      }
+      tap_port.$tdi <= 1'bx;
+      TapGoto(TAP_PAUSE_DR);
+    }
+  }
+  if (remain != 0) {
+    if (tap_state_reg != TAP_SHIFT_DR) TapGoto(TAP_SHIFT_DR);
+    // TDO - TDI order last bit shifted-in first (TapIn[len])
+    from = 0;
+    to = remain -1;
+    tmpStr = TapIn.substr(from, to);
+    b = tmpStr.atobin();
+    for(i=0; i<remain; i++) {
+      tdo_out = TapNext((i == remain-1) ? TAP_NEXT_ADVANCE : TAP_NEXT_REMAIN, b[i]);
+      sprintf(tdo_data ,"%s%s", BinToChar(tdo_out), tdo_data);
+    }
+    tap_port.$tdi <= 1'bx;
+    TapGoto(TAP_PAUSE_DR);
+  }
+  dbg.dispmon(dispmonScope, MON_INFO, psprintf("DR ==> 'b%s", tdo_data));    
+  TapDRLoad = tdo_data;
+}
+
+function string CLASSNAME::TapDRGet(integer w) {
+  integer i;
+  string get_data = "";
+  bit tdo_out;
+
+  dbg.dispmon(dispmonScope, MON_INFO, psprintf("TapDRGet (w=%0d)", w));
+
+  if (tap_state_reg != TAP_SHIFT_DR) TapGoto(TAP_SHIFT_DR);
+  for (i=0; i<w; i++) {
+    tdo_out = TapNext((i == w-1) ? TAP_NEXT_ADVANCE : TAP_NEXT_REMAIN, 0);
+    sprintf(get_data, "%s%s", BinToChar(tdo_out), get_data);
+  }
+  tap_port.$tdi <= 1'bx;
+  TapGoto(TAP_PAUSE_DR);
+
+  TapDRGet = get_data;
+}
+
+//-------- Wait for an NCU read return --------------
+// System controller gives read error if timeout occurs
+function integer CLASSNAME::TapWait4DataRdy(integer time_out_limit) {
+  integer i;
+  bit     tdo_out;
+
+  dbg.dispmon(dispmonScope, MON_INFO, psprintf("TAP UCB wait (TCK timeout: %0d cycles)", time_out_limit));
+  fork
+   tdo_out = tap_port.$tdo;
+   toggleDutTck();
+  join
+  terminate; 
+  // Wait for the so-called 'sentinel' bit 65; TDO will remain 1'b0 until the read is available
+  // at which time the TDO is set to 1'b1
+  for (i=0; i < time_out_limit && tdo_out !== 1'b1; i++) {
+    fork
+     tdo_out = tap_port.$tdo;
+     toggleDutTck(); // Continue scanning the TDO until it goes high
+    join
+    terminate; 
+  }
+  TapWait4DataRdy = (i >= time_out_limit);
+}
+
+//-------- Wait for L2 read return --------------
+// System controller gives read error if timeout occurs
+function integer CLASSNAME::TapWait4L2DataRdy(integer time_out_limit) {
+  integer i;
+  bit     tdo_out;
+
+  dbg.dispmon(dispmonScope, MON_INFO, psprintf("TAP L2 wait (TCK timeout: %0d cycles)", time_out_limit));
+  fork
+   tdo_out = tap_port.$tdo;
+   toggleDutTck();
+  join
+  terminate; 
+  // Wait for the so-called 'sentinel' bit 65; TDO will remain 1'b0 until the read is available
+  // at which time the TDO is set to 1'b1
+  for (i=0; i < time_out_limit && tdo_out !== 1'b1; i++) {
+    fork
+     tdo_out = tap_port.$tdo;
+     toggleDutTck(); // Continue scanning the TDO until it goes high
+    join
+    terminate; 
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_SHIFT_DR);
+  }
+  TapWait4L2DataRdy = (i >= time_out_limit);
+}
+
+//-------------- JTAG Public ----------------
+function integer CLASSNAME::loadUndef(string aUndef) {
+  //          MSB 5432109876543210 LSB
+  string TapIn = "1100001110001100"; // Choose an asymetric pattern
+  string TapOut;
+  bit [127:0] TapInB  = TapIn.atobin();
+  bit [127:0] TapOutB;
+  loadUndef = 0;
+
+  TapOut = TapIRLoad(aUndef);
+  TapOut = TapDRLoad(TapIn);
+  TapOutB = TapOut.atobin();
+  if (TapOutB !== { TapInB[14:0], 1'b0 }) { // Bypass should always shift 1'b0 first
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("ERROR: Bypass out ('b%0b) does not match expected", TapOutB) );
+    loadUndef = 1;
+  }
+}
+
+function integer CLASSNAME::loadBypass(string aBypass) {
+  loadBypass = loadUndef(aBypass);
+}
+
+function integer CLASSNAME::loadIdcode(string aIdcode) {
+  void = TapIRLoad(aIdcode);
+  loadIdcode = checkIdcode();
+}
+
+function integer CLASSNAME::loadExtest(string aExtest) {
+  void = TapIRLoad(aExtest);
+  TapGoto(TAP_SHIFT_DR);
+  loadExtest = 0;
+}
+
+function integer CLASSNAME::checkIdcode() {
+  //          MSB 5432109876543210 LSB
+  string TapIn = "1100001110001100"; // Choose an asymetric pattern
+  string TapOut;
+  bit [127:0] TapOutB;
+  checkIdcode = 0;
+  
+  TapOut = TapDRLoad({TapIn, TapIn});
+  TapOutB = TapOut.atobin();
+  if (TapOutB !== {TAP_VERSION, TAP_PART_NUM, TAP_ID_NUM, 1'b1}) {
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("IDCODE ('b%0b) does not match expected", TapOutB) );
+    checkIdcode = 1;
+  }
+}
+
+task CLASSNAME::Delay(integer count) {
+  repeat(count) toggleDutTck();
+}
+
+task CLASSNAME::toggleDutTck() {
+  posedge2Dut();
+  negedge2Dut();
+}
+
+task CLASSNAME::posedge2Dut() {
+  @(posedge tap_port.$tck);
+   tap_port.$tck2dut = 1'b1 async;
+}
+
+task CLASSNAME::negedge2Dut() {
+  @(negedge tap_port.$tck);
+   tap_port.$tck2dut = 1'b0 async;
+}
+
+//
+// WHAT: wait for tap state reg of the Vera Reference model changed.
+//
+task CLASSNAME::waitVeraRefTapStateRegChange() {
+  wait_var(tap_state_reg);
+}
+
+task CLASSNAME::enableTlrStateGlitch() {
+  this.genTlrGlitch = 1'b1;
+}
+
+task CLASSNAME::disableTlrStateGlitch() {
+  this.genTlrGlitch = 1'b0;
+}
+

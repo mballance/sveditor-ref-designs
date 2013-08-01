@@ -1,0 +1,455 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilu_peu_cov.vconpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+connect input dmu_ilu_coverage_ifc.ilu_clk = "`TOP.cpu.dmu.iol2clk" iskew -1 
+connect input dmu_ilu_coverage_ifc.peu_clk = "`PEU.pc_clk" iskew -1 
+
+
+  connect input	      dmu_ilu_coverage_ifc.j2d_por_l        	= "`PEU.rst_por_";
+  connect input	      dmu_ilu_coverage_ifc.j2d_rst_l        	= "`PEU.rst_wmr_";
+
+  //------------------------------------------------------------------------
+  //   data path -
+  //     note: k2y_buf_addr_vld_monitor & y2k_buf_addr_vld_monitor are added 
+  //           for the use in DMU-ILU monitor only
+  //------------------------------------------------------------------------
+//  connect input			        k2y_buf_addr_vld_monitor			= "MAQ";
+  connect input [7:0]        dmu_ilu_coverage_ifc.k2y_buf_addr    	= "`ILU.k2y_buf_addr";// read pointer to IDB
+  connect input  [127:0]      dmu_ilu_coverage_ifc.y2k_buf_data    	= "`ILU.y2k_buf_data";// 16-byte data    
+  connect input  [3:0]        dmu_ilu_coverage_ifc.y2k_buf_dpar    	= "`ILU.y2k_buf_dpar";// data parity
+  connect input	y2k_buf_addr_vld_monitor			= "`ILU.y2k_buf_addr_vld_monitor";
+  connect input  [7:0]        dmu_ilu_coverage_ifc.y2k_buf_addr    	= "`ILU.y2k_buf_addr";// read address to DOU
+  connect input [127:0]      dmu_ilu_coverage_ifc.k2y_buf_data    	= "`ILU.k2y_buf_data";// payload
+  connect input [3:0]        dmu_ilu_coverage_ifc.k2y_buf_dpar    	= "`ILU.k2y_buf_dpar";// word parity for the payload
+
+  //------------------------------------------------------------------------
+  //   record interface to TMU
+  //------------------------------------------------------------------------
+  connect input              dmu_ilu_coverage_ifc.k2y_rcd_deq      	= "`ILU.k2y_rcd_deq";// ingress record fifo dequeue
+  //DMU is 116 bits wide so add 10'b0 to LSB when hooking up to DMUXtr in ilu_peu_top.vcon
+  connect input  [115:0]      dmu_ilu_coverage_ifc.y2k_rcd          	= "`ILU.y2k_rcd";// ingress PEC record
+  connect input		      dmu_ilu_coverage_ifc.y2k_rcd_enq      	= "`ILU.y2k_rcd_enq";// ingress PEC record enqueue
+  connect input [125:0]      dmu_ilu_coverage_ifc.k2y_rcd          	= "`ILU.k2y_rcd";// egress PEC rcd
+  connect input              dmu_ilu_coverage_ifc.k2y_rcd_enq      	= "`ILU.k2y_rcd_enq";// egress enqueue for PEC rcd
+  connect input		      dmu_ilu_coverage_ifc.y2k_rcd_deq      	= "`ILU.y2k_rcd_deq";// egress rcd fifo dequeue 
+  
+  //------------------------------------------------------------------------
+  //   release interface with TMU
+  //------------------------------------------------------------------------
+  connect input [8:0]        dmu_ilu_coverage_ifc.k2y_rel_rcd      	= "`ILU.k2y_rel_rcd";// ingress 1 PCIE FC data credit (16-byte data) w/ d_ptr
+  connect input              dmu_ilu_coverage_ifc.k2y_rel_enq      	= "`ILU.k2y_rel_enq";     // ingress enqueue for release record
+  connect input  [8:0]        dmu_ilu_coverage_ifc.y2k_rel_rcd      	= "`ILU.y2k_rel_rcd";// egress release rcd
+  connect input		      dmu_ilu_coverage_ifc.y2k_rel_enq      	= "`ILU.y2k_rel_enq";// egress enqueue for release rcd
+  
+  //------------------------------------------------------------------------
+  //   DOU DMA Rd Cpl Buffer status rcd interface with CLU
+  //------------------------------------------------------------------------
+  connect input [5:0]        dmu_ilu_coverage_ifc.k2y_dou_dptr     	= "`ILU.k2y_dou_dptr";
+  connect input	      dmu_ilu_coverage_ifc.k2y_dou_err      	= "`ILU.k2y_dou_err";
+  connect input	      dmu_ilu_coverage_ifc.k2y_dou_vld      	= "`ILU.k2y_dou_vld";
+
+  //------------------------------------------------------------------------
+  //   DMU misc. interface
+  //------------------------------------------------------------------------
+  connect input  [2:0] 	      dmu_ilu_coverage_ifc.y2k_mps          	= "`ILU.y2k_mps";// max. payld size to CMU
+  connect input		      dmu_ilu_coverage_ifc.y2k_int_l        	= "`ILU.y2k_int_l";// interrupt req to IMU
+  connect input		      dmu_ilu_coverage_ifc.p2d_drain             = "`ILU.p2d_drain"; // drain req to ILU 
+    	  
+  //------------------------------------------------------------------------
+  //  CSR ring to DMU
+  //------------------------------------------------------------------------
+  connect input [31:0]       dmu_ilu_coverage_ifc.k2y_csr_ring_out  	= "`ILU.k2y_csr_ring_out";
+  connect input  [31:0]       dmu_ilu_coverage_ifc.y2k_csr_ring_in   	= "`ILU.y2k_csr_ring_in";
+  
+  //------------------------------------------------------------------------
+  //  debug ports
+  //------------------------------------------------------------------------
+  connect input [5:0]        dmu_ilu_coverage_ifc.k2y_dbg_sel_a   	= "`ILU.k2y_dbg_sel_a";
+  connect input [5:0]        dmu_ilu_coverage_ifc.k2y_dbg_sel_b   	= "`ILU.k2y_dbg_sel_b";
+  connect input  [7:0]        dmu_ilu_coverage_ifc.y2k_dbg_a        	= "`ILU.y2k_dbg_a";
+  connect input  [7:0]        dmu_ilu_coverage_ifc.y2k_dbg_b        	= "`ILU.y2k_dbg_b";
+
+  //------------------------------------------------------------------------
+  // ILU to PEU interface 
+  //------------------------------------------------------------------------
+  connect input 	    dmu_ilu_coverage_ifc.p2d_ue_int	        = "`PEU.p2d_ue_int";
+  connect input 	    dmu_ilu_coverage_ifc.p2d_ce_int	        = "`PEU.p2d_ce_int";
+  connect input 	    dmu_ilu_coverage_ifc.p2d_oe_int	        = "`PEU.p2d_oe_int";
+
+
+  //Clock
+  connect input		      if_ILU_PEU_PCIE_coverage.refclk         CLOCK			= "`TOP.PCIE_Clock_250";// inputclock 250 MHz
+  // Denali Clocks
+  connect input               if_ILU_PEU_PCIE_coverage.DEN_CLK_TX       	= "`TOP.DEN_CLK_TX";
+  connect input               if_ILU_PEU_PCIE_coverage.DEN_CLK_RX       	= "`TOP.DEN_CLK_RX";
+ 
+  // Misc Port in FNXPCIEXactor
+  connect input              if_ILU_PEU_PCIE_coverage.DEN_RESET         	= "`TOP.DEN_RESET";
+  
+  //The Recieve Detect signals were used in FNX , Included here but not connected to N2
+  connect input              if_ILU_PEU_PCIE_coverage.RCV_DET_MODE      ;//1bit
+
+
+//  connect input [7:0]        if_ILU_PEU_PCIE_coverage.RCV_DET_LANES   PRZ          	= "`TOP.TX_P"; //8bit
+
+ 
+//------------------------------------------------------------------
+// peu registers coverage interface 
+//------------------------------------------------------------------
+  connect input       peu_registers_coverage_ifc.peu_clk = "`PEU.peu_ptl.l2t_clk" iskew -1     ;
+//  connect input       peu_registers_coverage_ifc.peu_reg_clk = "`PEU.pc_clk" iskew -1      ;
+  connect input  [2:0]     peu_registers_coverage_ifc.peu_debug_select_a_block   = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_dbg_sel_a.tlu_dbg_sel_a_block_hw_read[2:0]" ;    
+
+    connect input [2:0]      peu_debug_select_a_module         = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_dbg_sel_a.tlu_dbg_sel_a_module_hw_read[2:0]"; 	
+    connect input [2:0]      peu_debug_select_a_signal         = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_dbg_sel_a.tlu_dbg_sel_a_signal_hw_read[2:0]"; 	
+
+ 
+    connect input [2:0]	   peu_debug_select_b_block     = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_dbg_sel_b.tlu_dbg_sel_b_block_hw_read[2:0]"; 	
+    connect input [2:0]	   peu_debug_select_b_module    = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_dbg_sel_b.tlu_dbg_sel_b_module_hw_read[2:0]"; 	
+    connect input [2:0]    peu_debug_select_b_signal    = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_dbg_sel_b.tlu_dbg_sel_b_signal_hw_read[2:0]"; 	
+
+    // peu control register
+    connect input [7:0]    peu_control_reg_los_tim	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_ctl.tlu_ctl_l0s_tim_hw_read[7:0]";  	 			 
+    connect input 	   peu_control_reg_npwr_en	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_ctl.tlu_ctl_npwr_en_hw_read";  	 			 
+    connect input [2:0]	   peu_control_reg_cto_sel	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_ctl.tlu_ctl_cto_sel_hw_read[2:0]";  	 			 
+    connect input [15:0	]   peu_control_reg_config	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_ctl.tlu_ctl_config_hw_read[15:0]";  	 			 
+
+
+    // peu pme turn off register
+    connect input  peu_trn_off_reg_pto     =	"`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.trn_off.trn_off_pto_hw_read";  	 			 
+
+    // peu Ingress Credits Initial register
+    connect input [7:0]    peu_ici_reg_nhc	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_ici.tlu_ici_nhc_hw_read[7:0]";  	 			 
+    connect input [7:0]    peu_ici_reg_php	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_ici.tlu_ici_php_hw_read[7:0]";  	 			 
+    connect input [7:0]    peu_ici_reg_pdc	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_ici.tlu_ici_pdc_hw_read[7:0]";  	 			 
+
+    // peu performance counter select register
+    connect input [1:0]    peu_prfc_reg_sel0	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_prfc.tlu_prfc_sel0_hw_read[1:0]";  	 			 
+    connect input [7:0]    peu_prfc_reg_sel1	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_prfc.tlu_prfc_sel1_hw_read[7:0]";  	 			 
+    connect input [7:0]    peu_prfc_reg_sel2	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_prfc.tlu_prfc_sel2_hw_read[7:0]";  	 			 
+
+
+    // peu link control register
+    connect input 	   peu_link_control_reg_extended_sync	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_ctl_hw_read[7]";  	 			 
+    connect input 	   peu_link_control_reg_common_clock	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_ctl_hw_read[6]";  	 			 
+    connect input 	   peu_link_control_reg_retrain	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_ctl_hw_read[5]";  	 			 
+    connect input 	   peu_link_control_reg_disable	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_ctl_hw_read[4]";  	 			 
+    connect input 	   peu_link_control_reg_rcb	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_ctl_hw_read[3]";  	 			 
+    connect input [1:0]	   peu_link_control_reg_aspm	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_ctl_hw_read[1:0]";  	 			 
+
+    // peu link status register
+    connect input 	   peu_link_status_reg_slot_clock	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_sts_hw_read[12]";  	 			 
+    connect input 	   peu_link_status_reg_train	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_sts_hw_read[11]";  	 			 
+    connect input 	   peu_link_status_reg_error	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_sts_hw_read[10]";  	 			 
+    connect input [5:0]	   peu_link_status_reg_width	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_sts_hw_read[9:4]";  	 			 
+    connect input [3:0]	   peu_link_status_reg_speed	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_sts_hw_read[3:0]";  	 			 
+
+
+    // peu slot capability register ?????????? to add 
+    //    connect input 	   peu_link_status_reg_slot_clock	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_sts_hw_read[12]";  	 			 
+
+    // peu dlpl dll control register 
+    connect input [7:0]	   peu_dlpl_dll_control_reg_ack_freq	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_cfg.link_cfg_ack_freq_hw_read[15:8]";  	 			 
+    connect input  	   peu_dlpl_dll_control_reg_flow_disable	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_cfg.link_cfg_csrbus_read_data[4]";  	 			 
+    connect input 	   peu_dlpl_dll_control_reg_other_message_req	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_cfg.link_cfg_other_message_request_hw_read";  	 			 
+    connect input 	   peu_dlpl_dll_control_reg_ack_nak_disable	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_cfg.link_cfg_ack_nak_disable_hw_read";  	 			 
+    connect input 	   peu_dlpl_dll_control_reg_data_link_en	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_cfg.link_cfg_data_link_en_hw_read";  	 			 
+
+    // peu dlpl macl / pcs  control register 
+    connect input [7:0]	   peu_dlpl_macl_control_reg_link_num	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_ctl.link_ctl_link_num_hw_read[7:0]";  	 			 
+    connect input [7:0]	   peu_dlpl_macl_control_reg_nfts	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_ctl.link_ctl_n_fts_hw_read[7:0]";  	 			 
+    connect input [5:0]	   peu_dlpl_macl_control_reg_link_capable	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_ctl.link_ctl_link_capable_hw_read[7:0]";  	 			 
+    connect input 	   peu_dlpl_macl_control_reg_fast_link_mode	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_ctl.link_ctl_fast_link_mode_hw_read";  	 			 
+    connect input 	   peu_dlpl_macl_control_reg_elastic_buffer_disable	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_ctl.elastic_buffer_disable_hw_read";  	 			 
+    connect input 	   peu_dlpl_macl_control_reg_scramble_disable	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_ctl.scramble_disable_hw_read";  	 			 
+    connect input 	   peu_dlpl_macl_control_reg_reset_assert	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_ctl.reset_assert_hw_read";  	 			 
+
+
+    // peu dlpl lane skew control register 
+    connect input 	   peu_dlpl_lane_skew_reg_deskew_disable	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lane_skew.lane_skew_deskew_disable_hw_read";  	 			 
+
+
+    // peu dlpl symbol number register 
+    connect input [2:0]	   peu_dlpl_sym_num_reg_skip	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.symbol_num.symbol_num_skip_symbols_hw_read[2:0]";  	 			 
+    connect input [3:0]	   peu_dlpl_sym_num_reg_ts1	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.symbol_num.symbol_num_ts1_symbols_hw_read[3:0]";  	 			 
+
+    // peu dlpl symbol timer register 
+    connect input [10:0]   peu_dlpl_sym_timer_reg_skip_interval	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.symbol_timer.symbol_timer_skip_interval_hw_read[10:0]";  	 			 
+
+    
+
+
+
+
+
+
+    // peu link bit error counter I register 
+    connect input    peu_link_bit_error_counter_I_reg_ber_en    = "`PEU.peu_ptl.ctb.tlr.csr.lnk_bit_err_cnt_1_ber_count_en_ext_read_data";
+    connect input    peu_link_bit_error_counter_I_reg_ber_clr   = "`PEU.peu_ptl.ctb.tlr.csr.lnk_bit_err_cnt_1_ber_count_clr_ext_read_data";
+
+    connect input [7:0]    peu_link_bit_error_counter_I_reg_cnt_bad_dllp	= "`PEU.peu_ptl.ctb.tlr.csr.lnk_bit_err_cnt_1_cnt_bad_dllp_ext_read_data[7:0]";  	 			 
+    connect input [7:0]    peu_link_bit_error_counter_I_reg_cnt_bad_tlp	= "`PEU.peu_ptl.ctb.tlr.csr.lnk_bit_err_cnt_1_cnt_bad_tlp_ext_read_data[7:0]";  	 			 
+    connect input [9:0]    peu_link_bit_error_counter_I_reg_cnt_pre	= "`PEU.peu_ptl.ctb.tlr.csr.lnk_bit_err_cnt_1_cnt_pre_ext_read_data[9:0]";  	 			 
+    
+    // peu link bit error counter II register 
+    connect input [63:0]   peu_link_bit_error_counter_II_reg	= "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_bit_err_cnt_2_ext_read_data[63:0]";  	 			 
+
+   
+    // peu serdes receiver lane control register 
+    connect input    peu_ser_receiver_lane_ctl0_reg_entest	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_ctl.serdes_receiver_lane_ctl_hw_read_0[0]";  	 			 
+    connect input    peu_ser_receiver_lane_ctl1_reg_entest	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_ctl.serdes_receiver_lane_ctl_hw_read_1[0]";  	 			 
+    connect input    peu_ser_receiver_lane_ctl2_reg_entest	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_ctl.serdes_receiver_lane_ctl_hw_read_2[0]";  	 			 
+    connect input    peu_ser_receiver_lane_ctl3_reg_entest	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_ctl.serdes_receiver_lane_ctl_hw_read_3[0]";  	 			 
+    connect input    peu_ser_receiver_lane_ctl4_reg_entest	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_ctl.serdes_receiver_lane_ctl_hw_read_4[0]";  	 			 
+    connect input    peu_ser_receiver_lane_ctl5_reg_entest	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_ctl.serdes_receiver_lane_ctl_hw_read_5[0]";  	 			 
+    connect input    peu_ser_receiver_lane_ctl6_reg_entest	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_ctl.serdes_receiver_lane_ctl_hw_read_6[0]";  	 			 
+    connect input    peu_ser_receiver_lane_ctl7_reg_entest	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_ctl.serdes_receiver_lane_ctl_hw_read_7[0]";  	 			 
+
+
+//     // peu serdes receiver lane status register: los 
+//     connect input    peu_ser_receiver_lane_status0_reg_los_detect	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_hw_read_0[3]";  	 			 
+//     connect input    peu_ser_receiver_lane_status1_reg_los_detect	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_hw_read_1[3]";  	 			 
+//     connect input    peu_ser_receiver_lane_status2_reg_los_detect	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_hw_read_2[3]";  	 			 
+//     connect input    peu_ser_receiver_lane_status3_reg_los_detect	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_hw_read_3[3]";  	 			 
+//     connect input    peu_ser_receiver_lane_status4_reg_los_detect	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_hw_read_4[3]";  	 			 
+//     connect input    peu_ser_receiver_lane_status5_reg_los_detect	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_hw_read_5[3]";  	 			 
+//     connect input    peu_ser_receiver_lane_status6_reg_los_detect	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_hw_read_6[3]";  	 			 
+//     connect input    peu_ser_receiver_lane_status7_reg_los_detect	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_hw_read_7[3]";  	 			 
+// 
+// 
+//     // peu serdes receiver lane status register : odd group 
+//     connect input    peu_ser_receiver_lane_status0_reg_odd_group	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_hw_read_0[2]";  	 			 
+//     connect input    peu_ser_receiver_lane_status1_reg_odd_group	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_hw_read_1[2]";  	 			 
+//     connect input    peu_ser_receiver_lane_status2_reg_odd_group	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_hw_read_2[2]";  	 			 
+//     connect input    peu_ser_receiver_lane_status3_reg_odd_group	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_hw_read_3[2]";  	 			 
+//     connect input    peu_ser_receiver_lane_status4_reg_odd_group	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_hw_read_4[2]";  	 			 
+//     connect input    peu_ser_receiver_lane_status5_reg_odd_group	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_hw_read_5[2]";  	 			 
+//     connect input    peu_ser_receiver_lane_status6_reg_odd_group	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_hw_read_6[2]";  	 			 
+//     connect input    peu_ser_receiver_lane_status7_reg_odd_group	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_hw_read_7[2]";  	 			 
+
+//     // peu serdes receiver lane status register: los 
+//     connect input    peu_ser_receiver_lane_status0_reg_los_detect	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_0[3]";  	 			 
+//     connect input    peu_ser_receiver_lane_status1_reg_los_detect	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_1[3]";  	 			 
+//     connect input    peu_ser_receiver_lane_status2_reg_los_detect	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_2[3]";  	 			 
+//     connect input    peu_ser_receiver_lane_status3_reg_los_detect	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_3[3]";  	 			 
+//     connect input    peu_ser_receiver_lane_status4_reg_los_detect	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_4[3]";  	 			 
+//     connect input    peu_ser_receiver_lane_status5_reg_los_detect	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_5[3]";  	 			 
+//     connect input    peu_ser_receiver_lane_status6_reg_los_detect	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_6[3]";  	 			 
+//     connect input    peu_ser_receiver_lane_status7_reg_los_detect	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_7[3]";  	 			 
+// 
+// 
+//     // peu serdes receiver lane status register : odd group 
+//     connect input    peu_ser_receiver_lane_status0_reg_odd_group	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_0[2]";  	 			 
+//     connect input    peu_ser_receiver_lane_status1_reg_odd_group	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_1[2]";  	 			 
+//     connect input    peu_ser_receiver_lane_status2_reg_odd_group	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_2[2]";  	 			 
+//     connect input    peu_ser_receiver_lane_status3_reg_odd_group	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_3[2]";  	 			 
+//     connect input    peu_ser_receiver_lane_status4_reg_odd_group	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_4[2]";  	 			 
+//     connect input    peu_ser_receiver_lane_status5_reg_odd_group	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_5[2]";  	 			 
+//     connect input    peu_ser_receiver_lane_status6_reg_odd_group	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_6[2]";  	 			 
+//     connect input    peu_ser_receiver_lane_status7_reg_odd_group	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_7[2]";  	 			 
+
+
+    // peu serdes transmitter lane control  register 
+    connect input    peu_ser_xmitter_ctl_lane0_reg_invert_polarity	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_0[1]";  	 			 
+    connect input    peu_ser_xmitter_ctl_lane1_reg_invert_polarity	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_1[1]";  	 			 
+    connect input    peu_ser_xmitter_ctl_lane2_reg_invert_polarity	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_2[1]";  	 			 
+    connect input    peu_ser_xmitter_ctl_lane3_reg_invert_polarity	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_3[1]";  	 			 
+    connect input    peu_ser_xmitter_ctl_lane4_reg_invert_polarity	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_4[1]";  	 			 
+    connect input    peu_ser_xmitter_ctl_lane5_reg_invert_polarity	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_5[1]";  	 			 
+    connect input    peu_ser_xmitter_ctl_lane6_reg_invert_polarity	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_6[1]";  	 			 
+    connect input    peu_ser_xmitter_ctl_lane7_reg_invert_polarity	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_7[1]";  	 			 
+
+
+    // peu serdes transmitter lane control  register 
+    connect input    peu_ser_xmitter_ctl_lane0_reg_entest	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_0[0]";  	 			 
+    connect input    peu_ser_xmitter_ctl_lane1_reg_entest	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_1[0]";  	 			 
+    connect input    peu_ser_xmitter_ctl_lane2_reg_entest	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_2[0]";  	 			 
+    connect input    peu_ser_xmitter_ctl_lane3_reg_entest	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_3[0]";  	 			 
+    connect input    peu_ser_xmitter_ctl_lane4_reg_entest	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_4[0]";  	 			 
+    connect input    peu_ser_xmitter_ctl_lane5_reg_entest	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_5[0]";  	 			 
+    connect input    peu_ser_xmitter_ctl_lane6_reg_entest	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_6[0]";  	 			 
+    connect input    peu_ser_xmitter_ctl_lane7_reg_entest	  = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_7[0]";  	 			 
+
+
+   //-----------------------
+   // register connections for above registers but with full register range 
+   //-----------------------
+
+   //  debug_select_a
+    connect input [8:0]      peu_debug_select_a_reg        = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_dbg_sel_a.tlu_dbg_sel_a_csrbus_read_data[8:0]"; 	
+ 
+    connect input [8:0]	   peu_debug_select_b_reg    = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_dbg_sel_b.tlu_dbg_sel_b_csrbus_read_data[8:0]"; 	
+
+    // peu control register
+    connect input [31:0]    peu_control_reg	 = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_ctl.tlu_ctl_csrbus_read_data[31:0]";  	 			 
+
+    // peu Ingress Credits Initial register
+    connect input [59:0]    peu_ici_reg	 = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_ici.tlu_ici_csrbus_read_data[59:0]";  	 			 
+
+    // peu performance counter select register
+    connect input [17:0]    peu_prfc_reg	 = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_prfc.tlu_prfc_csrbus_read_data[17:0]";  	 			 
+
+
+    // peu link control register
+    connect input [63:0]   peu_link_control_reg	 = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_ctl_csrbus_read_data[63:0]";  	 			 
+
+    // peu link status register
+    connect input [63:0]  peu_link_status_reg	 = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_sts.lnk_sts_csrbus_read_data[63:0]";  	 			 
+
+
+    // peu slot capability register ?????????? to add 
+    //    connect input 	   peu_link_status_reg_slot_clock	 = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_sts_csrbus_read_data[63:0]";  	 			 
+
+    // peu dlpl dll control register 
+    connect input [63:0]   peu_dlpl_dll_control_reg	 = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_cfg.link_cfg_csrbus_read_data[63:0]";  	 			 
+
+    // peu dlpl macl / pcs  control register 
+    connect input [63:0]   peu_dlpl_macl_control_reg	 = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_ctl.link_ctl_csrbus_read_data[63:0]";  	 			 
+
+
+    // peu dlpl lane skew control register 
+    connect input [63:0]   peu_dlpl_lane_skew_reg	 = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lane_skew.lane_skew_csrbus_read_data";  	 			 
+
+
+    // peu dlpl symbol number register 
+    connect input [63:0]	   peu_dlpl_sym_num_reg	 = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.symbol_num.symbol_num_csrbus_read_data[63:0]";  	 			 
+
+    // peu dlpl symbol timer register 
+    connect input [63:0]   peu_dlpl_sym_timer_reg	 = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.symbol_timer.symbol_timer_csrbus_read_data[63:0]";  	 			 
+
+    
+    connect input [63:0]	   peu_dlpl_core_status_reg 	 = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.core_status.core_status_csrbus_read_data[63:0]";  	 			 
+
+   
+    // peu serdes receiver lane control register 
+    connect input [63:0]    peu_ser_receiver_lane_ctl0_reg	 = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_ctl.serdes_receiver_lane_ctl_csrbus_read_data_0[63:0]";  	 			 
+
+
+    // peu serdes receiver lane status register: los 
+    connect input [63:0]   peu_ser_receiver_lane_status0_reg	 = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_0[63:0]";  	 			 
+
+
+    // peu serdes transmitter lane control  register 
+    connect input [63:0]   peu_ser_xmitter_ctl_lane0_reg	 = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_csrbus_read_data_0[63:0]";  	 			 
+
+
+
+ //------------------------------------------------------------------------
+ // peu ras
+ //------------------------------------------------------------------------
+
+  // peu_oe_log_en register
+    connect input peu_oe_log_w_ld = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.oe_log.oe_log_w_ld";
+    connect input [23:0] peu_oe_log_en_reg = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.oe_log.oe_log_en_hw_read[23:0]";
+
+
+  // peu_oe_int_en register
+    connect input peu_oe_int_en_w_ld = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.oe_int_en.oe_int_en_w_ld"; 
+    connect input [63:0] peu_oe_int_en_reg = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.oe_int_en.oe_int_en_hw_read[63:0]"; 
+
+  // peu_oe_err register 
+    connect input peu_oe_err_w_ld  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.oe_err.oe_err_w_ld"; 
+    connect input peu_oe_err_rw1c  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.oe_err.rw1c_alias"; 
+    connect input peu_oe_err_rw1s  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.oe_err.rw1s_alias"; 
+    connect input [63:0] peu_oe_err_hw_set  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.oe_err.oe_err_hw_set[63:0]"; 
+    connect input [63:0] peu_oe_err_csrbus_wr_data  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.oe_err.csrbus_wr_data[63:0]"; 
+    connect input [63:0] peu_oe_err_csrbus_read_data  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.oe_err.oe_err_csrbus_read_data[63:0]"; 
+
+
+  // peu_ue_log_en register
+    connect input peu_ue_log_w_ld = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_log.ue_log_w_ld";
+    connect input [23:0] peu_ue_log_en_reg = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_log.ue_log_en_hw_read[23:0]";
+
+
+  // peu_ue_int_en register
+    connect input peu_ue_int_en_w_ld = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_int_en.ue_int_en_w_ld"; 
+    connect input [63:0] peu_ue_int_en_reg = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_int_en.ue_int_en_hw_read[63:0]"; 
+
+  // peu_ue_err register
+    connect input peu_ue_err_w_ld  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_err.ue_err_w_ld"; 
+    connect input peu_ue_err_rw1c  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_err.rw1c_alias"; 
+    connect input peu_ue_err_rw1s  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_err.rw1s_alias"; 
+    connect input [63:0] peu_ue_err_hw_set  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_err.ue_err_hw_set[63:0]"; 
+    connect input [63:0] peu_ue_err_csrbus_wr_data  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_err.csrbus_wr_data[63:0]";
+    connect input [63:0] peu_ue_err_csrbus_read_data  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_err.ue_err_csrbus_read_data[63:0]";
+
+
+  // peu_ce_log_en register
+    connect input peu_ce_log_w_ld = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_log.ce_log_w_ld";
+    connect input [23:0] peu_ce_log_en_reg = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_log.ce_log_en_hw_read[23:0]";
+
+
+  // peu_ce_int_en register
+    connect input peu_ce_int_en_w_ld = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_int_en.ce_int_en_w_ld"; 
+    connect input [63:0] peu_ce_int_en_reg = "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_int_en.ce_int_en_hw_read[63:0]"; 
+
+  // peu_ce_err register
+    connect input peu_ce_err_w_ld  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_err.ce_err_w_ld"; 
+    connect input peu_ce_err_rw1c  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_err.rw1c_alias"; 
+    connect input peu_ce_err_rw1s  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_err.rw1s_alias"; 
+    connect input [63:0] peu_ce_err_hw_set  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_err.ce_err_hw_set[63:0]"; 
+    connect input [63:0] peu_ce_err_csrbus_wr_data  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_err.csrbus_wr_data[63:0]";
+    connect input [63:0] peu_ce_err_csrbus_read_data  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_err.ce_err_csrbus_read_data[63:0]";
+
+  
+  // peu_event_log_en register
+    connect input peu_event_log_w_ld  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.event_err_log.event_err_log_en_w_ld"; 
+    connect input [63:0] peu_event_log_en_reg  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.event_err_log.event_err_log_en_csrbus_read_data[63:0]"; 
+
+   
+  // peu_event_int_en register
+    connect input peu_event_int_en_w_ld  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.event_err_int_en.event_err_int_en_w_ld"; 
+    connect input [63:0] peu_event_int_en_reg  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.event_err_int_en.event_err_int_en_hw_read[63:0]"; 
+
+  
+  // peu_event_err status register
+    connect input peu_event_err_w_ld  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.event_err_sts_clr.event_err_sts_clr_w_ld";
+    connect input peu_event_err_rw1c  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.event_err_sts_clr.rw1c_alias";
+    connect input peu_event_err_rw1s  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.event_err_sts_clr.rw1s_alias";
+    connect input [63:0] peu_event_err_hw_set  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.event_err_sts_clr.event_err_sts_clr_hw_set[63:0]";
+    connect input [63:0] peu_event_err_csrbus_wr_data  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.event_err_sts_clr.csrbus_wr_data[63:0]";
+    connect input [63:0] peu_event_err_csrbus_read_data  =  "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.event_err_sts_clr.event_err_sts_clr_csrbus_read_data[63:0]";
+
+
+
+
+
+
+
+ } // end of interface peu_registers_coverage_ifc
+ 
+ 
+
+ 
+

@@ -1,0 +1,118 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ccu_clk_packet.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+// type of operational mode
+enum ccu_operation_mode_e { CCU_FUNC_MODE, CCU_ATPG_MODE, CCU_DTM_MODE, CCU_BYPASS_MODE, CCU_PLLTEST_MODE,
+   CCU_EXTCLK_MODE, CCU_CHAR_MODE, CCU_ILLEGAL_MODE} ;
+
+class CCU_clk_packet {
+  string name;
+  ccu_operation_mode_e mode;
+  //----CCU CSRs----
+  bit [63:0] pll_ctl;   // effective value of PLL_CTL
+  //--- pll input----
+  integer sys_clk_per;  // sys clk period
+  //----effective multipliers and ratios---
+  integer cmp2io_ratio;   // cmp-to-io   clk ratio
+  integer cmp2io2x_ratio; // cmp-to-io2x clk ratio
+  integer cmp_mult;      // integral part. ie. cmp_clk_freq = sys_clk_freq * cmp_mult
+  bit     cmp_mult_frac; // fractional part. 0 means 0.0 and 1 means 0.5
+  integer dr_mult;       // integral part. ie. dr_clk_freq  = sys_clk_freq * dr_mult;
+  bit     dr_mult_frac;  // fractional part. 0: means 0.0, 1 means 0.5
+  //---user-defined limits/deviations---
+  integer cmp_per_dev, cmp_pw_dev; // deviation of cmp clk period and duty cycle (in %)
+  integer dr_per_dev, dr_pw_dev;   // deviation of dr clk period and duty cycle (in %)
+  integer iox_per_dev, iox_pw_dev; // deviation of IO and io2X clk period and duty cycle (in %)
+  //---expected values of clock periods---
+  integer cmp_clk_per_nom,  cmp_clk_per_min,  cmp_clk_per_max; // nominal, min, max
+  integer dr_clk_per_nom,   dr_clk_per_min,   dr_clk_per_max;
+  integer io_out_per_nom,   io_out_per_min,   io_out_per_max;
+  integer io2x_out_per_nom, io2x_out_per_min, io2x_out_per_max;
+  //--- dr_sync pulse locations at cluster header outputs ---
+  integer dr_sync_loc[4];  // 4 DR clks in one PLL ref clk cycle
+ 
+  //---public tasks---
+  task new(string name="CCU_clk_packet");
+  function string get_mode_name();
+}
+
+//#########################################################
+//#### implementations of subroutines              ########
+//#########################################################
+
+task CCU_clk_packet::new(string name="CCU_clk_packet") {
+  integer i;
+
+  this.name = name;
+  mode = CCU_ILLEGAL_MODE;
+  //---initialize to illegal values---
+  pll_ctl = 64'h0;
+  sys_clk_per = -1;
+  cmp2io_ratio = -1;
+  cmp2io2x_ratio = -1;
+  cmp_mult = -1;
+  cmp_mult_frac = 1'b0;
+  dr_mult  = -1;
+  dr_mult_frac = 1'b0;
+  cmp_per_dev = -1;
+  cmp_pw_dev = -1;
+  dr_per_dev = -1;
+  dr_pw_dev = -1;
+  iox_per_dev = -1;
+  iox_pw_dev = -1;
+  cmp_clk_per_nom = -1;  cmp_clk_per_min = -1;  cmp_clk_per_max = -1;
+  dr_clk_per_nom = -1;   dr_clk_per_min = -1;   dr_clk_per_max = -1;
+  io_out_per_nom = -1;   io_out_per_min = -1;   io_out_per_max = -1;
+  io2x_out_per_nom = -1; io2x_out_per_min = -1; io2x_out_per_max = -1;
+  for (i = 0; i < 4; i++)
+    dr_sync_loc[i] = -1;
+}
+
+// WHAT: convert "mode" from enumerated type into string
+//
+function string CCU_clk_packet::get_mode_name() {
+  case (this.mode) {
+    CCU_FUNC_MODE :    get_mode_name = "FUNC_MODE";
+    CCU_ATPG_MODE :    get_mode_name = "ATPG_MODE";
+    CCU_DTM_MODE :     get_mode_name = "DTM_MODE";
+    CCU_BYPASS_MODE :  get_mode_name = "BYPASS_MODE";
+    CCU_PLLTEST_MODE : get_mode_name = "PLLTEST_MODE";
+    CCU_EXTCLK_MODE :  get_mode_name = "EXTCLK_MODE";
+    CCU_CHAR_MODE :    get_mode_name = "CHAR_MODE";
+    CCU_ILLEGAL_MODE : get_mode_name = "ILLEGAL_MODE";
+    default:           get_mode_name = "UNKNOWN_MODE";
+  }
+}

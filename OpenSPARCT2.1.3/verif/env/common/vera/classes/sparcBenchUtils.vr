@@ -1,0 +1,853 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: sparcBenchUtils.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <std_display_defines.vri>
+#include <std_display_class.vrh>
+#include <plusArgMacros.vri>
+#include <defines.vri>
+
+#include <cmp.vri>
+#include <globals.vri>
+
+#ifndef FC_BENCH
+#ifndef FC_SCAN_BENCH
+#include <verilog_tasks_ncu.vri>
+#endif
+#endif
+
+// mem slam, reg slam
+#include <verilog_tasks_misc.vri>
+   
+#include <std_display_class.vrh>
+#include <baseParamsClass.vrh>
+#include <sparcParams.vrh>
+#include <baseUtilsClass.vrh>
+#include <memArray.vrh>
+
+#ifndef CCM_BENCH
+#ifndef FC_BENCH
+#ifndef FC_SCAN_BENCH
+#include <ccx_tag_class.vrh>
+#endif
+#endif
+#endif
+
+#include <sparcBenchUtils_if.vrh>
+
+#define CLASSNAME SparcBenchUtils
+#define CLASSNAMEQ "SparcBenchUtils"
+
+class CLASSNAME extends BaseUtils {
+
+  local string className = "SparcBenchUtils";
+  local StandardDisplay dbg;
+  local reg noNCUcheck = 0;
+  local reg failNCUcheck = 0;
+  
+  // rands
+  local randc reg [5:0] startThread;
+  local randc reg [2:0] randCID;
+  local rand  integer parkWait;
+  // end rands
+
+  // constraints
+  constraint parkWait_c {
+    parkWait <= gParam.por_delay_max;
+    parkWait >= gParam.por_delay_min;
+  }
+  // end constraints
+
+  
+  task new(StandardDisplay dbgHndl, integer clockPeriod = 100);
+
+  task resetDut();
+  
+  function reg ioSpaceAccess(reg [63:0] addr, // full addr of request
+                            var reg [127:0] data, // r/w data
+                             reg read = 1,    // request is read, else write
+                             reg [7:0] size = 8'hff, // write byte mask
+                             integer thread = 99, // please provide
+                             integer myPort = 99); // optional for messaging
+
+  function reg [127:0] copyDataByte (reg [127:0] data, 
+                                     reg [7:0]   size,
+                                     reg [3:0] offset);
+  
+  function reg [63:0] evictAddr (reg [7:0] core_enable,
+                                 var reg [2:0] cidUsed,
+                                 reg [3:0] cid = 4'hf,
+                                 integer dCacheWeight = 60);
+
+  function reg [127:0] evictVector (reg [7:0] core_enable,
+                                    reg [63:0] evict_pa,
+                                    reg [2:0] cpuId,
+                                    var reg [7:0] targets);
+
+  function reg [63:0] getThreadEnables();
+  function reg [63:0] getRunStatus();
+  function reg [2:0] whichBank(reg [63:0] addr);
+}
+
+
+//----------------------------------------------------------
+// Do not call randomize() in this classes new() task.
+// The final class extention of this class must (does) do that in its new()!
+// Go ahead an assume that the first set of random numbers are available.
+task CLASSNAME::new(StandardDisplay dbgHndl, integer clockPeriod = 100) {
+  super.new(dbgHndl, clockPeriod);
+  this.dbg = dbgHndl;
+  if (mChkPlusarg(noNCUcheck)) noNCUcheck = 1;
+  if (mChkPlusarg(failNCUcheck)) failNCUcheck = 1;
+}
+
+
+// call AFTER time zero
+function reg [63:0] CLASSNAME::getThreadEnables() {
+  //getThreadEnables = sparcBenchUtils_if.th_check_enable; // -vcs_run_args=+thread=1
+  getThreadEnables = gParam.finishMask; // this is better
+}
+
+// call AFTER time zero. gets core_running_status.
+function reg [63:0] CLASSNAME::getRunStatus() {
+  getRunStatus = sparcBenchUtils_if.core_running_status;
+}
+
+
+// return which bank this address goes to.
+// for partial bank mode
+function reg [2:0] CLASSNAME::whichBank(reg [63:0] addr) {
+
+  case (gParam.bank_set_mask) {
+    1: whichBank = addr[6];
+    2: whichBank = {2'b01,addr[6]};
+    3: whichBank = {1'b0,addr[7:6]};
+    4: whichBank = {2'b10,addr[6]};
+    5: whichBank = {addr[7],1'b0,addr[6]};
+    6: whichBank = {addr[7],~addr[7],addr[6]};
+    8: whichBank = {2'b11,addr[6]};
+    9: whichBank = {addr[7],addr[7],addr[6]};
+    10: whichBank = {addr[7],1'b1,addr[6]};
+    12: whichBank = {1'b1,addr[7],addr[6]};
+    15: whichBank = {addr[8],addr[7],addr[6]};
+    default: error("bank_set_mask is illegal\n");
+  }
+
+}
+
+
+
+//----------------------------------------------------------
+// start threads
+//
+// rules:
+// 1 - always start with the lowest core, after that randomize core selection.
+// 2 - in a core, always start the lowest thread first.
+// 3 - after each core has had its lowest thread started, randomize the
+//     rest of the threads.
+//
+
+task CLASSNAME::resetDut () {
+
+  
+  //reg [31:0] resetThis;
+  reg [63:0] threadEnables;
+  integer core, tid, tmp;
+
+  integer lowCore; // lowest core from threadEnables
+  integer lowThread [8]; // lowest thread in each core
+  reg [63:0] doneThreads; // have been started already
+  reg [7:0] doneCores; // have been started already
+  
+  
+#ifndef FC_BENCH
+#ifndef FC_SCAN_BENCH
+  
+  for (tid=0; tid<8; tid++) lowThread[tid] = 32'hx;
+  
+  void = this.rand_mode(OFF, "startThread");
+
+  // do not unpark too early.
+  if (sparcBenchUtils_if.core_cycle_cnt < 12)
+    repeat (12 - sparcBenchUtils_if.core_cycle_cnt)
+      @(negedge sparcBenchUtils_if.clk);
+
+  // range is 28-48 (38 ideal) cycles from time zero if +forcePORstate
+  if (gParam.forcePORstate) {
+    if (sparcBenchUtils_if.core_cycle_cnt < 38)
+    repeat (38 - sparcBenchUtils_if.core_cycle_cnt)
+      @(negedge sparcBenchUtils_if.clk);
+  }
+  
+  threadEnables = sparcBenchUtils_if.th_check_enable; // -vcs_run_args=+thread=1
+  if (! threadEnables) {
+    PR_ALWAYS(className, MON_ALWAYS,
+            psprintf("Unparking threads: th_check_enable = 0, Will not unpark ANY threads!!!"));
+    return;
+  }
+  PR_ALWAYS(className, MON_ALWAYS,
+            psprintf("Unparking threads: th_check_enable = %h",threadEnables));
+
+  // find lowest core
+  for (core=0; core<8; core++) {
+    if (|threadEnables[7+(core*8):core*8]) {
+      lowCore = core;
+      break;
+    } else doneCores[core] = 1;
+  }
+  
+  // find lowest thread in each core
+  for (core=lowCore; core<8; core++) {
+    for (tid=0; tid<8; tid++) {
+      if (threadEnables[tid+(8*core)] == 1) {
+        lowThread[core] = tid;
+        break;
+      }
+    }
+  }
+
+  doneThreads = ~threadEnables; // call unused tids done for starters
+    
+  PR_ALWAYS(className, MON_ALWAYS,
+            psprintf("Unparking: low core = %0d, low threads (0-07): %1d,%1d,%1d,%1d,%1d,%1d,%1d,%1d",lowCore,lowThread[7],lowThread[6],lowThread[5],lowThread[4],lowThread[3],lowThread[2],lowThread[1],lowThread[0]));
+  PR_ALWAYS(className, MON_ALWAYS,
+            psprintf("Unparking: low core = %0d, low threads (0-63): %2d,%2d,%2d,%2d,%2d,%2d,%2d,%2d",lowCore,lowThread[7]+56,lowThread[6]+48,lowThread[5]+40,lowThread[4]+32,lowThread[3]+24,lowThread[2]+16,lowThread[1]+8,lowThread[0]));
+    
+  // POR threads in random orders after lowest core lowest tid
+  // but lowest first for each core.
+  // this is lowest first...
+  tmp = (lowCore*8)+lowThread[lowCore];
+  verilog_write_cmp_reg({ASI_CMP_CORE,ASI_CMP_CORE_RUNNING_W1S},
+                        1 << tmp, tmp);
+  
+  doneThreads[tmp] = 1; // mark it done
+  doneCores[lowCore] = &doneThreads[7+(lowCore*8):lowCore*8]; // core done?
+  
+  PR_ALWAYS(className, MON_ALWAYS,
+            psprintf("T%0d unparked (lowest tid in lowest core)\n",tmp));
+
+  // quick check
+  if (doneThreads !== 64'hffffffffffffffff) {
+
+    // now the rest
+
+    // start the lowest thread on each core (except lowest core).
+    // they could be chosen at random or sequential.
+    repeat (8) {
+      core = randCID;
+      void = this.randomize();
+      if (core == lowCore || doneCores[core]) continue;
+      if (lowThread[core] !== 32'hx) {
+        tmp = (core*8)+lowThread[core];
+        // parkWait = urandom_range(gParam.por_delay_max,gParam.por_delay_min);
+        //       PR_DEBUG (className, MON_DEBUG,
+        //                 psprintf("T%0d post unpark delay %d\n",get_cycle(),resetThis,del));
+        repeat (parkWait) @(posedge sparcBenchUtils_if.clk);
+        verilog_write_cmp_reg({ASI_CMP_CORE,ASI_CMP_CORE_RUNNING_W1S},
+                              1 << tmp, tmp);
+        PR_ALWAYS(className, MON_ALWAYS,
+                  psprintf("T%0d unparked (lowest tid in core)\n",tmp));
+        doneThreads[tmp] = 1; // mark it done
+        doneCores[core] = &doneThreads[7+(core*8):core*8]; // core done?
+      }
+    }
+    
+    // start the remaining threads at random
+    repeat (64) {
+      if (doneThreads[startThread] == 0) {
+        void = this.randomize();
+        // parkWait = urandom_range(gParam.por_delay_max,gParam.por_delay_min);
+        //       PR_DEBUG (className, MON_DEBUG,
+        //                 psprintf("T%0d post unpark delay %d\n",get_cycle(),resetThis,del));
+        repeat (parkWait) @(posedge sparcBenchUtils_if.clk);
+        
+        verilog_write_cmp_reg({ASI_CMP_CORE,ASI_CMP_CORE_RUNNING_W1S},
+                              1 << startThread,
+                              startThread);
+        PR_ALWAYS(className, MON_ALWAYS,
+                  psprintf("T%0d unparked (remaining non-lowest tids)\n",startThread));
+        doneThreads[startThread] = 1; // mark it done
+
+      }
+      void = this.rand_mode(ON, "startThread");
+      void = this.randomize();
+      void = this.rand_mode(OFF, "startThread");
+    }
+
+  }
+  
+#endif
+#endif
+}
+
+/*
+task CLASSNAME::resetDut () {
+
+  
+  reg [31:0] tid, resetThis;
+  reg [63:0] threadEnables;
+  integer lowThread, del;
+
+#ifndef FC_BENCH
+
+  void = this.rand_mode(OFF, "startThread");
+  
+  repeat (5) @(negedge sparcBenchUtils_if.clk);
+
+  threadEnables = sparcBenchUtils_if.th_check_enable; // -vcs_run_args=+thread=1
+  
+  PR_ALWAYS(className, MON_ALWAYS,
+            psprintf("Unparking threads: th_check_enable = %h",threadEnables));
+
+  // find lowest thread
+  for (tid=0; tid<=63; tid++) {
+    if (threadEnables[tid] == 1) {
+      lowThread = tid;
+      break;
+    }
+  }
+  
+  //POR threads in random orders after lowest
+  verilog_write_cmp_reg({ASI_CMP_CORE,ASI_CMP_CORE_RUNNING_W1S},
+                        1<<lowThread,
+                        lowThread);
+  PR_ALWAYS(className, MON_ALWAYS,
+            psprintf("T%0d unparked (first)\n",lowThread));
+
+  repeat (64) {
+    if (threadEnables[startThread] == 1 && startThread !== lowThread) {
+      del = urandom_range(gParam.por_delay_max,gParam.por_delay_min);
+      //       PR_DEBUG (className, MON_DEBUG,
+      //                 psprintf("T%0d post unpark delay %d\n",get_cycle(),resetThis,del));
+      repeat (del) @(posedge sparcBenchUtils_if.clk);
+      
+      verilog_write_cmp_reg({ASI_CMP_CORE,ASI_CMP_CORE_RUNNING_W1S},
+                            1<<startThread,
+                            startThread);
+      PR_ALWAYS(className, MON_ALWAYS,
+                psprintf("T%0d unparked\n",startThread));
+
+    }
+    void = this.rand_mode(ON, "startThread");
+    void = this.randomize();
+    void = this.rand_mode(OFF, "startThread");
+  }
+
+#endif
+
+}
+*/
+
+
+
+
+
+//----------------------------------------------------------
+// Is address allowed at NCU for a read or write?  Returns true if the
+// r/w was OK.  If the return is false, the response packet MUST set the
+// error indication just as a real NCU would. The caller has to do
+// this!!!  Also returns the data for the address to the caller.  Zeros
+// will be returned for addresses that have never been written (except
+// 0x82 RNG).
+//
+// Certain ASI registers (CMP) may be implemented in verilog.
+// We will detect that here and do the right thing.
+//
+// Any write to any address that isn't explicitly defined will be
+// silently dropped.  That includes reserved and not supported regions.
+// It also includes unimplemented addresses within a region.  (For
+// example, the 0x90 region is for IO mapped ASI registers, but there
+// aren't very many.  Any write to an address that isn't mapped to a
+// register will get dropped by NCU RTL, *BUT* this function allows the
+
+//
+// Real world store example:
+// * The LSU sends the NCU a store.
+// * The NCU acks the store - always.
+// * Since the store is ack'ed, software sees it as done.
+// * The NCU trys to figure out where the write should go.
+//   If it can't figure it out, it drops it.
+// * The SOC units themselves could also drop it if the NCU
+//   forwarded them a request that they don't support.
+// 
+// This function will use the following table to define it's behavior.
+// Any range identified with ERROR *must* cause a load error response packet
+// to be returned to the core. THE USER/CALLER MUST DO THIS!!! This will
+// cause a trap to be taken by the core.  In order for nas to take the
+// same trap, we need to add this case to the current interrupt sync
+// mechanism. Reads from 0x82 will return random data. Currently, only
+// 0xFF will be considered 100% read only.
+//
+// OLD Address [39:32]                                                behavior
+// OLD ---------------                                                --------
+// OLD 0x80 NCU                                                       R/W allowed
+// OLD 0x81 NIU                                                       R/W allowed
+// OLD * 0x82 RNG (Random Number Generator)                             IGNORE writes
+// OLD * 0x83 CCU                                                       R/W allowed
+// OLD 0x84 MCUs                                                      R/W allowed
+// OLD 0x85 TCU (JTAG/TAP. NCU/Core will not initiate)                ERROR on read
+// OLD * 0x86 TAP to ASI (not supported)                                ERROR on read
+// OLD * 0x87 TAP to L2 CSR (not supported)                             ERROR on read
+// OLD 0x88 DMUCSR                                                    R/W allowed
+// OLD 0x89 RST                                                       R/W allowed
+// OLD 0x8A-0x8F Reserved                                             ERROR on read
+// OLD 0x90 ASI CPU shared registers                                  R/W allowed
+// OLD 0x91-0x9F Reserved                                             ERROR on read
+// OLD 0xA0-0xBF L2 CSR (never comes to NCU)                          ERROR on read
+// OLD 0xC0-0xCF PCIE (64GB) / DMUPIO                                 R/W allowed
+// OLD 0xD0-0xFE Reserved                                             ERROR on read
+// OLD 0xFF SSI (boot ROM)                                            IGNORE writes
+//
+// Address [39:32]                                                behavior
+// ---------------                                                --------
+// 0x80 NCU                                                       R/W allowed
+// 0x81 NIU                                                       R/W allowed
+// 0x82 Reserved                                                  ERROR on read
+// 0x83 CCU (+0x30 is Random Number Generator)                    R/W allowed
+// 0x84 MCUs                                                      R/W allowed
+// 0x85 TCU (JTAG/TAP)                                            R/W allowed
+// 0x86 Debug                                                     R/W allowed
+// 0x87 Reserved                                                  ERROR on read
+// 0x88 DMU                                                       R/W allowed
+// 0x89 RST                                                       R/W allowed
+// 0x8A-0x8F Reserved                                             ERROR on read
+// 0x90 ASI CPU shared registers                                  R/W allowed
+// 0x91-0x9F Reserved                                             ERROR on read
+// 0xA0-0xBF L2 CSR (never goes to NCU)                           ERROR on read
+// 0xC0-0xCF PCIE (64GB) / DMUPIO                                 R/W allowed
+// 0xD0-0xFE Reserved                                             ERROR on read
+// 0xFF SSI (boot ROM)                                            IGNORE writes
+// 
+// To disable the CPX pkt error response and allow full R/W of ALL
+// addresses by the NCU model (except writes to 0xFF) +noNCUcheck can be
+// used.  Until Riesling/nas is updated with interrupt sync, and a
+// specific knowledge of the I/O map, +noNCUcheck could possibly be used.
+// The plus arg +noNCUcheck is normally not recommended because it
+// presents a behavior that IS NOT at all like a real N2 (so forget I
+// even mentioned it)!
+// 
+// To always fail the simulation on error ("ERROR on read" space was
+// accessed or 0xFF was written), use +failNCUcheck. This would be a good
+// way to find "bad" diags.
+// 
+//
+function reg CLASSNAME::ioSpaceAccess(reg [63:0] addr, // full addr of request
+                                      var reg [127:0] data, // r/w data
+                                      reg read = 1,    // request is read, else write
+                                      reg [7:0] size = 8'hff, // write mask, read size
+                                      integer thread = 99,
+                                      integer myPort = 99) // optional for messaging
+{
+
+  reg [63:0] tmp64;
+
+#ifndef NCURTL
+#ifndef FC_BENCH
+#ifndef FC_SCAN_BENCH
+  
+  PR_INFO ("ioaccess", MON_INFO,
+             psprintf("addr = %h data = %h R/W = %b size = %h thread = %0d myPort = %0d",
+             addr,data,read,size,thread,myPort));
+
+  ioSpaceAccess = 1; // no error
+  addr = addr & 64'hfffffffffffffff8;
+  if (read) data = 128'hdeaddeaddeaddeaddeaddeaddeaddead;
+  
+  // detect special registers implemented in verilog.
+  if (
+    (addr[IO_ASI_ADDR_NCU] == 8'h90 &&
+     (addr[IO_ASI_ADDR_REG] == ASI_CMP_CORE ||
+      addr[IO_ASI_ADDR_ADR] == ASI_WMR_VEC_MASK_ADR ||
+      addr[IO_ASI_ADDR_ADR] == ASI_L2_IDX_HASH_EN_ADR ||
+      addr[IO_ASI_ADDR_ADR] == ASI_CMP_TICK_ENABLE_ADR)) ||
+     (addr == ASI_RESET_STAT)
+     ) {
+
+    if (thread == 99) thread = addr[IO_ASI_ADDR_CT];
+    if (read == 0)
+      verilog_write_cmp_reg(addr,data[63:0],thread);
+    else
+    {
+      verilog_read_cmp_reg(addr,tmp64,thread);
+      data = {tmp64,tmp64};
+    }
+    
+    PR_INFO ("ioaccess", MON_INFO,
+               psprintf("err = %b  Special IO Register Access (i.e. CMP reg, etc)",
+               ioSpaceAccess));
+    return;
+  }
+
+
+  case (addr[IO_ASI_ADDR_NCU]) {
+    8'h80, 8'h81, 8'h83, 8'h84, 8'h85, 8'h86, 8'h88, 8'h89: {
+      // 8'h83 +0x30 is Random Number Generator
+      if (addr[39:0] == 40'h83_0000_0030) {
+        if (read) {
+          data[63:0] = {urandom(),urandom()};
+          // review getting socket errors
+          #ifndef GATESIM
+            verilog_mem_slam(addr[39:0],
+                             data[63:0],
+                             8'hff,
+                             "NCU BFM");
+          #endif
+        }
+      } else {
+      if (read) data = gMem.read128(addr,myPort, 1);
+      else gMem.writeBM(addr, data[63:0], size, myPort);
+      }
+    }
+    8'h82, 8'h87, 8'h8a, 8'h8b, 8'h8c, 8'h8d, 8'h8e, 8'h8f: { // reserved
+      ioSpaceAccess = 0;
+    }
+  } // case
+  
+  case (addr[39:36]) {
+    4'h9: {// 0x90 ASI CPU shared registers
+      if (addr[IO_ASI_ADDR_NCU] == 8'h90) { // 0x90 ASI CPU shared registers
+        // Certain ASI registers (CMP) may be implemented in verilog.
+        // The code that calls this function MUST filter those out
+        // and do the right thing. We will not attempt that here!!!
+        if (read) data = gMem.read128(addr,myPort, 1);
+        else gMem.writeBM(addr, data[63:0], size, myPort);            
+      } else {// 0x91-0x9F Reserved ERROR
+        ioSpaceAccess = 0;
+      }  
+    }
+    4'hA: {// 0xA0-0xBF L2 CSR (handled by CCX directly and does not come to NCU) ERROR
+      PR_ERROR (CLASSNAMEQ, MON_ERR, psprintf ("T%d Bench ERROR FAIL: - L2 CSR address seen at NCU, this is bad! (addr=%0h (%0h),data=%0h,mask=%0h,read=%0h",thread,addr,addr[39:32],data,size,read));
+    }
+    4'hB: {// 0xA0-0xBF L2 CSR (handled by CCX directly and does not come to NCU) ERROR
+      PR_ERROR (CLASSNAMEQ, MON_ERR, psprintf ("T%d Bench ERROR FAIL: - L2 CSR address seen at NCU, this is bad! (addr=%0h (%0h),data=%0h,mask=%0h,read=%0h",thread,addr,addr[39:32],data,size,read));
+
+    }
+    4'hC: {// 0xC0-0xCF PCIE (64GB) / DMUPIO
+      if (read) data = gMem.read128(addr,myPort, 1);
+      else gMem.writeBM(addr, data[63:0], size, myPort);  
+    }
+    4'hD: {// 0xD0-0xFE Reserved ERROR
+      ioSpaceAccess = 0;
+    }
+    4'hE: {// 0xD0-0xFE Reserved ERROR
+      ioSpaceAccess = 0;
+    }
+    4'hF: {// 0xD0-0xFE Reserved ERROR
+      if (addr[39:32] == 8'hFF) {// 0xFF SSI (boot ROM) ERROR on write
+        if (read) {
+          if (read) data = gMem.read128(addr,myPort, 1);
+        } else ioSpaceAccess = 0;
+      } else {// 0xD0-0xFE Reserved ERROR
+        ioSpaceAccess = 0;
+      }
+    }
+  } // case
+
+
+  // if +failNCUcheck fail the sim right now!
+  if (ioSpaceAccess == 0 && failNCUcheck == 1)
+    PR_ERROR (CLASSNAMEQ, MON_ERR, psprintf ("T%d Bench ERROR FAIL: - Attempt to access I/O address/ASI in a way that is NOT allowed. (addr=%0h (%0h),data=%0h,mask=%0h,read=%0h",thread,addr,addr[39:32],data,size,read));
+
+  // if +noNCUcheck, always return a happy value
+  // and (almost) always do the access
+  if (noNCUcheck) {
+    ioSpaceAccess = 1;
+    if (read == 1 && addr[39:32] !== 8'h82)
+      data = gMem.read128(addr,myPort, 1);
+    if (read == 0 && addr[39:32] !== 8'hFF)
+        gMem.writeBM(addr, data[63:0], size, myPort);
+  }
+
+  PR_INFO ("ioaccess", MON_INFO,
+               psprintf("err = %b Normal IO Register Access",
+               ioSpaceAccess));
+
+
+#endif
+#endif
+#endif
+}
+
+//----------------------------------------------------------
+// replicate data bytes across all data bytes depending on size.
+// big endian, so the high bit bytes replicate from high bit
+// end to low bit end.
+function reg[127:0]  CLASSNAME::copyDataByte (reg [127:0] data, 
+                                              reg [7:0] size,
+                                              reg [3:0] offset)
+{
+
+  reg [127:0] tmpData = 0;
+
+  // start with the addressed byte at byte 0
+  data = data << (8*offset);
+    
+  case (size) {
+    8'h0: {// 1 byte
+      repeat (16) {
+        tmpData = tmpData >> 8; // seems backwards but works
+        tmpData[127:120] = data[127:120];
+      }
+    }
+    8'h1: {// 2 bytes
+      repeat (8) {
+        tmpData = tmpData >> 16;        
+        tmpData[127:112] = data[127:112];
+      }
+    }
+    8'h2: {// 4 bytes
+      repeat (4) {
+        tmpData = tmpData >> 32;
+        tmpData[127:96] = data[127:96];
+      }
+    }
+    8'h3: {// 8 bytes
+      repeat (2) {
+        tmpData = tmpData >> 64;
+        tmpData[127:64] = data[127:64];
+      }
+    }
+    8'h4: {// 16 bytes
+      tmpData = data;
+    }
+    
+    default: PR_ERROR("copyDataByte", MON_ERR, psprintf ("ERROR bad size=%b passed in.",size));
+
+  }
+
+  copyDataByte = tmpData;
+}
+
+
+
+
+// Evictions use 2 functions, evictAddr & evictVector.
+// "Eviction loop" code will call evictAddr to get address, then BFM will call
+// evictVector to get the vector and modify the shadow tag.
+// "Eviction loop" code will call task enqueueEvict in the correct bfm to
+// request the invalidate after evictAddr has been called.
+// The evict User Event that takes PA, will call task enqueueEvict in the
+// correct bfm to request the invalidate.
+
+
+//--------------------
+// Pick a random core and search for a line with a valid entry.
+// mem_index - itag 0..63, dtag 0..127
+// evict_index is normalized index between 0..31
+// used to search for tag in all lines in the group (aka L2 cache line)
+// returns a valid address.
+
+// Inputs:
+//    core_enable = 8 bit vector, 1 bit per core
+//    cid = N, to limit search to that core.
+//    dCacheWeight = N to weight I/D caches. 100 % based
+//
+// Outputs:
+//    found address if any, all F's otherwise.
+//    cidUsed = a core that had the address
+function reg [63:0] CLASSNAME::evictAddr(reg [7:0] core_enable,
+                                         var reg [2:0] cidUsed,
+                                         reg [3:0] cid = 4'hf,
+                                         integer dCacheWeight = 60) // 100 % based
+{
+  reg         evict=0;       // =1, if valid entry found in the table
+  reg [6:0]   mem_index=0;   // raw index from tag table search
+  reg [28:0]  evict_tag=0;   // tag that is being evicted
+  reg [4:0]   evict_index=0; // Normalized between 0..31  
+  reg         junk;
+  reg dCacheAddr = 0;
+  
+#ifndef CCM_BENCH
+#ifndef FC_BENCH
+#ifndef FC_SCAN_BENCH
+  
+  evictAddr = 64'hFFFFFFFFFFFFFFFF;
+  cidUsed = 0;
+  
+  if (cid ==  4'hf) {
+    // Pick cid out of the enabled cores.
+    // This runs in zero time so randCID is safe from other calls to randomize().
+    while (!core_enable[randCID]) {
+      void = this.randomize(); 
+    }
+    cidUsed = randCID;
+  } else {
+    // check the cid
+    cidUsed = cid;
+    if (!core_enable[cidUsed])
+      PR_ERROR("evict", MON_ERR,
+               psprintf (" BENCH ERROR - selected core not available!"));
+  }
+
+  randcase {
+    100-dCacheWeight: {
+      // Get raw index that has a valid entry
+      itag[cidUsed].search_tagmem(evict,mem_index);  // set evict=1, if valid entry found
+      // found nothing
+      if (! evict) return;
+      // Normalize between 0..31
+      evict_index = mem_index / 2;
+      // Get the tag that will be evicted
+      itag[cidUsed].get_tag(mem_index,junk,evict_tag);
+    }
+    dCacheWeight: {
+      // Get raw index that has a valid entry
+      dtag[cidUsed].search_tagmem(evict,mem_index);  // set evict=1, if valid entry found
+      // found nothing
+      if (! evict) return;     
+      // Normalize between 0..31
+      evict_index = mem_index / 4;
+      // Get the tag that will be evicted
+      dtag[cidUsed].get_tag(mem_index,junk,evict_tag);
+      dCacheAddr = 1;
+    }
+  }
+
+  evictAddr = {evict_tag,evict_index,6'b0};
+
+  PR_INFO ("evict", MON_INFO,
+           psprintf("EVICTION evictAddr PA{[39:6],6'b0}=%h evict_tag(pa[39:11])=%h evict_index(pa[10:6])=%h core=%0d dCacheAddr=%0d",
+                    evictAddr,evict_tag,evict_index,cidUsed,dCacheAddr));
+
+#endif
+#endif
+#endif
+  
+}
+
+
+//----------------------------------------------------------
+// Evict a PA from the L1 cache in all cores that are enabled.
+// The value that is returned as evictVector has the format as defined
+// in the CCX packet spec as Vinv.
+//
+// Pass in address. Will check all enabled cores for hit at that address and return
+// an eviction vector for all matching/hitting cores.
+//
+// Inputs:
+//    core_enable = 8 bit vector, 1 bit per core
+//    evict_pa = address to evict
+//    cpuId = CPU associated with evict_pa being cached
+// Output:
+//    evictVector = 0, no entries to evict.
+//    targets = cores that will be the target of the evict packet.
+function reg [127:0] CLASSNAME::evictVector(reg [7:0] core_enable,
+                                            reg [63:0] evict_pa,
+                                            reg [2:0] cpuId,
+                                            var reg [7:0] targets)
+{
+  reg         evict=0;       // 1, if valid entry found in the table
+  reg [6:0]   mem_index=0;   // raw index from tag table search
+  reg [28:0]  evict_tag=0;   // tag that is being evicted
+  reg [4:0]   evict_index=0; // Normalized between 0..31
+  reg [3:0]   dmatch=0;
+  reg [3:0]   imatch=0,i;
+  reg [111:0] i_vect=0,d_vect=0,e_vect=0;
+
+#ifndef CCM_BENCH
+#ifndef FC_BENCH
+#ifndef FC_SCAN_BENCH
+  
+  targets = 0;
+  evictVector = 0;
+
+  // Get index & tag from User argument
+  evict_tag = evict_pa[39:11];
+  evict_index = evict_pa[10:6];
+  mem_index = evict_pa[10:4]; // tag class array index
+
+  
+  //-------------------- 
+  // If valid tag found in tag table, evict it in both itag & dtag
+ 
+  PR_INFO ("evict", MON_INFO,
+           psprintf("EVICTION evictVector PA{[39:6],6'b0}=%h evict_tag(pa[39:11])=%h evict_index(pa[10:6])=%h core=%0d mem_index(pa[10:4])=%h",
+                    evict_pa,evict_tag,evict_index,cpuId,mem_index));
+  
+  //-------------------- 
+  // If valid tag found in tag table, evict it in both itag & dtag
+  i_vect = 0;
+  d_vect = 0;
+  e_vect = 0;
+
+  // evict the pa in all cores L1 cache
+  for (i=0; i<=7; i=i+1) {
+    if (core_enable[i]) {
+      itag[i].evict_group(evict_tag, evict_index, i_vect);
+      dtag[i].evict_group(evict_tag, evict_index, d_vect);
+
+      if ((i_vect!=0)|(d_vect!=0)) {
+        targets[i] = 1'b1;
+      }
+
+      // Create invalidation vector that is returned in CPX pkt
+      e_vect = e_vect | i_vect | d_vect;
+    }
+  }
+
+
+  if (e_vect) {
+    //--------------------
+    // Debug messages
+
+    PR_INFO ("evict", MON_INFO,
+             psprintf("EVICTION evictVector PA[39:0]=%h tag=%h evict_index(pa[10:6])=%h mem_index(pa[10:4])=%h+",evict_pa,evict_tag,evict_index,mem_index));
+    PR_INFO ("evict", MON_INFO,
+             psprintf("EVICTION \taddr:        0x%12h     0x%12h   0x%12h    0x%12h", evict_pa+48,evict_pa+32, evict_pa+16, evict_pa));
+    PR_INFO ("evict", MON_INFO,
+             psprintf("EVICTION \titag: Vinv[111:88] = %h [87:56] = %h [55:32] = %h [31:0] = %h ",
+                      i_vect[111:88],i_vect[87:56],i_vect[55:32],i_vect[31:0]));
+    PR_INFO ("evict", MON_INFO,
+             psprintf("EVICTION \tdtag: Vinv[111:88] = %h [87:56] = %h [55:32] = %h [31:0] = %h ",
+                      d_vect[111:88],d_vect[87:56],d_vect[55:32],d_vect[31:0]));
+    PR_INFO ("evict", MON_INFO,
+             psprintf("EVICTION \t      Vinv[111:88] = %h [87:56] = %h [55:32] = %h [31:0] = %h ",
+                      e_vect[111:88],e_vect[87:56],e_vect[55:32],e_vect[31:0]));
+
+
+    // Create Vinv as defined in CCX packet spec
+    evictVector[127:117] = 11'b0;
+    evictVector[116:112] = evict_index;
+    evictVector[111:0]   = e_vect;
+    
+  } else {
+    // not an error because time elapsed and the L1 tags have changed!
+  }
+
+#endif
+#endif
+#endif
+  
+}
+  

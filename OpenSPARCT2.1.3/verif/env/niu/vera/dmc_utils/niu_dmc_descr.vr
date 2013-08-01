@@ -1,0 +1,113 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_dmc_descr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "niu_mem.vrh"
+extern CSparseMem SparseMem;
+
+virtual class Cdescriptor {
+        integer id;
+        bit [63:0] address;// Address of this descriptor
+        bit [63:0] sw_address;// software Address of this descriptor
+        string type;// Tx or Rx
+        integer valid;
+	integer pkt_page_id;
+
+        virtual task add(integer xlate , (integer ring_page_id = 0)) {
+        }
+}
+
+MakeVeraList(Cdescriptor) // list of descriptors
+
+class CTxdescriptor extends Cdescriptor {
+
+// Tx descriptor Fields
+        bit [43:0] sad;
+        bit sop;
+        bit mark;
+        bit [3:0] num_ptr;
+        bit [13:0] tr_len;
+	integer pkt_page_id;
+
+        task new( (integer i=0),(integer p=0) ){
+          id = i;
+          valid =0;
+          pkt_page_id = p;
+        }
+
+        task add( integer xlate , (integer ring_page_id = 0) ) {
+           bit [63:0] data;
+           data = pack_Txdescr();
+           printf("DESC_ADD %0h, DESC_DATA %0h page_id - %d xlate_on - %d \n", this.address, data,ring_page_id,xlate);
+           SparseMem.WriteVMem(this.address, data,8'hff,xlate,ring_page_id);
+
+        }
+        local function bit[63:0] pack_Txdescr() {
+          // Valid only for Tx Descriptors
+          pack_Txdescr = { sop,mark,num_ptr,tr_len,sad};
+        }
+
+}
+
+MakeVeraList(CTxdescriptor) // list of descriptors
+
+class CRxdescriptor extends Cdescriptor { 
+
+// Rx descriptor Fields
+        bit [31:0] blk_addr;
+	integer pkt_page_id;
+
+        task new((integer i=0),(integer p=0)) {
+          id = i;
+          valid =0;
+	  pkt_page_id = p;
+        }
+
+        task add( integer xlate , (integer ring_page_id = 0) ) {
+           bit [63:0] data;
+           data = pack_Rxdescr();
+           //printf("DESC_ADD %0h, DESC_DATA %0h\n", this.address, data);
+           SparseMem.WriteVMem(this.address, data,8'hff,xlate,ring_page_id);  
+           
+
+        }
+        local function bit[31:0] pack_Rxdescr() {
+          // Valid only for Rx Descriptors
+          pack_Rxdescr = { blk_addr};
+        }
+
+}
+
+
+MakeVeraList(CRxdescriptor) // list of descriptors

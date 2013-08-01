@@ -1,0 +1,151 @@
+.##########################################################################
+.#
+.# File:	l2sat_cov_inc.pal
+.#
+.# Description:
+.# -----------
+.#	Common Pal header file that can be used to include common defines
+.#      or subroutines.  A "toggle" subroutine is provided to generate
+.#      toggle type coverage for a variable.
+.#
+.# $Id: $
+.#
+.##########################################################################
+.
+
+.## $cores        = 8;            # default settings
+.## $sys          = "MSS";        # default system being simulated
+.# END_INIT
+.## $THREADS_PER_CORE     = 4;    # a frequently used constant
+. $BANKS                = 1;
+.
+// sys = $sys, cores = $cores
+.
+.$CCX_PATH = "`TOP.cpu.ccx";
+.
+. for ( $i = 0; $i < $BANKS; $i++ ) {
+.       $L2T_PATH[$i] = "`TOP.cpu.l2t${i}";
+.       $L2B_PATH[$i] = "`TOP.cpu.l2b${i}";
+. }
+
+.###########################################################################
+.# toggle - use to generate toggle type coverage for a signal or field.
+.# just pass the number of bits in the variable. Use like this:
+.#
+.# sample variable_toggle_sample (variable[5:0]) {
+.# . &toggle(6); 
+.# }
+.#
+.##########################################################################
+.sub toggle {
+.  local($num_bits) = @_;
+.  
+.  for($i=$num_bits-1; $i >= 0; $i--) {                   
+.    printf ("  wildcard state s_bit_%02d_0 ( %d\'b", $i, $num_bits );
+.    for($j=$num_bits-1; $j >= 0; $j--) {                 
+.      if( $i == $j ) { print "0"; }                      
+.      else           { print "x"; }                      
+.    }                                                    
+.    print " );\n";                                       
+.    printf ("  wildcard state s_bit_%02d_1 ( %d\'b", $i, $num_bits );
+.    for($j=$num_bits-1; $j >= 0; $j--) {                 
+.      if( $i == $j ) { print "1"; }                      
+.      else           { print "x"; }                      
+.    }                                                    
+.    print " );\n";                                       
+.  }
+.}
+.
+.
+.###########################################################################
+.# two_errors - use to generate coverage for two sucessive errors.
+.# Use like this:
+.#
+.# sample variable_two_bits_sample (variable[5:0]) {
+.# . &two_errors(32);  //32 different errors
+.# }
+.#
+.##########################################################################
+.
+.sub two_errors {
+.   local($num_errors) = @_;
+.$state_count = 0;
+.for($i=1; $i <=$num_errors; $i++){
+.   for($k=1; $k<=$num_errors; $k++){
+.      $new_errors[$k] = 'x';
+.   }
+.   $new_errors[$i] = '1';
+.   for($j=1; $j <=$num_errors; $j++){
+.      for($k=1; $k<=$num_errors; $k++){
+.         $prev_errors[$k] = 'x';
+.      }
+.      $prev_errors[$j] = '1';
+.      printf ("   wildcard state s_bit_%02d ( ", $state_count++);
+.      printf("%d\'b", $num_errors*2);
+.      for($k=1; $k <= $num_errors; $k++){
+.         printf("%s", $new_errors[$k]);
+.      }
+.      for($k=1; $k <= $num_errors; $k++){
+.         printf("%s", $prev_errors[$k]);
+.      }
+.      printf (" );\n");
+.   }
+.}
+.}
+.
+.###########################################################################
+.# partial_cores - use to generate coverage for partial cores.
+.# Use like this:
+.#
+.# sample variable_two_bits_sample (variable[5:0]) {
+.# . &partial_cores(6, 4);  //at most 4 out of 6
+.# }
+.#
+.##########################################################################
+.sub partial_cores {
+.  local($num_bits, $max_bits) = @_;
+.
+.$state_count = 0;
+.for($i=1; $i <= 2**$num_bits-1; $i++) {
+.     $temp = $i;
+.     $k = 1;
+.     $bit_count = 0;
+.     my @tmp;
+.     for($k=1; $k <= $num_bits; $k++){
+.	if($temp%2 == 0){
+.           $tmp[$k] = 0;
+.        }
+.        else{
+.           $tmp[$k] = 1;
+.           $bit_count++;
+.        }
+.        $temp = $temp / 2;
+.     }
+.     if($bit_count <= $max_bits) {
+.        printf ("   state s_bit_%02d ( %d\'b", $state_count++, $num_bits );
+.        for($j=1; $j <= $num_bits; $j++){
+.           printf("%d", $tmp[$j]);
+.        }
+.        printf (" );\n");
+.     }
+. }
+.}
+.###########################################################################
+.# toggle2 - use to generate toggle type coverage for a signal or field.
+.# just pass the number of bits in the variable andn its name like this:
+.#
+.# sample variable_toggle_sample (variable[5:0]) {
+.# . &toggle2(6, "variable" ); 
+.# }
+.#
+.# &toggle uses wildcards which are said to hurt performance. This uses
+.# a different technique.
+.##########################################################################
+.#sub toggle2 {
+.#  local($num_bits,$variable) = @_;
+.#  
+.#  for($i=$num_bits-1; $i >= 0; $i--) {                   
+.#    printf("  state s_bit_%02d_0 ( %s[%d] == 1'b0 );\n", $i, $variable, $i );
+.#    printf("  state s_bit_%02d_1 ( %s[%d] == 1'b1 );\n", $i, $variable, $i );
+.#  }
+.#}

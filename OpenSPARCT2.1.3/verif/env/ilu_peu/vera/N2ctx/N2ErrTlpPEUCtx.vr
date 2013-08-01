@@ -1,0 +1,1196 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: N2ErrTlpPEUCtx.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class ErrTlpPEUCtx extends PEUCtxBase 
+{
+  local string f_mode;
+  local integer f_index;
+  local integer f_errQueue;
+
+  bit     f_expectInterrupt;
+  
+  // added for incorrect length testing
+  integer f_pyldDelta_min;
+  integer f_pyldDelta_max;
+  integer f_pyldDelta_chance_negative;
+  integer f_pyld_set_TD;
+  bit f_pyld_set_TD_value;
+  integer f_pyld_Length;
+  bit[4:0] f_pyld_Type;
+  bit[1:0] f_pyld_Fmt;
+  integer f_pyld_ReqWeight;
+  integer f_pyld_CplWeight;
+  integer f_pyld_Cpl_solicited_chance;
+
+  // added by for crossing 4KB boundary testing
+  integer f_cross4k_DW_max;
+  integer f_cross4k_DW_min;
+  bit [9:0] mps;
+  
+  bit [7:0] f_msgCode;
+
+  bit f_abort;
+
+  //Receiver Error Testing
+  integer f_nmbrRcvrErrsToInject = 10;    //Total number of packets that get error
+  integer f_rcvrErrPct = 10;              //% of packets that get an error
+  //Set the percentage weight of each type of receiver error
+  integer f_rcvrErr8b10bWeight = 10;
+  integer f_rcvrErrFramingWeight = 10;
+  integer f_rcvrErrDisparityWeight = 10;
+  integer f_rcvrErrFlipBitWeight = 10;
+  integer f_rcvrErrLcrcWeight = 10;
+  integer f_rcvrErrDupSeqNmbrWeight = 0; 
+  integer f_rcvrErrOutOfSeqNmbrWeight = 0; 
+  integer f_rcvrErrBadSeqNmbrWeight = 0; 
+  bit     f_optional_CE_BTP = 0;	//Make the check of BTP optional
+
+
+  // Unsupport DLLP Error Testing
+  integer f_nmbrDLLPErrsToInject = 10;    //Total number of packets that get error
+  integer f_DLLPErrPct = 10;              //% of packets that get an error
+
+  //Set the percentage weight of each type of DLLP  error
+  integer f_DLLPErrUnsupportWeight = 10;  
+  integer f_DLLPErrBadCRCWeight = 10;
+
+  // Ack Nak Error Testing
+  integer f_nmbrAckNakErrsToInject = 10; 
+  integer f_DLLPAckLessthanAckedErrWeight = 10; 
+  integer f_DLLPNakLessthanAckedErrWeight = 10; 
+  integer f_DLLPAckmorethanTLPNxtSeqErrWeight = 10; 
+  integer f_DLLPNakmorethanTLPNxtSeqErrWeight = 10; 
+
+  // Invert LCRC, EDB Injections 
+  integer f_nmbrInvertLCRCEDBErrsToInject = 1; 
+  integer f_InvertLCRCErrWeight = 0; 
+  integer f_EDBErrWeight = 0; 
+  integer f_InvertLCRCAndEDBErrWeight = 0; 
+
+
+  integer f_nmbrnullTlpErrsToInject = 0; 
+  integer f_nullTlpErrWeight = 0; 
+  
+
+  // Flow control protocol Error Testing
+    integer f_nmbrFCPErrsToInject = 0;     //Total number of packets that get error injected
+  //Set the percentage weight of each type of FCP errors
+  integer f_DLLP_FCP_Infinite_FC_PH_ErrWeight = 0;
+  integer f_DLLP_FCP_Infinite_FC_PD_ErrWeight = 0;
+  integer f_DLLP_FCP_Infinite_FC_NPH_ErrWeight = 0;
+  integer f_DLLP_FCP_Infinite_FC_NPD_ErrWeight = 0;
+  integer f_DLLP_FCP_Infinite_FC_CLPH_ErrWeight = 0;
+  integer f_DLLP_FCP_Infinite_FC_CLPD_ErrWeight = 0;
+
+  integer f_DLLP_FCP_Infinite_FC_all_P_ErrWeight = 0;
+  integer f_DLLP_FCP_Infinite_FC_all_NP_ErrWeight = 0;
+  integer f_DLLP_FCP_Infinite_FC_all_CLP_ErrWeight = 0;
+
+  integer f_DLLP_FCP_over128_FC_PH_ErrWeight = 0;
+  integer f_DLLP_FCP_over2048_FC_PD_ErrWeight = 0;
+  integer f_DLLP_FCP_over128_FC_NPH_ErrWeight = 0;
+  integer f_DLLP_FCP_over2048_FC_NPD_ErrWeight = 0;
+  integer f_DLLP_FCP_over128_FC_CLPH_ErrWeight = 0;
+  integer f_DLLP_FCP_over2048_FC_CLPD_ErrWeight = 0;
+
+  
+  static bit[4:0] f_badType = 4'b0;
+  static bit[1:0] f_badFmt = 2'b0;
+  static integer  f_badCpl = 0;
+  static integer  f_badIndex = 0;
+
+  string mode;
+  string error_List[29] = {"invalid type", 
+			   "incorrect length",
+			   "cross 4KB",
+			   "excessive pyld",
+			   "MsgNonZeroTC", 
+			   "MsgData",
+			   "ErrCpl", 
+			   "unexpected completion",
+			   "locked completion",
+			   "completion length", 
+			   "completion count",
+			   "completion address",
+			   "completion TC",
+			   "completion attr",
+			   "RdlkReq",  
+			   "Msg",
+			   "CfgIoReq", 
+			   "CfgIoReqPoison",
+			   "PoisonReq",
+			   "PoisonCpl",
+			   "IncorrectCpl",
+                           "NonConfigCRS",
+                           "DWBE",
+			   "RdCplUr",
+			   "WrCplUr",			   
+			   "RdCplCa",
+			   "WrCplCa",
+			   "CRS completion",
+			   "Receiver Errors"
+  };
+
+  
+  task new( string a_name, PEUTestEnv a_env, string a_mode )
+  {
+    super.new(a_name,a_env);
+    f_mode = a_mode;
+    f_index = 0;
+    f_expectInterrupt = 1;
+
+    if (f_mode == "Random") {
+      mode = error_List[(urandom() % 28)];
+    } 
+
+    // default values for incorrect length
+    // parameter values
+    f_pyldDelta_min = 2;
+    f_pyldDelta_max = 6;
+    f_pyldDelta_chance_negative = 50;
+    f_pyld_set_TD = 0;
+    f_pyld_Length = -1;
+    f_pyld_Type = 5'bxxxxx;             // illegal value for Type
+    f_pyld_Fmt = 2'b00;
+    f_pyld_ReqWeight = 1;
+    f_pyld_CplWeight = 1;
+    f_pyld_Cpl_solicited_chance = 50;
+    
+    f_cross4k_DW_max = 5;
+    f_cross4k_DW_min = 1;
+    f_msgCode = 8'bxxxxxxxx;
+    f_abort = 0;
+    f_errQueue = 0;
+
+    //Default values for Receiver Error
+    f_nmbrRcvrErrsToInject = 10;
+    f_rcvrErrPct = 10;
+    f_rcvrErr8b10bWeight = 10;
+    f_rcvrErrFramingWeight = 10;
+    f_rcvrErrDisparityWeight = 10;
+    f_rcvrErrFlipBitWeight = 10;
+    f_rcvrErrLcrcWeight = 10;
+    f_rcvrErrDupSeqNmbrWeight = 0;
+    f_rcvrErrOutOfSeqNmbrWeight = 0;
+    f_rcvrErrBadSeqNmbrWeight = 0;
+    f_DLLPAckLessthanAckedErrWeight = 0; 
+    f_DLLPNakLessthanAckedErrWeight = 0; 
+    f_DLLPAckmorethanTLPNxtSeqErrWeight = 0; 
+    f_DLLPNakmorethanTLPNxtSeqErrWeight = 0; 
+    f_optional_CE_BTP = 0;
+
+    // Flow control protocol Error
+    f_DLLP_FCP_Infinite_FC_PH_ErrWeight = 0;
+    f_DLLP_FCP_Infinite_FC_PD_ErrWeight = 0;
+    f_DLLP_FCP_Infinite_FC_NPH_ErrWeight = 0;
+    f_DLLP_FCP_Infinite_FC_NPD_ErrWeight = 0;
+    f_DLLP_FCP_Infinite_FC_CLPH_ErrWeight = 0;
+    f_DLLP_FCP_Infinite_FC_CLPD_ErrWeight = 0;
+  
+    f_DLLP_FCP_Infinite_FC_all_P_ErrWeight = 0;
+    f_DLLP_FCP_Infinite_FC_all_NP_ErrWeight = 0;
+    f_DLLP_FCP_Infinite_FC_all_CLP_ErrWeight = 0;
+
+    f_DLLP_FCP_over128_FC_PH_ErrWeight = 0;
+    f_DLLP_FCP_over2048_FC_PD_ErrWeight = 0;
+    f_DLLP_FCP_over128_FC_NPH_ErrWeight = 0;
+    f_DLLP_FCP_over2048_FC_NPD_ErrWeight = 0;
+    f_DLLP_FCP_over128_FC_CLPH_ErrWeight = 0;
+    f_DLLP_FCP_over2048_FC_CLPD_ErrWeight = 0;
+
+    // Default values for Unsupport DLLP Error
+    f_nmbrDLLPErrsToInject = 10;
+    f_DLLPErrPct = 10;
+
+    // Default values for ack Nak Error
+    f_nmbrAckNakErrsToInject = 10; 
+
+    // Default value for flow control protocol error 
+    f_nmbrFCPErrsToInject = 0;
+  }
+
+  task Execute()
+  {
+    super.Execute();
+  }
+  
+  protected function CTStrategyBase ProvideStrategy()
+  {
+    integer f_pyldDelta;
+    PEUStrBase thisStrategy;
+    PEUStrBase nullStr;
+    ErrChkPEUStr errChk;		// The guy who checks error state
+    MalReqPEUStr badReq;		// Generate a bad read/write request
+    MalCplPEUStr badCpl;
+    ErrCplPEUStr errCpl;
+    bit [ 63:0 ] csr;
+    integer cross_4k_DW_cnt;
+
+    PioBasePEUStr    pioBase;           // Need strategies to generate bad 
+    PioMRdPEUStr     pioMRd;            // ingress completions.
+    PioCfgIOWrPEUStr pioCfgIOWr;
+    PioCfgIORdPEUStr pioCfgIORd;
+
+    DmaURCfgIORdWrPEUStr dmaURCfgIOWrRd;        // Need Strategies to 
+    DmaURMsgDPEUStr      dmaURMsgD;             // generate unsupported
+    DmaURMsgPEUStr       dmaURMsg;              // ingress (DMA) requests
+    DmaURRdLkPEUStr      dmaURRdLk;
+
+    DmaPoisonPEUStr      dmaPreq;		// A poisoned DMA request
+    IngressRcvrErr       RcvrErr;		// Injects Receiver errors on 
+                                                //  background traffic
+    ilupeuIngressDLLPErr  DLLPErr;       // for Unsupport and BAD CRC DLLPs   
+                                                //  on background traffic
+    ilupeuIngressAckNakErr  	AckNakErr;  //  
+    ilupeuIngressduplicateSeqNmbrReq  duplicateSeqNmbrReq;  // injects duplicate 
+					 // sequence number TLP without skip 
+
+    ilupeuIngressnullTlpErr nullTlpErr;    
+
+    ilupeuIngressFCPErr		FCPErr;         
+
+    f_index = f_index + 1;
+
+    if (f_mode == "random"){ 
+      mode = error_List[ urandom_range(28,5) ];	//4 and down are unrecoverable UE mfp errors   
+//      mode = error_List[(urandom() % (f_abort?23:28))];
+      f_env.Report.report(RTYP_INFO,"ErrTlpPEUCtx f_mode == random - mode=%s f_index=%0d \n",mode,f_index);
+    }
+    else if (f_mode != "Random"){
+      mode = f_mode;
+    }
+
+printf("ErrTlpPEUCtx mode=%s f_index=%0d \n",mode,f_index);
+    
+    if ( f_index > 1 && !this.StratStop ) 
+      printf("ErrTlp (cycle %0d) %s\n", get_cycle(), mode);
+    
+					// If the "StratStop" (within the base
+					// context class) has been set, then
+					// just return a base context which
+					// does nothing.
+    if ( this.StratStop ) 
+      {
+	nullStr = new( f_env );
+	thisStrategy = nullStr;
+      }
+    
+					// The first strategy? Build a
+					// mailbox and fire up the guy
+					// who'll check interrupt status 
+					// after it's all over.
+					// The test uses "NumStrat" to tell us
+					// how many errors to generate.  
+					// Every error-generating strategy will
+					// add something to the "f_errQueue".
+    else if ( f_index == 1 && !f_abort )
+      {
+	f_errQueue = alloc( MAILBOX, 0, 1 );
+	errChk = new( f_env, f_errQueue, this.NumStrat-1 );
+
+	// The "errChk" strategy will enable
+	// interrupt checking when it's done. 
+	if ( f_expectInterrupt ) f_env.disableInterrupt();
+	thisStrategy = errChk;
+      }
+
+					// The directed "invalid type" test
+                                        // does every such type (and format).
+					// Malformed requests are sent either 
+					// singly or in pairs.  We want to make
+					// sure that every undefined type is
+					// recorded as malformed.
+    else if ( mode == "invalid type" )
+      {
+      badReq = new( f_env );
+      badReq.SetErrQueue( f_errQueue );
+      // this loop will quit if isInvalid
+      while (1) // while (!badReq.SetType( f_badFmt, f_badType ) )
+        {
+	  f_badType = f_badType + 1;
+	  if ( f_badType == 0 ) f_badFmt = f_badFmt + 1;
+	  printf("f_badType = %x f_badFmt = %x\n", 
+		 f_badType, f_badFmt); 
+	  if ( badReq.SetType( f_badFmt, f_badType ) ) break;
+	}      
+      thisStrategy = badReq;
+      }
+    
+    // The directed "incorrect length" test
+    else if ( mode == "incorrect length" ) {
+
+      // do this only for the random condition.
+      if (f_mode == "Random" || f_mode == "random") {
+        randcase {
+          1: { // 4KB/2KB/1KB... Mem Wr without data
+	    f_pyld_Length = 1 << (urandom() % 11);
+	    f_pyld_set_TD = 1;
+	    f_pyld_set_TD_value = urandom()%2;
+	    f_pyldDelta_min = (f_pyld_Length == 0) ? 1024 : f_pyld_Length;
+	    f_pyldDelta_max = f_pyldDelta_min;
+	    f_pyldDelta_chance_negative = 100;
+	    f_pyld_ReqWeight = 1;      
+	    f_pyld_CplWeight = 0;      
+            if ( urandom()%2 )
+	      f_pyld_Fmt  = PEC_PCI__FMT_DATA_3DW;
+            else
+	      f_pyld_Fmt  = PEC_PCI__FMT_DATA_4DW;
+	    f_pyld_Type = PEC_PCI__TYPE_MEM;
+          }
+          1: { // Mem Rd/Wr off by one
+	    f_pyld_Length = (urandom() % (16-1)) + 1;
+	    f_pyld_set_TD = 1;
+	    f_pyld_set_TD_value = urandom()%2;
+	    f_pyldDelta_min = 1;
+	    f_pyldDelta_max = 1;
+	    f_pyldDelta_chance_negative = 50;
+	    f_pyld_ReqWeight = 1;      
+	    f_pyld_CplWeight = 0;      
+	    f_pyld_Fmt  = urandom() % 4;
+	    f_pyld_Type = PEC_PCI__TYPE_MEM;
+          }
+          1: { // Cpl off by one
+	    f_pyld_Length = (urandom() % (16-1)) + 1;
+	    f_pyld_set_TD = 1;
+	    f_pyld_set_TD_value = urandom()%2;
+	    f_pyldDelta_min = 1;
+	    f_pyldDelta_max = 1;
+	    f_pyldDelta_chance_negative = 50;
+	    f_pyld_ReqWeight = 0;      
+	    f_pyld_CplWeight = 1;      
+	    f_pyld_Fmt  = PEC_PCI__FMT_NO_DATA_3DW;
+	    f_pyld_Type = PEC_PCI__TYPE_MEM;
+            f_pyld_Cpl_solicited_chance = 100;
+          }
+          1: { // Mem-write off by as much as possible
+	    f_pyld_Length = (urandom() % (16-1)) + 2;
+	    f_pyld_set_TD = 1;
+	    f_pyld_set_TD_value = urandom()%2;
+	    f_pyldDelta_min = 1;
+	    f_pyldDelta_max = f_pyld_Length;
+	    f_pyldDelta_chance_negative = 50;
+	    f_pyld_ReqWeight = 1;      
+	    f_pyld_CplWeight = 0;      
+            if ( urandom()%2 )
+	      f_pyld_Fmt  = PEC_PCI__FMT_DATA_3DW;
+            else
+	      f_pyld_Fmt  = PEC_PCI__FMT_DATA_4DW;
+	    f_pyld_Type = PEC_PCI__TYPE_MEM;
+          }
+        }
+      } 
+
+      randcase {
+	f_pyld_ReqWeight : {
+	  badReq = new( f_env );
+	  badReq.SetErrQueue( f_errQueue );
+	  // Use requested {Fmt,Type}
+	  if ( f_pyld_Type !== 5'bxxxxx )
+	    if ( badReq.SetField( "FmtType", {f_pyld_Fmt,f_pyld_Type} ) )
+	      error( "(%0d) ErrTlpPEUCtx(%s): setting invalid {fmt,type} = %b\n",
+		     get_cycle(), mode, {f_pyld_Fmt,f_pyld_Type} );
+	                               // Use requested length
+	  if ( f_pyld_Length >= 0 )
+	    badReq.SetLength( f_pyld_Length );
+                                        // Adjust the packet length by random amt
+                                        // between f_pyldDelta_min and f_pyldDelta_max
+	  f_pyldDelta =
+	    urandom() % (f_pyldDelta_max - f_pyldDelta_min + 1) + f_pyldDelta_min;
+                                        // Choose whether adjustment is neg or pos
+	  if ( ((urandom() % 100) + 1) <= f_pyldDelta_chance_negative )
+	    f_pyldDelta *= -1;
+
+	  printf( "(%0d) ErrTlpPEUCtx(%s): adjusting req payload by %0d DWs\n",
+		  get_cycle(), mode, f_pyldDelta );
+
+	  badReq.AdjustLen( f_pyldDelta );
+	  if ( f_pyld_set_TD )
+	    badReq.SetTD( f_pyld_set_TD_value );
+
+	  thisStrategy = badReq;
+	}
+	f_pyld_CplWeight : {
+	  badCpl = new( f_env );
+	  badCpl.SetErrQueue( f_errQueue );
+                                        // Use requested {Fmt,Type}
+	  if ( f_pyld_Type !== 5'bxxxxx )
+	    if ( badCpl.SetType( f_pyld_Fmt, f_pyld_Type ) )
+	      error( "(%0d) ErrTlpPEUCtx(%s): setting invalid {fmt,type} = %b\n",
+		     get_cycle(), mode, {f_pyld_Fmt,f_pyld_Type} );
+                                        // Use requested length
+	  if ( f_pyld_Length >= 0 )
+	    badCpl.SetLength( f_pyld_Length );
+                                        // Adjust the packet length by random amt
+                                        // between f_pyldDelta_min and f_pyldDelta_max
+	  f_pyldDelta =
+	    urandom() % (f_pyldDelta_max - f_pyldDelta_min + 1) + f_pyldDelta_min;
+                                        // Choose whether adjustment is neg or pos
+	  if ( ((urandom() % 100) + 1) <= f_pyldDelta_chance_negative )
+	    f_pyldDelta *= -1;
+
+	  printf( "(%0d) ErrTlpPEUCtx(%s): adjusting cpl payload by %0d DWs\n",
+		  get_cycle(), mode, f_pyldDelta );
+
+	  badCpl.AdjustLen( f_pyldDelta );
+	  if ( f_pyld_set_TD )
+	    badCpl.SetTD( f_pyld_set_TD_value );
+
+	  if ( ((urandom() % 100) + 1) <= f_pyld_Cpl_solicited_chance )
+	    badCpl.SetSolicited( 1 );
+	  else {
+	    badCpl.SetSolicited( 0 );
+	  }
+
+	  thisStrategy = badCpl;
+	}
+      }
+    }
+
+    else if ( mode == "cross 4KB" ) {
+      badReq = new( f_env );
+      badReq.SetErrQueue( f_errQueue );
+	                               // Use requested {Fmt,Type}
+      if ( f_pyld_Type !== 5'bxxxxx )
+	if ( badReq.SetField( "FmtType", {f_pyld_Fmt,f_pyld_Type} ) )
+	  error( "(%0d) ErrTlpPEUCtx(%s): setting invalid {fmt,type} = %b\n",
+		 get_cycle(), mode, {f_pyld_Fmt,f_pyld_Type} );
+                                       // call strategy Cross4K()
+      mps = f_env.getMaxPayloadSize();
+      //Make sure we don't go bigger than mps 
+      if ( f_badIndex < ( (mps == 512) ? 7 : (mps == 256) ? 6 : 5 ) )
+        cross_4k_DW_cnt = 1 << f_badIndex;
+      else
+        cross_4k_DW_cnt = urandom_range( f_cross4k_DW_max,
+                                         f_cross4k_DW_min );
+      badReq.Cross4K( cross_4k_DW_cnt );
+
+      f_badIndex = f_badIndex + 1;
+      thisStrategy = badReq;
+    }
+
+    else if ( mode == "excessive pyld" ) {
+	
+      badReq = new( f_env );
+      badReq.SetErrQueue( f_errQueue );
+     
+      if ( urandom()%2 ) 
+        f_pyld_Fmt = PEC_PCI__FMT_DATA_3DW;
+      else
+        f_pyld_Fmt = PEC_PCI__FMT_DATA_4DW;
+      f_pyld_Type = PEC_PCI__TYPE_MEM;
+      void = badReq.SetField( "FmtType", {f_pyld_Fmt,f_pyld_Type} );
+     
+      f_pyld_Length = f_env.getMaxPayloadSize() / 4;
+      randcase
+        {
+        1: f_pyld_Length = f_pyld_Length + ( 1 << (urandom()%10) );
+        1: f_pyld_Length = f_pyld_Length + urandom()%15 + 1;
+        1: f_pyld_Length = f_pyld_Length << (urandom()%3 + 1);
+        }
+      badReq.SetLength( f_pyld_Length );
+      if ( f_pyld_Length > 1000 ) f_env.setIngressThrottle(0);
+
+      thisStrategy = badReq;
+    }
+
+    else if ( mode == "MsgNonZeroTC" ) {
+      badReq = new( f_env );
+      badReq.SetErrQueue( f_errQueue );
+	                               // Use Msg (no data) fmt and type
+      void = badReq.SetField( "FmtType",
+			      {PEC_PCI__FMT_NO_DATA_4DW,PEC_PCI__TYPE_MSG} );
+
+      if ( f_msgCode === 8'bxxxxxxxx ) {
+	                               // Randomly choose a message code
+	randcase {
+	  1 : f_msgCode = PEC_PCI__MSG_CODE_ASSERT_INTA;
+	  1 : f_msgCode = PEC_PCI__MSG_CODE_ASSERT_INTB;
+	  1 : f_msgCode = PEC_PCI__MSG_CODE_ASSERT_INTC;
+	  1 : f_msgCode = PEC_PCI__MSG_CODE_ASSERT_INTD;
+	  1 : f_msgCode = PEC_PCI__MSG_CODE_DEASSERT_INTA;
+	  1 : f_msgCode = PEC_PCI__MSG_CODE_DEASSERT_INTB;
+	  1 : f_msgCode = PEC_PCI__MSG_CODE_DEASSERT_INTC;
+	  1 : f_msgCode = PEC_PCI__MSG_CODE_DEASSERT_INTD;
+	  1 : f_msgCode = PEC_PCI__MSG_CODE_PM_PME;
+	  1 : f_msgCode = PEC_PCI__MSG_CODE_PM_TO_ACK;
+	  1 : f_msgCode = PEC_PCI__MSG_CODE_ERR_COR;
+	  1 : f_msgCode = PEC_PCI__MSG_CODE_ERR_NONFATAL;
+	  1 : f_msgCode = PEC_PCI__MSG_CODE_ERR_FATAL;
+	}
+      }
+      void = badReq.SetField( "MsgCode", f_msgCode );
+                                       // Use random TC != 0
+      void = badReq.SetField( "TC", (urandom() % 7) + 1 );
+
+      thisStrategy = badReq;
+    }
+
+    else if ( mode == "INTxData" ) {
+      badReq = new( f_env );
+      badReq.SetErrQueue( f_errQueue );
+
+	                               // Use Msg (with data) fmt and type
+      void = badReq.SetField( "FmtType",
+			      {PEC_PCI__FMT_DATA_4DW,PEC_PCI__TYPE_MSG} );
+
+	                               // Select the next INT message code
+      case( f_badIndex % 8 )
+        {
+	0 : f_msgCode = PEC_PCI__MSG_CODE_ASSERT_INTA;
+	1 : f_msgCode = PEC_PCI__MSG_CODE_ASSERT_INTB;
+	2 : f_msgCode = PEC_PCI__MSG_CODE_ASSERT_INTC;
+	3 : f_msgCode = PEC_PCI__MSG_CODE_ASSERT_INTD;
+	4 : f_msgCode = PEC_PCI__MSG_CODE_DEASSERT_INTA;
+	5 : f_msgCode = PEC_PCI__MSG_CODE_DEASSERT_INTB;
+	6 : f_msgCode = PEC_PCI__MSG_CODE_DEASSERT_INTC;
+	7 : f_msgCode = PEC_PCI__MSG_CODE_DEASSERT_INTD;
+	}
+      void = badReq.SetField( "MsgCode", f_msgCode );
+
+					// ...and a payload length
+      case( f_badIndex / 8 )
+        {
+        0 : badReq.SetLength( 1 );
+        1 : badReq.SetLength( 4 );
+        2 : badReq.SetLength( 16 );
+        3 : badReq.SetLength( 3 );
+        4 : badReq.SetLength( 7 );
+        5 : badReq.SetLength( 32 );
+        default: badReq.SetLength( f_badIndex / 8 );
+        }
+
+      f_badIndex = f_badIndex + 1;
+      thisStrategy = badReq;
+    }
+
+    else if ( mode == "CfgIoReq" ) {
+
+      dmaURCfgIOWrRd = new( f_env, f_errQueue );
+
+      dmaURCfgIOWrRd._ep_req_prob_false = 100;
+      dmaURCfgIOWrRd._ep_req_prob_true  = 0;
+
+      thisStrategy = dmaURCfgIOWrRd;
+    }
+
+    else if ( mode == "CfgIoReqPoison" ) {
+printf("ErrTlpPEUCtx CfgIoReqPoison f_index=%0d \n",f_index);
+
+      dmaURCfgIOWrRd = new( f_env, f_errQueue );
+
+      dmaURCfgIOWrRd._ep_req_prob_false = 0;
+      dmaURCfgIOWrRd._ep_req_prob_true  = 100;
+
+      thisStrategy = dmaURCfgIOWrRd;
+    }
+    
+    
+    
+    else if ( mode == "RdlkReq" ) {
+
+      dmaURRdLk = new( f_env, f_errQueue );
+
+      dmaURRdLk._ep_req_prob_false = 100;
+      dmaURRdLk._ep_req_prob_true  =   0;
+  
+      thisStrategy = dmaURRdLk;
+    }
+
+    
+    else if ( mode == "MsgData" ) {
+
+      dmaURMsgD = new( f_env, f_errQueue );
+
+      dmaURMsgD._ep_req_prob_false = 100;
+      dmaURMsgD._ep_req_prob_true  =   0;
+
+      thisStrategy = dmaURMsgD;
+    }
+
+    
+    else if ( mode == "Msg" ) {
+
+      dmaURMsg = new( f_env, f_errQueue );
+
+      dmaURMsg._ep_req_prob_false = 100;
+      dmaURMsg._ep_req_prob_true  =   0;
+
+      thisStrategy = dmaURMsg;
+    }
+
+    
+    else if ( mode == "RdCplUr" ) {
+
+      randcase {
+
+        1 : { pioMRd     = new( f_env, f_errQueue );  pioBase = pioMRd;     }
+        1 : { pioCfgIORd = new( f_env, f_errQueue );  pioBase = pioCfgIORd; }
+      }
+
+      pioBase._ep_cpl_prob_true  =   0;
+      pioBase._ep_cpl_prob_false = 100;
+
+      pioBase._cpl_status_prob_sc    = 0;
+      pioBase._cpl_status_prob_ur    = 1;
+      pioBase._cpl_status_prob_crs   = 0;
+      pioBase._cpl_status_prob_ca    = 0;
+      pioBase._cpl_status_prob_rsvd1 = 1;
+      pioBase._cpl_status_prob_rsvd2 = 1;
+      pioBase._cpl_status_prob_rsvd3 = 1;
+      pioBase._cpl_status_prob_rsvd4 = 1;
+
+      thisStrategy = pioBase;
+    }
+
+    
+    else if ( mode == "WrCplUr" ) {
+
+      pioCfgIOWr = new( f_env, f_errQueue );  pioBase = pioCfgIOWr;
+
+      pioBase._ep_cpl_prob_true  =   0;
+      pioBase._ep_cpl_prob_false = 100;
+
+      pioBase._cpl_status_prob_sc    = 0;
+      pioBase._cpl_status_prob_ur    = 1;
+      pioBase._cpl_status_prob_crs   = 0;
+      pioBase._cpl_status_prob_ca    = 0;
+      pioBase._cpl_status_prob_rsvd1 = 1;
+      pioBase._cpl_status_prob_rsvd2 = 1;
+      pioBase._cpl_status_prob_rsvd3 = 1;
+      pioBase._cpl_status_prob_rsvd4 = 1;
+      
+      thisStrategy = pioBase;
+    }
+
+    
+    else if ( mode == "RdCplCa" ) {
+
+      randcase {
+
+        1 : { pioMRd     = new( f_env, f_errQueue );  pioBase = pioMRd;     }
+        1 : { pioCfgIORd = new( f_env, f_errQueue );  pioBase = pioCfgIORd; }
+      }
+
+      pioBase._ep_cpl_prob_true  =   0;
+      pioBase._ep_cpl_prob_false = 100;
+
+      pioBase._cpl_status_prob_sc    = 0;
+      pioBase._cpl_status_prob_ur    = 0;
+      pioBase._cpl_status_prob_crs   = 0;
+      pioBase._cpl_status_prob_ca    = 1;
+      pioBase._cpl_status_prob_rsvd1 = 0;
+      pioBase._cpl_status_prob_rsvd2 = 0;
+      pioBase._cpl_status_prob_rsvd3 = 0;
+      pioBase._cpl_status_prob_rsvd4 = 0;
+
+      thisStrategy = pioBase;
+    }
+
+    
+    else if ( mode == "WrCplCa" ) {
+
+      pioCfgIOWr = new( f_env, f_errQueue );  pioBase = pioCfgIOWr;
+
+      pioBase._ep_cpl_prob_true  =   0;
+      pioBase._ep_cpl_prob_false = 100;
+
+      pioBase._cpl_status_prob_sc    = 0;
+      pioBase._cpl_status_prob_ur    = 0;
+      pioBase._cpl_status_prob_crs   = 0;
+      pioBase._cpl_status_prob_ca    = 1;
+      pioBase._cpl_status_prob_rsvd1 = 0;
+      pioBase._cpl_status_prob_rsvd2 = 0;
+      pioBase._cpl_status_prob_rsvd3 = 0;
+      pioBase._cpl_status_prob_rsvd4 = 0;
+      
+      thisStrategy = pioBase;
+    }
+
+    
+    
+    else if ( mode == "ErrCpl" ) {
+      errCpl = new( f_env );
+      errCpl.SetErrQueue( f_errQueue );
+      thisStrategy = errCpl;
+    }
+    
+    
+    else if ( mode == "ErrCplCpl" ) {
+      errCpl = new( f_env );
+      errCpl.SetErrQueue( f_errQueue );
+      errCpl.SendCpl();
+      thisStrategy = errCpl;
+    }
+    
+
+    else if ( mode == "CRS completion" ) {
+      errCpl = new( f_env );
+      errCpl.SetErrQueue( f_errQueue );
+      errCpl.CRS();
+      case( f_badCpl % 4 )
+        {
+        0: errCpl.SetType( PEC_PCI__TYPE_CFG0, 0 );
+        1: errCpl.SetType( PEC_PCI__TYPE_CFG0, 1 );
+        2: errCpl.SetType( PEC_PCI__TYPE_CFG1, 0 );
+        3: errCpl.SetType( PEC_PCI__TYPE_CFG1, 1 );
+        }
+      case ( f_badCpl )
+        {
+        11: errCpl.AdjustLen( 1 );
+        12: errCpl.AdjustCount( 1 );
+        13: errCpl.BadReqID( 8'h80 );
+        }
+      f_badCpl = f_badCpl + 1;
+      thisStrategy = errCpl;
+    }
+    
+    else if ( mode == "NonConfig CRS completion") {
+      f_badCpl = urandom_range(1,0) ;
+      printf("# F_Mode = NonConfig CRS completion =%d\n", 
+	     f_badCpl); 
+      errCpl = new( f_env );
+      errCpl.SetErrQueue( f_errQueue );
+      errCpl.CRS();
+      case ( f_badCpl % 3 ) 
+	{
+	0: errCpl.SetType( PEC_PCI__TYPE_IO, 0); 
+	1: errCpl.SetType( PEC_PCI__TYPE_IO, 1);
+	2: errCpl.SetType( PEC_PCI__TYPE_MEM, 0); 
+	}
+      case ( f_badCpl / 3 )
+        {
+        1: errCpl.AdjustLen( 1 );
+        2: errCpl.AdjustCount( 1 );
+        3: errCpl.BadReqID( 8'h80 );
+        }
+      thisStrategy = errCpl;
+    }
+      
+    else if ( mode == "unexpected completion" ) {
+      errCpl = new( f_env );
+      errCpl.SetErrQueue( f_errQueue );
+      if ( f_badCpl == 0 )
+        errCpl.NoRequest();
+      else if ( f_badCpl <= 7 )
+        errCpl.BadTag( f_badCpl << 5 );
+      else if ( f_badCpl < 24 )
+        errCpl.BadReqID( 1 << (f_badCpl-8) );
+      else if ( f_badCpl == 24 )
+        {
+        errCpl.BadStatus();
+        errCpl.BadReqID(); 
+        }
+      else randcase
+        {
+        1: errCpl.BadReqID(); 
+        1: { errCpl.BadReqID(); errCpl.BadStatus(); }
+        1: errCpl.BadTag();
+        1: errCpl.NoRequest();
+        }
+      f_badCpl = f_badCpl + 1; 
+      thisStrategy = errCpl;
+    }
+    
+    else if ( mode == "locked completion" ) {
+      errCpl = new( f_env );
+      errCpl.SetErrQueue( f_errQueue );
+      errCpl.SendCplLk();
+      if ( f_badCpl % 2 ) errCpl.NoRequest();
+      case (f_badCpl % 7)
+        {
+        0: errCpl.SetType( PEC_PCI__TYPE_MEM, 0 );
+        1: errCpl.SetType( PEC_PCI__TYPE_CFG1, 0 );
+        2: errCpl.SetType( PEC_PCI__TYPE_CFG1, 0 );
+        3: errCpl.SetType( PEC_PCI__TYPE_IO, 0 );
+        4: errCpl.SetType( PEC_PCI__TYPE_CFG0, 1 );
+        5: errCpl.SetType( PEC_PCI__TYPE_CFG1, 1 );
+        6: errCpl.SetType( PEC_PCI__TYPE_IO, 1 );
+        }
+      f_badCpl = f_badCpl + 1; 
+      thisStrategy = errCpl;
+    }
+    
+    else if ( mode == "completion count" ) {
+      errCpl = new( f_env );
+      errCpl.SetErrQueue( f_errQueue );
+      case (f_badCpl % 5)
+        {
+        0: errCpl.AdjustCount(1);   
+        1: errCpl.AdjustCount(-1);   
+        2: errCpl.AdjustCount(512);
+	3: errCpl.AdjustCount(64);  // for code coverage
+	4: errCpl.AdjustCount(128); // for code coverage
+        }
+      case (f_badCpl % 4)
+        {
+        0: errCpl.SetType( PEC_PCI__TYPE_MEM, 0 );
+        1: errCpl.SetType( PEC_PCI__TYPE_CFG0, 0 );
+        2: errCpl.SetType( PEC_PCI__TYPE_CFG1, 0 );
+        3: errCpl.SetType( PEC_PCI__TYPE_IO, 0 );
+        }
+      f_badCpl = f_badCpl + 1; 
+      thisStrategy = errCpl;
+    }
+    
+    else if ( mode == "completion address" ) {
+      errCpl = new( f_env );
+      errCpl.SetErrQueue( f_errQueue );
+      case (f_badCpl % 3)
+        {
+        0: errCpl.AdjustAddr(1);   
+        1: errCpl.AdjustAddr(-1);   
+        2: errCpl.AdjustAddr(64);
+        }
+      case (f_badCpl % 4)
+        {
+        0: errCpl.SetType( PEC_PCI__TYPE_MEM, 0 );
+        1: errCpl.SetType( PEC_PCI__TYPE_CFG0, 0 );
+        2: errCpl.SetType( PEC_PCI__TYPE_CFG1, 0 );
+        3: errCpl.SetType( PEC_PCI__TYPE_IO, 0 );
+        }
+      f_badCpl = f_badCpl + 1; 
+      thisStrategy = errCpl;
+    }
+    
+    else if ( mode == "completion TC" ) {
+      errCpl = new( f_env );
+      errCpl.SetErrQueue( f_errQueue );
+      errCpl.BadTC( (f_badCpl%7) + 1 );
+      f_badCpl = f_badCpl + 1; 
+      thisStrategy = errCpl;
+    }
+    
+    else if ( mode == "completion attr" ) {
+      errCpl = new( f_env );
+      errCpl.SetErrQueue( f_errQueue );
+      errCpl.BadAttr( (f_badCpl%3) + 1 );
+      f_badCpl = f_badCpl + 1; 
+      thisStrategy = errCpl;
+    }
+    
+    else if ( mode == "completion length" ) {
+      errCpl = new( f_env );
+      errCpl.SetErrQueue( f_errQueue );
+      case (f_badCpl % 4)
+        {
+        0: errCpl.SetType( PEC_PCI__TYPE_MEM, 0 );
+        1: errCpl.SetType( PEC_PCI__TYPE_CFG0, 0 );
+        2: errCpl.SetType( PEC_PCI__TYPE_CFG1, 0 );
+        3: errCpl.SetType( PEC_PCI__TYPE_IO, 0 );
+        }
+      
+      if ( f_badCpl < 4 )       errCpl.AdjustLen( 1 );
+      else if ( f_badCpl < 8 )  errCpl.AdjustLen( -1 );
+      else if ( f_badCpl < 10 ) errCpl.AdjustLen( 2 );
+      else if ( f_badCpl < 12 ) errCpl.AdjustLen( 4 );
+      else if ( f_badCpl < 14 ) errCpl.AdjustLen( 8 );
+      else if ( f_badCpl < 15 ) errCpl.AdjustLen( 16 );
+      else if ( f_badCpl < 16 ) errCpl.AdjustLen( 32 );
+      else                      errCpl.AdjustLen( urandom()%8 + 1 );
+
+      f_badCpl = f_badCpl + 1;       
+      thisStrategy = errCpl;
+    }
+    
+    else if ( mode == "NonConfigCRS" ) {
+      errCpl = new( f_env );
+      errCpl.SetErrQueue( f_errQueue );
+      case (f_badCpl % 3)
+        {
+        0: errCpl.SetType( PEC_PCI__TYPE_MEM, 0 );
+        1: errCpl.SetType( PEC_PCI__TYPE_IO, 0 );
+        2: errCpl.SetType( PEC_PCI__TYPE_IO, 1 );
+        }
+//N2 Only allow NonConfigCRS errors
+//      case ( f_badCpl / 3 )
+//        {
+//        1: errCpl.AdjustLen( 1 );
+//        2: errCpl.AdjustCount( 1 );
+//        3: errCpl.BadReqID( 8'h80 );
+//        }
+      errCpl.CRS();
+      f_badCpl = f_badCpl + 1; 
+      thisStrategy = errCpl;
+    }
+
+    else if ( mode == "IncorrectCpl" ) {
+      errCpl = new( f_env );
+      errCpl.SetErrQueue( f_errQueue );
+      case (f_badCpl % 7)
+        {
+        0: errCpl.SetType( PEC_PCI__TYPE_MEM, 0 );
+        1: errCpl.SetType( PEC_PCI__TYPE_CFG0, 0 );
+        2: errCpl.SetType( PEC_PCI__TYPE_CFG0, 1 );
+        3: errCpl.SetType( PEC_PCI__TYPE_CFG1, 0 );
+        4: errCpl.SetType( PEC_PCI__TYPE_CFG1, 1 );
+        5: errCpl.SetType( PEC_PCI__TYPE_IO, 0 );
+        6: errCpl.SetType( PEC_PCI__TYPE_IO, 1 );
+        }
+      case ((f_badCpl/7) % 2)
+        {
+        0: errCpl.WrongData();
+        1: errCpl.WrongStatus();
+        }
+      f_badCpl = f_badCpl + 1; 
+      thisStrategy = errCpl;
+    }
+    
+    else if ( mode == "PoisonReq" ) {
+      dmaPreq = new( f_env );
+      dmaPreq.SetErrQueue( f_errQueue );
+
+      case (f_badIndex%4)
+        {
+        0: dmaPreq.SetType( PEC_PCI__TYPE_MEM, 0 );
+        1: dmaPreq.SetType( PEC_PCI__TYPE_MEM, 1 );
+        2: dmaPreq.SetType( PEC_PCI__TYPE_MSG, 0 );
+        3: dmaPreq.SetType( PEC_PCI__TYPE_MEM, 1 );
+        }
+      case ( f_badIndex / 4 )
+        {
+        0: dmaPreq.SetLen( 1 );
+        1: dmaPreq.SetLen( 16 );
+        2: dmaPreq.SetLen( f_env.getMaxPayloadSize() / 4 );
+        default: dmaPreq.SetLen( 9 );
+        }
+      f_badIndex = f_badIndex + 1;
+      thisStrategy = dmaPreq;
+    }
+
+    else if ( mode == "PoisonReqP2252" ) {
+      dmaPreq = new( f_env );
+      dmaPreq.SetErrQueue( f_errQueue );
+
+      case (f_badIndex%4)
+        {
+        0: dmaPreq.SetType( PEC_PCI__TYPE_MEM, 1 );
+        1: dmaPreq.SetType( PEC_PCI__TYPE_MEM, 1 );
+        2: dmaPreq.SetType( PEC_PCI__TYPE_MEM, 1 );
+        3: dmaPreq.SetType( PEC_PCI__TYPE_MEM, 1 );
+        }
+      case ( f_badIndex / 4 )
+        {
+        0: dmaPreq.SetLen( 4 );
+        1: dmaPreq.SetLen( 16 );
+        2: dmaPreq.SetLen( f_env.getMaxPayloadSize() / 4 );
+        default: dmaPreq.SetLen( 32 );
+        }
+      f_badIndex = f_badIndex + 1;
+      thisStrategy = dmaPreq;
+    }
+
+    
+    else if ( mode == "PoisonCpl" ) {
+
+      randcase {
+
+        1 : { pioMRd     = new( f_env, f_errQueue );  pioBase = pioMRd;     }
+        1 : { pioCfgIORd = new( f_env, f_errQueue );  pioBase = pioCfgIORd; }
+      }
+
+      pioBase._ep_cpl_prob_true  = 100;
+      pioBase._ep_cpl_prob_false =   0;
+
+      thisStrategy = pioBase;
+    }
+
+    
+    else if ( mode == "DWBE" ) {
+      badReq = new( f_env );
+      badReq.SetErrQueue( f_errQueue );
+      randcase
+        {
+        1: badReq.SetLength(1);
+        2: badReq.SetLength(2);
+        1: badReq.SetLength(3);
+        1: badReq.SetLength(4);
+        }
+      while ( !badReq.SetDWBE( urandom()%16, urandom()%16, urandom()%2 ) )
+        {
+        // Pick another DWBE-pair...
+        }
+      thisStrategy = badReq;
+    }
+
+    else if ( mode == "Receiver Errors" ) {
+      RcvrErr = new( f_env );
+      RcvrErr.SetErrQueue( f_errQueue );
+ 
+      RcvrErr.nmbrRcvrErrsToInject = f_nmbrRcvrErrsToInject;
+      RcvrErr.rcvrErrPct = f_rcvrErrPct;
+      RcvrErr.rcvrErr8b10bWeight = f_rcvrErr8b10bWeight;
+      RcvrErr.rcvrErrFramingWeight = f_rcvrErrFramingWeight;
+      RcvrErr.rcvrErrDisparityWeight = f_rcvrErrDisparityWeight;
+      RcvrErr.rcvrErrFlipBitWeight = f_rcvrErrFlipBitWeight;
+      RcvrErr.rcvrErrLcrcWeight = f_rcvrErrLcrcWeight;
+      RcvrErr.rcvrErrDupSeqNmbrWeight = f_rcvrErrDupSeqNmbrWeight;
+      RcvrErr.rcvrErrOutOfSeqNmbrWeight = f_rcvrErrOutOfSeqNmbrWeight;
+      RcvrErr.rcvrErrBadSeqNmbrWeight = f_rcvrErrBadSeqNmbrWeight;
+      RcvrErr.optional_CE_BTP = f_optional_CE_BTP;
+
+      RcvrErr.InvertLCRCErrWeight = f_InvertLCRCErrWeight;
+      RcvrErr.EDBErrWeight = f_EDBErrWeight;
+//       RcvrErr.InvertLCRCAndEDBErrWeight = f_InvertLCRCAndEDBErrWeight;
+      printf("AC:  mode = Receiver Errors at time %d\n",get_time(LO));  
+
+
+      thisStrategy = RcvrErr;
+    }
+
+
+    else if ( mode == "DLLP Errors") { 
+      DLLPErr = new(f_env); 
+      DLLPErr.SetErrQueue( f_errQueue); 
+      DLLPErr.nmbrDLLPErrsToInject = f_nmbrDLLPErrsToInject;
+      DLLPErr.DLLPErrUnsupportWeight = f_DLLPErrUnsupportWeight;
+      DLLPErr.DLLPErrBadCRCWeight = f_DLLPErrBadCRCWeight;
+      printf("AC:  mode = DLLP Errors at time %d\n",get_time(LO));  
+
+      thisStrategy = DLLPErr;
+    }
+
+    else if ( mode == "ACK NAK Errors") { 
+      AckNakErr = new(f_env); 
+      AckNakErr.SetErrQueue( f_errQueue); 
+      AckNakErr.nmbrAckNakErrsToInject = f_nmbrAckNakErrsToInject;
+      AckNakErr.DLLPAckLessthanAckedErrWeight = f_DLLPAckLessthanAckedErrWeight;
+      AckNakErr.DLLPNakLessthanAckedErrWeight = f_DLLPNakLessthanAckedErrWeight;
+      AckNakErr.DLLPAckmorethanTLPNxtSeqErrWeight = f_DLLPAckmorethanTLPNxtSeqErrWeight;
+      AckNakErr.DLLPNakmorethanTLPNxtSeqErrWeight = f_DLLPNakmorethanTLPNxtSeqErrWeight;
+      printf("AC:  mode = Ack Nak Errors at time %d\n",get_time(LO));  
+
+
+      thisStrategy = AckNakErr;
+    }
+
+//      else if ( mode == "Invert LCRC and EDB Errors") { 
+     else if ( mode == "Null TLP Errors") { 
+ 
+       nullTlpErr = new(f_env); 
+       nullTlpErr.SetErrQueue( f_errQueue); 
+       nullTlpErr.nmbrnullTlpErrsToInject = f_nmbrnullTlpErrsToInject;
+       nullTlpErr.nullTlpErrWeight = f_nullTlpErrWeight;
+
+//        nullTlpErr.InvertLCRCErrWeight = f_InvertLCRCErrWeight;
+//        nullTlpErr.EDBErrWeight = f_EDBErrWeight;
+//        nullTlpErr.NormalLCRCENDErrWeight = f_NormalLCRCENDErrWeight;
+       printf("AC:  mode = Null TLP (Invert LCRC and EDB) Errors at time %d\n",get_time(LO));  
+ 
+       thisStrategy = nullTlpErr;
+     }
+
+    
+
+    
+    // duplicate sequence number non skip error.  Not forced by Denali 
+    else if ( mode == "DuplicateSeqNmbrNoSkip" ) {
+      // dmaPreq = new( f_env );
+      duplicateSeqNmbrReq = new( f_env );
+      duplicateSeqNmbrReq.SetErrQueue( f_errQueue );
+
+      randcase
+        {
+        10: duplicateSeqNmbrReq.SetType( PEC_PCI__TYPE_MEM, 0 );
+        10: duplicateSeqNmbrReq.SetType( PEC_PCI__TYPE_MEM, 1 );
+        20: duplicateSeqNmbrReq.SetType( PEC_PCI__TYPE_MSG, 0 );
+        }
+      randcase 
+        {
+        10: duplicateSeqNmbrReq.SetLen( 1 );
+        10: duplicateSeqNmbrReq.SetLen( 16 );
+        10: duplicateSeqNmbrReq.SetLen( f_env.getMaxPayloadSize() / 4 );
+        10: duplicateSeqNmbrReq.SetLen( urandom_range(0, 255) );
+        }
+
+      thisStrategy = duplicateSeqNmbrReq;
+    }
+
+   
+    else if ( mode == "Flow Control Protocol Errors") {
+      FCPErr = new(f_env);
+      FCPErr.SetErrQueue( f_errQueue);
+      FCPErr.nmbrFCPErrsToInject = f_nmbrFCPErrsToInject;
+      FCPErr.DLLP_FCP_Infinite_FC_PH_ErrWeight = f_DLLP_FCP_Infinite_FC_PH_ErrWeight;
+      FCPErr.DLLP_FCP_Infinite_FC_PD_ErrWeight = f_DLLP_FCP_Infinite_FC_PD_ErrWeight;
+      FCPErr.DLLP_FCP_Infinite_FC_NPH_ErrWeight = f_DLLP_FCP_Infinite_FC_NPH_ErrWeight;
+      FCPErr.DLLP_FCP_Infinite_FC_NPD_ErrWeight = f_DLLP_FCP_Infinite_FC_NPD_ErrWeight;
+      FCPErr.DLLP_FCP_Infinite_FC_CLPH_ErrWeight = f_DLLP_FCP_Infinite_FC_CLPH_ErrWeight;
+      FCPErr.DLLP_FCP_Infinite_FC_CLPD_ErrWeight = f_DLLP_FCP_Infinite_FC_CLPD_ErrWeight;
+
+      FCPErr.DLLP_FCP_Infinite_FC_all_P_ErrWeight = f_DLLP_FCP_Infinite_FC_all_P_ErrWeight;
+      FCPErr.DLLP_FCP_Infinite_FC_all_NP_ErrWeight = f_DLLP_FCP_Infinite_FC_all_NP_ErrWeight;
+      FCPErr.DLLP_FCP_Infinite_FC_all_CLP_ErrWeight = f_DLLP_FCP_Infinite_FC_all_CLP_ErrWeight;
+
+      FCPErr.DLLP_FCP_over128_FC_PH_ErrWeight = f_DLLP_FCP_over128_FC_PH_ErrWeight;
+      FCPErr.DLLP_FCP_over2048_FC_PD_ErrWeight = f_DLLP_FCP_over2048_FC_PD_ErrWeight;
+      FCPErr.DLLP_FCP_over128_FC_NPH_ErrWeight = f_DLLP_FCP_over128_FC_NPH_ErrWeight;
+      FCPErr.DLLP_FCP_over2048_FC_NPD_ErrWeight = f_DLLP_FCP_over2048_FC_NPD_ErrWeight;
+      FCPErr.DLLP_FCP_over128_FC_CLPH_ErrWeight = f_DLLP_FCP_over128_FC_CLPH_ErrWeight;
+      FCPErr.DLLP_FCP_over2048_FC_CLPD_ErrWeight = f_DLLP_FCP_over2048_FC_CLPD_ErrWeight;
+
+      printf("AC:  mode = Flow Control Protocol Errors at time %d\n",get_time(LO));
+
+
+      thisStrategy = FCPErr;
+    }
+
+
+
+
+    
+    
+
+
+    
+					// An unknown sort of error...
+					// The "ErrChk" strategy will hang.
+    else
+      {
+      printf("ErrTlp (cycle %0d) '%s' is undefined\n", get_cycle(), mode);
+      nullStr = new( f_env );
+      thisStrategy = nullStr;
+      }
+
+    if ( f_abort ) thisStrategy.f_abortErrTlp = 1;
+
+    ProvideStrategy = thisStrategy;
+
+    } /* end ProvideStrategy */
+    
+  protected function CTStrategyBase FinalizeParms( CTStrategyBase a_strategy )
+    {
+    FinalizeParms = a_strategy;
+    } /* end FinalizeParms */
+
+  } /* end ErrTlpPEUCtx */ 

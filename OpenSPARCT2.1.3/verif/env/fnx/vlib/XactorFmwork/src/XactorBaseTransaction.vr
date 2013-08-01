@@ -1,0 +1,152 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: XactorBaseTransaction.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "XactorBasePacket.vrh"
+#include "XactorBaseSignalInterface.vrh"
+#include "XactorBaseManager.vrh"
+#include "XactorDefines.vri"
+#include "CTTransactionID.vrh"
+
+#include "cReport.vrh"
+
+virtual class XactorBaseTransaction {
+
+  // Transactor Name. This should be the same name for all transaction
+  // objects using the same DUT interface.
+  protected string XactorName;  
+
+  // Transactor Data Packet handle. It encapsulates data related to a transaction.
+  protected XactorBasePacket Packet;
+  
+  // Transactor Drive/Expect Manager handle. Process drives and expects.
+  XactorBaseManager Manager;
+
+  // Transactor Signal-Interface Manager handle. Drives and samples transactions from
+  // the DUT, decodes/builds packets(with the driven/sampled data signals), and
+  // receives/sends packets from/to the transactor manager.
+  XactorBaseSignalInterface SignalInterface;
+  
+  // Report handle. Generates different types of messages.
+  ReportClass MyReport;
+
+  task new() {}
+
+  // Pass a CTTransactionID object to the transaction
+  virtual task SetID(CTTransactionID XactionID);
+
+  // Returns a CTTransactionID
+  virtual function CTTransactionID GetID();
+
+  // FieldType is a string that indicates which field (within the Packet member) to set. 
+  // FieldValue is the actual value that the packet field will be set to.  
+  virtual task SetPacket(string FieldType,
+			 bit [XACT_FIELD_WIDTH-1:0] FieldValue
+			 );
+
+  // FieldType is a string that indicates which field (within the Packet member) to get. 
+  // FieldValue is the returned value of the field indicated by FieldType.
+  virtual function bit [XACT_FIELD_WIDTH-1:0] GetPacket(string FieldType);
+
+  // Resets the Packet member. 
+  virtual task ResetPacket();
+
+  // FieldType is a string that indicates which field (within the Signal Interface member) 
+  // to set. FieldValue is the actual value that the packet field will be set to.  
+  virtual task SetSignalInterface(string FieldType, 
+				  bit [XACT_FIELD_WIDTH-1:0] FieldValue
+				  );
+
+  // FieldType is a string that indicates which field (within the Signal Interface member) 
+  // to get. FieldValue is the returned value of the field indicated by FieldType.
+  virtual function bit [XACT_FIELD_WIDTH-1:0] GetSignalInterface(string FieldType);
+
+  // This task will use the report utility to print all the information about the
+  // transaction. 
+  virtual task Display(string msg = "");
+
+  // This function returns the name of the transactor.
+  virtual function string Name();
+
+  // This task prints a complete list of all the pending expects of the transactor.
+  virtual task DumpExpectList();
+
+  // Returns 1 if an expect (with the same value of the Packet member) is pending and
+  // 0 otherwise.
+  virtual function bit IsExpectPending();
+
+  // Returns the number of pending expects of the transactor.
+  virtual function integer ExpectCount();
+
+  // This function is similar to the Expect(next one). The only difference is in the case of a 
+  // timeout, the expect thread will be silently removed from the expect manager data structures.    
+  virtual function bit ExpectExpire(integer Window);
+
+  // This function will launch an expect thread. The thread will be installed in the data 
+  // structures of the expect manager and will stay there waiting for the DUT to drive the 
+  // expected value.
+  // If Expect is satisfied by a matched transaction driven by the DUT within the Window period, 
+  // then the function returns a 1 indicating success. If the Window period elapses without a 
+  // match, then it returns a 0.
+  virtual function bit Expect(integer Window);
+
+  // This task will launch a thread that will be waiting for the next transaction driven by the
+  // DUT. It will then return a packet object (through the parameter list) with the data fields
+  // of the sampled transaction.
+  virtual task Sample(XactorBasePacket Pkt,
+		      integer Window = 50000
+		      );
+
+  // This function removes a pending expect for a transaction that matches the values in Packet. If
+  // a pending expect is found the function returns 1, and 0 otherwise.
+  virtual function bit Remove();
+
+  // This task initiates a transaction to be driven to the DUT. 
+  // D : Number of cycles (delay) before the transaction is sent to the drive manager to be 
+  // scheduled. It could be seen as a priority given to the drive transaction, the larger the 
+  // delay number, the longer the time the transaction will have to wait before it is scheduled 
+  // for driving. The default value is 0, which schedules the drive transaction immediately.
+  virtual task Drive(integer D = 0);
+
+  // This task enables the transactor. Any scheduled drives or pending expects are resumed.
+  virtual task Enable();
+
+  // This task disables the transactor, preventing reporting of unexpected transactions or 
+  // incorrect design behavior. Scheduled drives and pending expects are suspended, but not lost.
+  virtual task Disable();
+
+  // This task resets the state of the transactor. All scheduled drives and pending expects are lost.  
+  virtual task Reset();
+
+} 

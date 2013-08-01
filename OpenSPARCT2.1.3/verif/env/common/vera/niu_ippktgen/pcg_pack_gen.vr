@@ -1,0 +1,185 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: pcg_pack_gen.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#define PG_WAIT_TO	6000		// Number of cycles to wait for time out
+
+task pkt_gen(	flow_desc flow, integer data_length, integer ttl, var integer token, 
+		bit[63:0] options=0) {
+
+	integer time_out = 0;
+       
+        integer current_flow_num;
+        integer flow_id;
+
+
+        current_flow_num = flow.flow_no; 
+
+	if(my_port > 4 ) {
+		printf("WARNING: PG: Port %0d is invalid (only used to satisfy fflp testsuite).\n",my_port);
+		printf("             No action is taken.\n");
+		return;
+	}
+
+	pckt_num++;
+
+        if (flow.fl_state.tcp_flags == 6'h02)
+             new_flow++;
+
+
+	case({	check_option(options, O_ORDER_START),
+		check_option(options, O_ORDER_CONT),
+		check_option(options, O_ORDER_END)	}) {
+	   3'b100:	order_seq = 0;
+	   3'b010:	order_seq++;
+	   3'b001:	order_seq++;
+	   }
+
+	if(flow.src_node.src_port[my_port] != 1) {
+		print_warn();
+		printf("PG: Specified src_node may not be used as source for this port. Continuing anyway ...\n");
+	  }
+
+
+
+	token = pack_db_add_entry(	my_port, flow, flow.frame, flow.src_node, flow.dst_node, flow.tup, flow.rx_param, flow.tx_param, flow.fl_state, data_length,ttl, options, order_seq,
+					pckt_num, ifedx_control);
+ 
+	pack_db[token].port_type = port_type;
+
+
+        if( pack_db[token].fl_state.tcp_flags == 2'h02 ) {
+
+	  flow_db_add_entry( my_port, data_length, flow, flow.tup, flow.rx_param, flow.tx_param, flow.fl_state, options, current_flow_num );
+ 
+}
+
+/***********************************
+	// If port 19 specify HTP descriptor control bits 
+	if (pack_db[token].org_port== 8) {
+		pack_db[token].htp.forward_dec = htp_forward_dec;
+		pack_db[token].htp.priority = 	htp_priority;
+		pack_db[token].htp.dont_tag = 	htp_dont_tag;
+		pack_db[token].htp.no_crc_ins = htp_no_crc_ins;
+		pack_db[token].htp.ortagin = 	htp_ortagin;
+	   }
+*****************************************/
+
+	if(debug_db_in)	display_db(token);
+	wait_send_fake=0;
+
+        mailbox_put(mb_q, token); 
+
+printf("Waiting for packet to go out ...(port type: %h), token# %0d\n",port_type, token);
+//printf("options fake out: %d\n",check_option( pack_db[token].options, O_FAKE_OUT) );
+
+	if( check_option( pack_db[token].options, O_WAIT_SEND_FAKE) ) {
+		while(wait_send_fake==0)	@(posedge CLOCK);
+	   }
+
+
+
+	if( check_option( pack_db[token].options, O_WAIT_SEND) ) {
+
+		fork
+			while(time_out<PG_WAIT_TO) {
+				wait_rx_clk(1);
+				time_out++;
+			   }
+
+                    while(pack_db[token].pg_done!=1)	@(posedge CLOCK);
+		join any
+
+		terminate;
+
+
+		if(pack_db[token].pg_done!=1) {
+				pack_db[token].pg_done=1;
+				print_warn();
+				printf("PG: Timed out waiting for done bit (waited %0d cycles)...\n",time_out);
+				printf("    This only happens with fake ports when we wait for someone\n");
+				printf("    to acknowladge that the packet was processed (Port: %0d).\n",my_port);
+				printf("    Token: %0d, Time: %0d\n",token,{get_time(HI),get_time(LO)});
+		   }
+
+	   }
+
+
+
+//printf("Packet went out ...\n");
+   }
+
+task pkt_auto_tx() {
+	integer		len;		// buffer length
+	byte_array	buf;		// Frame buffer
+	integer		token;		// Read from the queue
+
+	buf = new;			// Allocate new buffer
+
+
+	while(1) {
+		mailbox_get(WAIT, mb_q, token);
+		if(debug_db_out)	display_db(token);
+
+		gen_buf( token,  buf, len );
+		if(debug_fa)	display_buf( buf, len, INTER_FEDX );
+		wait_send_fake=1;
+
+		if( !check_option( pack_db[token].options, O_NO_OUT_TOKEN) ) {
+			if(debug_out_token)
+				printf("INFO: PG[%0d]: Sending token (%0d) to outgoing mailbox. (Time: %d)\n",
+					my_port, token, {get_time(HI),get_time(LO)} );
+        		mailbox_put(mbox_id.pg_mb[my_port], token); 
+		   }
+
+		printf("pg[%0d]: Transmitting packet ...\n",my_port);
+		printf("options fake out: %d\n",check_option( pack_db[token].options, O_FAKE_OUT) );
+		if( !(check_option( pack_db[token].options, O_FAKE_OUT )) & !port_type[2] ) {
+			//printf("pg[%0d]: Setting done bit ...\n",my_port);
+			//if(verbose_on)
+                        	printf("INFO: PG[%0d]: Sending out packet token:%0d at time %0d \n",my_port, token,
+					{get_time(HI),get_time(LO)}); 
+			send_packet(port_type, buf, len, pack_db[token].options);
+
+
+			pack_db[token].pg_done = 1;
+			//if(verbose_on)
+				printf("INFO: PG[%0d]: Packet token %0d sent done at time=%0d  \n",my_port, token,
+				{get_time(HI),get_time(LO)});
+		   }
+		printf("pg[%0d]: Done Transmitting packet ...\n",my_port);
+	   }
+   }
+
+
+

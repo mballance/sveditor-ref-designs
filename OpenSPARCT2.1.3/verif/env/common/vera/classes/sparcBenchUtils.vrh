@@ -1,0 +1,78 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: sparcBenchUtils.vrh
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#ifndef INC__TMP_SPARCBENCHUTILS_VRH
+#define INC__TMP_SPARCBENCHUTILS_VRH
+
+typedef class StandardDisplay ;
+typedef class BaseUtils;
+
+extern class SparcBenchUtils extends BaseUtils { 
+  task new (
+    StandardDisplay dbgHndl,
+    integer clockPeriod = 100
+    );
+
+  task resetDut();
+  
+  function reg [63:0] getThreadEnables();
+  function reg [63:0] getRunStatus();
+  
+  function reg ioSpaceAccess(reg [63:0] addr, // full addr of request
+                             var reg [127:0] data, // r/w data
+                             reg read = 1,    // request is read, else write
+                             reg [7:0] size = 8'hff, // write byte mask
+                             integer thread = 99, // please
+                             integer myPort = 99); // optional for messaging
+
+  function reg [127:0] copyDataByte (reg [127:0] data, 
+                                     reg [7:0]   size,
+                                     reg [3:0] offset);
+
+
+function reg [63:0] evictAddr (reg [7:0] core_enable,
+                               var reg [2:0] cidUsed,
+                               reg [3:0] cid = 4'hf,
+                               integer dCacheWeight = 60);
+
+function reg [127:0] evictVector (reg [7:0] core_enable,
+                                  reg [63:0] evict_pa,
+                                  reg [2:0] cpuId,
+                                  var reg [7:0] targets);
+
+function reg [2:0] whichBank(reg [63:0] addr);
+
+}
+
+#endif

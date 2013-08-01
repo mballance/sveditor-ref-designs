@@ -1,0 +1,244 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: XactorHash.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "XactorBinTree.vrh"
+#include "XactorList.vrh"
+#include "XactorUtilities.vrh"
+
+#include "XactorBasePacket.vrh"
+#include "XactorBaseExpectDataStruct.vrh"
+#include "XactorBaseBuilder.vrh"
+#include "XactorDefines.vri"
+
+// Entries in the Hash Table 
+#define XACT_CAM_ENTRIES 9      
+
+typedef class XactorHash;
+
+class XactorHash extends XactorBaseExpectDataStruct {
+
+//  bit [3:0] ai[4];
+
+  // Hash Data Structure. Each element could be any 
+  // data structure with the interface defined in the
+  // XactorBaseExpectDataStruct base class.
+  XactorBaseExpectDataStruct Table[XACT_CAM_ENTRIES];
+
+
+  task new (XactorBaseBuilder Builder);
+
+  // Public method. Inserts a new node with the specified values.
+  virtual task Insert (XactorBasePacket Item, 
+		       var event e[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]
+		       );
+  
+  // Public method. Deletes a node with the specified values and returns 
+  // Success = 1 if the node was found and deleted and Success = 0 otherwise.
+  virtual task Delete (XactorBasePacket Item,
+		       var bit Success
+		       );
+
+  // Deletes the node with the specified reference Item.
+  // Success = 1 if the node was found and deleted and Success = 0 otherwise.
+  virtual task RefDelete (XactorBasePacket Item,
+			  var bit Success
+			  );
+  
+  // Public method.
+  virtual task WildCardDelete1 (XactorBasePacket Item, 
+				var bit Success
+				);
+
+  // Public method. Will return the number of nodes in the hash data structure.
+  virtual function integer CountNodes();
+
+  // Public method. Returns 1 if Item is within the hash and
+  // 0 otherwise.
+  virtual function bit InStructure(XactorBasePacket Item);
+
+  // Public method. Prints all the nodes of the hash table.
+  // Each "compressed" expected value is decoded by
+  // a packet object. Once decoded, each field will be stored within the
+  // same packet and printed.
+  virtual task PrintNodes ();
+
+  // Public method. Returns 1 if the hash table is empty and 0 otherwise.
+  virtual function bit Empty();
+
+  // Public method. Triggers every node's remove event and then deletes the 
+  // complete hash table
+  virtual task Reset();
+
+//  virtual protected task GenerateHash();
+
+  // Local method. Returns an index based on the value of Item.
+  virtual protected function integer Hash (XactorBasePacket Item);
+
+}
+
+  ////////////////
+ // Definitions
+////////////////
+
+task XactorHash::new (XactorBaseBuilder Builder) {
+  integer Index;
+  
+  for (Index=0; Index <= XACT_CAM_ENTRIES-1; ++Index)
+    Table[Index] = Builder.CreateHashElement();
+  
+  //    GenerateHash();
+}
+
+// Public method. Inserts a new node with the specified values.
+task XactorHash::Insert (XactorBasePacket Item, 
+			 var event e[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS]
+			 ) {    
+  
+  Table[Hash(Item)].Insert(Item, e);
+}
+
+// Public method. Deletes a node with the specified values and returns 
+// Success = 1 if the node was found and deleted and Success = 0 otherwise.
+task XactorHash::Delete (XactorBasePacket Item,
+			 var bit Success
+			 ) {
+  
+  Table[Hash(Item)].Delete(Item, Success);
+}
+
+// Deletes the node with the specified reference Item.
+// Success = 1 if the node was found and deleted and Success = 0 otherwise.
+task XactorHash::RefDelete (XactorBasePacket Item,
+			    var bit Success
+			    ) {
+  
+  Table[Hash(Item)].RefDelete(Item, Success);
+}
+
+// Public method.
+task XactorHash::WildCardDelete1 (XactorBasePacket Item, 
+				  var bit Success
+				  ) {
+  integer Index;
+  bit DeleteSuccess = 1'b0;
+  
+  for (Index=0; Index <= XACT_CAM_ENTRIES-1; ++Index) {
+    Table[Index].WildCardDelete1(Item, DeleteSuccess);
+    if(DeleteSuccess)
+      Success = 1'b1;
+  }
+}
+
+// Public method. Will return the number of nodes in the hash data structure.
+function integer XactorHash::CountNodes() {
+  
+  integer Index;
+  integer Counter = 0;
+  
+  for (Index=0; Index <= XACT_CAM_ENTRIES-1; ++Index) 
+    Counter = Counter + Table[Index].CountNodes();
+  
+  CountNodes = Counter;
+} 
+
+// Public method. Returns 1 if Item is within the hash and
+// 0 otherwise.
+function bit XactorHash::InStructure(XactorBasePacket Item) {
+  integer Result = 0;
+  
+  if(Table[Hash(Item)].InStructure(Item) === 1'b1)
+    Result = 1;
+  
+  InStructure = Result;
+}
+
+// Public method. Prints all the nodes of the hash table.
+// Each "compressed" expected value is decoded by
+// a packet object. Once decoded, each field will be stored within the
+// same packet and printed.
+task XactorHash::PrintNodes () {
+  integer Index;
+
+  for (Index=0; Index <= XACT_CAM_ENTRIES-1; ++Index) {
+    Table[Index].PrintNodes();
+  }
+}
+
+// Public method. Returns 1 if the hash table is empty and 0 otherwise.
+function bit XactorHash::Empty() {
+  integer Index = 0;
+  bit Result;
+
+  Result = 1'b1; // Assume empty
+  for(Index = 0; Index <= XACT_CAM_ENTRIES - 1; Index++) {
+    if(!Table[Index].Empty()) 
+      Result = 1'b0; // Not empty, since at least one element is not empty
+  }
+
+  Empty = Result;
+}
+
+// Public method. Triggers every node's remove event and then deletes the 
+// complete hash table
+task XactorHash::Reset() {
+  integer Index;
+  
+  for (Index=0; Index <= XACT_CAM_ENTRIES-1; ++Index) {
+    Table[Index].Reset();
+  }
+  
+}
+
+//  task XactorHash::GenerateHash() {
+//    integer Index;
+//
+//    for(Index=0; Index<=3; Index++) {
+//      ai[Index] = random();
+//    }
+//  }
+
+// Local method. Returns an index based on the value of Item.
+function integer XactorHash::Hash (XactorBasePacket Item) {
+  
+  //    bit [63:0] a = 64'h0;
+  //    integer Index;
+  //    for(Index = 0; Index <= 3; Index++)
+  //      a = a + ai[Index]*Item[(15-(Index*4)):((15-(Index*4))-3)];
+  //    hash = a % XACT_CAM_ENTRIES;    
+  
+  Hash = Item.PktHash(XACT_CAM_ENTRIES);
+}
+
+

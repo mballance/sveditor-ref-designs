@@ -1,0 +1,182 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: dmu_cov_defines.vrhpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+  integer	dmu_back_to_back;
+
+  bit [5:0]     dmu_cmd;
+  bit           dmubypass;
+  bit           dmudatareq;
+  bit           dmudatareq16;
+  bit [127:0]   dmudata;
+  bit [15:0]    dmc_tag;
+
+  bit [15:0]    dmu_id_out;
+
+  bit           sio_dmu_req;
+  bit [127:0]   sio_dmu_data;
+  integer 	sio_dmu_back_to_back;
+ 
+  // concatinate {dmu_cmd,dmubypass}
+  bit [6:0]     this_dmu_cmd, last_dmu_cmd;
+  bit           last_dmu_cmd_valid = 1'b0;
+
+  bit [5:0]     sio_dmu_this_cmd, sio_dmu_last_cmd;
+  bit           sio_dmu_last_cmd_valid = 1'b0;
+
+  event dmu_sii_sample_evnt_trig;
+  event sio_dmu_sample_evnt_trig;
+  bit sio_dmu_rd_return_de;
+  bit sio_dmu_rd_return_ue;
+  bit [5:0] sio_dmu_rd_return_ctagecc;
+
+  // -------------DMU-SII-----------------
+  bit dmu_sii_even_addr_par;
+  bit dmu_sii_odd_addr_par;
+  bit dmu_sii_pio_cpl_to_err;
+  bit dmu_sii_pio_cpl_bus_err;
+  bit dmu_sii_pio_cpl_ue_err;
+  bit [15:0] dmu_sii_byte_en;
+  bit [1:0] dmu_sii_parity;
+  bit dmu_sii_datareq;
+  bit dmu_sii_datareq16;
+  bit [1:0] dmu_sii_reqtype;
+
+   
+  //----------PIO-------------------
+  event pio_sample_evnt_trig;
+  reg [31:0] 	ncu_pio_b2b;
+  reg [3:0]	ncu_pio_credit;
+  reg      	ncu_pio_wr;
+  reg [2:0]	ncu_pio_size;
+  reg [7:0]	ncu_pio_bmsk;
+  reg [1:0]	ncu_pio_cmap;
+  reg [1:0]	ncu_pio_bufid;
+  reg [1:0]	ncu_pio_cmd;
+  reg [5:0]	ncu_pio_cpu;
+  reg [35:0]	ncu_pio_add;
+
+  //----------IOMMU Invalidates-------------------
+  event iommu_inv_sample_evnt_trig;
+  reg [33:0]	ncu_iommu_inv_addr;
+
+  //----------------ILU-DMU Ingress-------------------
+  // Ingress PEC Record
+  event ilu_dmu_iHdr_sample_evnt_trig;
+  reg [1:0] 	ilu_dmu_hdr_F;
+  reg [4:0]	ilu_dmu_hdr_Type;
+  reg [6:0]	ilu_dmu_hdr_F_Type;
+  reg [2:0]	ilu_dmu_hdr_TC;
+  reg [1:0]	ilu_dmu_hdr_Atr;
+  reg [9:0]	ilu_dmu_hdr_Len;
+  reg [15:0]	ilu_dmu_hdr_ReqID;
+  reg [7:0]	ilu_dmu_hdr_TLPTag;
+  reg [3:0]	ilu_dmu_hdr_LastDWBE;
+  reg [3:0]	ilu_dmu_hdr_FirstDWBE;
+  reg [61:0]	ilu_dmu_hdr_Addr;
+  reg [2:0]	ilu_dmu_mps;
+  reg		ilu_dmu_b2b;
+  reg [7:0]	ilu_dmu_hdr_msg_code;
+
+  // Ingress Address/Data
+  event dmu_ilu_iBufAddr_sample_evnt_trig;
+
+  // Ingress Release Record
+  event dmu_ilu_iRel_sample_evnt_trig;
+  reg [8:0]      dmu_ilu_irel_rcd;
+    
+  // dmu _ilu egress data path
+  //reg 		dmu_ilu_idp_addr_vld;
+  // dmu_ilu egress release
+  //  reg [8:0]	dmu_ilu_erel_rcd;
+
+  //----------------DMU-ILU Egress--------------------
+  event dmu_ilu_eHdr_sample_evnt_trig;
+  reg [1:0] 	dmu_ilu_hdr_F;
+  reg [4:0]	dmu_ilu_hdr_Type;
+  reg [6:0]	dmu_ilu_hdr_F_Type;
+  reg [2:0]	dmu_ilu_hdr_TC;
+  reg [1:0]	dmu_ilu_hdr_Atr;
+  reg [9:0]	dmu_ilu_hdr_Len;
+  reg [15:0]	dmu_ilu_hdr_ReqID;
+  reg [7:0]	dmu_ilu_hdr_TLPTag;
+  reg [3:0]	dmu_ilu_hdr_LastDWBE;
+  reg [3:0]	dmu_ilu_hdr_FirstDWBE;
+  reg [63:0]	dmu_ilu_hdr_Addr;
+  reg [5:0]	dmu_ilu_hdr_Dptr;
+  reg		dmu_ilu_b2b;
+
+  // Egress Address/Data
+  event ilu_dmu_eBufAddr_sample_evnt_trig;
+
+  // Egress Release Record
+  event ilu_dmu_eRel_sample_evnt_trig;
+  reg [8:0]	ilu_dmu_erel_rcd;
+
+  //reg [7:0]	ilu_dmu_edp_addr;
+  //-----------------ILU-DMU-egress rel--------------
+  // ilu_dmu egress data path
+  //reg 		ilu_dmu_edp_addr_vld;
+  // ilu_dmu egress release
+
+  //reg [7:0]	dmu_ilu_idp_addr;
+
+  //----------------DMU Internal----------------------
+  event dmu_im2di_sample_evnt_trig;
+  reg [3:0]	diu_im2di_addr;
+  reg [15:0]	diu_im2di_bmask;
+
+  event dmu_cl2di_sample_evnt_trig;
+  reg [8:0]	diu_cl2di_addr;
+
+  event dmu_cmu_sample_evnt_trig;
+  reg [6:0] 	dmu_cmu_Type;
+  reg [9:0] 	dmu_cmu_Len;
+  reg [11:0] 	dmu_cmu_Byte;
+  reg [4:0] 	dmu_cmu_Cntxt;
+  reg [4:0] 	dmu_cmu_Pkseq;
+  reg [40:0] 	dmu_cmu_Addr;
+  reg    	dmu_cmu_Addr_err;
+  reg		dmu_cmu_b2b;
+
+  //----------------PEU_DEM_INT ----------------------
+
+  reg  [2:0] assert_inta_b2b = 0; 
+  reg  [2:0] assert_intb_b2b = 0; 
+  reg  [2:0] assert_intc_b2b = 0; 
+  reg  [2:0] assert_intd_b2b = 0; 
+  reg  [2:0] de_assert_inta_b2b = 0; 
+  reg  [2:0] de_assert_intb_b2b = 0; 
+  reg  [2:0] de_assert_intc_b2b = 0; 
+  reg  [2:0] de_assert_intd_b2b = 0; 
+  reg  [7:0] intx_dup_reg = 0;

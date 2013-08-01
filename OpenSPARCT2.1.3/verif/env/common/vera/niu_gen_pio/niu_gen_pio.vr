@@ -1,0 +1,448 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_gen_pio.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "cMesg.vrh"
+
+#ifdef NEP_HT
+//#include "cht_tasks.vrh"
+//#include "nep_ht_pio.vrh"
+#endif
+
+#ifdef N2
+#include "ncu_stub.vrh"
+#endif
+
+
+#ifdef NEP_SAT
+#include "ncu_stub.vrh"
+#endif
+
+#ifdef NEP_PCIE
+#include "Pcie_pkt_gen.vrh"
+extern Pcie_pkt_gen  pcie_pkt;
+#endif
+
+#define  TIME {get_time(HI), get_time(LO)}
+
+extern Mesg be_msg;
+
+class  niu_gen_pio {
+
+  local bit [63:0] base_addr;
+  local bit        addr_mode; // 0 - 32-bit addr, 1 - 64-bit addr
+  local bit        data_mode; // 0 - 32-bit data, 1 - 64-bit data
+  local bit [ 2:0] chip_mode; // 000 - NEP_HT, 001 - NEP_PE, 010 - NEP_SAT
+                              // 011 - N2_SAT, 100 - N2_IOS
+  local bit [63:0] address; 
+  local bit [63:0] wr_data;   // data for pio_wr
+  local bit [63:0] rd_data;   // data returned from pio_rd
+  local bit        pio_64_bit; // 1 - 64-bit  0 - 32-bit
+  local bit        np_pios;    // 1 - mimic non-posted PIOs 0 - posted pios (To emulate Opetron)
+  local bit        drop_pios;  // PIOs are dropped
+  local integer    sema_pio_drv;// flag to prevent multiple use of database
+                                // anticipate pending activity
+  local integer    pio_32bit_sema_id;
+  local bit        cfg_access;  // 1 = cfg_access; 0 = register access
+  local bit        posted_cmd;  // 1 = posted cmds; 0 = non-posted cmds
+  local bit        expect_pio_err;// = 1'b1, whether a pio_error expected.
+
+
+  #ifdef N2
+  Cncu_stub        ncu_driver; // instance of ncu driver for N2
+  #endif
+
+  #ifdef NEP_SAT
+  Cncu_stub        ncu_driver; // No PE block and PIOs are done through ncu_stub
+  #endif
+  integer              read_status; // 0 - NACK
+				// 1 - ACK
+				//-1 - ERROR
+
+  task new();
+  task cfg_access_en (bit cfg) ;
+  task set_posted (bit posted_en) ;
+  task pio_wr( bit [63:0] addr, 
+               bit [63:0] write_data, 
+              (bit exp_pio_err = 1'b0) ) ;
+
+  task pio_rd( bit [63:0] addr, 
+               var bit [63:0] read_data,
+              (bit [63:0] exp_data  = 64'b0),
+              (bit [63:0] data_mask = 64'hFFFF_FFFF_FFFF_FFFF),
+              (bit exp_data_valid = 1'b0),
+              (bit exp_pio_err = 1'b0) );
+
+#ifdef NEP_PCIE
+
+  task  pcie_cfg_wr(bit [2:0] func_no, bit [31:0] reg_data, 
+                    bit [7:0] reg_addr, bit[3:0] ext_reg_num, 
+                    (bit[3:0] first_be = 4'b1111));
+
+  task  pcie_cfg_rd(bit [2:0] func_no, var bit [31:0] reg_data, 
+                    bit [7:0] reg_addr, bit[3:0] ext_reg_num, 
+                    (bit[3:0] first_be = 4'b1111));
+
+  task pio_wr_32( bit [63:0] addr, 
+               bit [63:0] write_data, 
+              (bit exp_pio_err = 1'b0) ) ; // To be used only in NEPTUNE mode
+
+  task pio_rd_32( bit [63:0] addr, 
+               var bit [63:0] read_data,
+              (bit [63:0] exp_data  = 64'b0),
+              (bit [63:0] data_mask = 64'hFFFF_FFFF),
+              (bit exp_data_valid = 1'b0),
+              (bit exp_pio_err = 1'b0) ); // To be used only in NEPTUNE mode
+#endif
+
+}
+
+task niu_gen_pio::new() {
+
+  #ifdef NEP_HT
+
+// Get the Base Address from command line
+   if ( get_plus_arg(CHECK, "HT_BASE_ADDR=") )
+   {
+     base_addr = get_plus_arg(HNUM, "HT_BASE_ADDR=") ;
+     be_msg.print(e_mesg_debug4, "read_nep_reg", "niu_gen_pio",
+            "HT_BASE_ADDR is set to %0h \n ", base_addr);
+   }
+   else {
+     base_addr = 64'h00000000_ff000000;
+     be_msg.print(e_mesg_debug4, "read_nep_reg", "niu_gen_pio",
+            "HT_BASE_ADDR is set to %0h \n ", base_addr);
+   }
+
+//  ht_pio    = new;
+  chip_mode = 3'b000; 
+
+  #endif
+
+  #ifdef NEP_PCIE
+     if ( get_plus_arg(CHECK, "NEP_32_BIT") ){
+       pio_64_bit = 0;
+       printf("%d niu_gen_pio :: PIOs are set to NEP_32_BIT \n", TIME);
+     }
+     else {
+       pio_64_bit = 1;
+       printf("%d niu_gen_pio :: PIOs are set to NEP_64_BIT \n", TIME);
+     }
+
+     if ( get_plus_arg(CHECK, "NEP_NP_PIOS_AMD_OPETRON") ){
+       np_pios = 1;
+       printf("%d niu_gen_pio :: PIO Writes are issued followed by  Zero length read NEP_NP_PIOS_AMD_OPETRON \n", TIME);
+     }
+     else {
+       np_pios = 0;
+       printf("%d niu_gen_pio :: PIO Writes are issued with out Zero length read \n", TIME);
+     }
+
+     if ( get_plus_arg(CHECK, "PCIE_DISABLE_INIT_CFG") ){
+       drop_pios = 1;
+       printf("%d WARNING niu_gen_pio :: PIOs are Dropped !!!!!! \n", TIME);
+     }
+     else {
+       drop_pios = 0;
+     }
+
+  #endif
+
+  #ifdef NEP_SAT
+
+  #endif
+
+  #ifdef  NEP_SAT
+     ncu_driver = new(ncu_bind);
+  #endif
+
+  #ifdef N2
+   #ifdef IOS_ENV
+	ncu_driver = new();
+   #else
+    #ifdef N2_FC
+	// ncu_driver = new();
+    #else
+  	ncu_driver = new(ncu_bind); 
+    #endif
+   #endif
+  #endif
+
+  addr_mode      = 1'b0;
+  data_mode      = 1'b1;
+  
+  sema_pio_drv      = alloc(SEMAPHORE, 0, 1, 1);
+  pio_32bit_sema_id = alloc(SEMAPHORE, 0, 1, 1);
+  cfg_access        = 1'b0;
+  posted_cmd        = 1'b1;
+  expect_pio_err    = 1'b0;
+  read_status = -1;
+}
+
+
+task niu_gen_pio::cfg_access_en(bit cfg_en)
+{
+   // set the cfg_access bit to enable HT config space accesses
+  cfg_access  = cfg_en;
+
+  be_msg.print(e_mesg_info, "cfg_access_en", "niu_gen_pio",
+            "posted_cmd bit is set to %0b \n ", cfg_en);
+}
+
+task niu_gen_pio::set_posted(bit posted_en)
+{
+  // set the posted bit to enable Posted commands on HT bus
+  posted_cmd  = posted_en;
+
+  be_msg.print(e_mesg_info, "set_posted", "niu_gen_pio",
+            "posted_cmd bit is set to %0b \n ", posted_en);
+}
+
+#ifdef NEP_PCIE
+
+task   niu_gen_pio::pcie_cfg_wr(bit [2:0] func_no, bit [31:0] reg_data, 
+                                bit [7:0] reg_addr, bit[3:0] ext_reg_num, 
+                                (bit[3:0] first_be = 4'b1111)){
+  printf("%d niu_gen_pio::pcie_cfg_wr func_no = %x reg_addr = %x ext_reg_num = %x reg_data = %x \n", TIME, func_no, reg_addr, ext_reg_num, reg_data);
+
+  pcie_pkt.pcie_cfg_wr(func_no, reg_data, reg_addr, ext_reg_num, first_be) ;
+}
+
+task  niu_gen_pio::pcie_cfg_rd(bit [2:0] func_no, var bit [31:0] reg_data, 
+                               bit [7:0] reg_addr, bit[3:0] ext_reg_num, 
+                               (bit[3:0] first_be = 4'b1111)){
+
+  printf("%d niu_gen_pio::pcie_cfg_rd func_no = %x reg_addr = %x ext_reg_num = %x \n", TIME, func_no, reg_addr, ext_reg_num);
+  pcie_pkt.pcie_cfg_rd(func_no, reg_data, reg_addr, ext_reg_num, first_be) ;
+  printf("%d niu_gen_pio::pcie_cfg_rd func_no = %x reg_addr = %x ext_reg_num = %x reg_data = %x \n", TIME, func_no, reg_addr, ext_reg_num, reg_data);
+}
+
+task niu_gen_pio::pio_wr_32( bit [63:0] addr, 
+                          bit [63:0] write_data, 
+                         (bit exp_pio_err = 1'b0) )
+{
+   bit [ 1:0] func_no;
+   bit [63:0] rd_data;
+
+
+   func_no = addr[26:25];
+   addr[26:24] = 3'b000;   
+   
+   pcie_pkt.pcie_pio_wr(func_no, addr, write_data, size_32b);
+   if(np_pios)
+     pcie_pkt.pcie_pio_flush_rd(func_no, addr, rd_data,  size_32b);
+#ifdef NEP_DEBUG
+   printf("%d niu_gen_pio::pio_wr_32 func_no = %b addr = %x write_data = %x \n", TIME, func_no, addr, write_data);
+#endif
+}
+
+
+task niu_gen_pio::pio_rd_32( bit [63:0] addr,
+                          var bit [63:0] read_data,
+                         (bit [63:0] exp_data  = 64'b0),
+                         (bit [63:0] data_mask = 64'hFFFF_FFFF),
+                         (bit exp_data_valid = 1'b0),
+                         (bit exp_pio_err = 1'b0) )
+{
+
+   bit [1:0] func_no;
+
+   read_status = 1; 
+   func_no = addr[26:25];
+   addr[26:24] = 3'b000;
+
+#ifdef NEP_DEBUG
+   printf("%d niu_gen_pio::pio_rd_32 func_no = %b addr = %x \n", TIME, func_no, addr);
+#endif
+
+   pcie_pkt.pcie_pio_rd(func_no, addr, read_data, size_32b );
+   read_data[63:32] = 32'b0;
+
+  if (exp_data_valid) {
+       if ((read_data & data_mask) !== (exp_data & data_mask)) {
+         be_msg.print(e_mesg_error, "niu_gen_pio::pio_rd_32", "Data miscompare ", "Addr : 0x%h expected: %h observed: %h mask: %h \n", addr, exp_data, read_data, data_mask);
+
+       }
+     }
+#ifdef NEP_DEBUG
+   printf("%d niu_gen_pio::pio_rd func_no = %b addr = %x read_data = %x \n", TIME, func_no, addr, read_data);
+#endif
+}
+
+#endif
+
+task niu_gen_pio::pio_wr( bit [63:0] addr, 
+                          bit [63:0] write_data, 
+                         (bit exp_pio_err = 1'b0) )
+{
+
+
+#ifdef NEP_PCIE
+
+   bit [ 1:0] func_no;
+   bit [63:0] tmp_write_data;
+   bit [63:0] tmp_addr, rd_data;
+
+
+   if(drop_pios) {
+     printf("%d WARNING niu_gen_pio::pio_wr Dropped !!!! addr = %x write_data = %x \n", TIME, addr, write_data);
+     return;
+   }
+
+   func_no = addr[26:25];
+   addr[26:24] = 3'b000;
+
+   if(pio_64_bit == 0){ // pios are done in 32-bit mode
+     semaphore_get(WAIT,pio_32bit_sema_id,1);
+     tmp_addr       = addr;
+     tmp_write_data = {32'h0055_99aa, write_data[31:0]};
+     pcie_pkt.pcie_pio_wr(func_no, tmp_addr, tmp_write_data, size_32b);
+     printf("%d niu_gen_pio::pio_wr_32_bit func_no = %b addr = %x write_data = %x \n", TIME, func_no, tmp_addr, tmp_write_data);
+     if(np_pios)
+       pcie_pkt.pcie_pio_flush_rd(func_no, tmp_addr, rd_data,  size_32b);
+     tmp_addr       = addr + 4;
+     tmp_write_data = {32'h0055_99aa, write_data[63:32]};
+     pcie_pkt.pcie_pio_wr(func_no, tmp_addr, tmp_write_data, size_32b );
+     printf("%d niu_gen_pio::pio_wr_32_bit func_no = %b addr = %x write_data = %x \n", TIME, func_no, tmp_addr, tmp_write_data);
+     if(np_pios)
+       pcie_pkt.pcie_pio_flush_rd(func_no, tmp_addr, rd_data,  size_32b);
+     semaphore_put(pio_32bit_sema_id,1);
+    }
+   else {
+     pcie_pkt.pcie_pio_wr(func_no, addr, write_data );
+     if(np_pios) { // Mimicking Opetron HT non-posted writes
+//        printf("%d niu_gen_pio::pio_wr Calling pcie_pio_flush_rd \n", TIME);
+        pcie_pkt.pcie_pio_flush_rd(func_no, addr, rd_data,  size_32b);
+     } 
+   }
+
+
+#ifdef NEP_DEBUG
+   printf("%d niu_gen_pio::pio_wr func_no = %b addr = %x write_data = %x \n", TIME, func_no, addr, write_data);
+#endif
+
+#endif
+
+  #ifdef  NEP_SAT
+
+   ncu_driver.write_data(addr[39:0],write_data);
+
+  #endif
+
+  #ifdef N2
+   #ifdef N2_FC
+    #else
+     ncu_driver.write_data(addr[39:0],write_data);
+   #endif
+  #endif
+
+  printf("%d niu_gen_pio::pio_wr addr = %x  write_data = %x \n", TIME, addr,  write_data);
+}
+
+
+task niu_gen_pio::pio_rd( bit [63:0] addr,
+                          var bit [63:0] read_data,
+                         (bit [63:0] exp_data  = 64'b0),
+                         (bit [63:0] data_mask = 64'hFFFF_FFFF_FFFF_FFFF),
+                         (bit exp_data_valid = 1'b0),
+                         (bit exp_pio_err = 1'b0) )
+{
+
+  #ifdef  NEP_SAT
+   integer status;
+   ncu_driver.read_data(addr[39:0],read_data,status,exp_pio_err);
+   read_status = status;
+  #endif
+
+  #ifdef N2
+   #ifdef N2_FC
+   #else
+   	integer status;
+   	ncu_driver.read_data(addr[39:0],read_data,status,exp_pio_err);
+        read_status = status;
+   #endif   
+  #endif 
+
+
+#ifdef NEP_PCIE	
+   bit [1:0] func_no;
+   bit [63:0] tmp_read_data1, tmp_read_data2;
+   bit [63:0] tmp_addr1, tmp_addr2;
+
+   read_status = 1; 
+   if(drop_pios) {
+     printf("%d WARNING niu_gen_pio::pio_rd Dropped !!!! addr = %x \n", TIME, addr);
+     read_data = 64'hdead_dead;
+     return;
+   }
+
+   func_no = addr[26:25];
+   addr[26:24] = 3'b000;
+   printf("%d niu_gen_pio::pio_rd func_no = %b addr = %x \n", TIME, func_no, addr);
+
+   if(pio_64_bit == 0){// pios are done in 32-bit mode
+
+     semaphore_get(WAIT,pio_32bit_sema_id,1);
+     tmp_addr1  = addr;
+     pcie_pkt.pcie_pio_rd(func_no, tmp_addr1, tmp_read_data1, size_32b );
+
+     tmp_addr2  = addr + 4;
+     pcie_pkt.pcie_pio_rd(func_no, tmp_addr2, tmp_read_data2, size_32b);
+
+     read_data = {tmp_read_data2[31:0], tmp_read_data1[31:0]};
+     semaphore_put(pio_32bit_sema_id,1);
+   }
+   else
+     pcie_pkt.pcie_pio_rd(func_no, addr, read_data);
+
+
+#ifdef NEP_DEBUG
+   if(pio_64_bit == 0){
+     printf("%d niu_gen_pio::pio_rd_32bit func_no = %b addr = %x read_data = %x \n", TIME, func_no, tmp_addr1, tmp_read_data1);
+     printf("%d niu_gen_pio::pio_rd_32bit func_no = %b addr = %x read_data = %x \n", TIME, func_no, tmp_addr2, tmp_read_data2);
+   }
+   printf("%d niu_gen_pio::pio_rd func_no = %b addr = %x read_data = %x \n", TIME, func_no, addr, read_data);
+#endif
+
+#endif
+  if ( exp_data_valid) {
+       if ((read_data & data_mask) !== (exp_data & data_mask)) {
+           // printf("PIO: pio_rd failure: Data miscompare\n");
+	   be_msg.print(e_mesg_error, "niu_gen_pio::pio_rd", "Data miscompare ", "Addr : 0x%h expected: %h observed: %h mask: %h \n", addr, exp_data, read_data, data_mask);
+
+       }
+     }
+  printf("%d niu_gen_pio::pio_rd addr = %0h read_data = %0h \n", TIME, addr, read_data);
+
+}

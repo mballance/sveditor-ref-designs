@@ -1,0 +1,109 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuLinkErrPEUStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class LinkErrPEUStr extends PEUStrBase 
+  {
+  integer  f_errQueue;				// A mailbox for bad pkt headers
+
+  task new( PEUTestEnv a_env )
+    {
+    super.new( a_env );
+    f_errQueue = 0;
+    }
+
+  task SetErrQueue( integer errQueue )
+    {
+    f_errQueue = errQueue;
+    }
+
+  task Execute()
+    {
+    bit[4:0] ltssmState;
+					// Pull down the link and wait for the
+					// TLU to signal "drain state".
+    f_env.linkDown();
+    f_env.activityStalled += 1;		//Stall the hangDetect since LTSSM must 
+					// timeout in recovery before going to 
+					// detect
+
+    //Make sure we go to Recovery.RcvrLock 
+#ifdef N2_IOS
+    f_env.toLtssmState( ILUPEU_LTSSM_RCVRY_RCVRLOCK,200, CSRT_OMNI);
+#else
+    f_env.toLtssmState( ILUPEU_LTSSM_RCVRY_RCVRLOCK,200 );
+#endif
+
+/*
+    //Drain state is not entered until timing out in RCVRY_LOCK
+    f_env.waitDrainState();
+
+					// Tell the enivronment that we're
+					// entering the drain state.  All
+					// subsequent non-posted requests will
+					// then expect an aborted completion
+					// from the ILU.  All new "expectTLU"
+					// requests will return when the ILU
+					// returns an aborted completion, and
+					// will result in an error if the 
+					// request is forwarded by the TLU.
+					// "enterDrainState" returns immediately
+					// if our request was posted, or when
+					// the completion is presented (for
+					// non-posted requests).
+    f_env.enterDrainState( 128'bx );
+
+*/
+
+					// Tell the error-checker about this
+					// bad-boy.
+    if ( f_errQueue != 0 )
+      {
+      mailbox_put( f_errQueue, e_ERR_none );
+      mailbox_put( f_errQueue, 4 );
+      mailbox_put( f_errQueue, e_ERR_oe_lin );
+      mailbox_put( f_errQueue, 128'bx );
+//Removed for 1.0 PRM
+//      mailbox_put( f_errQueue, e_ERR_oe_lin );	//DLPL errors will always set Primary and Secondary
+//      mailbox_put( f_errQueue, 128'bx );	// Link Interrupt bit
+      mailbox_put( f_errQueue, e_ERR_dlpl_sds_los );	//Cleared 1st in ilupeuErrChkPEUStr
+      mailbox_put( f_errQueue, 128'bx );
+      //Optional Phy errors may occur since link is randomly shut down
+      mailbox_put( f_errQueue, e_ERR_dlpl_stp_no_end_edb );
+      mailbox_put( f_errQueue, 128'bx0 );
+      mailbox_put( f_errQueue, e_ERR_dlpl_sdp_no_end );
+      mailbox_put( f_errQueue, 128'bx0 );
+
+      }
+    } /* end Execute */
+  } /* end LinkErrPEUStr */

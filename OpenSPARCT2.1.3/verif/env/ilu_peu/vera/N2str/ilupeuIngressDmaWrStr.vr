@@ -1,0 +1,104 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuIngressDmaWrStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class DmaWrPEUStr extends PEUStrBase 
+  {
+  integer f_len;				// The packet's payload length
+  bit[3:0] f_firstDWBE;				// It's "first DWBE" field
+  bit[3:0] f_lastDWBE;				// It's "last DWBE" field
+  integer f_bndy;	 			// The address' boundary
+  bit f_lenSpecified;				// Was a length specified?
+  bit f_firstSpecified;				// Was a "firstDWBE" specified?
+  bit f_lastSpecified;				// Was a "lastDWBE" specified?
+  bit f_bndySpecified;				// Was an addr bndy specified?
+
+  task new( PEUTestEnv a_env )
+    {
+    super.new( a_env );
+    f_lenSpecified = 0;
+    f_firstSpecified = 0;
+    f_lastSpecified = 0;
+    f_bndySpecified = 0;
+    }
+  task SetLen( integer a_len )
+    {
+    f_len = a_len;
+    f_lenSpecified = 1;
+    }
+  task SetFirstDWBE( bit[3:0] a_dwbe )
+    {
+    f_firstDWBE = a_dwbe;
+    f_firstSpecified = 1;
+    }
+  task SetLastDWBE( bit[3:0] a_dwbe )
+    {
+    f_lastDWBE = a_dwbe;
+    f_lastSpecified = 1;
+    }
+  task SetAddrBndy( integer a_bndy )
+    {
+    f_bndy = a_bndy;
+    f_bndySpecified = 1;
+    }
+  task Execute()
+    {
+    bit[PEC_PCI__HDR] ingressHdr;		// The ingress TLP's header
+    integer ingressData;			// A payload descriptor
+    bit[7:0] ingressTag;			// The tag for the TLP
+
+					// First, get in line for a DMA tag...
+    f_env.allocDmaTag( ingressTag );
+
+					// Then build a TLP
+    if ( f_lenSpecified )
+      f_env.genIngressWrReq( ingressTag, ingressHdr, ingressData, f_len );
+    else
+      f_env.genIngressWrReq( ingressTag, ingressHdr, ingressData );
+
+					// ...and set fields as requested
+                                        // by the caller.
+    if ( f_firstSpecified )
+      ingressHdr[PEC_PCI__FIRST_DWBE] = f_firstDWBE;
+    if ( f_lastSpecified )
+      ingressHdr[PEC_PCI__LAST_DWBE] = f_lastDWBE;
+    if ( f_bndySpecified )
+      f_env.setAddrBndy( ingressHdr, f_bndy, 64 );
+
+    f_env.reserveIngressCredits( ingressHdr );
+    f_env.drivePCIE( ingressHdr, ingressData );
+    f_env.consumeIngressCredits( ingressHdr );
+    f_env.expectILU( ingressHdr, ingressData );
+    f_env.freeDmaTag( ingressTag );
+    } /* end Execute */
+  } /* end DmaWrPECStr */

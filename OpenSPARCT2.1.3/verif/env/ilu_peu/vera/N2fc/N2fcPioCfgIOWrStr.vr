@@ -1,0 +1,266 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: N2fcPioCfgIOWrStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class N2fcPioCfgIOWrStr extends PioCfgIOWrPEUStr {
+
+  local string          cmd;
+  local bit [63:0]      addr;
+  local bit [31:0]      length;
+  local bit [63:0]      dat;
+  local integer         pio_error; // 0 = no error, 1 = timeout, 2 = uc
+
+  public task new (PEUTestEnv a_env,
+                   string     cmd,
+                   bit [63:0] addr,
+                   bit [31:0] length,
+                   bit [63:0] dat,
+                   integer    err
+                   );
+  
+  public task Execute();
+  local task SetCplHdr ();
+  local task SetupParms ();
+}
+
+
+task N2fcPioCfgIOWrStr::new (PEUTestEnv a_env,
+                             string     cmd,
+                             bit [63:0] addr,
+                             bit [31:0] length,
+                             bit [63:0] dat,
+                             integer    err
+                             ) {
+
+  super.new (a_env);
+
+  if ( err == 3 ) {
+    return; // don't set up an expect or a completion
+  }
+  
+  this._env      = a_env;
+  this.cmd       = cmd;
+  this.addr      = addr;
+  this.length    = length;
+  this.dat       = dat;
+  this.pio_error = err;
+
+  this.SetupParms ();
+  this.Execute ();
+}
+
+
+//-------------------------------------------------------------------------
+// over-ride parent class method
+//-------------------------------------------------------------------------
+
+task N2fcPioCfgIOWrStr::Execute() {
+  integer cnt1,cnt2;
+  
+  //printf ("\nUDEBUG : N2fcPioCfgIOWrStr::Execute %s \n", cmd);
+  
+  SetPacketParams();
+  
+  _req_id                      = PiuCsrs.piuREQ_ID; // override base class
+  reqHdr [PEC_PCI__REQ_ID]     = this._req_id;
+  cplHdr [PEC_PCI__CPL_REQ_ID] = this._req_id;
+
+  if (pio_error == 4) {
+    //Make denali check for this instead of just disabling error
+    //[PCISIG-PHY.2.3#11].  [port_0].RX Nullified TLP 
+//    f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_NULL_TLP );
+    //Packet will come out as a NULL packet so set the Xtr to check 
+    // for the PCIE_PL_NONFATAL_FRAME_NULL_TLP error
+    _env.Pod.FNXPCIEEnableTrans.ExpectNullPkt();
+    cnt1 = _env.Pod.FNXPCIEBldr.SignalInterface.expectNullPkt; 
+  }
+  
+  this._env.expectPCIE(reqHdr, this._data, 1);
+  non_posted_write_cmpl_outstanding++;
+
+  //If the packet gets transmitted than make sure its NULL
+  if (pio_error == 4) {
+    cnt2 = _env.Pod.FNXPCIEBldr.SignalInterface.expectNullPkt; 
+    //Make sure packet expect wasn't removed and a NULL pkt was received
+    if( cnt1 !== (cnt2 + 1)  &&  !sync( CHECK, _env.ev_removePcie ) ){
+      _env.Report.report(RTYP_TEST_ERROR,"N2fcPioCfgIOWrStr Outgoing packet matched but a NullPkt wasn't received\n");
+    }
+  }
+
+  SetCplHdr();
+
+  if ( this.pio_error == 1 ) {
+    printf ("\nDEBUG : N2fcPioCfgIOWrStr::Execute pio timeout requested, so no completion generated\n");
+    return; // timeout - don't send a completion
+  }
+  
+  fork { // don't block other expects
+
+    sync( ALL, _env.ev_StallPioCpl);   // stall the completion if event is OFF
+    
+    if ((this._cpl_status === PEC_PCI__CPL_STATUS_RSVD1) ||
+        (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD2) ||
+        (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD3) ||
+        (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD4)) {
+      this._env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlCplSt ); //Malformed Completion TLP - Reserved completion status (%u).
+    }
+
+    this._env.drivePCIE(cplHdr, 0);
+
+    if ((this._cpl_status === PEC_PCI__CPL_STATUS_CA)    ||
+        (this._cpl_status === PEC_PCI__CPL_STATUS_UR)    ||
+        (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD1) ||
+        (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD2) ||
+        (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD3) ||
+        (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD4)) {
+    
+      //this._env.expectILU(urHdr, this._data);
+      //mailbox_put(this._errQueue, e_ERR_oe_wuc);
+      //mailbox_put(this._errQueue, cplHdr );
+      
+      if ( (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD1) ||
+          (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD2) ||
+          (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD3) ||
+          (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD4)) {
+        this._env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlCplSt ); //Malformed Completion TLP - Reserved completion status (%u).
+      }
+    }
+
+    else if (this._cpl_status === PEC_PCI__CPL_STATUS_CRS) {
+
+      this._env.expectTimeoutCpl(reqHdr);
+      //mailbox_put(this._errQueue, e_ERR_oe_crs);
+      //mailbox_put(this._errQueue, cplHdr );
+    }
+    
+    else if (this._ep_cpl === 1'b_1) {
+
+      cplHdr [PEC_PCI__EP] = 0;
+      SetCplHdr();
+      this._env.drivePCIE(cplHdr, 0);
+      //    this._env.expectILU(cplHdr, 0);
+      cplHdr [PEC_PCI__EP] = 1;
+      //mailbox_put(this._errQueue, e_ERR_ue_pp);
+      //mailbox_put(this._errQueue, cplHdr);
+    }
+    
+    this._env.freePioTag(this._tag);
+
+    non_posted_write_cmpl_outstanding--;
+  }
+  join none
+}
+
+
+//-------------------------------------------------------------------------
+// New method. capture the header Request Tag and return it on completion
+//-------------------------------------------------------------------------
+
+task N2fcPioCfgIOWrStr::SetCplHdr () {
+
+  //printf ("\nUDEBUG : N2fcPioCfgIOWrStr::SetCplHdr Got a Req Tag of %0h\n", this._env.ReceivedReqTag);
+  cplHdr[PEC_PCI__CPL_TAG] = this._env.ReceivedReqTag;
+}
+
+
+
+//-------------------------------------------------------------------------
+// New method. Setup parent properties based on Core request
+//-------------------------------------------------------------------------
+
+task N2fcPioCfgIOWrStr::SetupParms() {
+
+ // setup parameters based on request
+  
+  _type_req_prob_cfg0        = 0;
+  _type_req_prob_cfg1        = 0;
+  _type_req_prob_io          = 0;
+
+  _ep_cpl_prob_false         = 100;
+  _ep_cpl_prob_true          = 0;
+  
+  _len_min                   = 1;
+  _len_max                   = 1;
+
+  _cpl_id_min               = 0;
+  _cpl_id_max               = 0;
+
+  _data_min                 = dat;
+  
+  _format_req_prob_3dw      = 100;
+  _format_req_prob_4dw      = 0;
+
+  _td_cpl_prob_true         = 50;
+  _td_cpl_prob_false        = 50;
+
+  case (cmd) {
+    "CFGWR0" :  {
+      this._type_req_prob_cfg0     = 1;
+      _addr_lsb_min                = {addr[27:12], 4'b0, addr[11:2], 2'b0};
+    }
+    "CFGWR1" :  {
+      this._type_req_prob_cfg1     = 1;
+      _addr_lsb_min                = {addr[27:12], 4'b0, addr[11:2], 2'b0};
+    }
+    "IOWR"   :  {
+      this._type_req_prob_io       = 1;
+      _addr_lsb_min                = {addr[27:2], 2'b0};
+    }
+    default :   { printf ("\n N2fcPioCfgIOWrStr unknown command \n"); }
+  }
+
+  // Select DWBE based on address, length combination
+  // (copied from N2fcPioMWrStr.vr)
+  if((length[7:4] == 0) && (length[3:0] != 0)) {
+    // got to "shift up" the dwbe, addr[2], and data since first_dwbe == 0 is illegal
+    _first_dwbe_min            = {length[0], length[1], length[2], length[3]};
+    _last_dwbe_min             = 0;
+    // make sure that address bit 2 is set 
+   _addr_lsb_min[2]            = 1;
+   _data_min[63:32]            = this.dat[31:0];
+  }
+  else {
+    _first_dwbe_min            = {length[4], length[5], length[6], length[7]};
+    _last_dwbe_min             = {length[0], length[1], length[2], length[3]};
+    // make sure that address bit 2 is cleared
+   _addr_lsb_min[2]            = 0;
+  }
+
+  _addr_lsb_max              = _addr_lsb_min;
+  _data_max                  = _data_min;
+  
+  _first_dwbe_max            = _first_dwbe_min;
+  _last_dwbe_max             = _last_dwbe_min;
+ 
+}
+

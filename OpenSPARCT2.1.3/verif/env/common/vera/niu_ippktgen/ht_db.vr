@@ -1,0 +1,122 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ht_db.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#define HT_DB 
+
+class ht_db {
+
+    //=======================================================
+    //=   IPP-HRP post_data parameters			  ===
+    //=======================================================
+    bit dest_port_type                          = 1'bx;  // dest_port_type
+                                                          // 0: IBTP
+                                                          // 1: HRP
+    bit [1:0] HT_target_type                    = 2'bx;   // 00: IPSec
+                                                          // 01: reserved
+                                                          // 10: CPU
+                                                          // 11: TCP TE
+    bit discard                                 = 1'bx;
+    bit goodpkt                                 = 1'bx;
+
+        
+    //=======================================================
+    //=   OPP-HRP Control Word parameters                 ===
+    //=======================================================
+    bit [7:0]  packet_type                      = 8'bx;  // Packet type
+							 // 8'b0xxxxxxx  - Skip; disable this tag
+							 // 8'b10000001  - IB
+							 // 8'b10000010  - Network
+							 // 8'b10000011  - IPSec(decrypted)
+							 // 8'b10000100  - IPSec(encrypted)
+							 // 8'b10000101  - IPSec Command
+							 // 8'b10000110  - TE
+							 // 8'b10000111  - Rdma Read
+							 // 8'b10001000  - Rdma Write
+    bit [3:0]  packet_source                    = 4'bx;  // Packet Source 
+							 // 4'b0000 	 - None
+						         // 4'b0001      - IB
+							 // 4'b0010      - Network
+							 // 4'b1000      - IPSec
+							 // 4'b1010      - TE
+							 // 4'b1011      - CPU
+    bit [3:0]  initial_dest                     = 4'bx;  // Initial Dest of packet 
+							 // 4'b0000      - None
+                                                         // 4'b0001      - IB
+                                                         // 4'b0010      - Network
+                                                         // 4'b1000      - IPSec
+                                                         // 4'b1010      - TE
+                                                         // 4'b1011      - CPU
+
+    bit [3:0]  final_dest                       = 4'bx;  // Final Dest of packet 
+                                                         // 4'b0000      - None
+                                                         // 4'b0001      - IB
+                                                         // 4'b0010      - Network
+                                                         // 4'b1000      - IPSec
+                                                         // 4'b1010      - TE
+                                                         // 4'b1011      - CPU
+    bit [7:0]  dest_port                        = 8'bx;  // Final port Destination
+					                 // 8'h00	 - mac0	
+					                 // 8'h01	 - mac1	
+					                 // 8'h02	 - mac2	
+					                 // 8'h03	 - mac3	
+					                 // 8'h00 -8'h3f - QPn	
+    bit [3:0]  dest_qos                         = 4'bx;  // Service Level of Packet
+    bit [10:0] rsvd1                            = 11'bx; // Reserved fields
+    bit [11:0] mac_default                      = 12'h0; // mac_default for IPSec from IP flow
+    bit [7:0]  mac_index                        = 8'h0;  // mac_index for IPSec from IP flow 
+    bit [10:0] bucket_cnt                       = 11'bx; // number of buckets for the packet
+                                                         // rsvd for IB flow
+    bit [10:0] eop_offset                       = 11'bx; // {line_offset, byte_offset}
+                                                         // rsvd for IB flow
+    bit [13:0] pkt_length                       = 14'bx;  // packet_length, mac status bytes(8) not
+							  // included, rsvd for IB flow
+    bit [2:0] rsvd2                             = 3'bx;  // Reserved fields
+    bit crc_err_from_mac                        = 1'b0;  // crc error from mac_status
+							 // rsvd for IB flow
+    bit [4:0] rsvd3                             = 5'bx;  // Reserved fields
+    bit [63:0] mac_status                       = 64'b0;  // Mac status word 
+							  // rsvd from IB side data flow
+
+
+    bit [127:0] control_word2			= 127'bx; // 2nd line of the control word
+
+    bit  abort                                  = 1'b0;  // abort bit in pakt status
+    bit  par_hdr_err                            = 1'b0;  // parity error in header
+    bit  par_data_err                           = 1'b0;  // parity error in packet data
+    bit  buf_alloc_err                          = 1'b0;  // buffer size allocation error
+    bit [3:0] mac_port                          = 4'b0;  // mac source port 0-3, 4'b1111-HTP 
+    bit [19:0] chksum_info                      = 20'b0;  //checksum info from MAC
+    bit  null_packet                            = 1'bx;
+
+} // end of class ht_db 

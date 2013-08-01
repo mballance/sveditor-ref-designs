@@ -1,0 +1,2402 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: asmEventsToVera.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+#define STD_DISP this.dbg
+
+#define ITEMCOUNT 15
+#define TMPEVENT 1
+  
+#include <plusArgMacros.vri>
+
+#include <std_display_class.vrh>
+
+// common
+#include <asmEvent.vrh>
+#include <asmEventsToVera.if.vrh>
+#include <baseAsmToVeraIntf.vrh>
+
+// class and header *MUST* be created in each bench that uses User Events.
+// Make sure Vera compiles with the right asmToVeraIntf file for your
+// bench. (Use -I paths!)
+#include <asmToVeraIntf.vrh>
+
+
+//#define DEBUGASMEVENTSTOVERA
+
+class AsmEventsToVera {
+  local string className = "AsmEventsToVera";
+  local AsmToVeraIntf asmToVeraIntf; // each bench creates & compiles this class!!
+  local asmEventCore probes[64];
+  local reg [63:0] enabledTids;
+  local reg [63:0] outOfBoot = 0;
+  local reg [63:0] startBoot = 0;
+  local reg [63:0] inBoot = 0;
+  local StandardDisplay dbg;
+  //// local reg debug = 0;
+  local bit debug = 0;
+  local EventClass userEventsList []; // pc's that have user event(s)
+  local integer eventCount = 0;
+  local integer listLock;
+
+  // never retire an event (asm runs again after reset)
+  local reg eventsNeverDone;
+  
+  task new(StandardDisplay dbg,
+           reg [63:0] enabledTids,
+           reg asm_err_en = 0,
+           reg err_inj_dbg = 0);
+
+  task readEventFile(string  file,
+                     integer kind = 0,
+                     string  lvl = null,
+                     string  name = null);
+
+  local task extract(string str, var string items [ITEMCOUNT]);
+  local task parseTrig(string items [ITEMCOUNT]);
+  local task mainMonitor();
+  local task serviceEvent(reg [63:0] pc, reg [5:0] fromTid);
+
+
+} // end
+
+
+
+
+/////////////////////////////////////////////////////////////////////////
+//  process $EV user event line from .s file, create and store user event.
+//
+//  None of this will make sense until you read:
+//
+//  Add to the case below to add a new User Event
+/////////////////////////////////////////////////////////////////////////
+task AsmEventsToVera::parseTrig(string items [ITEMCOUNT])
+{
+  EventClass  evnt = null;
+  string      str = "";
+  reg    [63:0] pc = 0;
+  integer i = 0;
+  
+// NOTE: The "1," in trig_pc_d(1, @VA... has no know use today. N1 called
+//     this paramater "kind" and it had values of 0, 1, 2, and 3 in
+//     diags. The first pass vera code looked for values of 1 and
+//     2. The second pass code, done in C, does not use this paramater
+//     at all. In the first pass vera code, a value of 2 meant that an
+//     intp task should send an interrupt to the given thread at each
+//     of 8 cores. A value of 1 for kind meant that the target core
+//     should be what was specified in the $EV, else the target core
+//     will be core 0 (or all cores if kind is 2). N2 ignores this
+//     paramater.
+
+//   reg    [63:0] firstParam = 0; // The "1," in trig_pc_d(1, @VA... has no know use today.
+
+ 
+  i = 0;
+  if (items[i] !== "trig_pc_d") error("first item not trig_pc_d\n");
+  i++;
+  str = items[i]; i++;
+//   firstParam = str.atohex();
+  str = items[i]; i++;
+  pc = str.atohex();
+
+      
+  case(items[i]) {
+    
+    "generic_ev" : { // generic user event for general use (6/06)
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+
+      str = items[i]; i++;
+      evnt.miscStrA = str;                         // arg1 is a string
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64A = str.atohex();                 // arg2 is a 64-bit value
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64B = str.atohex();                 // arg3 is a 64-bit value
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+    }
+
+    "intp": { // ! $EV trig_pc_d(1,@VA(.MAIN.R3_th3r1)) -> intp(1, 1, 1)
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      str = items[i]; i++;
+      evnt.tid = str.atohex(); // 64 tids // target tid
+      str = items[i]; i++;
+      evnt.intType = str.atohex(); // type
+      str = items[i]; i++;
+      evnt.misc64A = str.atohex();  // vec
+      // optional params
+      str = items[i]; i++;
+      if (str == "*") evnt.src = 64;
+      else evnt.src = str.atohex(); // srcTid
+      str = items[i]; i++;
+      if (str == "*") evnt.wait = 0;
+      else evnt.wait = str.atoi(); // wait
+      str = items[i]; i++;
+      if (str == "*") evnt.thisTid = 64;
+      else evnt.thisTid = str.atohex(); // thisTid
+      str = items[i]; i++;        
+      if (str == "*") evnt.tidMask = 0;
+      else evnt.tidMask = str.atohex(); // targetTidMask
+      str = items[i]; i++;
+      if (str !== "*") evnt.multiShot = str.atohex(); //  multiShot
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+
+    }
+
+    "extint": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+
+      str = items[i]; i++;
+      if (str == "*") evnt.wait = 0;
+      else evnt.wait = str.atoi();
+
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntA = 0;
+      else evnt.miscIntA = str.atoi();
+     
+     //making this permanently multishot 
+      evnt.multiShot = 1; //  multiShot
+      
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+      
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+
+    }
+
+    "warmrst": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      
+      // optional params
+      str = items[i]; i++;
+      if (str == "*") evnt.wait = 0;
+      else evnt.wait = str.atoi();
+       
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+      
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+
+    }
+
+
+    // Does not use CPX stall input! Starves SPC of response pkts.
+    "cpx_stall": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      str = items[i]; i++;
+      evnt.tid = str.atohex(); // 64 tids
+      str = items[i]; i++;
+      evnt.miscIntA = str.atoi(); // duration
+      // optional params
+      str = items[i]; i++;
+      if (str == "*") evnt.wait = 0;
+      else evnt.wait = str.atoi();
+      
+      if(evnt.tid <= 63) {
+        if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+        else userEventsList[pc] = evnt;
+      } else error("cpx_stall: thread ID too high: 0x%0h\n",evnt.tid);
+      
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+    }
+
+    // ! $EV trig_pc_d(1,@VA(.MAIN.R3_th3r1)) -> printf("your text", thisTid, multiShot)   
+    "printf" : {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      evnt.miscStrA = items[i]; i++;
+      // optional params
+      str = items[i]; i++;
+      if (str !== "*") evnt.thisTid = str.atohex(); // thisTid
+      str = items[i]; i++;
+      if (str !== "*") evnt.multiShot = str.atohex(); //  multiShot
+  
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;     
+      
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+    }
+
+    "dump_mem" : {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      str = items[i]; i++;
+      evnt.misc64A = str.atohex(); // addr
+      str = items[i]; i++;
+      evnt.misc64B = str.atohex(); // amount
+      
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+      
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+    }
+
+    // SPC BFM will do a store to L2. Pick correct port w/ BFM!!!
+    "store": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      str = items[i]; i++;
+      evnt.tid = str.atohex(); // 8 cores
+      str = items[i]; i++;
+      evnt.misc64A = str.atohex(); // addr
+      str = items[i]; i++;
+      evnt.misc64B = str.atohex(); // data
+      
+      if(evnt.tid <= 63) {
+        if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+        else userEventsList[pc] = evnt;
+      } else error("store: CPU ID too high: 0x%0h\n",evnt.tid);
+      
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+    }
+
+// ************* Trap Counting Task  **************
+
+   "L2ErrTrapCount": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      str = items[i]; i++;
+      evnt.misc64A = str.atohex(); // injectErr
+      str = items[i]; i++;
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+    }
+
+
+
+// ************* Data Array Injection **************
+
+   "L2DAErrInjection": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      str = items[i]; i++;
+      evnt.misc64A = str.atohex(); // injectErr
+      str = items[i]; i++;
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+    }
+
+// ************* Tag Array Injection **************
+
+   "L2TAErrInjection": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      str = items[i]; i++;
+      evnt.misc64A = str.atohex(); // injectErr
+      str = items[i]; i++;
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+    }
+
+// ************* IOS Err Injection **************
+
+   "IosErrInj": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+
+      str = items[i]; i++;
+      evnt.miscStrA = str;             // Error type
+
+      str = items[i]; i++;
+      evnt.misc64A = str.atohex();       // Tag
+
+      str = items[i]; i++;
+      evnt.misc64B = str.atohex();       // PA
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+    }
+
+   "IosRandErrInj": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+
+      str = items[i]; i++;
+      evnt.miscStrA = str;             // Error type
+
+      str = items[i]; i++;
+      evnt.misc64A = str.atohex();       //
+
+      str = items[i]; i++;
+      evnt.misc64B = str.atohex();       //
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+    }
+
+    "siuDmaRd": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      str = items[i]; i++;
+      evnt.misc64A = str.atohex(); // addr
+      str = items[i]; i++;
+      evnt.misc64B = str.atohex(); // amount
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+    }
+
+    "siuDmaWri": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      str = items[i]; i++;
+      evnt.misc64A = str.atohex(); // addr
+      str = items[i]; i++;
+      evnt.misc64B = str.atohex(); // amount
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+    }
+
+    "jtagRdWrL2": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64A = str.atohex(); // addr
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64B = str.atohex(); // data
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64C = str.atohex(); // jtagDoneAddrMem
+
+      str = items[i]; i++;
+      evnt.misc01A = str.atobin(); // rdWr rd=0, wr=1
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+    }
+
+    "pktGenConfig": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+
+      str = items[i]; i++;
+      evnt.tid = str.atohex(); // mac_port
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64A = str.atohex();      // frame_type
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64B = str.atohex();      // frame_class
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64C = str.atohex();      // data_length
+
+      str = items[i]; i++;
+      evnt.misc01A = str.atohex();      // tx_multi_port
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64D = str.atohex();      // data_length_p1
+
+      str = items[i]; i++;
+      if (str !== "*") evnt.multiShot = str.atohex(); // optional multiShot
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+
+    }
+
+     "NIU_AddTxChannels": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+
+      str = items[i]; i++;
+      evnt.tid = str.atohex(); // mac_port
+
+      str = items[i]; i++;
+      evnt.misc64B = str.atohex(); // dma_no
+
+//    str = items[i]; i++;
+//    if (str == "*") evnt.miscIntA = 0;
+//    else evnt.miscIntA = str.atoi();     dma_no
+
+      str = items[i]; i++;
+      evnt.misc01A = str.atohex();      // tx_multi_port
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64C = str.atohex();      // tx_multi_dma_p0
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64D = str.atohex();      // tx_multi_dma_p1
+
+      str = items[i]; i++;
+      if (str !== "*") evnt.multiShot = str.atohex(); // optional multiShot
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+     }
+
+     "NIU_SetTxRingKick": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+
+      str = items[i]; i++;
+      evnt.tid = str.atohex(); // mac_port
+
+      str = items[i]; i++;
+      evnt.misc64B = str.atohex(); // dma_no
+
+      str = items[i]; i++;
+      evnt.misc01A = str.atohex();      // tx_multi_port
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64C = str.atohex();      // tx_multi_dma_p0
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64D = str.atohex();      // tx_multi_dma_p1
+
+      str = items[i]; i++;
+      if (str !== "*") evnt.multiShot = str.atohex(); // optional multiShot
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+     }  
+
+     "NIU_SetTxMaxBurst": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+
+      str = items[i]; i++;
+      evnt.misc01B = str.atohex();      // mac_port
+
+      str = items[i]; i++;
+      evnt.misc64B = str.atohex(); // dma_no
+
+      str = items[i]; i++;
+      evnt.misc64A = str.atohex(); // SetTxMaxBurst_Data
+
+      str = items[i]; i++;
+      evnt.misc01A = str.atohex();      // tx_multi_port
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64C = str.atohex();      // tx_multi_dma_p0
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64D = str.atohex();      // tx_multi_dma_p1
+
+      str = items[i]; i++;
+      if (str !== "*") evnt.multiShot = str.atohex(); // optional multiShot
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+    }
+
+     "NIU_InitTxDma": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+
+      str = items[i]; i++;
+      evnt.misc01B = str.atohex();      // mac_port
+
+      str = items[i]; i++;
+      evnt.misc64B = str.atohex(); // dma_no
+
+//    str = items[i]; i++;
+//    evnt.tid = str.atohex();    dma_no
+
+      str = items[i]; i++;
+      evnt.misc64A = str.atohex(); // Xlate
+
+      str = items[i]; i++;
+      evnt.misc01A = str.atohex();      // tx_multi_port
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64C = str.atohex();      // tx_multi_dma_p0
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64D = str.atohex();      // tx_multi_dma_p1      
+
+      str = items[i]; i++;
+      if (str !== "*") evnt.multiShot = str.atohex(); // optional multiShot
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+
+    }
+
+
+     "NIU_TxDMAActivate": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+
+      str = items[i]; i++;
+      evnt.misc64B = str.atohex(); // mac_port
+
+      str = items[i]; i++;
+      evnt.tid = str.atohex(); // dma_activelist
+//    i++;
+
+      str = items[i]; i++;
+      evnt.misc01A = str.atohex();      // tx_multi_port
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64C = str.atohex();      // tx_multi_dma_p0
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64D = str.atohex();      // tx_multi_dma_p1
+
+      str = items[i]; i++;
+      if (str !== "*") evnt.multiShot = str.atohex(); // optional multiShot
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+
+    }
+
+    "NIU_EXIT_chk": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      str = items[i]; i++;
+      evnt.misc64B = str.atohex(); // mac_port
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+
+    }
+ 
+    "TxPktGen": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+
+      str = items[i]; i++;
+      evnt.misc64A = str.atohex(); // mac_port
+
+      str = items[i]; i++;
+      evnt.tid = str.atohex(); // dma channel
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64B = str.atohex(); // num of packets
+
+      str = items[i]; i++;
+      evnt.misc01A = str.atohex();      // tx_multi_port
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64C = str.atohex();      // tx_multi_dma_p0
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64D = str.atohex();      // tx_multi_dma_p1
+
+      str = items[i]; i++;
+      if (str !== "*") evnt.multiShot = str.atohex(); // optional multiShot
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+
+    }
+
+    "NIU_InitRxDma": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.tid = str.atohex();       	// RxDmaChnlNo
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64A = str.atohex();     	// RxDescRingLen
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64B = str.atohex();     	// RxRingStartAddr
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64C = str.atohex();     	// RbrConfData
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64D = str.atohex();   	// RxInitKick    
+
+      str = items[i]; i++;
+      evnt.misc01A = str.atohex(); 	// Xlate
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64E = str.atohex();   	// multi_dma      
+
+      str = items[i]; i++;
+      if (str !== "*") evnt.multiShot = str.atohex(); // optional multiShot
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+
+    }
+
+    "NIU_RxPktConf": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.tid = str.atohex(); 		// RxPktCnt
+//KH
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64A = str.atohex(); 	// iport
+
+      str = items[i]; i++;
+      if (str !== "*") evnt.multiShot = str.atohex(); // optional multiShot
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+
+    }
+
+    "NIU_RxGenPkt": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      str = items[i]; i++;
+      evnt.tid = str.atohex(); 		// mac_port
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64A = str.atohex(); 	// RxDmaChnlNo
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64B = str.atohex(); 	// RxPktCnt
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64C = str.atohex();       // RxPktLen
+
+//KH
+      str = items[i]; i++;
+      evnt.misc01B = str.atohex();       // multi_port
+
+      str = items[i]; i++;
+      if (str.match("0x")) str = str.postmatch();
+      evnt.misc64D = str.atohex();       // multi_dma
+
+      str = items[i]; i++;
+      if (str !== "*") evnt.multiShot = str.atohex(); // optional multiShot
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+
+    }
+
+
+    // ! $EV trig_pc_d(1,@VA(.MAIN.R3_th3r1)) -> marker("text", thisTid, multiShot) bootEnd|goodTrap|badTrap
+    "marker": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      evnt.miscStrA = items[i]; i++;
+      // optional params
+      str = items[i]; i++;
+      if (str !== "*") evnt.thisTid = str.atohex(); // thisTid
+      str = items[i]; i++;
+      if (str !== "*") evnt.multiShot = str.atohex(); //  multiShot
+      
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+
+    }
+
+    "reset_now": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      evnt.miscStrA = items[i]; i++;
+      // optional params
+      str = items[i]; i++;
+      if (str !== "*") evnt.multiShot = str.atohex(); //  multiShot
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+
+    }
+
+    
+    //-----------------------------------------------------------
+    // Start PCIe link training after boot
+    //-----------------------------------------------------------
+    "set_StartPEUTest": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+
+      str = items[i]; i++;
+      if (str !== "*") evnt.multiShot = str.atohex(); // optional multiShot
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+
+    }
+
+    //-----------------------------------------------------------
+    // Transmit a PCIe Egress command.
+    // detailed description in
+    // :/verif/env/fc/vera/classes/asmToVeraIntf.vr
+    //-----------------------------------------------------------
+    "EnablePCIeEgCmd": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+
+      str = items[i]; i++;
+      evnt.miscStrA = str;               // Command type
+
+      str = items[i]; i++;
+      evnt.misc64A = str.atohex();       // Address
+
+      str = items[i]; i++;
+      evnt.misc64B = str.atohex();       // length
+      
+      str = items[i]; i++;
+      evnt.misc64C = str.atohex();       // start data. Denali generates incr. data
+
+      str = items[i]; i++;
+      if (str == "*") evnt.miscStrB = ""; // default value
+      else evnt.miscStrB = str; // optional errors
+
+      str = items[i]; i++;
+      if (str !== "*") evnt.multiShot = str.atohex(); // optional multiShot
+
+      
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+
+    }
+
+    //-----------------------------------------------------------
+    // Transmit a PCIe Ingress command.
+    // detailed description in
+    // :/verif/env/fc/vera/classes/asmToVeraIntf.vr
+    //-----------------------------------------------------------
+    "EnablePCIeIgCmd": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+
+      str = items[i]; i++;
+      evnt.miscStrA = str;               // Command type
+
+      str = items[i]; i++;
+      evnt.misc64A = str.atohex();       // Start of Address range
+
+      str = items[i]; i++;
+      evnt.misc64B = str.atohex();       // End of Address range
+      
+      str = items[i]; i++;
+      evnt.miscStrC = str;               // length
+
+      str = items[i]; i++;
+      evnt.misc64D = str.atohex();       // # of commands
+
+      str = items[i]; i++;
+      if (str == "*") evnt.miscStrB = ""; // default value
+      else evnt.miscStrB = str;           // optional errors
+
+      str = items[i]; i++;
+      if (str == "*") evnt.multiShot = 1; // default to always multishot
+      else evnt.multiShot = str.atohex(); // optional multiShot
+
+      
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+
+    }
+    
+    
+    //////////////////////////////////////////////////////////////////
+    // ERROR exents in this section
+    
+    "errCpxPkt": { // ! $EV trig_pc_d(1,@VA(.MAIN.R3_th3r1)) -> errCpxPkt(0,0,2)
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      str = items[i]; i++;
+      evnt.tid = str.atohex(); // match tid
+      str = items[i]; i++;
+      evnt.misc64D = str.atohex(); // pkt type match for err
+      str = items[i]; i++;
+      evnt.misc64C = str.atohex(); // value for error bits
+      // optional params
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64A = 0;
+      else evnt.misc64A = str.atohex(); // optional ifill2 indicator
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64B = 64'hffffffffffffffff;
+      else evnt.misc64B = str.atohex(); // optional addr to match as well
+      str = items[i]; i++;
+      if (str !== "*") evnt.multiShot = str.atohex(); // optional multiShot
+//       str = items[i]; i++;
+//       if (str !== "*") evnt.wait = str.atohex(); // optional wait
+      
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+
+    }
+
+    "errIndicationL2Pkt": { // !$EV trig_pc_d(1, @VA(.MAIN.label_3)) -> errIndicationL2Pkt(3, 2, 1)
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      str = items[i]; i++;
+      evnt.tid = str.atohex(); // drive tid
+      str = items[i]; i++;
+      evnt.misc64A = str.atohex(); // value to drive for error bits
+      str = items[i]; i++;
+      evnt.misc01A = str.atohex(); // pkt NC field value on error
+      
+      // optional params
+      str = items[i]; i++;
+      if (str !== "*") evnt.multiShot = str.atohex(); // optional multiShot
+//       str = items[i]; i++;
+//       if (str !== "*") evnt.wait = str.atohex(); // optional wait
+      
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+
+    }
+    
+    "errIndicationSOCPkt": { // !$EV trig_pc_d(1, @VA(.MAIN.label_3)) -> errIndicationSOCPkt(3, 2, 1)
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      str = items[i]; i++;
+      evnt.tid = str.atohex(); // drive tid
+      str = items[i]; i++;
+      evnt.misc64A = str.atohex(); // value to drive for error bits
+      // optional params
+      str = items[i]; i++;
+      if (str !== "*") evnt.multiShot = str.atohex(); // optional multiShot
+//       str = items[i]; i++;
+//       if (str !== "*") evnt.wait = str.atohex(); // optional wait
+      
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+
+    }
+// The way parameter is overloaded. For ICDP errors it represents the
+// inst in which to inject err. ICDP errors are injected in way 0.
+// For ICVP, ICTP, and ICMH it represets the way. 
+    // ! $EV trig_pc_d(1,@VA(.MAIN.label)) ->
+    // IC_hard_err_inj(reg [3:0] err_type, reg [48:0] va, reg [2:0] way, reg [7:0] tid)
+    //
+    "IC_hard_err_inj": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      str = items[i]; i++;
+      evnt.misc64A = str.atohex(); // err_type
+      str = items[i]; i++;
+      evnt.misc64B = str.atohex(); // address
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64C = 3'h0;
+      else evnt.misc64C = str.atohex(); // way
+      str = items[i]; i++;
+      if (str !== "*") evnt.tid = str.atohex(); // 64 tids // target tid
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+    }
+
+    // ! $EV trig_pc_d(1,@VA(.MAIN.label)) ->
+    // DC_hard_err_inj(reg [3:0] err_type, reg [6:0] index, reg [1:0] way, reg [7:0] tid)
+    //
+    "DC_hard_err_inj": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      str = items[i]; i++;
+      evnt.misc64A = str.atohex(); // err_type
+      str = items[i]; i++;
+      evnt.misc64B = str.atohex(); // address
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64C = 2'h0;
+      else evnt.misc64C = str.atohex(); // way
+      str = items[i]; i++;
+      if (str !== "*") evnt.tid = str.atohex(); // 64 tids // target tid
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+   }
+
+    // ! $EV trig_pc_d(1,@VA(.MAIN.R3_th3r1)) ->
+    // DTLB_err_enable(reg [2:0] err_type, integer err_freq, reg merr,
+    //                 integer burst_len, integer burst_freq,reg [7:0] tid)
+    //
+    // THIS IS AN IMMEDIATE ACTION AT TIME ZERO SO JUST CALL THE FINAL TASK NOW.
+    "DTLB_err_enable": { 
+
+      evnt = new(TMPEVENT);
+      evnt.routine = items[i]; i++;
+
+      // all optional params
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64A = 3'h7;
+      else evnt.misc64A = str.atohex(); // err_type = 3'h7
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntA = -1;
+      else evnt.miscIntA = str.atoi(); // err_freq = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64B = 2'h3;
+      else evnt.misc64B = str.atohex(); // merr = 2'h3
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntB = -1;
+      else evnt.miscIntB = str.atoi(); // burst_len  = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntC = -1;
+      else evnt.miscIntC = str.atoi(); // burst_freq = -1 
+      str = items[i]; i++;
+      if (str !== "*") evnt.tid = str.atohex(); // 64 tids // target tid
+
+      asmToVeraIntf.DTLB_err_enable(evnt.misc64A,
+                                    evnt.miscIntA,
+                                    evnt.misc64B,
+                                    evnt.miscIntB,
+                                    evnt.miscIntC,
+                                    evnt.tid);
+
+#ifdef DEBUGASMEVENTSTOVERA
+      evnt.printList();
+#endif
+      evnt = null;
+
+    }
+
+    // ! $EV trig_pc_d(1,@VA(.MAIN.R3_th3r1)) ->
+    // ITLB_err_enable(reg [2:0] err_type, integer err_freq, reg merr,
+    //                 integer burst_len, integer burst_freq,bit [7:0] tid)
+    //
+    // THIS IS AN IMMEDIATE ACTION AT TIME ZERO SO JUST CALL THE FINAL TASK NOW.
+    "ITLB_err_enable": { 
+
+      evnt = new(TMPEVENT);
+      evnt.routine = items[i]; i++;
+
+      // all optional params
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64A = 3'h7;
+      else evnt.misc64A = str.atohex(); // err_type = 3'h7
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntA = -1;
+      else evnt.miscIntA = str.atoi(); // err_freq = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64B = 2'h3;
+      else evnt.misc64B = str.atohex(); // merr = 2'h3
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntB = -1;
+      else evnt.miscIntB = str.atoi(); // burst_len  = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntC = -1;
+      else evnt.miscIntC = str.atoi(); // burst_freq = -1 
+      str = items[i]; i++;
+      if (str !== "*") evnt.tid = str.atohex(); // 64 tids // target tid
+
+      asmToVeraIntf.ITLB_err_enable(evnt.misc64A,
+                                    evnt.miscIntA,
+                                    evnt.misc64B,
+                                    evnt.miscIntB,
+                                    evnt.miscIntC,
+                                    evnt.tid);
+
+#ifdef DEBUGASMEVENTSTOVERA
+      evnt.printList();
+#endif
+      evnt = null;
+
+    }
+
+    // ! $EV trig_pc_d(1,@VA(.MAIN.R3_th3r1)) ->
+    // DC_err_enable(reg [3:0] err_type, integer err_freq, reg merr,
+    //                 integer burst_len, integer burst_freq,reg [7:0] tid)
+    //
+    // THIS IS AN IMMEDIATE ACTION AT TIME ZERO SO JUST CALL THE FINAL TASK NOW.
+    "DC_err_enable": {
+
+      evnt = new(TMPEVENT);
+      evnt.routine = items[i]; i++;
+      
+      // all optional params
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64A = 4'hF;
+      else evnt.misc64A = str.atohex(); // err_type = 4'hF
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntA = -1;
+      else evnt.miscIntA = str.atoi(); // err_freq = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64B = 2'h3;
+      else evnt.misc64B = str.atohex(); // merr = 2'h3
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntB = -1;
+      else evnt.miscIntB = str.atoi(); // burst_len  = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntC = -1;
+      else evnt.miscIntC = str.atoi(); // burst_freq = -1
+      str = items[i]; i++;
+      if (str !== "*") evnt.tid = str.atohex(); // 64 tids // target tid
+    
+
+      asmToVeraIntf.DC_err_enable(evnt.misc64A,
+                                    evnt.miscIntA,
+                                    evnt.misc64B,
+                                    evnt.miscIntB,
+                                    evnt.miscIntC,
+                                    evnt.tid);
+
+#ifdef DEBUGASMEVENTSTOVERA
+      evnt.printList();
+#endif
+      evnt = null;
+
+    }
+
+    // ! $EV trig_pc_d(1,@VA(.MAIN.R3_th3r1)) ->
+    // IC_err_enable(reg [3:0] err_type, integer err_freq, reg merr,
+    //                 integer burst_len, integer burst_freq,reg [7:0] tid)
+    //
+    // THIS IS AN IMMEDIATE ACTION AT TIME ZERO SO JUST CALL THE FINAL TASK NOW.
+    "IC_err_enable": {
+
+      evnt = new(TMPEVENT);
+      evnt.routine = items[i]; i++;
+      
+      // all optional params
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64A = 4'hF;
+      else evnt.misc64A = str.atohex(); // err_type = 4'hF
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntA = -1;
+      else evnt.miscIntA = str.atoi(); // err_freq = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64B = 2'h3;
+      else evnt.misc64B = str.atohex(); // merr = 2'h3
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntB = -1;
+      else evnt.miscIntB = str.atoi(); // burst_len  = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntC = -1;
+      else evnt.miscIntC = str.atoi(); // burst_freq = -1
+      str = items[i]; i++;
+      if (str !== "*") evnt.tid = str.atohex(); // 64 tids // target tid
+    
+
+      asmToVeraIntf.IC_err_enable(evnt.misc64A,
+                                    evnt.miscIntA,
+                                    evnt.misc64B,
+                                    evnt.miscIntB,
+                                    evnt.miscIntC,
+                                    evnt.tid);
+
+#ifdef DEBUGASMEVENTSTOVERA
+      evnt.printList();
+#endif
+      evnt = null;
+
+    }
+   // ! $EV trig_pc_d(1,@VA(.MAIN.R3_th3r1)) ->
+    // STB_err_enable(reg [4:0] err_type, integer err_freq, reg merr,
+    //                 integer burst_len, integer burst_freq, reg ue_en, 
+    //		       integer ce_wt, reg [7:0] tid)
+    //
+    // THIS IS AN IMMEDIATE ACTION AT TIME ZERO SO JUST CALL THE FINAL TASK NOW.
+    "STB_err_enable": {
+
+      evnt = new(TMPEVENT);
+      evnt.routine = items[i]; i++;
+
+      // all optional params
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64A = 5'h1F;
+      else evnt.misc64A = str.atohex(); // err_type = 5'h1F
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntA = -1;
+      else evnt.miscIntA = str.atoi(); // err_freq = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64B = 2'h3;
+      else evnt.misc64B = str.atohex(); // merr = 2'h3
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntB = -1;
+      else evnt.miscIntB = str.atoi(); // burst_len  = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntC = -1;
+      else evnt.miscIntC = str.atoi(); // burst_freq = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64C = 2'h3;
+      else evnt.misc64C = str.atohex(); // ue_en = 2'h3
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntD = -1;
+      else evnt.miscIntD = str.atoi(); // ce_wt = -1
+      str = items[i]; i++;
+      if (str !== "*") evnt.tid = str.atohex(); // 64 tids // target tid
+    
+
+      asmToVeraIntf.STB_err_enable(evnt.misc64A,
+                                    evnt.miscIntA,
+                                    evnt.misc64B,
+                                    evnt.miscIntB,
+                                    evnt.miscIntC,
+				                    evnt.misc64C,
+                                    evnt.miscIntD,
+                                    evnt.tid);
+
+#ifdef DEBUGASMEVENTSTOVERA
+      evnt.printList();
+#endif
+      evnt = null;
+
+    }
+    
+// ! $EV trig_pc_d(1,@VA(.MAIN.R3_th3r1)) ->
+    // MRA_err_enable(reg [1:0] err_type, integer err_freq, reg [7:0] mra_entry,
+    //                 reg wr_en, integer burst_len, integer burst_freq, reg [7:0] tid)
+    //
+    // THIS IS AN IMMEDIATE ACTION AT TIME ZERO SO JUST CALL THE FINAL TASK NOW.
+    "MRA_err_enable": {
+
+      evnt = new(TMPEVENT);
+      evnt.routine = items[i]; i++;
+      
+      // all optional params
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64A = 2'h3;
+      else evnt.misc64A = str.atohex(); // err_type = 2'h3
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntA = -1;
+      else evnt.miscIntA = str.atoi(); // err_freq = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64B = 8'hff;
+      else evnt.misc64B = str.atohex(); // mra_entry = 8'hff
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64C = 2'h3;
+      else evnt.misc64C = str.atohex(); // wr_en = 2'h3
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntB = -1;
+      else evnt.miscIntB = str.atoi(); // burst_len  = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntC = -1;
+      else evnt.miscIntC = str.atoi(); // burst_freq = -1
+      str = items[i]; i++;
+      if (str !== "*") evnt.tid = str.atohex(); // 64 tids // target tid
+    
+
+      asmToVeraIntf.MRA_err_enable(evnt.misc64A,
+                                    evnt.miscIntA,
+                                    evnt.misc64B,
+                                    evnt.misc64C,
+                                    evnt.miscIntB,
+                                    evnt.miscIntC,
+                                    evnt.tid);
+
+#ifdef DEBUGASMEVENTSTOVERA
+      evnt.printList();
+#endif
+      evnt = null;
+
+    }
+    
+// ! $EV trig_pc_d(1,@VA(.MAIN.R3_th3r1)) ->
+    // IRF_err_enable(reg [2:0] err_type, integer err_freq, integer ce_wt, reg merr,
+    //                 integer burst_len, integer burst_freq,reg [7:0] tid)
+    //
+    // THIS IS AN IMMEDIATE ACTION AT TIME ZERO SO JUST CALL THE FINAL TASK NOW.
+    "IRF_err_enable": {
+
+      evnt = new(TMPEVENT);
+      evnt.routine = items[i]; i++;
+      
+      // all optional params
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64A = 3'h7;
+      else evnt.misc64A = str.atohex(); // err_type = 3'h7
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntA = -1;
+      else evnt.miscIntA = str.atoi(); // err_freq = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntB = -1;
+      else evnt.miscIntB = str.atoi(); // ce_wt = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64B = 2'h3;
+      else evnt.misc64B = str.atohex(); // merr = 2'h3
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntC = -1;
+      else evnt.miscIntC = str.atoi(); // burst_len  = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntD = -1;
+      else evnt.miscIntD = str.atoi(); // burst_freq = -1
+      str = items[i]; i++;
+      if (str !== "*") evnt.tid = str.atohex(); // 64 tids // target tid
+    
+
+      asmToVeraIntf.IRF_err_enable(evnt.misc64A,
+                                    evnt.miscIntA,
+                                    evnt.miscIntB,
+                                    evnt.misc64B,
+                                    evnt.miscIntC,
+                                    evnt.miscIntD,
+                                    evnt.tid);
+
+#ifdef DEBUGASMEVENTSTOVERA
+      evnt.printList();
+#endif
+      evnt = null;
+
+    }
+
+// ! $EV trig_pc_d(1,@VA(.MAIN.R3_th3r1)) ->
+    // FRF_err_enable(reg [2:0] err_type, integer err_freq, integer ce_wt, reg merr,
+    //                 integer burst_len, integer burst_freq,reg [7:0] tid)
+    //
+    // THIS IS AN IMMEDIATE ACTION AT TIME ZERO SO JUST CALL THE FINAL TASK NOW.
+    "FRF_err_enable": {
+
+      evnt = new(TMPEVENT);
+      evnt.routine = items[i]; i++;
+      
+      // all optional params
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64A = 3'h7;
+      else evnt.misc64A = str.atohex(); // err_type = 3'h7
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntA = -1;
+      else evnt.miscIntA = str.atoi(); // err_freq = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntB = -1;
+      else evnt.miscIntB = str.atoi(); // ce_wt = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64B = 2'h3;
+      else evnt.misc64B = str.atohex(); // merr = 2'h3
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntC = -1;
+      else evnt.miscIntC = str.atoi(); // burst_len  = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntD = -1;
+      else evnt.miscIntD = str.atoi(); // burst_freq = -1
+      str = items[i]; i++;
+      if (str !== "*") evnt.tid = str.atohex(); // 64 tids // target tid
+    
+
+      asmToVeraIntf.FRF_err_enable(evnt.misc64A,
+                                    evnt.miscIntA,
+                                    evnt.miscIntB,
+                                    evnt.misc64B,
+                                    evnt.miscIntC,
+                                    evnt.miscIntD,
+                                    evnt.tid);
+
+#ifdef DEBUGASMEVENTSTOVERA
+      evnt.printList();
+#endif
+      evnt = null;
+
+    }
+
+// ! $EV trig_pc_d(1,@VA(.MAIN.R3_th3r1)) ->
+    // SCA_err_enable(integer err_freq, integer ce_wt, 
+    //                integer burst_len, integer burst_freq, reg [7:0] tid)
+    //
+    // THIS IS AN IMMEDIATE ACTION AT TIME ZERO SO JUST CALL THE FINAL TASK NOW.
+    "SCA_err_enable": {
+
+      evnt = new(TMPEVENT);
+      evnt.routine = items[i]; i++;
+      
+      // all optional params
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntA = -1;
+      else evnt.miscIntA = str.atoi(); // err_freq = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntB = -1;
+      else evnt.miscIntB = str.atoi(); // ce_wt = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntC = -1;
+      else evnt.miscIntC = str.atoi(); // burst_len  = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntD = -1;
+      else evnt.miscIntD = str.atoi(); // burst_freq = -1
+      str = items[i]; i++;
+      if (str !== "*") evnt.tid = str.atohex(); // 64 tids // target tid
+    
+
+      asmToVeraIntf.SCA_err_enable(evnt.miscIntA,
+                                    evnt.miscIntB,
+                                    evnt.miscIntC,
+                                    evnt.miscIntD,
+                                    evnt.tid);
+
+#ifdef DEBUGASMEVENTSTOVERA
+      evnt.printList();
+#endif
+      evnt = null;
+
+    }
+
+// ! $EV trig_pc_d(1,@VA(.MAIN.R3_th3r1)) ->
+    // TSA_err_enable(reg [1:0] err_type, integer err_freq, reg [6:0] tsa_entry,
+    //                 reg wr_en, integer ce_wt, integer burst_len, integer burst_freq, reg [7:0] tid)
+    //
+    // THIS IS AN IMMEDIATE ACTION AT TIME ZERO SO JUST CALL THE FINAL TASK NOW.
+    "TSA_err_enable": {
+
+      evnt = new(TMPEVENT);
+      evnt.routine = items[i]; i++;
+      
+      // all optional params
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64A = 2'h3;
+      else evnt.misc64A = str.atohex(); // err_type = 2'h3
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntA = -1;
+      else evnt.miscIntA = str.atoi(); // err_freq = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64B = 7'h7f;
+      else evnt.misc64B = str.atohex(); // tsa_entry = 7'h7f
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64C = 2'h3;
+      else evnt.misc64C = str.atohex(); // wr_en = 2'h3
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntB = -1;
+      else evnt.miscIntB = str.atoi(); // ce_wt  = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntC = -1;
+      else evnt.miscIntC = str.atoi(); // burst_len  = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntD = -1;
+      else evnt.miscIntD = str.atoi(); // burst_freq = -1
+      str = items[i]; i++;
+      if (str !== "*") evnt.tid = str.atohex(); // 64 tids // target tid
+    
+
+      asmToVeraIntf.TSA_err_enable(evnt.misc64A,
+                                    evnt.miscIntA,
+                                    evnt.misc64B,
+                                    evnt.misc64C,
+                                    evnt.miscIntB,
+                                    evnt.miscIntC,
+                                    evnt.miscIntD,
+                                    evnt.tid);
+
+#ifdef DEBUGASMEVENTSTOVERA
+      evnt.printList();
+#endif
+      evnt = null;
+
+    }
+
+    // ! $EV trig_pc_d(1,@VA(.MAIN.R3_th3r1)) ->
+    // TCC_err_enable(reg [1:0] err_type, integer err_freq, integer ce_wt,
+    //                 integer burst_len, integer burst_freq,bit [7:0] tid)
+    //
+    // THIS IS AN IMMEDIATE ACTION AT TIME ZERO SO JUST CALL THE FINAL TASK NOW.
+    "TCC_err_enable": { 
+
+      evnt = new(TMPEVENT);
+      evnt.routine = items[i]; i++;
+
+      // all optional params
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64A = 2'h3;
+      else evnt.misc64A = str.atohex(); // err_type = 2'h3
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntA = -1;
+      else evnt.miscIntA = str.atoi(); // err_freq = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntB = -1;
+      else evnt.miscIntB = str.atoi(); // ce_wt = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntC = -1;
+      else evnt.miscIntC = str.atoi(); // burst_len  = -1
+      str = items[i]; i++;
+      if (str == "*") evnt.miscIntD = -1;
+      else evnt.miscIntD = str.atoi(); // burst_freq = -1 
+      str = items[i]; i++;
+      if (str !== "*") evnt.tid = str.atohex(); // 64 tids // target tid
+
+      asmToVeraIntf.TCC_err_enable(evnt.misc64A,
+                                    evnt.miscIntA,
+                                    evnt.miscIntB,
+                                    evnt.miscIntC,
+                                    evnt.miscIntD,
+                                    evnt.tid);
+
+#ifdef DEBUGASMEVENTSTOVERA
+      evnt.printList();
+#endif
+      evnt = null;
+
+    }
+
+    // L2C_err_enable(bit [5:0] err_type, integer err_freq, integer ce_wt, integer nd_wt
+    //                 integer burst_len, integer burst_freq 
+    //		       bit [7:0] tid)
+    //
+    // THIS IS AN IMMEDIATE ACTION AT TIME ZERO SO JUST CALL THE FINAL TASK NOW.
+    "L2C_err_enable": {
+
+      evnt = new(TMPEVENT);
+      evnt.routine = items[i]; i++;
+      
+      // all optional params
+      str = items[i]; i++;
+      if (str == "*") evnt.misc64A = 6'h3F;
+      else evnt.misc64A = str.atohex(); // err_type = 6'h3F
+      str = items[i]; i++;
+
+      if (str == "*") evnt.miscIntA = -1;
+      else evnt.miscIntA = str.atoi(); // err_freq = -1
+      str = items[i]; i++;
+
+      if (str == "*") evnt.miscIntB = -1;
+      else evnt.miscIntB = str.atoi(); // ce_wt = -1
+      str = items[i]; i++;
+
+      if (str == "*") evnt.miscIntC = -1;
+      else evnt.miscIntC = str.atoi(); // nd_wt = -1
+      str = items[i]; i++;
+
+      if (str == "*") evnt.miscIntD = -1;
+      else evnt.miscIntD = str.atoi(); // burst_len  = -1
+      str = items[i]; i++;
+
+      if (str == "*") evnt.miscIntE = -1;
+      else evnt.miscIntE = str.atoi(); // burst_freq = -1
+      str = items[i]; i++;
+
+      if (str !== "*") evnt.tid = str.atohex(); // 64 tids // target tid
+    
+
+      asmToVeraIntf.L2C_err_enable(evnt.misc64A,
+                                    evnt.miscIntA,
+                                    evnt.miscIntB,
+                                    evnt.miscIntC,
+                                    evnt.miscIntD,
+                                    evnt.miscIntE,
+                                    evnt.tid);
+
+#ifdef DEBUGASMEVENTSTOVERA
+      evnt.printList();
+#endif
+      evnt = null;
+
+    }
+ 
+    // end ERROR events in this section
+    //////////////////////////////////////////////////////////////////
+
+
+    "registerSlam": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+
+      str = items[i]; i++;
+      evnt.miscStrA = str; //The Name of the register to slam
+      str = items[i]; i++;
+      evnt.misc128A = str.atohex(); // The value to slam the register
+      str = items[i]; i++;
+      if (str !== "*") evnt.tid = str.atohex(); // 64 tids
+      
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+      
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+
+    }
+
+    //task watchDebugReg(integer which, integer wait=0,
+    //                   integer verbose=0, reg [1:0] checkValue)  
+    "watchDebugReg": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+      str = items[i]; i++;
+      evnt.miscIntA = str.atoi(); // wait
+      str = items[i]; i++;
+      evnt.miscIntB = str.atoi(); // verbose
+      str = items[i]; i++;
+      evnt.miscIntC = str.atoi(); // verbose
+      str = items[i]; i++;
+      if (str !== "*") evnt.misc64A = str.atohex(); // checkValue
+      
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+      
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+    }
+
+    "spc_warm_reset": {
+      evnt = new;
+      evnt.pc = pc;
+      evnt.routine = items[i]; i++;
+
+      if (assoc_index(CHECK, userEventsList, pc)) userEventsList[pc].push(evnt);
+      else userEventsList[pc] = evnt;
+
+#ifdef DEBUGASMEVENTSTOVERA
+      userEventsList[pc].printList();
+#endif
+    }
+    
+    default: error("AsmEventsToVera::parseTrig invalid case!\n");
+
+  }
+
+}
+
+
+/////////////////////////////////////////////////////////////////////////
+// see what we have to do for this address and do it.
+//
+//  None of this will make sense until you read:
+//
+//  Add to the case below to add a new User Event
+/////////////////////////////////////////////////////////////////////////
+task AsmEventsToVera::serviceEvent(reg [63:0] pc, reg [5:0] fromTid) {
+
+  EventClass evntHndlHead = null;
+  EventClass evnt = null;
+  integer remain, notDone=0;
+
+  evntHndlHead = userEventsList[pc];
+  if (evntHndlHead !== null) evnt = evntHndlHead.getHeadEvent();
+
+  // keep processing until all events for this address are done
+  while (evnt !== null) {
+
+  PR_NORMAL (className, MON_NORMAL,
+             psprintf("serviceEvent: routine = %s, evnt.pc = 0x%0h, evnt.tid = 0x%0h, evnt.tidMask = 0x%0h, fromTid = %0d, passed pc = 0x%0h",
+                      evnt.routine,evnt.pc,evnt.tid,evnt.tidMask,fromTid, pc));
+
+#ifdef DEBUGASMEVENTSTOVERA             
+    evnt.printSelf();
+#endif
+    
+    case (evnt.routine) {
+
+      "generic_ev" : { // generic user event for general use (6/06)
+        asmToVeraIntf.generic_ev(evnt.miscStrA,
+                                 evnt.misc64A,
+                                 evnt.misc64B);
+      }
+
+      "intp": {
+        reg [63:0] mask;
+        integer tid = 0;
+        integer wait = 0;
+
+        // if user set thisTid to < 64 then thisTid == fromTid must be true
+        // else pass over this intp this time.
+        if (evnt.thisTid >= 64 || evnt.thisTid == fromTid) {
+
+          // mask always wins.
+          // did user set mask.
+          mask = evnt.tidMask;
+
+          // mask always wins.
+          // use evnt.tid if no mask.
+          if (!mask) {
+            mask = 1 << evnt.tid;            
+            // user wants to target only the thread that is at this PC now.
+            if (evnt.tid > 63) mask = 1 << fromTid;
+          }
+          
+          // dont target non existent tids
+          mask = mask & enabledTids;
+          
+          while (mask) {
+            if (mask[0]) {
+
+              // special value 999 to enable random wait times
+              if (evnt.wait == 9999) wait = urandom_range(10, 0);
+              else wait = evnt.wait;
+
+              PR_NORMAL (className, MON_NORMAL,
+                         psprintf("serviceEvent: calling intp for tid %0d (mask=%h,wait=%0d)",
+                                  tid,evnt.tidMask,wait));
+
+#ifdef DEBUGASMEVENTSTOVERA
+              evnt.printSelf();
+#endif
+
+              asmToVeraIntf.intp(tid,
+                                 evnt.intType,
+                                 evnt.misc64A,
+                                 *, // use bench default. not in use! evnt.src,
+                                 wait
+                                 );
+            }
+            mask = mask >> 1;
+            tid++;
+          }
+        } else notDone = 1; // preserve this event
+      }
+      
+      "extint": {
+        asmToVeraIntf.extint(evnt.wait,  evnt.miscIntA);
+      }
+      
+      "warmrst": {
+        asmToVeraIntf.warmrst();
+      }
+      
+      "cpx_stall": {
+        asmToVeraIntf.cpx_stall(evnt.tid,
+                                evnt.miscIntA,
+                                evnt.wait);
+      }
+      
+      "printf": {
+        // if user set thisTid to < 64 then thisTid == fromTid must be true
+        // else pass over it this time.
+        if (evnt.thisTid >= 64 || evnt.thisTid == fromTid) {
+          PR_ALWAYS("AsmEventsToVera", MON_ALWAYS, evnt.miscStrA);
+        } else notDone = 1; // preserve this event
+      }
+
+      "dump_mem": {
+        asmToVeraIntf.dump_mem(evnt.misc64A,
+                               evnt.misc64B);
+      }
+      
+      // SPC BFM will do a store. Pick correct port w/ BFM!!!
+      "store": {
+        asmToVeraIntf.store(evnt.tid,
+                            evnt.misc64A,
+                            evnt.misc64B);
+      }
+
+	// Trap conuting Random Error Injection in CCM (L2)
+      "L2ErrTrapCount": {
+        asmToVeraIntf.L2ErrTrapCount(evnt.misc64A);
+      }
+
+      // Random Error Injection in CCM Data Array
+      "L2DAErrInjection": {
+        asmToVeraIntf.L2DAErrInjection(evnt.misc64A);
+      }
+
+      // Random Error Injection in CCM Tag Array
+      "L2TAErrInjection": {
+        asmToVeraIntf.L2TAErrInjection(evnt.misc64A);
+      }
+
+      "IosErrInj": {
+        asmToVeraIntf.IosErrInj(evnt.miscStrA,
+                                evnt.misc64A,
+                                evnt.misc64B);
+      }
+
+
+      "IosRandErrInj": {
+        asmToVeraIntf.IosRandErrInj(evnt.miscStrA,
+                                evnt.misc64A,
+                                evnt.misc64B);
+      }
+
+      "siuDmaRd": {
+        asmToVeraIntf.siuDmaRd(evnt.misc64A,
+                               evnt.misc64B);
+      }
+      "siuDmaWri": {
+        asmToVeraIntf.siuDmaWri(evnt.misc64A,
+                                evnt.misc64B);
+      }
+      "jtagRdWrL2": {
+        asmToVeraIntf.jtagRdWrL2(evnt.misc64A,
+                                 evnt.misc64B,
+                                 evnt.misc64C,
+                                 evnt.misc01A);
+      }
+      "pktGenConfig": {
+        asmToVeraIntf.pktGenConfig(evnt.tid,
+				evnt.misc64A,
+				evnt.misc64B,
+                                evnt.misc64C,
+                                evnt.misc01A,
+                                evnt.misc64D);
+      }
+
+      "NIU_SetTxMaxBurst": {
+        asmToVeraIntf.NIU_SetTxMaxBurst(evnt.misc01B,
+                             evnt.misc64B,
+                             evnt.misc64A,
+                             evnt.misc01A,
+                             evnt.misc64C,
+                             evnt.misc64D);
+      }
+
+      "NIU_SetTxRingKick": {
+        asmToVeraIntf.NIU_SetTxRingKick(evnt.tid,
+                             evnt.misc64B,
+                             evnt.misc01A,
+                             evnt.misc64C,
+                             evnt.misc64D);
+      }
+
+      "NIU_AddTxChannels": {
+        asmToVeraIntf.NIU_AddTxChannels(evnt.tid,
+                             evnt.misc64B,
+                             evnt.misc01A,
+                             evnt.misc64C,
+                             evnt.misc64D);
+      }
+
+      "NIU_InitTxDma": {
+        asmToVeraIntf.NIU_InitTxDma(evnt.misc01B,
+                                    evnt.misc64B,
+                                    evnt.misc64A,
+                                    evnt.misc01A, 
+                                    evnt.misc64C, 
+                                    evnt.misc64D);
+      }
+
+      "NIU_TxDMAActivate": {
+        asmToVeraIntf.NIU_TxDMAActivate(evnt.misc64B,
+                             evnt.tid, 
+                             evnt.misc01A,
+                             evnt.misc64C,
+                             evnt.misc64D);
+      }
+
+      "NIU_EXIT_chk": {
+        asmToVeraIntf.NIU_EXIT_chk(evnt.misc64B);
+      }
+
+
+      "TxPktGen": {
+        asmToVeraIntf.TxPktGen(evnt.misc64A, 
+			     evnt.tid,
+                             evnt.misc64B, 
+                             evnt.misc01A, 
+                             evnt.misc64C, 
+                             evnt.misc64D);
+      }
+
+
+      "NIU_InitRxDma": {
+        asmToVeraIntf.NIU_InitRxDma(evnt.tid,
+				      evnt.misc64A,
+                                      evnt.misc64B,
+                                      evnt.misc64C,
+                                      evnt.misc64D,
+				      evnt.misc01A,
+				      evnt.misc64E);
+      }
+
+      "NIU_RxPktConf": {
+        asmToVeraIntf.NIU_RxPktConf(evnt.tid,
+                                    evnt.misc64A);
+      }
+
+      "NIU_RxGenPkt": {
+        asmToVeraIntf.NIU_RxGenPkt(evnt.tid,
+				   evnt.misc64A,
+				   evnt.misc64B,
+				   evnt.misc64C,
+				   evnt.misc01B,
+                                   evnt.misc64D);
+      }
+
+
+      "marker": {
+        PR_NORMAL (className, MON_NORMAL,
+                         psprintf("serviceEvent: Doing: routine = marker, string = %s, from tid = %0d at pc = 0x%0h",
+                                  evnt.miscStrA,fromTid,pc));
+        asmToVeraIntf.marker(evnt.miscStrA,fromTid,pc);
+        
+#ifndef FC_BENCH
+        // special case to improve performance.
+        // once last thread gets done, allow multiShot event to retire
+        if (evnt.miscStrA == "bootEnd") {      
+          outOfBoot[fromTid] = 1;
+          // printf("%0d outOfBoot = 0x%h\n",get_time(LO),outOfBoot);         
+          if (outOfBoot == enabledTids) {
+            evnt.multiShot = 0;
+            //evnt.setDone(1);
+          }
+        }
+        if (evnt.miscStrA == "bootStart") {      
+          startBoot[fromTid] = 1;
+          // printf("%0d startBoot = 0x%h\n",get_time(LO),startBoot);
+          if (startBoot == enabledTids) {
+            evnt.multiShot = 0;
+            //evnt.setDone(1);
+          }
+        }
+#endif
+        
+      }
+
+      "reset_now": {
+        asmToVeraIntf.reset_now(evnt.miscStrA);
+      }
+
+      "set_StartPEUTest": {
+        asmToVeraIntf.set_StartPEUTest();
+      }
+
+      "EnablePCIeEgCmd": {
+        asmToVeraIntf.EnablePCIeEgCmd(evnt.miscStrA,
+                                      evnt.misc64A,
+                                      evnt.misc64B,
+                                      evnt.misc64C,
+                                      evnt.miscStrB);
+      }
+
+      "EnablePCIeIgCmd": {
+        asmToVeraIntf.EnablePCIeIgCmd(evnt.miscStrA,
+                                      evnt.misc64A,
+                                      evnt.misc64B,
+                                      evnt.miscStrC,
+                                      evnt.misc64D,
+                                      evnt.miscStrB);
+      }
+      
+      "errCpxPkt": {
+        asmToVeraIntf.errCpxPkt(evnt.tid,
+                                evnt.misc64D,
+                                evnt.misc64C,
+                                evnt.misc64A,
+                                evnt.misc64B,
+                                evnt.misc01A);
+      }
+      
+      "IC_hard_err_inj": {
+        asmToVeraIntf.IC_hard_err_inj(evnt.misc64A,
+                                    evnt.misc64B,
+                                    evnt.misc64C,
+                                    evnt.tid);
+      }
+
+      "DC_hard_err_inj": {
+        asmToVeraIntf.DC_hard_err_inj(evnt.misc64A,
+                                    evnt.misc64B,
+                                    evnt.misc64C,
+                                    evnt.tid);
+      }
+
+      "errIndicationL2Pkt": {
+        asmToVeraIntf.errCpxPkt(evnt.tid,
+                                4'b1100,
+                                evnt.misc64A,
+                                0,
+                                64'hffffffffffffffff,
+                                evnt.misc01A);
+      }
+
+      "errIndicationSOCPkt": {
+        asmToVeraIntf.errCpxPkt(evnt.tid,
+                                4'b1101,
+                                evnt.misc64A,
+                                0,
+                                64'hffffffffffffffff,
+                                evnt.misc01A);
+
+      }
+   
+      "registerSlam": {
+        asmToVeraIntf.registerSlam(evnt.miscStrA,
+                                   evnt.misc128A,
+                                   evnt.tid);
+      }
+
+      "watchDebugReg": {
+        asmToVeraIntf.watchDebugReg(evnt.miscIntA, evnt.miscIntB,
+                                          evnt.miscIntC, evnt.misc64A);
+      }
+      
+      "spc_warm_reset": {
+        asmToVeraIntf.spc_warm_reset();
+      }
+      
+      default: error("AsmEventsToVera::serviceEvent invalid case!\n");
+    }
+
+    // next?
+    if (eventsNeverDone) notDone = 1; // for reset testing. Code will repeat.
+    evnt = evntHndlHead.getNextEvent(remain,notDone,eventCount);
+    notDone = 0;
+
+    // kill off this PC's list, we are all finished with it
+    if (!remain) {
+      userEventsList[pc].delete();
+      userEventsList[pc] = null;
+      assoc_index (DELETE, userEventsList, pc);
+    }
+
+          
+  } // while 
+  
+}
+
+
+
+
+
+
+////////////////////////////////////////////////////////////////
+// new
+////////////////////////////////////////////////////////////////
+task AsmEventsToVera::new(StandardDisplay dbg,
+                          reg [63:0] enabledTids,
+                          reg asm_err_en = 0,
+                          reg err_inj_dbg = 0) {
+
+  this.dbg = dbg;
+  this.enabledTids = enabledTids;
+  listLock = alloc(SEMAPHORE, 0, 1, 1);
+
+#ifdef DEBUGASMEVENTSTOVERA
+  this.debug = 1;
+#endif
+
+  if (mChkPlusarg(eventsNeverDone)) eventsNeverDone = 1;
+  else eventsNeverDone = 0;
+  
+  probes[0] = asmEventCore0;
+  probes[1] = asmEventCore1;
+  probes[2] = asmEventCore2;
+  probes[3] = asmEventCore3;
+  probes[4] = asmEventCore4;
+  probes[5] = asmEventCore5;
+  probes[6] = asmEventCore6;
+  probes[7] = asmEventCore7;
+  probes[8] = asmEventCore8;
+  probes[9] = asmEventCore9;
+  probes[10] = asmEventCore10;
+  probes[11] = asmEventCore11;
+  probes[12] = asmEventCore12;
+  probes[13] = asmEventCore13;
+  probes[14] = asmEventCore14;
+  probes[15] = asmEventCore15;
+  probes[16] = asmEventCore16;
+  probes[17] = asmEventCore17;
+  probes[18] = asmEventCore18;
+  probes[19] = asmEventCore19;
+  probes[20] = asmEventCore20;
+  probes[21] = asmEventCore21;
+  probes[22] = asmEventCore22;
+  probes[23] = asmEventCore23;
+  probes[24] = asmEventCore24;
+  probes[25] = asmEventCore25;
+  probes[26] = asmEventCore26;
+  probes[27] = asmEventCore27;
+  probes[28] = asmEventCore28;
+  probes[29] = asmEventCore29;
+  probes[30] = asmEventCore30;
+  probes[31] = asmEventCore31;
+  probes[32] = asmEventCore32;
+  probes[33] = asmEventCore33;
+  probes[34] = asmEventCore34;
+  probes[35] = asmEventCore35;
+  probes[36] = asmEventCore36;
+  probes[37] = asmEventCore37;
+  probes[38] = asmEventCore38;
+  probes[39] = asmEventCore39;
+  probes[40] = asmEventCore40;
+  probes[41] = asmEventCore41;
+  probes[42] = asmEventCore42;
+  probes[43] = asmEventCore43;
+  probes[44] = asmEventCore44;
+  probes[45] = asmEventCore45;
+  probes[46] = asmEventCore46;
+  probes[47] = asmEventCore47;
+  probes[48] = asmEventCore48;
+  probes[49] = asmEventCore49;
+  probes[50] = asmEventCore50;
+  probes[51] = asmEventCore51;
+  probes[52] = asmEventCore52;
+  probes[53] = asmEventCore53;
+  probes[54] = asmEventCore54;
+  probes[55] = asmEventCore55;
+  probes[56] = asmEventCore56;
+  probes[57] = asmEventCore57;
+  probes[58] = asmEventCore58;
+  probes[59] = asmEventCore59;
+  probes[60] = asmEventCore60;
+  probes[61] = asmEventCore61;
+  probes[62] = asmEventCore62;
+  probes[63] = asmEventCore63;
+
+}
+
+////////////////////////////////////////////////////////////////
+//  read diag.ev file and build up sync routine.
+////////////////////////////////////////////////////////////////
+
+// N1 calls as: read_vera_tasks("diag.ev", 0, "", "");
+task AsmEventsToVera::readEventFile(string  file,
+                                    integer kind = 0,
+                                    string  lvl = null,
+                                    string  name = null) {
+  integer    fp,i;
+  string     line, items[ITEMCOUNT];
+  reg [63:0] tmp64;
+  
+  if (mChkPlusarg(noUserEvents)) {
+    printf("%9d: AsmEventsToVera[]: +noUserEvents detected. AsmEventsToVera class dissabled!\n", get_cycle());
+    return;
+  }
+    
+  fp = fopen(file, "r", SILENT);
+  while(fp){
+    line = freadstr(fp, SILENT);
+    if (line == null) break;
+    if (line.match("printhex")) continue;
+    if (line.match("printdec")) continue;
+    if (line.match("^\s*$")) continue;
+    if (line.match("^\s*//")) continue;
+    // Do not process N1 errors
+    // or we end up with garbage in list! jp
+    if (line.match("error(")) continue;
+
+    // seperates fields by ( and comma, always excluding any 64'h
+    this.extract(line, items);
+
+    if (items[0] == "trig_pc_d") parseTrig(items);
+    else {
+      printf("AsmEventsToVera::readVeraTasks ERROR: This stuff is bad ->");
+      for (i=0;i<ITEMCOUNT;i++) if (items[i] != null) printf("%s \n",items[i]);
+      printf("<-\n");
+      error("AsmEventsToVera::readVeraTasks ERROR: invalid user event found in file %s\n",file);
+    }
+  }
+
+  if (fp) fclose(fp);
+
+  // if no events, do nothing.
+  if (assoc_index(FIRST, userEventsList, tmp64)) {
+    eventCount = userEventsList[tmp64].getEventCount();
+    asmToVeraIntf = new();     // Each bench's $EVENTs implementation tasks
+    fork mainMonitor(); join none    
+  }
+  
+}
+
+////////////////////////////////////////////////////////////////
+//  parse line, used by readVeraTasks
+////////////////////////////////////////////////////////////////
+// trig_pc_d(0,64'h0000000020000d90) -> intp(0, 0, 3a)
+// error(0,64'h0000000020000d90,1,IRF,ce,8,x, x,x,x, x,x,x)
+
+task AsmEventsToVera::extract(string str, var string items [ITEMCOUNT]) {
+
+  integer i = 0;
+
+#ifdef DEBUGASMEVENTSTOVERA
+if (debug) printf("\nExtract: input=%s\n",str);
+#endif
+
+  for (i=0;i<ITEMCOUNT;i++) items[i] = "*";
+  i = 0;
+  
+  // seperates fields by ( and comma, always excluding any 64'h
+  while(str.match("\s*(64'h)*([\w\*]+)"))
+  {
+    items[i] = str.backref(1); //str_list.push_back(str.backref(1));
+#ifdef DEBUGASMEVENTSTOVERA
+    printf("Extract:push_backA: [%0d] %s\n", i, items[i]);
+#endif
+    i++;
+    str = str.postmatch();
+
+    if(str.match("^\(\s*\"")){
+      str = str.postmatch();
+      str.match("\"");
+      items[i] = str.prematch(); // str_list.push_back(str.prematch());
+#ifdef DEBUGASMEVENTSTOVERA
+      printf("Extract:push_backB: [%0d] %s\n", i, items[i]);
+#endif
+      i++;
+      str = str.postmatch();
+    }
+  }
+
+}
+
+
+
+//
+// watch for instruction completion, get address, check hash.
+// if user event is dumping a register, get CWP and reg too.
+//
+// Uses new() input enabledTids to determine which threads to monitor.
+// 
+task AsmEventsToVera::mainMonitor() {
+
+  integer i, maxTidBit=64, minTidBit=0, serviceTime;
+  reg [5:0] thread;
+  reg [63:0] pc, localReady;
+  reg [2:0] core, tid;
+  
+  repeat (2) @(posedge probes[0].$clk);
+  
+  if (mChkPlusarg(noUserEvents)) {
+    printf("%9d: AsmEventsToVera[]: +noUserEvents detected. AsmEventsToVera class dissabled!\n", get_cycle());
+    return;
+  }
+  
+  if (eventCount) {
+    
+    printf("%9d: AsmEventsToVera[]: $EV User Events detected. Input enabledTids=0x%h\n", get_cycle(), enabledTids);
+    if (! enabledTids) printf("%9d: AsmEventsToVera[]: $EV User Events enabledTids is 0! No User Events will happen!\n", get_cycle());
+    
+// printf("%0d AsmEventsToVera: core_running_status 0x%h\n",
+//        get_cycle(),asmEventsToVera_if.core_running_status);
+
+    for (i=0;i<64;i++) if (enabledTids[i]) maxTidBit = i;
+    for (i=63;i<=0;i--) if (enabledTids[i]) minTidBit = i;
+
+    while (1) {
+
+// printf("%0d AsmEventsToVera: while loop waiting for readies\n", get_cycle());
+      
+      @(asmEventsToVera_if.ev_ready); // wait for any change
+
+// printf("%0d AsmEventsToVera: outer while loop see a ready\n", get_cycle());
+
+      while (asmEventsToVera_if.ev_ready) { // any high/staying high?
+
+        localReady = asmEventsToVera_if.ev_ready;
+        
+// printf("%0d AsmEventsToVera: inner while loop still see ready: %h\n", get_cycle(),localReady);
+
+        for (i=minTidBit;i<=maxTidBit;i++) {
+          if (enabledTids[i] && localReady[i]) {
+
+            pc = probes[i].$ev_pc;
+
+#ifdef DEBUGASMEVENTSTOVERA
+            printf("%0d AsmEventsToVera: TID %0d @%0d ready = %b pc = 0x%h\n",
+                   get_cycle(), i, get_time(LO), localReady[i],pc[43:0]);
+#endif
+
+            // check the hash w/ this pc and serviceEvent.
+            // only do one thread at a time.
+            if (assoc_index(CHECK, userEventsList, pc)) {
+              serviceTime = get_time(LO);
+              serviceEvent(pc,i);
+              if (serviceTime != get_time(LO))
+                printf("\nERROR: When servicing an event, time advanced (from %0d to %0d).\nThis will cause events to be missed. Advancing time is not allowed.\nKeep in mind that checking and driving interfaces CAN advance time!!!\nCheck your asmToVeraIntf.vr file - use forks as needed.\n",serviceTime,get_time(LO));
+            }
+          }
+        } // for
+        
+        @(negedge probes[0].$clk);
+        if (eventCount == 0) {
+          @(negedge probes[0].$clk);
+          wait_child();
+          printf("%0d: AsmEventsToVera: All User Events consumed, no child threads, goodbye.\n", get_cycle());
+          break;
+        }
+      } // while ready continues back to back
+      if (eventCount == 0) {
+        wait_child(); // overkill
+        break;
+      }
+    } // while waiting for a ready
+  } // have events
+}
+
+

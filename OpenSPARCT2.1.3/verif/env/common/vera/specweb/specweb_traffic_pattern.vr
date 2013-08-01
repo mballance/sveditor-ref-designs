@@ -1,0 +1,172 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: specweb_traffic_pattern.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+class Cspecweb_traffic_pattern {
+
+      // Local
+      local string name = "Cspecweb_traffic_pattern";
+      local integer specweb_rx_ptrns[];
+      local integer specweb_tx_ptrns[];
+      local integer debugOn = 0;
+      local integer total_rx_ptrns_wts = 0;
+      local integer total_tx_ptrns_wts = 0;
+      local integer specweb_tx_dist;
+      local string dirn;
+      local task get_ptrn();
+
+      // Global
+      function integer get_pkt_len();
+      task new(string dirnIn) {
+
+	   dirn = dirnIn;
+           get_ptrn();
+
+	   // RX
+	   if(dirn == "RX") {
+	      if(assoc_index(CHECK, specweb_rx_ptrns) == 0) {
+	         error("<%0d> %s: ERROR : specweb_rx_ptrns array is empty check Rx ptrn file\n",
+	         	get_time(LO), name);
+	      }
+              printf("<%0d> %s: total_rx_ptrns_wts:%0d \n", get_time(LO), name, total_rx_ptrns_wts);
+	   }
+
+	   // TX
+	   if(dirn == "TX") {
+	      if(assoc_index(CHECK, specweb_tx_ptrns) == 0) {
+	         error("<%0d> %s: ERROR : specweb_tx_ptrns array is empty check Tx ptrn file\n",
+	         	get_time(LO), name);
+	      }
+              printf("<%0d> %s: total_tx_ptrns_wts:%0d \n", get_time(LO), name, total_tx_ptrns_wts);
+	   }
+      } // task new
+} // class Cspecweb_traffic_pattern
+
+function integer Cspecweb_traffic_pattern::get_pkt_len() {
+     integer max_loop = 0, reset_weights = 0, len, loop, size;
+     bit [30:0] rand_num= 0;
+     static integer callerId = 0;
+     integer total_rx_ptrns_wts_local ;
+     integer total_tx_ptrns_wts_local ;
+     if(dirn == "RX") {
+        total_rx_ptrns_wts_local = total_rx_ptrns_wts;
+	// Try getting pkt length SPECWEB_MAX_ITER times
+	size = assoc_index(CHECK, specweb_rx_ptrns);
+	for(loop = 0; loop < size; loop++) {
+            rand_num = random();
+            rand_num = rand_num % total_rx_ptrns_wts_local;
+	    if(specweb_rx_ptrns[loop] > rand_num) {
+	       get_pkt_len = loop;
+	       //printf("get_pkt_len: Try getting pkt length SPECWEB_MAX_ITER times. id:%0d len:%0d\n", 
+	       //		callerId, get_pkt_len);
+	       callerId++;
+	       return;
+	    } else {
+	      total_rx_ptrns_wts_local -= specweb_rx_ptrns[loop];
+	    }
+	} // for
+     } // if
+
+     // TX
+     if(dirn == "TX") {
+        total_tx_ptrns_wts_local = total_tx_ptrns_wts;
+	// Try getting pkt length SPECWEB_MAX_ITER times
+	size = assoc_index(CHECK, specweb_tx_ptrns);
+	for(loop = 0; loop < size; loop++) {
+            rand_num = random();
+            rand_num = rand_num % total_tx_ptrns_wts_local;
+	    if(specweb_tx_ptrns[loop] > rand_num) {
+	       get_pkt_len = loop;
+	       //printf("get_pkt_len: Try getting pkt length SPECWEB_MAX_ITER times. id:%0d len:%0d\n", 
+	       //		callerId, get_pkt_len);
+	       callerId++;
+	       return;
+	    } else {
+	      total_tx_ptrns_wts_local -= specweb_tx_ptrns[loop];
+	    }
+	} // for
+     } // if
+}
+
+task Cspecweb_traffic_pattern::get_ptrn() {
+     bit [15:0] length;
+     bit [1023:0] pattern_file_bits;
+     string pattern_file;
+     string line, str;
+     integer ptrn_fh;
+     integer tmp_len, tmp_num_pkts;
+     integer id = 0;
+
+     if(dirn == "RX") {
+          if (get_plus_arg (CHECK,"NIU_TX_RX_PERF_SPECWEB_RX_PATTERN="))
+             pattern_file_bits = get_plus_arg(STR,"NIU_TX_RX_PERF_SPECWEB_RX_PATTERN=");
+     }
+     if(dirn == "TX") {
+          if (get_plus_arg (CHECK,"NIU_TX_RX_PERF_SPECWEB_TX_PATTERN="))
+             pattern_file_bits = get_plus_arg(STR,"NIU_TX_RX_PERF_SPECWEB_TX_PATTERN=");
+     }
+
+     pattern_file.bittostr(pattern_file_bits);
+     printf("<%0d> %s: pattern_file:%s\n", get_time(LO), name, pattern_file);
+
+     ptrn_fh = fopen(pattern_file, "r");
+     if(ptrn_fh == 0) {
+        error("<%0d> %s: Can't open input file : ptrn_fh:%s\n",
+        	get_time(LO), name, ptrn_fh);
+     }
+     
+     line = freadstr(ptrn_fh, SILENT);
+     while(line !== null) {
+           sscanf (line, "%d%d", tmp_len, tmp_num_pkts);
+           if((tmp_len == id) && (tmp_len <= 9600)) {
+              id++;
+	      if(dirn == "RX") {
+	         specweb_rx_ptrns[tmp_len] = tmp_num_pkts ; 
+		 total_rx_ptrns_wts +=tmp_num_pkts ;
+	      }
+	      if(dirn == "TX") {
+	         specweb_tx_ptrns[tmp_len] = tmp_num_pkts;
+		 total_tx_ptrns_wts +=tmp_num_pkts ;
+	      }
+	      if(debugOn) {
+                 printf("TESTING: FILE: --%s-- , dirn:%s, tmp_len:%0d tmp_num_pkts:%0d\n", 
+                   line, dirn, tmp_len, tmp_num_pkts);
+	      }
+           }
+           line = freadstr(ptrn_fh, SILENT);
+     }
+     fclose(ptrn_fh);
+}
+
+

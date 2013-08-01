@@ -1,0 +1,336 @@
+/*
+* ========== Copyright Header Begin ==========================================
+* 
+* OpenSPARC T2 Processor File: interrupt0x60_sys_init.s.pal
+* Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+* 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+*
+* DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License as published by
+* the Free Software Foundation; version 2 of the License.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+*
+* For the avoidance of doubt, and except that if any non-GPL license 
+* choice is available it will apply instead, Sun elects to use only 
+* the General Public License version 2 (GPLv2) at this time for any 
+* software where a choice of GPL license versions is made 
+* available with the language indicating that GPLv2 or any later version 
+* may be used, or where a choice of which version of the GPL is applied is 
+* otherwise unspecified. 
+*
+* Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+* CA 95054 USA or visit www.sun.com if you need additional information or 
+* have any questions. 
+*
+* 
+* ========== Copyright Header End ============================================
+*/
+start_perl
+# $Id: interrupt0x60_sys_init.s.pal,v 1.9 2006/12/01 19:22:18 granvold Exp $
+print "/* \$Id\$ */\n";
+
+# Hardware constraints:
+$hw_num_ivs = 64;      $hw_max_ivn = $hw_num_ivs - 1;
+$hw_num_threads = 64;  $hw_max_thread_num = $hw_num_threads - 1;
+
+# interrupt0x60 constraints:
+$max_cc_ivns  = 48;  $max_cc_ivns_m1 = $max_cc_ivns - 1;
+$max_niu_ivns = 16; $max_niu_ivns_m1 = $max_niu_ivns - 1;
+$max_msi_idx  =  8;  $max_msi_idx_m1 = $max_msi_idx - 1;
+
+start_text(>)
+/* Initialize system-wide interrupt-related registers (TT=0x60) */
+
+/*>>>>>> ONLY EDIT THE .pal VERSION OF THIS FILE <<<<<<<<*/
+
+/*
+ * This is tightly linked with interrupt0x60_defines.h and
+ * interrupt0x60_handler.s
+ *
+ * The primary goal of this file is to take the -midas_args=-DINTR0x60_<xx>
+ * options (or #defines) and do the corresponding initialization
+ * of N2 registers.  These macros are defined in interrupt0x60_defines.h
+ */
+
+
+                !! DO NOT MODIFY G1 !!!
+
+/* We need some cpp macros for NCU register addresses */
+#include "ncu_defines.h"
+
+#if defined(INTR0x60_NIU_RX_IV_0) || defined(INTR0x60_NIU_TX_IV_0)
+#include "niu_defines.h"
+#include "niu_macros.h"
+#endif /*defined(INTR0x60_NIU_RX_IV_0) || defined(INTR0x60_NIU_TX_IV_0)*/
+
+
+intr0x60_sys_init:
+
+#ifdef PORTABLE_CORE
+    ldxa  [%g0] ASI_INTR_ID, %l7
+    and   %l7, 0x38, %l7                ! %l7 = core ID, not thread ID
+#endif
+
+#if defined(INTR0x60_INITIALIZE_INT_MAN) || (INTR0x60_SSI_ERR_IV != INTR0x60_BAD_IV) || (INTR0x60_SSI_INT_IV != INTR0x60_BAD_IV)
+    ! Initialize the Interrupt Management Registers
+intr0x60_sys_init_int_man:
+    best_set_reg(INT_MAN, %l1, %l2)     ! %l2 = INT_MAN reg. addr.
+
+intr0x60_sys_init_int_man_0:
+    best_set_reg(mpeval((INTR0x60_BAD_THREAD<<8)+INTR0x60_BAD_IV), %l0, %l1)
+#ifdef PORTABLE_CORE
+    setx  0x3800, %l0, %l6
+    andn  %l1, %l6, %l1
+    sllx  %l7, 8, %l6
+    or    %l1, %l6, %l1                 ! Use core ID of core running on
+#endif
+    stx  %l1, [%l2]
+
+intr0x60_sys_init_int_man_ssi_err:
+    add  %l2, INT_MAN_STEP, %l2
+    best_set_reg(mpeval((INTR0x60_SSI_ERR_THREAD<<8)+INTR0x60_SSI_ERR_IV),
+                 %l0, %l1)
+#ifdef PORTABLE_CORE
+    setx  0x3800, %l0, %l6
+    andn  %l1, %l6, %l1
+    sllx  %l7, 8, %l6
+    or    %l1, %l6, %l1                 ! Use core ID of core running on
+#endif
+    stx  %l1, [%l2]
+intr0x60_sys_init_enable_ssi_error_interrupts:
+#include "ssi_defines.h"
+    best_set_reg(SSI_TIMEOUT_ADDR, %l0, %l3)
+    best_set_reg(SSI_TIMEOUT_ERREN_MASK, %l0, %l1)
+    ldx  [%l3],%l0
+    or   %l0, %l1, %l1
+    stx  %l1, [%l3]
+
+intr0x60_sys_init_int_man_ssi_int:
+    add  %l2, INT_MAN_STEP, %l2
+    best_set_reg(mpeval((INTR0x60_SSI_INT_THREAD<<8)+INTR0x60_SSI_INT_IV),
+                 %l0, %l1)
+#ifdef PORTABLE_CORE
+    setx  0x3800, %l0, %l6
+    andn  %l1, %l6, %l1
+    sllx  %l7, 8, %l6
+    or    %l1, %l6, %l1                 ! Use core ID of core running on
+#endif
+    stx  %l1, [%l2]
+#endif /* INTR0x60_INITIALIZE_INT_MAN or SSI_ERR or SSI_INT */
+
+
+>for ($ivn = 0; $ivn < $max_niu_ivns; $ivn++) {
+
+#ifdef INTR0x60_NIU_RX_IV_${ivn}
+intr0x60_sys_init_int_man_niu_rx_${ivn}:
+    best_set_reg(mpeval(INT_MAN+(64+INTR0x60_NIU_RX_IV_${ivn})*INT_MAN_STEP), %l1, %l2)
+    best_set_reg(mpeval((INTR0x60_NIU_RX_THREAD_${ivn}<<8)+INTR0x60_NIU_RX_IV_${ivn}),
+                 %l0, %l1)
+    stx  %l1, [%l2]
+#ifndef INTR0x60_NIU_RX_NO_SYS_INIT
+    ! Initialize the NIU for RX DMA interrupt.
+    NIU_RX_LD_IM0_INTR_ON_MARK( INTR0x60_NIU_RX_DMA_${ivn},
+                                %l1, %l2, %l3, %l4,
+                                INTR0x60_NIU_RX_IV_${ivn},
+                                eval(64 + INTR0x60_NIU_RX_IV_${ivn}), %l5 )
+#endif
+#endif /* INTR0x60_NIU_RX_IV_${ivn} */
+>}
+
+
+>for ($ivn = 0; $ivn < $max_niu_ivns; $ivn++) {
+
+#ifdef INTR0x60_NIU_TX_IV_${ivn}
+intr0x60_sys_init_int_man_niu_tx_${ivn}:
+    best_set_reg(mpeval(INT_MAN+(64+INTR0x60_NIU_TX_IV_${ivn})*INT_MAN_STEP), %l1, %l2)
+    best_set_reg(mpeval((INTR0x60_NIU_TX_THREAD_${ivn}<<8)+INTR0x60_NIU_TX_IV_${ivn}),
+                 %l0, %l1)
+    stx  %l1, [%l2]
+#ifndef INTR0x60_NIU_TX_NO_SYS_INIT
+    ! Initialize the NIU for TX DMA interrupt.
+    NIU_TX_LD_IM0_INTR_ON_MARK( INTR0x60_NIU_TX_DMA_${ivn},
+                                %l1, %l2, %l3, %l4,
+                                INTR0x60_NIU_TX_IV_${ivn},
+                                eval(64 + INTR0x60_NIU_TX_IV_${ivn}) )
+#endif /* INTR0x60_NIU_TX_NO_SYS_INIT */
+#endif /* INTR0x60_NIU_TX_IV_${ivn} */
+>}
+
+
+
+    ! Initialize Mondo Interrupt Vector Register
+intr0x60_sys_init_mondo_int_vec:
+#ifdef INTR0x60_MONDO_IV
+    best_set_reg(INTR0x60_MONDO_IV, %l2, %l1)
+#else
+    best_set_reg(INTR0x60_BAD_IV, %l2, %l1)
+#endif /* INTR0x60_MONDO_IV */
+    best_set_reg(MONDO_INT_VEC, %l2, %l3)
+    stx	 %l1, [%l3]
+
+#ifdef INTR0x60_MONDO_IV
+/* Mondos come from PIU, so do the appropriate initialization */
+/* Need some cpp macros for PIU registers */
+#include "peu_defines.h"
+
+
+intr0x60_sys_init_clear_intx:
+    set	 1, %l3
+>for $intx ("A", "B", "C", "D") {
+    best_set_reg(PCI_E_INT_${intx}_CLEAR_ADDR, %l1, %l2)
+    stx  %l3, [%l2]
+>}
+
+
+/* Clear the MSI registers, if any MSIs are being used */
+#ifdef INTR0x60_MSI_0_NUM
+intr0x60_sys_init_clear_msi:
+    set  1, %l3
+    sllx %l3, 62, %l3           ! EQWR_N is bit 62
+    best_set_reg(PCI_E_MSI_CLEAR_ADDR, %l1, %l2)
+>for $idx (0 .. $max_msi_idx_m1) {
+#ifdef INTR0x60_MSI_${idx}_NUM
+intr0x60_sys_init_clear_msi_${idx}:
+    best_set_reg(mpeval(PCI_E_MSI_CLEAR_STEP*INTR0x60_MSI_${idx}_NUM),
+                 %l1, %l4)
+    stx  %l3, [%l2+%l4]
+#endif /* INTR0x60_MSI_${idx}_NUM */
+>}
+#endif /* INTR0x60_MSI_0_NUM */
+
+
+    ! Also clear in Interrupt Clear reg.
+intr0x60_sys_init_piu_intr_clear:
+    best_set_reg(PCI_E_INT_CLEAR_ADDR, %l1, %l2)
+    mov  PCI_E_INT_CLEAR_COUNT, %l3
+intr0x60_sys_init_piu_intr_clear_loop_top:
+    stx  %g0, [%l2]
+    dec  %l3
+    brnz %l3,intr0x60_sys_init_piu_intr_clear_loop_top
+    add  PCI_E_INT_CLEAR_STEP, %l2, %l2
+
+/* WIP: Clear INO 62 and 63 */
+
+
+/* Set up the Event Queues in PIU, if any are being used */
+#ifdef INTR0x60_EVENT_QUEUE_BASE
+intr0x60_sys_init_piu_eq_base_addr:
+    ! First the Event Queue Base Address reg.
+    ! Formatted for a bypass address.
+    best_set_reg(PCI_E_EV_QUE_BASE_ADDRESS_ADDR, %l1, %l2)
+    setx @PA(INTR0x60_EVENT_QUEUE_BASE), %l1, %l3
+    best_set_reg(0xfffc000000000000, %l1, %l6)
+    or   %l3, %l6, %l3
+    stx  %l3, [%l2]
+
+    ! Event Queue Control Set reg.
+intr0x60_sys_init_piu_eq_ctl_set_en:
+    set  1, %l3
+    sllx %l3, 44, %l3           ! EN is bit 44
+    best_set_reg(PCI_E_EV_QUE_CTL_SET_ADDR, %l1, %l2)
+>for $idx (0 .. $max_msi_idx_m1) {
+#ifdef INTR0x60_MSI_${idx}_NUM
+intr0x60_sys_init_piu_eq_ctl_set_en_${idx}:
+    best_set_reg(mpeval(PCI_E_EV_QUE_CTL_SET_STEP*INTR0x60_MSI_${idx}_EQN),
+                 %l1, %l4)
+    stx  %l3, [%l2+%l4]
+#endif /* INTR0x60_MSI_${idx}_NUM */
+>}
+#ifdef INTR0x60_PM_PME_EQN
+intr0x60_sys_init_piu_eq_ctl_set_en_pm_pme:
+    best_set_reg(mpeval(PCI_E_EV_QUE_CTL_SET_STEP*INTR0x60_PM_PME_EQN),
+                 %l1, %l4)
+    stx  %l3, [%l2+%l4]
+#endif /* INTR0x60_PM_PME_EQN */
+#ifdef INTR0x60_PME_TO_ACK_EQN
+intr0x60_sys_init_piu_eq_ctl_set_en_pme_to_ack:
+    best_set_reg(mpeval(PCI_E_EV_QUE_CTL_SET_STEP*INTR0x60_PME_TO_ACK_EQN),
+                 %l1, %l4)
+    stx  %l3, [%l2+%l4]
+#endif /* INTR0x60_PME_TO_ACK_EQN */
+
+#endif /* INTR0x60_EVENT_QUEUE_BASE */
+
+
+#ifdef INTR0x60_MSI_START_ADDRESS
+    ! Set up the MSI address
+intr0x60_sys_init_piu_msi_addr:
+    best_set_reg(INTR0x60_MSI_START_ADDRESS, %l1, %l3)
+    best_set_reg(PCI_E_MSI_32_ADDRESS_ADDR, %l1, %l2)
+    stx  %l3, [%l2]
+    best_set_reg(PCI_E_MSI_64_ADDRESS_ADDR, %l1, %l2)
+    stx  %l3, [%l2]
+
+    ! MSI-to-Event Queue Mapping registers
+intr0x60_sys_init_piu_msi_mapping:
+    set  1, %l3
+    sllx %l3, 63, %l3           ! V is bit 63
+    best_set_reg(PCI_E_MSI_MAP_ADDR, %l1, %l2)
+>for $idx (0 .. $max_msi_idx_m1) {
+#ifdef INTR0x60_MSI_${idx}_NUM
+intr0x60_sys_init_piu_msi_mapping_${idx}:
+    best_set_reg(mpeval(PCI_E_MSI_MAP_STEP*INTR0x60_MSI_${idx}_NUM),
+                 %l1, %l4)
+    best_set_reg(INTR0x60_MSI_${idx}_EQN, %l1, %l5)
+    add  %l3, %l5, %l5
+    stx  %l5, [%l2+%l4]
+#endif /* INTR0x60_MSI_${idx}_NUM */
+>}
+#endif /* INTR0x60_MSI_START_ADDRESS */
+
+#ifdef INTR0x60_PM_PME_EQN
+    ! PM_PME-to-Event Queue Mapping registers
+intr0x60_sys_init_piu_pm_pme_mapping:
+    set  1, %l3
+    sllx %l3, 63, %l3           ! V is bit 63
+    best_set_reg(PCI_E_PM_PME_MAP_ADDR, %l1, %l2)
+    best_set_reg(INTR0x60_PM_PME_EQN, %l1, %l5)
+    add  %l3, %l5, %l5
+    stx  %l5, [%l2]
+#endif /* INTR0x60_PM_PME_EQN */
+
+#ifdef INTR0x60_PME_TO_ACK_EQN
+    ! PME_TO_ACK-to-Event Queue Mapping registers
+intr0x60_sys_init_piu_pme_to_ack_mapping:
+    set  1, %l3
+    sllx %l3, 63, %l3           ! V is bit 63
+    best_set_reg(PCI_E_PME_ACK_MAP_ADDR, %l1, %l2)
+    best_set_reg(INTR0x60_PME_TO_ACK_EQN, %l1, %l5)
+    add  %l3, %l5, %l5
+    stx  %l5, [%l2]
+#endif /* INTR0x60_PME_TO_ACK_EQN */
+
+
+>for $mondo_num (20 .. 59, 62, 63) {
+
+#if INTR0x60_MONDO_${mondo_num}_V || INTR0x60_INIT_ALL_PIU_INT_MAP
+intr0x60_sys_init_piu_int_map_mondo_${mondo_num}:
+    best_set_reg(mpeval(PCI_E_INT_MAP_ADDR+PCI_E_INT_MAP_STEP*(${mondo_num}-20)),
+                 %l1, %l3)
+    best_set_reg(mpeval((INTR0x60_MONDO_${mondo_num}_MODE   << PCI_E_INT_MAP_MDO_MODE_SHIFT)+
+                        (INTR0x60_MONDO_${mondo_num}_V      << PCI_E_INT_MAP_V_SHIFT)+
+                        (INTR0x60_MONDO_${mondo_num}_THREAD << PCI_E_INT_MAP_THREADID_SHIFT)+
+                        (1 << (INTR0x60_MONDO_${mondo_num}_CNTRL+PCI_E_INT_MAP_INT_CNTRL_NUM_SHIFT))),
+                        %l1, %l2)
+#ifdef PORTABLE_CORE
+    set   0x38, %l1
+    sllx  %l1, PCI_E_INT_MAP_THREADID_SHIFT, %l1
+    andn  %l2, %l1, %l2
+    sllx  %l7, PCI_E_INT_MAP_THREADID_SHIFT, %l1
+    or    %l1, %l2, %l2          ! Use core ID of core running on
+#endif
+    stx  %l2, [%l3]
+#endif /* INTR0x60_MONDO_${mondo_num}_V || INTR0x60_INIT_ALL_PIU_INT_MAP */
+>}
+
+#endif /* INTR0x60_MONDO_IV */

@@ -1,0 +1,134 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_txintr_utils.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+#include "niu_tx_descp.vrh"
+
+#include "niu_int_dev.vrh"
+#include "niu_int_mgr.vrh"
+#include "cMesg.vrh"
+
+extern Mesg     be_msg;
+
+// adding txdma intr dev class
+
+class CNiuIntrDevTxDMAm extends DMAChannel {
+
+   event intr_rcvd;
+   bit [63:0] rd_data;
+   bit [63:0] wr_data;
+   integer count = 0;
+   integer exp_err;
+
+   task new(integer i, integer dev_id) {
+        super.new(i,"TX",dev_id);
+	trigger(OFF,intr_rcvd);
+        exp_err = 0;
+   }
+
+  function integer isr( ( bit[1:0] ldf_flags = 0) ) {
+	printf("Start In ISR id - %d LDF Flags - %x \n",super.dev_id,ldf_flags);
+	isr_done = 0;
+        SetPendingFlag();
+
+
+	trigger(ON,intr_rcvd);
+
+        if(ldf_flags[1] == 1'b1) {
+           // error interrupt detected
+           // read the tx_cs reg
+           Read_TxCs(rd_data);
+           be_msg.print(e_mesg_info,"TX_ISR","Tx_Cs_Rd","Value of TxCs %h for DMA %d\n",rd_data,this.id);
+           if(rd_data[7:0] == 8'h0) {
+             // err interrupt received but status bits not set
+             be_msg.print(e_mesg_error,"TX_ISR","err_flag_chk","Err intr rcvd, but err_stat zero for DMA %d\n",this.id);
+           } else {
+            if(!exp_err) {
+             if(rd_data[0]) 
+                be_msg.print(e_mesg_error,"TX_ISR","err_chk","Err intr rcvd, Pkt_Prt_Err status set for DMA %d\n",this.id);
+             else if(rd_data[1])
+                be_msg.print(e_mesg_error,"TX_ISR","err_chk","Err intr rcvd, Conf_Prt_Err status set for DMA %d\n",this.id);
+             else if(rd_data[2])
+                be_msg.print(e_mesg_error,"TX_ISR","err_chk","Err intr rcvd, Nack_PktRd_Err status set for DMA %d\n",this.id);
+             else if(rd_data[3])
+                be_msg.print(e_mesg_error,"TX_ISR","err_chk","Err intr rcvd, Nack_PrefRd_Err status set for DMA %d\n",this.id);
+             else if(rd_data[4])
+                be_msg.print(e_mesg_error,"TX_ISR","err_chk","Err intr rcvd, Pref_BufPar_Err status set for DMA %d\n",this.id);
+             else if(rd_data[5])
+                be_msg.print(e_mesg_error,"TX_ISR","err_chk","Err intr rcvd, Ring_Oflow_Err status set for DMA %d\n",this.id);
+             else if(rd_data[6])
+                be_msg.print(e_mesg_error,"TX_ISR","err_chk","Err intr rcvd, Pkt_Size_Err status set for DMA %d\n",this.id);
+             else if(rd_data[7])
+                be_msg.print(e_mesg_error,"TX_ISR","err_chk","Err intr rcvd, Mbox_Err status set for DMA %d\n",this.id);
+           } else {
+             if(rd_data[0]) 
+                be_msg.print(e_mesg_info,"TX_ISR","err_chk","Err intr rcvd, Pkt_Prt_Err status set for DMA %d\n",this.id);
+             else if(rd_data[1])
+                be_msg.print(e_mesg_info,"TX_ISR","err_chk","Err intr rcvd, Conf_Prt_Err status set for DMA %d\n",this.id);
+             else if(rd_data[2])
+                be_msg.print(e_mesg_info,"TX_ISR","err_chk","Err intr rcvd, Nack_PktRd_Err status set for DMA %d\n",this.id);
+             else if(rd_data[3])
+                be_msg.print(e_mesg_info,"TX_ISR","err_chk","Err intr rcvd, Nack_PrefRd_Err status set for DMA %d\n",this.id);
+             else if(rd_data[4])
+                be_msg.print(e_mesg_info,"TX_ISR","err_chk","Err intr rcvd, Pref_BufPar_Err status set for DMA %d\n",this.id);
+             else if(rd_data[5])
+                be_msg.print(e_mesg_info,"TX_ISR","err_chk","Err intr rcvd, Ring_Oflow_Err status set for DMA %d\n",this.id);
+             else if(rd_data[6])
+                be_msg.print(e_mesg_info,"TX_ISR","err_chk","Err intr rcvd, Pkt_Size_Err status set for DMA %d\n",this.id);
+             else if(rd_data[7])
+                be_msg.print(e_mesg_info,"TX_ISR","err_chk","Err intr rcvd, Mbox_Err status set for DMA %d\n",this.id);
+           }
+             reset_dma(); 
+
+	     // trigger the event
+	     isr_done = 1;
+
+             }
+        } else {
+        // read the tx_cs reg
+        Read_TxCs(rd_data);
+        be_msg.print(e_mesg_info,"TX_ISR","Tx_Cs_Rd","Value of TxCs %h for DMA %d\n",rd_data,this.id);
+        // printf("Value of TxCs from ISR %h\n",rd_data);
+        // re-enable mailbox update after this
+        wr_data = rd_data | 64'h2000_0000;
+        count++;
+        SetTxCs(wr_data);
+	// trigger the event
+	isr_done = 1;
+       }
+       ClrPendingFlag();
+   } 
+}
+

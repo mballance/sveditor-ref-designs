@@ -1,0 +1,192 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuIngressnullTlpErr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class ilupeuIngressnullTlpErr  extends PEUStrBase 
+  {
+  integer f_errQueue;				// A mailbox for bad pkt headers
+
+  integer nmbrnullTlpErrsToInject = 0;	//Total number of packets that get error injected
+  //Set the percentage weight of each type of FCP errors 
+  integer nullTlpErrWeight = 0; 
+
+
+  denaliPcieEiTypeT DenaliErrortype; 
+//   bit [FNX_PCIE_XTR_DLLP_TYPE_WIDTH-1:0] DLLPtype; 
+
+  //Only allow 1 of these strategies to be active at a time
+  static integer FCPErr_semaphore = alloc(SEMAPHORE, 0, 1, 1);
+
+  task new( PEUTestEnv a_env )
+    {
+    super.new( a_env );
+    f_errQueue = 0;
+    }
+
+  task SetErrQueue( integer a_queue )
+    {
+    f_errQueue = a_queue;
+    } /* end SetErrQueue */
+
+  task Execute()
+    {
+    integer nmbrErrs;
+    integer nullTlpErrsInject_freq = 100;     // freq of clock cycles to inject this error
+    integer nmbrnullTlpErrsInjected; 
+
+    bit[PEC_PCI__HDR] ingressHdr;               // The ingress TLP's header
+    integer ingressData;                        // A payload descriptor
+    bit[7:0] ingressTag;                        // The tag for the TLP
+
+
+    string  dma_type = ""; 
+    bit null_tlp = 0; 
+
+    //Get the semaphore when its your turn
+    semaphore_get( WAIT, FCPErr_semaphore, 1);
+
+
+
+    //Clear all the specific error trackers
+    nmbrnullTlpErrsInjected = 0; 
+
+   // create random number to cause Null TLP type error
+     nullTlpErrsInject_freq   = (urandom() % 10) + 20;
+
+
+    //inject errors until all the errors are injected 
+     while (nmbrnullTlpErrsToInject > nmbrnullTlpErrsInjected) {
+
+       
+    // adjust FC credit  number between 1 to FFx for header, between 1 to FFFx for data  
+//       FC_H_random  = (urandom() % 254) + 1;  
+//       FC_H_over128  = (urandom_range(256, 129) );  
+
+//        //determine the type of errors inject based on the weight specified in the testcase 
+//        randcase {
+//            // for infinite case.
+//            nullTlpErrWeight: {f_env.FCP_CPL_inject = 1; dma_type = "CLPD"; HdrFC = f_env.Scenario.denaliInitialCompletionHeaderCredit; DataFC = FC_D_over2048 ;}
+//                                       {
+// 					PCIETlpTrans.MyPacket.DenaliErr = PCIE_EI_TLP_NULL;
+//                                         // PCIETlpTrans.tempSuppressDenaliErr(PCIE_PL_NONFATAL_FRAME_NULL_TLP  );
+//                                              // PCIETlpTrans.tempSuppressDenaliErr_enable_callback(PCIE_PL_NONFATAL_FRAME_NULL_TLP  );
+//                                              nullTlpErr = 1;
+//                                              nullTlpErrInjected += 1;
+// at time %d, nullTlpErrWeightselected \n"
+// , get_time(LO));
+// 
+//                                       }
+// 
+//        }
+// 
+// at time %0d, FC_type to be sent = %0s \n", get_time(LO), dma_type);  
+
+     // allocate the tag
+     f_env.allocDmaTag(ingressTag); 
+     // sending the randomized dma xaction  
+
+     randcase {
+                 10: dma_type = "dmawrite"; 
+                 0: dma_type = "dmaread"; 
+               //   10: dma_type = "dmacpl"; 
+              }
+
+     null_tlp = 1; 
+
+     printf("AC: dma_type = %s \n", dma_type); 
+
+     if (dma_type == "dmawrite" ) {
+        f_env.genIngressWrReq (ingressTag, ingressHdr, ingressData); 
+ingressHdr[PEC_PCI__TD] = 0;
+        f_env.drivePCIE(ingressHdr, ingressData, *,*,*,*,*,*,null_tlp); 
+     }
+     if (dma_type == "dmaread" ) {
+        f_env.genIngressRdReq (ingressTag, ingressHdr, ingressData); 
+ingressHdr[PEC_PCI__TD] = 0;
+        f_env.drivePCIE(ingressHdr, ingressData,*,*,*,*,*,*,null_tlp); 
+     }
+     if (dma_type == "dmacpl" ) {
+        // f_env.genIngressCpl (reqHdr, cplHdr, cplData); 
+        f_env.genIngressCpl (ingressHdr, ingressHdr, ingressData);   // don't care in this test, just sending dummy  
+ingressHdr[PEC_PCI__TD] = 0;
+        f_env.drivePCIE(ingressHdr, ingressData,*,*,*,*,*,*,null_tlp); 
+     }
+
+     null_tlp = 0; 
+     f_env.freeDmaTag(ingressTag); 
+
+      
+     nmbrnullTlpErrsInjected += 1; 
+       printf("AC: ilupeuIngressnullTlpErr injects error:  nmbrnullTlpErrsInjected=%0d nmbrnullTlpErrsToInject=%0d \n",nmbrnullTlpErrsInjected, nmbrnullTlpErrsToInject);
+
+     repeat (nullTlpErrsInject_freq) @(posedge CLOCK); 
+    } 
+
+    //Delay to allow the last error to propogate before checking
+    repeat( 200 ) @(posedge CLOCK);    
+
+    //Track possible errors based on the type of errors injected 
+    nmbrErrs = 0;         // number of error type that got set.  
+
+
+    if (nmbrnullTlpErrsInjected >= 1) {
+     nmbrErrs += 2;         // dlpl and oe primary error got set, does not cause secondary oe error
+    }
+
+    printf("AC: nmbrErrs = %d \n", nmbrErrs); 
+
+    
+
+    if( f_errQueue != 0 ){
+
+       // note: bx = no header to check 
+       //       bx0 = error above is optional.  clear it if it's set
+        
+       mailbox_put( f_errQueue, e_ERR_none );
+       mailbox_put( f_errQueue, nmbrErrs );
+
+     if (nmbrnullTlpErrsInjected >= 1) {
+       mailbox_put( f_errQueue, e_ERR_dlpl_src_tlp );    //  Ingress TLP w/ inverted CRC and EDB error 
+       mailbox_put( f_errQueue, 128'bx );
+       mailbox_put( f_errQueue, e_ERR_oe_lin );    //  oe error link interrupt event   
+       mailbox_put( f_errQueue, 128'bx );
+     }
+     
+    } // f_errQueue !=0 
+
+    repeat( 10 ) @(posedge CLOCK);    
+    semaphore_put( FCPErr_semaphore, 1 );
+
+    } /* end Execute */
+
+  } /* end IngressUnsupportDLLPErr */

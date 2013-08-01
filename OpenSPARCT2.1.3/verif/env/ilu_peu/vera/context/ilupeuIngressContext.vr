@@ -1,0 +1,234 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuIngressContext.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class ilupeuIngressContext extends ilupeuContextBase {
+
+
+  //Inherited from CTContextBase
+  //integer       NumStrat;
+  //string        Name = "";
+  //protected    CTTransactionID      ID = new;  
+  
+
+  // Strategy Type Encoding
+  protected integer strat_type_tlp_enc;
+  protected integer strat_type_dllp_enc;
+
+  local bit     HangDetect = 0;
+  local integer WaitCount;
+
+  // Constructor
+  task new ( ReportClass     _Report,
+             CSRCollection   _CSR,
+             ilupeuPodClass  _Pod, 	//Xactors
+             ilupeuScenario  _Scenario );
+ 
+  // Public Methods
+  task Execute();
+
+  
+  function CTStrategyBase ProvideTlpStrategy();
+  function CTStrategyBase ProvideDllpStrategy();
+  function CTStrategyBase FinalizeTlpParms( CTStrategyBase FinalStrategy );
+  function CTStrategyBase FinalizeDllpParms( CTStrategyBase FinalStrategy );
+
+}	//End ILUPEUINgressContext extends CTContextBase
+
+task ilupeuIngressContext::new ( ReportClass     _Report,
+                                 CSRCollection    _CSR,
+                                 ilupeuPodClass    _Pod,
+                                 ilupeuScenario    _Scenario)
+{
+    
+    string Name = "ilupeuIngressContext" ;
+
+    super.new ( _Report,
+                _CSR,
+                _Pod, 
+                _Scenario,
+                Name );
+
+
+}	//End ilupeuIngressContext::new
+
+function CTStrategyBase ilupeuIngressContext::ProvideTlpStrategy()
+{
+  // All Supported TLP Strategies Should Be Listed Here
+  ilupeuIngressTlpStrategy  TlpStrat;
+ 
+  //Provide the strategy based on test parameters
+  randcase{
+
+     Scenario.IngrTlpWt: {
+          
+        strat_type_tlp_enc = ILUPEU_TLP_STRAT_ENC;
+        TlpStrat = new ( Report,
+                         CSR,
+                         Pod,
+                         Scenario ) ;
+
+        ProvideTlpStrategy = TlpStrat;
+     }
+  }
+} 	//End ilupeuIngressContext::ProvideTlpStrategy()
+
+
+function CTStrategyBase ilupeuIngressContext::ProvideDllpStrategy()
+{
+/*
+  // All Supported DLLP Strategies Should Be Listed Here
+//review - Will probably allow Denali to handle all flow control
+  ilupeuIngressDllpFCStrategy DllpFCStrat;
+//  ilupeuIngressDllpPMStrategy DllpPMStrat;
+ 
+  //Provide the strategy based on test parameters
+  randcase{
+     Scenario.IngrDllpFCWt: {
+          
+        strat_type_dllp_enc = ILUPEU_DLLP_FC_STRAT_ENC;
+        DllpFCStrat = new ( Report,
+                            CSR,
+                            Pod,
+                            Scenario ) ;
+
+        ProvideDllpStrategy = DllpFCStrat;
+     }
+     Scenario.IngrDllpPMWt: {
+          
+        strat_type_dllp_enc = ILUPEU_DLLP_PM_STRAT_ENC;
+        DllpPMStrat = new ( Report,
+                            CSR,
+                            Pod,
+                            Scenario ) ;
+
+        ProvideDllpStrategy = DllpPMStrat;
+     }
+  }
+*/
+}	//End ilupeuIngressContext::ProvideDllpStrategy()
+
+function CTStrategyBase ilupeuIngressContext::FinalizeTlpParms( CTStrategyBase FinalStrategy )
+{
+
+  // All Supported TLP Strategies Should Be Listed Here
+  ilupeuIngressTlpStrategy  TlpStrat;
+
+  //Cast assign to the correct Type
+  case( strat_type_tlp_enc ){
+     ILUPEU_TLP_STRAT_ENC  :    cast_assign( TlpStrat, FinalStrategy );
+
+     default : QuickReport( Report, RTYP_TEST_ERROR,
+                           "ilupeuIngressContext FinalizeTlpParms() -> hit default case strat_type_tlp_enc=%0d",
+                           strat_type_tlp_enc );
+  }
+
+  //Set up Necessary Parameters 
+  case( strat_type_tlp_enc ){
+     ILUPEU_TLP_STRAT_ENC     :    FinalizeTlpParms = TlpStrat;
+  }
+
+}	//End ilupeuIngressContext::FinalizeTlpParms
+
+
+function CTStrategyBase ilupeuIngressContext::FinalizeDllpParms( CTStrategyBase FinalStrategy )
+{
+
+/*
+  // All Supported DLLP Strategies Should Be Listed Here
+  ilupeuIngressDllpFCStrategy DllpFCStrat;
+//  ilupeuIngressDllpPMStrategy DllpPMStrat;
+
+  //Cast assign to the correct Type
+  case( strat_type_dllp_enc ){
+     ILUPEU_DLLP_FC_STRAT_ENC :    cast_assign( DllpFCStrat, FinalStrategy );
+//     ILUPEU_DLLP_PM_STRAT_ENC :    cast_assign( DllpPMStrat, FinalStrategy );
+
+     default : QuickReport( Report, RTYP_TEST_ERROR,
+                           "ilupeuIngressContext FinalizeDllpParms() -> hit default case strat_type_dllp_enc=%0d",
+                           strat_type_dllp_enc );
+  }
+
+  //Set up Necessary Parameters 
+  case( strat_type_dllp_enc ){
+     ILUPEU_DLLP_FC_STRAT_ENC :    FinalizeDllpParms = DllpFCStrat;
+//    ILUPEU_DLLP_PM_STRAT_ENC :    FinalizeDllpParms = DllpPMStrat;
+  }
+*/
+
+}	//End ilupeuIngressContext::FinalizeDllpParms
+
+task ilupeuIngressContext::Execute() {
+  //Determine the number of strategies for each type 
+  tlpNumStrat = RandUtil.Rand32( Scenario.IngrTlpMinStrats, Scenario.IngrTlpMaxStrats );
+  dllpNumStrat = RandUtil.Rand32( Scenario.IngrDllpMinStrats, Scenario.IngrDllpMaxStrats );
+
+  //Set the min and max issue delay values 
+  tlpMinDelay = Scenario.IngrTlpMinIssueDly;
+  tlpMaxDelay = Scenario.IngrTlpMaxIssueDly;
+  dllpMinDelay = Scenario.IngrDllpMinIssueDly;
+  dllpMaxDelay = Scenario.IngrDllpMaxIssueDly;
+
+  //Set the min and max active strats values
+  tlpMinActiveStrats = Scenario.IngrTlpMinActiveStrats;
+  tlpMaxActiveStrats = Scenario.IngrTlpMaxActiveStrats;
+  dllpMinActiveStrats = Scenario.IngrDllpMinActiveStrats;
+  dllpMaxActiveStrats = Scenario.IngrDllpMaxActiveStrats;
+
+  QuickReport( Report,RTYP_INFO, "Starting Context %s ID = %0d tlpNumStrat=%0d dllpNumStrat=%0d",
+                       Name, ID.GetContextID(), tlpNumStrat,dllpNumStrat );
+
+  //Fork off a seperate thread for TLP's and DLLP's for better control
+  fork
+  {
+      if( tlpNumStrat > 0 && Scenario.IngrTlpWt > 0 ){
+         ExecuteTlp();
+      }
+  }
+  {
+      if( dllpNumStrat > 0 && ( Scenario.IngrDllpFCWt > 0 || Scenario.IngrDllpPMWt > 0 ) ){
+         ExecuteDllp();
+      }
+  }
+  join
+
+  //Delay to let any Report Errors filter through
+  repeat(20) @(posedge CLOCK);
+
+  QuickReport( Report,RTYP_INFO, "Finishing Context %s ID = %0d",
+                       Name,
+                       ID.GetContextID() );
+
+}
+ 
+

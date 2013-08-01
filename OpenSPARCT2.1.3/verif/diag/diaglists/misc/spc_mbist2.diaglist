@@ -1,0 +1,156 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: spc_mbist2.diaglist
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+<spc2_mbist2 sys=spc2_dft -novcs_use_ntb -sunv_run -vera_build_args="VERA_SYS_DEFS=-DSPC_BENCH -DFC_SCAN_BENCH -DSPC_DFT_BENCH -DVERA_DIAGS">
+
+<core_mbist2 name=core_mbist2>
+<runargs -tg_seed=1 -vcs_run_args=+noDebugChecks>
+
+//--------------------------------------
+// Long diags - run once a week
+
+<spc_secondary_all>
+<core_mbist2_long>
+ // Full version of default mode test checking for successful
+ // completion of CAMBIST only (no RAM checking)
+ cam_default_mode mb0_default_mode_cam_test.vr -vcs_run_args=+mb_enable=1 -drm_cpufreq='1200 ..' -drm_freeram=2000 -drm_freeswap=2000 
+</core_mbist2_long>
+
+//--------------------------------------
+// Short diags - run nightly
+
+<spc_secondary_nightly>
+
+//stb
+stb_cam_test0     mb0_user_mode_cam_err_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=0 -vcs_run_args=+user_cam_sel=2
+stb_cam_test6     mb0_user_mode_cam_err_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=6 -vcs_run_args=+user_cam_sel=2 
+stb_cam_test10    mb0_user_mode_cam_err_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=10  -vcs_run_args=+user_cam_sel=2 
+
+//dtlb
+dtlb_seq0  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=0 -vcs_run_args=+user_cam_sel=0
+dtlb_seq8  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=8 -vcs_run_args=+user_cam_sel=0
+dtlb_seq13 mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=d -vcs_run_args=+user_cam_sel=0
+
+//itlb
+itlb_seq0  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=0 -vcs_run_args=+user_cam_sel=1
+itlb_seq7  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=7 -vcs_run_args=+user_cam_sel=1
+itlb_seq13 mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=d -vcs_run_args=+user_cam_sel=1
+
+//err injection
+dtlb_seq0_err0 mb0_dtlb_cam_test_00_err_00.vr -vcs_run_args=+mb_enable=1
+stb_seq2_err0 mb0_stb_cam_test_02_err_00.vr -vcs_run_args=+mb_enable=1
+itlb_seq11_err0 mb0_itlb_cam_test_11_err_00.vr -vcs_run_args=+mb_enable=1
+
+</spc_secondary_nightly>
+
+<core_mbist2_fast>
+  mb1_connect     sampleTest_mb1.vr -vera_build_args="VERA_SYS_DEFS=-DSPC_BENCH -DFC_SCAN_BENCH -DSPC_DFT_BENCH -DVERA_DIAGS" 
+  mb2_connect     sampleTest_mb2.vr -vera_build_args="VERA_SYS_DEFS=-DSPC_BENCH -DFC_SCAN_BENCH -DSPC_DFT_BENCH -DVERA_DIAGS" 
+  mb0_connect     sampleTest_mb0.vr -vera_build_args="VERA_SYS_DEFS=-DSPC_BENCH -DFC_SCAN_BENCH -DSPC_DFT_BENCH -DVERA_DIAGS"
+  mb2_irf_shadow  mb2_irf_shadow.vr -vera_build_args="VERA_SYS_DEFS=-DSPC_BENCH -DFC_SCAN_BENCH -DSPC_DFT_BENCH -DVERA_DIAGS"
+  mb0_icd         sampleTest_mb0_icd.vr -vera_build_args="VERA_SYS_DEFS=-DSPC_BENCH -DFC_SCAN_BENCH -DSPC_DFT_BENCH -DVERA_DIAGS"
+
+
+stb_cam_test1     mb0_user_mode_cam_err_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=1 -vcs_run_args=+user_cam_sel=2 
+stb_cam_test2     mb0_user_mode_cam_err_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=2 -vcs_run_args=+user_cam_sel=2 
+stb_cam_test3     mb0_user_mode_cam_err_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=3 -vcs_run_args=+user_cam_sel=2 
+stb_cam_test4     mb0_user_mode_cam_err_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=4 -vcs_run_args=+user_cam_sel=2 
+stb_cam_test5     mb0_user_mode_cam_err_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=5 -vcs_run_args=+user_cam_sel=2 
+stb_cam_test7     mb0_user_mode_cam_err_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=7 -vcs_run_args=+user_cam_sel=2 
+stb_cam_test8     mb0_user_mode_cam_err_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=8 -vcs_run_args=+user_cam_sel=2 
+stb_cam_test9     mb0_user_mode_cam_err_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=9 -vcs_run_args=+user_cam_sel=2 
+
+</core_mbist2_fast>
+
+<core_cambist_fast>
+
+ dtlb_seq1  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=1 -vcs_run_args=+user_cam_sel=0
+ dtlb_seq2  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=2 -vcs_run_args=+user_cam_sel=0
+ dtlb_seq3  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=3 -vcs_run_args=+user_cam_sel=0
+ dtlb_seq4  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=4 -vcs_run_args=+user_cam_sel=0
+ dtlb_seq5  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=5 -vcs_run_args=+user_cam_sel=0
+ dtlb_seq6  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=6 -vcs_run_args=+user_cam_sel=0
+ dtlb_seq7  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=7 -vcs_run_args=+user_cam_sel=0
+ dtlb_seq9  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=9 -vcs_run_args=+user_cam_sel=0
+ dtlb_seq10 mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=a -vcs_run_args=+user_cam_sel=0
+ dtlb_seq11 mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=b -vcs_run_args=+user_cam_sel=0
+ dtlb_seq12 mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=c -vcs_run_args=+user_cam_sel=0
+
+ itlb_seq1  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=1 -vcs_run_args=+user_cam_sel=1
+ itlb_seq2  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=2 -vcs_run_args=+user_cam_sel=1
+ itlb_seq3  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=3 -vcs_run_args=+user_cam_sel=1
+ itlb_seq4  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=4 -vcs_run_args=+user_cam_sel=1
+ itlb_seq5  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=5 -vcs_run_args=+user_cam_sel=1
+ itlb_seq6  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=6 -vcs_run_args=+user_cam_sel=1
+ itlb_seq8  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=8 -vcs_run_args=+user_cam_sel=1
+ itlb_seq9  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=9 -vcs_run_args=+user_cam_sel=1
+ itlb_seq10 mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=a -vcs_run_args=+user_cam_sel=1
+ itlb_seq11 mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=b -vcs_run_args=+user_cam_sel=1
+ itlb_seq12 mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=c -vcs_run_args=+user_cam_sel=1
+
+ stb_seq0  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=0 -vcs_run_args=+user_cam_sel=2
+ stb_seq1  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=1 -vcs_run_args=+user_cam_sel=2
+ stb_seq2  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=2 -vcs_run_args=+user_cam_sel=2
+ stb_seq3  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=3 -vcs_run_args=+user_cam_sel=2
+ stb_seq4  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=4 -vcs_run_args=+user_cam_sel=2
+ stb_seq5  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=5 -vcs_run_args=+user_cam_sel=2
+ stb_seq6  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=6 -vcs_run_args=+user_cam_sel=2
+ stb_seq7  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=7 -vcs_run_args=+user_cam_sel=2
+ stb_seq8  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=8 -vcs_run_args=+user_cam_sel=2
+ stb_seq9  mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=9 -vcs_run_args=+user_cam_sel=2
+ stb_seq10 mb0_user_mode_cam_test.vr -vcs_run_args=+user_cam_mode=1 -vcs_run_args=+mb_enable=1 -vcs_run_args=+user_cam_test_sel=a -vcs_run_args=+user_cam_sel=2
+
+ // Default mode but with RAM portion shrunk down so that the engine thinks each array has only
+ // one entry (so the cam portion starts quickly).
+ cam_default_mode_fast mb0_default_mode_fast_cam_test.vr -vcs_run_args=+mb_enable=1 -drm_cpufreq='1200 ..' -drm_freeram=2000 -drm_freeswap=2000
+
+ //diags with error injection tlb:
+ itlb_seq0_err0 mb0_itlb_cam_test_00_err_00.vr -vcs_run_args=+mb_enable=1
+ dtlb_seq2_err0 mb0_dtlb_cam_test_02_err_00.vr -vcs_run_args=+mb_enable=1
+ dtlb_seq0_err1 mb0_dtlb_cam_test_00_err_01.vr -vcs_run_args=+mb_enable=1
+ dtlb_seq11_err0 mb0_dtlb_cam_test_11_err_00.vr -vcs_run_args=+mb_enable=1
+
+ //diags with error injection stb:
+ stb_seq6_err0 mb0_stb_cam_test_06_err_00.vr -vcs_run_args=+mb_enable=1
+ stb_seq7_err0 mb0_stb_cam_test_07_err_00.vr -vcs_run_args=+mb_enable=1
+ 
+</core_cambist_fast>
+
+</spc_secondary_all>
+
+</runargs>
+</core_mbist2>
+</spc2_mbist2>
+
+

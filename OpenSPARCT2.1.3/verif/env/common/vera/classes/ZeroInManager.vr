@@ -1,0 +1,343 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ZeroInManager.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+
+#include "ZeroInDefines.vri"
+// std disp
+#include "std_display_defines.vri"
+#include "std_display_class.vrh"
+// plus args
+#include "plusArgMacros.vri"
+
+class AssertionInfo {
+  string _pathToAssertion; // Hierarchical path to assertion
+  string _type;
+  string _module;
+  string _statistic;
+  bit[63:0] _valueToCheck;
+  task new (string a_type,
+	    string a_path,
+	    string a_module,
+	    string a_statistic = "",
+	    bit[63:0] a_valueToCheck = 1
+	    ) {
+    _pathToAssertion = a_path;
+    _type = a_type;
+    _module = a_module;
+    _statistic = a_statistic;
+    _valueToCheck = a_valueToCheck;
+  }
+}
+
+MakeVeraList(AssertionInfo);
+
+class ZeroInManager {
+  StandardDisplay _dbg;
+  bit _zeroInCheckOff;
+  string _name;
+  local bit _rtlOnly;
+  
+  local VeraList_AssertionInfo  _listOfAssertions;
+  
+  task new (StandardDisplay a_dbg, string a_name);
+
+  task turnOffAllAssertionsInModule(string a_moduleName);
+  
+  // Add to list of a 0in assertions being checked
+  virtual task addCheck(string a_type,
+                        string a_pathToAssertion,
+                        string a_moduleName="",
+                        string a_statistic="",
+                        bit [63:0] a_valueToCheck = 0);
+
+  // disable checker.
+  virtual task disableCheck(string a_type, string a_pathToAssertion, string a_moduleName="");
+  
+  // enable checker.
+  virtual task enableCheck(string a_type, string a_pathToAssertion, string a_moduleName="");
+  
+  // check if the assertion is covered
+  // return 1 if covered, else return 0.
+  virtual function bit checkIfCovered(string a_type, string a_pathToAssertion,
+                                      string a_statistic, bit[63:0] a_val);
+
+  // check if assertion fired.
+  // return 1 if fired, else return 0.
+  function bit checkIfFired(string a_type, string a_pathToAssertion,
+			    string a_check, string a_module);
+
+  // Check if all 0in cheks that have been added are covered
+  // Return 1 if covered, else return 0
+  virtual function bit coveredAllChecks();
+
+  local function zin_status conv2zin_status(integer i) {
+    case (i) {
+      0 : conv2zin_status = ZIN_STATUS_SUCCESS;
+      1 : conv2zin_status = ZIN_STATUS_INCORRECT_CHECKER_IDENTIFIER;
+      2 : conv2zin_status = ZIN_STATUS_NOT_READY_FOR_ZIN_CALLS;
+      3 : conv2zin_status = ZIN_STATUS_ILLEGAL_NULL_PARAMS;
+      4 : conv2zin_status = ZIN_STATUS_NO_CHECKERS_OF_GIVEN_TYPE;
+      5 : conv2zin_status = ZIN_STATUS_NO_CHECKER_OF_GIVEN_NAME;
+      6 : conv2zin_status = ZIN_STATUS_NO_INFO_PORT_WITH_GIVEN_NAME;
+      7 : conv2zin_status = ZIN_STATUS_UNSUPPORTED_INFO_TYPE;
+      8 : conv2zin_status = ZIN_STATUS_INCORRECT_DB_NAME;
+      9 : conv2zin_status = ZIN_STATUS_CORRUPTED_DB;
+      10 : conv2zin_status = ZIN_STATUS_INCORRECT_DB_HANDLE;
+      11 : conv2zin_status = ZIN_STATUS_ILLEGAL_VALUES_FOR_CACTION;
+      default: conv2zin_status = ZIN_STATUS_UNKNOWN;
+    }  
+  }
+
+  local function zin_checker_action conv2zin_checker_action(integer i) {
+    case (i) {
+      0: conv2zin_checker_action = ZIN_CHECKER_ACTION_NONE;
+      1: conv2zin_checker_action = ZIN_CHECKER_ACTION_STOP;
+      2: conv2zin_checker_action = ZIN_CHECKER_ACTION_FINISH;
+      default: {
+        _dbg.dispmon(_name, MON_ERROR,
+                    psprintf("Invalid checker action seen: %d", i));
+      }
+    }
+  }
+}
+
+task ZeroInManager::new (StandardDisplay a_dbg, string a_name)
+{
+  _dbg = a_dbg;
+  _name = a_name;
+  _listOfAssertions = new;
+  _zeroInCheckOff = 1;
+
+  //if (get_plus_arg(CHECK, "runsim_0incheck")) {
+  if (mChkPlusarg(runsim_0incheck)) {
+    _zeroInCheckOff = 0;
+  }
+  //if (get_plus_arg(CHECK, "runsim_0insearch")) {
+  if (mChkPlusarg(runsim_0insearch)) {
+    _zeroInCheckOff = 0;
+  }
+
+  if (_zeroInCheckOff) 
+    _dbg.dispmon(_name, MON_ALWAYS, "new()... ignoring all Zero In commands from testbench");
+
+  // sim_type may not be always defined, so I use rtl as default
+  _rtlOnly = 1;
+//  if (get_plus_arg(CHECK, "sim_type=")) {
+//    string plusArgValStr;
+//    bit [63:0] plusArgVal = get_plus_arg(STR, "sim_type=");
+//    plusArgValStr.bittostr(plusArgVal);
+//    case (plusArgValStr) {
+//      "rtl": _rtlOnly = 1;
+//      "gate", "gates": _rtlOnly = 0;
+//    }
+//  }
+}
+
+task ZeroInManager::turnOffAllAssertionsInModule(string a_moduleName)
+{
+  zin_status zinStat;
+  integer retVal;
+
+  if (_zeroInCheckOff) return;
+    
+  // Turn off all assertions in the coverage file
+  retVal = zin_checker_turn_off("", "", a_moduleName, ZIN_NO_SEVERITY);
+  zinStat = conv2zin_status(retVal);
+  if (zinStat == ZIN_STATUS_SUCCESS) {
+    _dbg.dispmon(_name, MON_ALWAYS,
+                psprintf("zin_checker_turn_off succeeded for all assertions in module %s", a_moduleName));
+  }
+  else {
+    _dbg.dispmon(_name, MON_ERROR,
+              psprintf("zin_checker_turn_off failed for with  status %s for all assertions in module %s",
+                       zinStat, ""));
+  }
+}
+
+// add to list of a 0in assertions being checked. Make sure assertion is enabled.
+task ZeroInManager::addCheck(string a_type,
+			     string a_pathToAssertion,
+			     string a_moduleName="",
+			     string a_statistic="",
+			     bit [63:0] a_valueToCheck = 1)
+{
+  AssertionInfo info;
+
+  if (_zeroInCheckOff) return;
+
+  info = new (a_type, a_pathToAssertion, a_moduleName, a_statistic, a_valueToCheck);
+  _listOfAssertions.push_back(info);
+
+  // Turn on check
+  enableCheck(a_type, a_pathToAssertion, a_moduleName);
+
+}
+
+// disable 0in checker.
+task ZeroInManager::disableCheck(string a_type, string a_pathToAssertion, string a_moduleName="")
+{
+  integer retVal;
+  zin_status zinStat;
+
+  if (_zeroInCheckOff) return;
+
+  retVal = zin_checker_turn_off(a_type, a_pathToAssertion, a_moduleName, ZIN_NO_SEVERITY);
+  zinStat = conv2zin_status(retVal);
+  if (zinStat == ZIN_STATUS_SUCCESS) {
+    _dbg.dispmon(_name, MON_DEBUG,
+              psprintf("zin_checker_turn_off succeeded for (%s, %s) in module %s", a_type, a_pathToAssertion, a_moduleName));
+  }
+  else {
+    _dbg.dispmon(_name, MON_ERROR,
+              psprintf("zin_checker_turn_off failed with status %s for (%s, %s) in module %s",
+                       zinStat, a_type, a_pathToAssertion, a_moduleName));
+  }
+}
+
+// enable 0in checker.
+task ZeroInManager::enableCheck(string a_type, string a_pathToAssertion, string a_moduleName="")
+{
+  integer retVal;
+  zin_status zinStat;
+
+  if (_zeroInCheckOff) return;
+
+  retVal = zin_checker_turn_on(a_type, a_pathToAssertion, a_moduleName, ZIN_NO_SEVERITY);
+  zinStat = conv2zin_status(retVal);
+  if (zinStat == ZIN_STATUS_SUCCESS) {
+    _dbg.dispmon(_name, MON_DEBUG,
+              psprintf("zin_checker_turn_on succeeded for (%s, %s) in module %s", a_type, a_pathToAssertion, a_moduleName));
+  }
+  else {
+    _dbg.dispmon(_name, MON_ERROR,
+              psprintf("zin_checker_turn_on failed with status %s for (%s, %s) in module %s",
+                       zinStat, a_type, a_pathToAssertion, a_moduleName));
+  }
+}
+
+// check if the assertion is covered.
+function bit ZeroInManager::checkIfCovered(string a_type, string a_pathToAssertion,
+                                           string a_statistic, bit[63:0] a_val)
+{
+  integer retVal;
+  zin_status zinStat;
+  integer severity = ZIN_NO_SEVERITY;
+  integer loVal, hiVal;
+
+  if (_zeroInCheckOff) {
+    checkIfCovered = 1;
+    return;
+  }
+
+  checkIfCovered = 0;
+
+  // Make sure the assertion is evaluated at least once
+  retVal = zin_checker_info(a_type, a_pathToAssertion, a_statistic, loVal, hiVal);
+  zinStat =  conv2zin_status(retVal);
+
+  if (zinStat == ZIN_STATUS_SUCCESS) {
+    _dbg.dispmon(_name, MON_DEBUG,
+                psprintf("zin_checker_info(%s, %s, %s ...) returned %s with (hiVal:%d, loVal%d)",
+                         a_type, a_pathToAssertion, a_statistic, zinStat, hiVal, loVal));
+  }
+  else {
+    _dbg.dispmon(_name, MON_ERROR,
+                psprintf("zin_checker_info(%s, %s, ...) returned %s with (hiVal:%d, loVal%d)",
+                         a_type, a_pathToAssertion, zinStat, hiVal, loVal));
+    return;
+  }
+  if (zinStat == ZIN_STATUS_SUCCESS) {
+    checkIfCovered = {hiVal, loVal} >= a_val;
+  }
+}
+
+// check if the assertion fired.
+function bit ZeroInManager::checkIfFired(string a_type, string a_pathToAssertion,
+					 string a_check, string a_module)
+{
+  integer retVal;
+  zin_status zinStat;
+  integer severity = ZIN_NO_SEVERITY;
+  integer firing_count;
+
+  if (_zeroInCheckOff) {
+    checkIfFired = 1;
+    return;
+  }
+
+  checkIfFired = 0;
+
+  // Make sure the assertion fired at least once
+  retVal = zin_checker_firing_count(a_type, a_pathToAssertion, a_check, a_module,
+				    severity, firing_count);
+  zinStat =  conv2zin_status(retVal);
+
+  if (zinStat == ZIN_STATUS_SUCCESS) {
+    _dbg.dispmon(_name, MON_DEBUG,
+                psprintf("zin_checker_firing_count(%s, %s, %s ...) returned %s with (count:%d)",
+                         a_type, a_pathToAssertion, a_check, zinStat, firing_count));
+  }
+  else {
+    _dbg.dispmon(_name, MON_ERROR,
+              psprintf("zin_checker_firing_count(%s, %s, %s, ...) returned %s with (count:%d)",
+                        a_type, a_pathToAssertion, a_check, zinStat, firing_count));
+    return;
+  }
+  if (zinStat == ZIN_STATUS_SUCCESS) {
+    checkIfFired = firing_count >= 1;
+  }
+}
+
+// check if all 0in checks that have been added are covered.
+function bit ZeroInManager::coveredAllChecks()
+{
+  VeraListIterator_AssertionInfo iter;
+  AssertionInfo info;
+  
+  coveredAllChecks = 1;         
+
+  if (_zeroInCheckOff) return;
+  
+  for (iter = _listOfAssertions.start(); iter.neq(_listOfAssertions.finish());) {
+    info = iter.data();
+    if (info._statistic.compare("") != 0)  {
+      coveredAllChecks = coveredAllChecks &&
+        checkIfCovered(info._type, info._pathToAssertion,
+                       info._statistic, info._valueToCheck);
+    }
+    iter.next();
+  }
+}

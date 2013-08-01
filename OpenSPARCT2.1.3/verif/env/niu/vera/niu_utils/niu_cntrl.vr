@@ -1,0 +1,89 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_cntrl.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#define STORAGE_CLASS extern
+#include "global_variable.vri"
+#define STORAGE_CLASS
+#include "niu_cntrl_globel.vri"
+
+
+
+class Cniu_cntrl{
+#include "niu_cntrl_local.vri"
+
+function integer get_timeout(WHICH_TIMEOUT which_timeout);
+function integer get_delay(WHICH_DELAY which_delay,(DELAY_TYPE delay_type = TB_DEFAULT));
+}
+
+function integer Cniu_cntrl:: get_timeout(WHICH_TIMEOUT which_timeout){
+	integer temp_timeout;
+	case(which_timeout){
+	RX_DMC_DRV_TO_001: temp_timeout = 1000;
+	RX_DMC_DRV_TO_002: temp_timeout = 5;
+	RX_DMC_DRV_TO_003: temp_timeout = 5;
+	default:temp_timeout = 1000;
+	}
+	get_timeout = temp_timeout;		// we can later replace  this with 
+						// function to change value based on 
+						
+						//arg or scale my a multiplying factor
+}
+function integer Cniu_cntrl:: get_delay(WHICH_DELAY which_delay,
+					(DELAY_TYPE delay_type = TB_DEFAULT)){
+	if(((random_test == 1) && (delay_type == TB_DEFAULT))||
+		(delay_type == USER_RANDOM)){
+		case(which_delay){
+			USER_DEFINED1: get_delay = 0; //USER_DEFINED_FUNCTION_1
+//			USER_DEFINED2: get_delay = USER_DEFINED_FUNCTION_2;
+			default:{ if(min_delay[delay_type] == max_delay[delay_type]){
+					get_delay = min_delay[delay_type];
+				}
+				else
+				{
+				get_delay = min_delay[delay_type] +
+				    random()%(max_delay[delay_type] - (min_delay[delay_type]));
+				}
+			       }
+		}
+	}
+	else
+	{
+		case(which_delay){
+			USER_DEFINED1: get_delay = 0; //USER_DEFINED_FUNCTION_1
+//			USER_DEFINED2: get_delay = USER_DEFINED_FUNCTION_2;
+			default: get_delay = min_delay[delay_type];
+			
+		}
+	}
+}

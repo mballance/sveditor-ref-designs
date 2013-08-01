@@ -1,0 +1,89 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ncu_io_sample.vrh
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+sample ncu_mio_intf_req_cov (ncu_cov_ios.ncu_mio_ssi_mosi)
+{
+	state mio_req (1'b1); 
+}
+sample ncu_mio_intf_res_cov (ncu_cov_ios.mio_ncu_ssi_miso)
+{
+	state mio_res (1'b1); 
+}
+sample ncu_mio_intf_int_cov (ncu_cov_ios.mio_ncu_ext_int_l)
+{
+	state mio_int (1'b1); 
+}
+
+
+sample ncu_siu_intf_req_cnt (ncu_siu_req_cnt)
+{
+           m_state REQ_ASSERT  		(1:5) ;
+}
+
+sample ssi_ufsm_cov (ncu_cov_ios.if_sm)
+{
+           state IDLE  		(2'b00) ;
+           state ACPT   	(2'b01) ;
+       //    state DROP  		(2'b10) ;
+	   trans IDLE_to_ACPT   ("IDLE"  -> "ACPT"); 
+	//   trans IDLE_to_DROP   ("IDLE"  -> "DROP"); 
+	   trans ACPT_to_IDLE   ("ACPT"  -> "IDLE"); 
+//	   trans DROP_to_IDLE   ("DROP"  -> "IDLE"); 
+}
+
+sample ssi_fsm_cov (ncu_cov_ios.ssi_sm)
+{
+           state IDLE  		(3'b000) ;
+           state REQ   		(3'b001) ;
+           state WDATA  	(3'b011) ;
+           state REQ_PAR  	(3'b101) ;
+           state ACK  		(3'b111) ;
+           state RDATA  	(3'b110) ;
+           state ACK_PAR  	(3'b010) ;
+	   trans IDLE_to_REQ         ("IDLE"   	-> "REQ"); 
+	   trans REQ_to_REQ_PAR      ("REQ"   	-> "REQ_PAR"); 
+	   trans REQ_to_WDATA        ("REQ"    	-> "WDATA"); 
+	   trans WDATA_to_REQ_PAR    ("WDATA"  	-> "REQ_PAR"); 
+	   trans REQ_PAR_to_SSI_ACK  ("REQ_PAR" -> "ACK"); 
+	   trans ACK_to_RDATA        ("ACK"  	-> "RDATA"); 
+	   trans ACK_to_ACK_PAR      ("ACK"  	-> "ACK_PAR"); 
+	   trans ACK_to_IDLE         ("ACK" 	-> "IDLE"); 
+	   trans RDATA_to_ACK_AAR    ("RDATA"  	-> "ACK_PAR"); 
+	   trans ACK_PAR_to_IDLE     ("ACK_PAR" -> "IDLE"); 
+}
+sample ssi_scksel_cov (ncu_cov_ios.ssi_scksel)
+{
+	state  CLK_DIV8  (2'b00)  if(ncu_io_sample_flag);
+	state  CLK_DIV4  (2'b10)  if(ncu_io_sample_flag);
+}

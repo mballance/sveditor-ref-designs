@@ -1,0 +1,657 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: pcg_fa.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+task gen_buf( integer token, byte_array buf, var integer ptr ) {
+
+    integer        len = -1;    // L2 length byte pointer
+    integer        n;
+    integer        he;          // header end
+    integer        flow_id;
+    integer        ipv4_ptr;
+    integer        ipv6_ptr;
+    //integer        tcp_length;
+    integer        tcp_hdr_start;
+  
+    bit [15:0]     tcp_length;
+    bit [31:0]     tmp32, mask;
+    bit [15:0]     tmp16 ;
+    bit [15:0]     tmp16_ipck ;
+    bit [15:0]     tmp16_tcpck ;
+    bit [31:0]     isn_tmp;
+    bit [47:0]     da_tmp;
+    bit [95:0]     tcp_psu_hdr;
+    bit [95:0]     udp_psu_hdr;
+    bit [15:0]     ipv4_hdr[10];
+    integer        tagged = 0;  // Tagged frame
+    bit [32:0]     addr;
+    bit            dv;
+  
+    ptr=0;
+
+    flow_id = pack_db[token].flow.flow_no;
+
+
+    if(INTER_FEDX) {
+        buf.val[ptr++] = pack_db[token].ifedx_control[07:0];
+        buf.val[ptr++] = pack_db[token].ifedx_control[15:8];
+    }
+
+
+    da_tmp = pack_db[token].dst_node.l2_addr;
+/*
+
+    if( check_option( pack_db[token].options, O_USE_MAC_DA) ) {
+
+        case(my_port) {
+            0:  addr = MAC0_BASE;
+            1:  addr = MAC1_BASE;
+            2:  addr = MAC2_BASE;
+            3:  addr = MAC3_BASE;
+        }
+        shadow_class.get_data(addr + MAC_ADDR0, tmp32, mask, dv);
+        da_tmp[15:00] = tmp32[15:0];
+        shadow_class.get_data(addr + MAC_ADDR1, tmp32, mask, dv);
+        da_tmp[31:16] = tmp32[15:0];
+        shadow_class.get_data(addr + MAC_ADDR2, tmp32, mask, dv);
+        da_tmp[47:32] = tmp32[15:0];
+    } // end if 
+
+    if( check_option( pack_db[token].options, O_USE_FMAC_DA) ) {
+        case(my_port) {
+            0:  da_tmp = shadow_class.mac_shadow_class.fmac0_addr;
+            1:  da_tmp = shadow_class.mac_shadow_class.fmac1_addr;
+            2:  da_tmp = shadow_class.mac_shadow_class.fmac2_addr;
+            3:  da_tmp = shadow_class.mac_shadow_class.fmac3_addr;
+        }
+    }
+*/
+
+    pack_db[token].dst_node.l2_addr = da_tmp;
+
+    // L2 Header Assembley: Insertion of DA & SA   
+    '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = da_tmp;
+
+    '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+    buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = pack_db[token].src_node.l2_addr;
+
+
+    // Check to see what kind of L2 pkt it is (802.3 or 802.Q)  
+    if( pack_db[token].frame.frame_type[2] ) {
+
+        // It is a 802.Q Tagged packet 
+
+        tagged = 1;
+        if( pack_db[token].frame.tpid != -1)
+            '{ buf.val[ptr++], buf.val[ptr++]} = pack_db[token].frame.tpid;		
+        else
+            '{ buf.val[ptr++], buf.val[ptr++]} = TPID_8021Q;	
+            '{ buf.val[ptr++], buf.val[ptr++]} = pack_db[token].src_node.tci;
+        }
+
+
+        // Check if L3/L4 Header should be appended to packet  
+        if(pack_db[token].frame.frame_type[1] == 1) {	
+
+            // L3 Header must be included	
+
+            // Check if packet is is an LLC-SNAP L2 packet  
+            if( pack_db[token].frame.frame_type[0] == 1) {
+                len = ptr;
+                ptr = ptr+2;	
+
+                // Insert LLC value    
+                if( check_option( pack_db[token].options, O_CUSTOM_LS) ) {
+                    tmp32 = cfg_reg[CFG_CUST_LS];
+                    '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++]} = tmp32[23:0];
+                } else
+                    '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++]} = LLC_SNAP;
+
+                    // SNAP values (last 2B comes from class value)   
+                    buf.val[ptr++] = H_UNDEF;
+                    buf.val[ptr++] = H_UNDEF;
+                    buf.val[ptr++] = H_UNDEF;
+                } else {
+		 
+                    // Regular IP Header  
+                    len = - 1;	
+                }
+   
+printf("pcg_fa.vr: frame class %d\n", pack_db[token].frame.frame_class);       
+
+                // Convert frame class to IPv6 if necessary.  
+                //     (should not be a user defined class)    
+                if( pack_db[token].frame.frame_type[3] == 1 &&
+                    pack_db[token].frame.frame_type[4] == 0 &&    
+                    pack_db[token].frame.frame_class < CL_TCP_OPT  )  
+                       pack_db[token].frame.frame_class += DELTA;
+                else if( pack_db[token].frame.frame_type[4]  == 1 &&
+                         pack_db[token].frame.tunnel_type[0] == 1 && 
+                         pack_db[token].frame.frame_class < CL_TCP_OPT )  
+                        pack_db[token].frame.frame_class += DELTA;
+ 
+printf("pcg_fa.vr: NEW frame class %d\n", pack_db[token].frame.frame_class);       
+                //
+                // Insert L3 Header Info
+                //
+ 
+                // Check to see if tunneling option is present 
+                if( pack_db[token].frame.frame_type[4]==1 ) {
+
+                    printf("pcg_fa.vr: Tunneling option on, tunnel_type: %h \n", pack_db[token].frame.tunnel_type);
+                    
+                    case( pack_db[token].frame.tunnel_type[1:0]){
+                       2'b00: {
+                            // IPv4/IPv4 Header
+    
+                            // Place packet frame type (L2) & first 12B of L3 Header
+                            for( n=0; n<14; n++)
+                                buf.val[ptr++] = class_mask(  pack_db[token].frame.class_funct,
+                                                              l3_class[CL_IP_TUN_V4_V4].val[n],
+                                                              l3_mask[pack_db[token].frame.class_mask].val[n]  );
+                            // Insert custom frame type value
+                            if(pack_db[token].frame.type != -1)
+                                '{buf.val[ptr-14], buf.val[ptr-13]} = pack_db[token].frame.type;
+
+                            // Insert custom TTL value into IP Header
+                            if(pack_db[token].ttl != -1)        buf.val[ptr-4] = pack_db[token].ttl;
+
+                            // Insert source/destination IP Addresses
+                            '{ buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++] } = pack_db[token].src_node.ip_addr;
+                            '{ buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++] } = pack_db[token].dst_node.ip_addr;
+
+                            // 2nd IPv4 Header
+
+printf("pcg_fa.vr: frame class %d\n", pack_db[token].frame.frame_class );  
+                            // Place packet frame type (L2) & first 12B of L3 Header
+                            for( n=2; n<14; n++)
+                                buf.val[ptr++] = class_mask(  pack_db[token].frame.class_funct,
+                                                              l3_class[pack_db[token].frame.frame_class].val[n],
+                                                              l3_mask[pack_db[token].frame.class_mask].val[n]  );
+                            // Insert custom frame type value
+                            if(pack_db[token].frame.type != -1)
+                                '{buf.val[ptr-14], buf.val[ptr-13]} = pack_db[token].frame.type;
+
+                            // Insert custom TTL value into IP Header
+                            if(pack_db[token].ttl != -1)        buf.val[ptr-4] = pack_db[token].ttl;
+
+                            // Insert source/destination IP Addresses
+                            '{ buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++] } = pack_db[token].src_node.ip_addr;
+                            '{ buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++] } = pack_db[token].dst_node.ip_addr;
+                        }   
+                       2'b01: {
+                            // IPv4/IPv6 Header
+     
+                            // Place packet frame type (L2) & first 12B of L3 Header
+                            for( n=0; n<14; n++)
+                                buf.val[ptr++] = class_mask(  pack_db[token].frame.class_funct,
+                                                              l3_class[CL_IP_TUN_V4_V6].val[n],
+                                                              l3_mask[pack_db[token].frame.class_mask].val[n]  );
+                            // Insert custom frame type value
+                            if(pack_db[token].frame.type != -1)
+                                '{buf.val[ptr-14], buf.val[ptr-13]} = pack_db[token].frame.type;
+
+                            // Insert custom TTL value into IP Header
+                            if(pack_db[token].ttl != -1)        buf.val[ptr-4] = pack_db[token].ttl;
+
+                            // Insert source/destination IP Addresses
+                            '{ buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++] } = pack_db[token].src_node.ip_addr;
+                            '{ buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++] } = pack_db[token].dst_node.ip_addr;
+
+                            // Now Insert IPv6 Header
+                            // Place packet frame type (L2) & first 12B of L3 Header
+                            for( n=2; n<10; n++)
+                                buf.val[ptr++] = class_mask( pack_db[token].frame.class_funct,
+                                                             l3_class[pack_db[token].frame.frame_class].val[n],
+                                                             l3_mask[pack_db[token].frame.class_mask].val[n] );
+                            // Insert custom frame type value
+                            if(pack_db[token].frame.type != -1)
+                                '{buf.val[ptr-10], buf.val[ptr-9]} = pack_db[token].frame.type;
+
+                            // Insert source/destination IP Addresses
+                            '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = pack_db[token].src_node.ipv6_addr;
+
+                            '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = pack_db[token].dst_node.ipv6_addr;
+                        }
+                       2'b10: {
+                            // IPv6/IPv4 Header
+
+                            printf("pcg_fa.vr: Tuneling (IPv6/IPv4) doing IPv6\n");  
+
+                            // Place packet frame type (L2) & first 12B of L3 Header
+                            for( n=0; n<10; n++)
+                                buf.val[ptr++] = class_mask( pack_db[token].frame.class_funct,
+                                                             l3_class[CL_IP_TUN_V6_V4].val[n],
+                                                             l3_mask[pack_db[token].frame.class_mask].val[n] );
+                            // Insert custom frame type value
+                            if(pack_db[token].frame.type != -1)
+                                '{buf.val[ptr-10], buf.val[ptr-9]} = pack_db[token].frame.type;
+
+                            // Insert source/destination IP Addresses
+                            '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = pack_db[token].src_node.ipv6_addr;
+
+                            '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = pack_db[token].dst_node.ipv6_addr;
+
+                            printf("pcg_fa.vr: Tuneling (IPv6/IPv4) doing IPv4\n");  
+
+                            // Now Insert IPv4 Header
+
+                            // Place packet frame type (L2) & first 12B of L3 Header
+                            for( n=2; n<14; n++)
+                                buf.val[ptr++] = class_mask(  pack_db[token].frame.class_funct,
+                                                              l3_class[pack_db[token].frame.frame_class].val[n],
+                                                              l3_mask[pack_db[token].frame.class_mask].val[n]  );
+                            // Insert custom frame type value
+                            if(pack_db[token].frame.type != -1)
+                                '{buf.val[ptr-14], buf.val[ptr-13]} = pack_db[token].frame.type;
+
+                            // Insert custom TTL value into IP Header
+                            if(pack_db[token].ttl != -1)        buf.val[ptr-4] = pack_db[token].ttl;
+
+                            // Insert source/destination IP Addresses
+                            '{ buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++] } = pack_db[token].src_node.ip_addr;
+                            '{ buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++] } = pack_db[token].dst_node.ip_addr;
+                        }
+                       2'b11: {
+                            // IPv6/IPv6 Header
+
+                            // Place packet frame type (L2) & first 12B of L3 Header
+                            for( n=0; n<10; n++)
+                                buf.val[ptr++] = class_mask( pack_db[token].frame.class_funct,
+                                                             l3_class[CL_IP_TUN_V6_V6].val[n],
+                                                             l3_mask[pack_db[token].frame.class_mask].val[n] );
+                            // Insert custom frame type value
+                            if(pack_db[token].frame.type != -1)
+                                '{buf.val[ptr-10], buf.val[ptr-9]} = pack_db[token].frame.type;
+
+                            // Insert source/destination IP Addresses
+                            '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = pack_db[token].src_node.ipv6_addr;
+
+                            '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = pack_db[token].dst_node.ipv6_addr;
+
+                            // Now Insert IPv6 Header
+
+                            // Place packet frame type (L2) & first 12B of L3 Header
+                            for( n=2; n<10; n++)
+                                buf.val[ptr++] = class_mask( pack_db[token].frame.class_funct,
+                                                             l3_class[pack_db[token].frame.frame_class].val[n],
+                                                             l3_mask[pack_db[token].frame.class_mask].val[n] );
+                            // Insert custom frame type value
+                            if(pack_db[token].frame.type != -1)
+                                '{buf.val[ptr-10], buf.val[ptr-9]} = pack_db[token].frame.type;
+
+                            // Insert source/destination IP Addresses
+                            '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = pack_db[token].src_node.ipv6_addr;
+
+                            '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = pack_db[token].dst_node.ipv6_addr;
+                        }
+                    } // end case  
+                }  
+                // check to see if regular L3 Header should be IPv4 or IPv6
+                else if( pack_db[token].frame.frame_type[3] == 0 ) {  
+
+                    printf("pcg_fa.vr: Building IPv4 packet \n");
+
+                    // This is an IPv4 Packet    
+ 
+                     //Place packet frame type (L2) & first 12B of L3 Header//NVN-- 12 frm 14 
+		    for( n=0; n<2; n++)
+		    	buf.val[ptr++] = class_mask(  pack_db[token].frame.class_funct,
+						      l3_class[pack_db[token].frame.frame_class].val[n],
+					              l3_mask[pack_db[token].frame.class_mask].val[n]  );
+                 
+		    for( n=2; n<12; n++)
+		    	buf.val[ptr++] = class_mask(  pack_db[token].frame.class_funct,
+						      l3_class[pack_db[token].frame.frame_class].val[n],
+					              l3_mask[pack_db[token].frame.class_mask].val[n]  );
+
+                    // Insert custom frame type value   
+		    if(pack_db[token].frame.type != -1)	
+			'{buf.val[ptr-14], buf.val[ptr-13]} = pack_db[token].frame.type;
+
+                    // Insert custom TTL value into IP Header    
+		    if(pack_db[token].ttl != -1)	buf.val[ptr-2] = pack_db[token].ttl;//NVN 2 frm 4
+
+     
+                        
+                     //   Initaialize the IP checksum to "0" 
+                       '{buf.val[ptr++],buf.val[ptr++]} = 16'h0000;
+
+
+                    // Insert source/destination IP Addresses 
+		    '{ buf.val[ptr++], buf.val[ptr++], 
+                       buf.val[ptr++], buf.val[ptr++] } = pack_db[token].src_node.ip_addr;
+		    '{ buf.val[ptr++], buf.val[ptr++], 
+                       buf.val[ptr++], buf.val[ptr++] } = pack_db[token].dst_node.ip_addr;
+
+                       printf("The val of ptr is %d /n",ptr); 
+
+                       tmp16_ipck = ipv4_cksum(buf,ptr);
+
+                     // '{buf.val[ptr-10],buf.val[ptr-9]} = 16'h1415; 
+                      '{buf.val[ptr-10],buf.val[ptr-9]} = tmp16_ipck; 
+                    
+                }  // end if IPv4 Header  
+                else if ( pack_db[token].frame.frame_type[3] == 1 ) {  
+
+                    // This is an IPv6 Packet
+                    printf("pcg_fa.vr: Bulding IPv6 Packet \n");
+
+                    // Place packet frame type (L2) & first 12B of L3 Header//NVN
+                    for( n=0; n<2; n++)
+                        buf.val[ptr++] = class_mask( pack_db[token].frame.class_funct,
+                                                     l3_class[pack_db[token].frame.frame_class].val[n],
+                                                     l3_mask[pack_db[token].frame.class_mask].val[n] );
+                    for( n=2; n<10; n++)
+                        buf.val[ptr++] = class_mask( pack_db[token].frame.class_funct,
+                                                     l3_class[pack_db[token].frame.frame_class].val[n],
+                                                     l3_mask[pack_db[token].frame.class_mask].val[n] );
+                    // Insert custom frame type value
+                    if(pack_db[token].frame.type != -1)
+                        '{buf.val[ptr-10], buf.val[ptr-9]} = pack_db[token].frame.type;
+
+                    // Insert custom TTL value into Hop Limit of IPV6 Header    
+		    if(pack_db[token].ttl != -1)	buf.val[ptr-1] = pack_db[token].ttl;//NVN 
+
+                    // Insert source/destination IP Addresses
+                    '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                       buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                       buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                       buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = pack_db[token].src_node.ipv6_addr;
+
+                    '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                       buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                       buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                       buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = pack_db[token].dst_node.ipv6_addr;
+
+
+                }  // end if IPv6 Header  
+
+                printf("pcg_fa.vr: Frame_class: %d\n"  , pack_db[token].frame.frame_class );
+
+
+                //
+                // Insert L4 header Info
+                //
+
+                if( pack_db[token].frame.frame_class == CL_UDP           | 
+                    pack_db[token].frame.frame_class == CL_UDP_OPT       | 
+                    pack_db[token].frame.frame_class == CL_UDP_FRAG      |   
+                    pack_db[token].frame.frame_class == CL_UDP_IP_V6     |
+                    pack_db[token].frame.frame_class == CL_UDP_OPT_IP_V6 |
+                    pack_db[token].frame.frame_class == CL_UDP_FRAG_IP_V6 ) {
+ 
+                    printf("pcg_fa.vr: Adding UDP Header  \n");   
+
+                    udp_psu_hdr = {pack_db[token].src_node.ip_addr, 
+                                   pack_db[token].dst_node.ip_addr,
+                                   8'h00,8'h17,tcp_length};
+
+                    // Insert source/destination port numbers
+                    '{ buf.val[ptr++], buf.val[ptr++] } = pack_db[token].tup.src_tcp_udp_port;
+                    '{ buf.val[ptr++], buf.val[ptr++] } = pack_db[token].tup.dst_tcp_udp_port;
+
+                    tmp32 = cfg_reg[CFG_UDP_LEN];
+                    '{ buf.val[ptr++], buf.val[ptr++] } = tmp32[15:0];
+                    tmp32 = cfg_reg[CFG_UDP_CSM];
+                    '{ buf.val[ptr++], buf.val[ptr++] } = tmp32[15:0];
+
+                } // end if UPD pkt  
+
+               else if ( pack_db[token].frame.frame_class == CL_TCP           | 
+                         pack_db[token].frame.frame_class == CL_TCP_OPT       | 
+                         pack_db[token].frame.frame_class == CL_TCP_FRAG      |      
+                         pack_db[token].frame.frame_class == CL_TCP_IP_V6     |
+                         pack_db[token].frame.frame_class == CL_TCP_OPT_IP_V6 |
+                         pack_db[token].frame.frame_class == CL_TCP_FRAG_IP_V6  ) {
+
+                    printf("pcg_fa.vr: Adding TCP Header  \n");   
+
+                          tcp_psu_hdr = {pack_db[token].src_node.ip_addr, 
+                                         pack_db[token].dst_node.ip_addr,
+                                         8'h00,8'h06,tcp_length};
+
+                     //tcp_hdr_start = ptr + 1;
+                     tcp_hdr_start = ptr ;
+
+                    // Insert source/destination port numbers
+                    '{ buf.val[ptr++], buf.val[ptr++] } = pack_db[token].tup.src_tcp_udp_port;
+                    '{ buf.val[ptr++], buf.val[ptr++] } = pack_db[token].tup.dst_tcp_udp_port;
+
+      
+
+
+         if( pack_db[token].fl_state.tcp_flags == 2'h02 ) {  
+
+                    '{ buf.val[ptr++], buf.val[ptr++], 
+                    buf.val[ptr++], buf.val[ptr++] } = pack_db[token].rx_param.rcv_isn;
+
+                     }
+
+         else {
+
+                    '{ buf.val[ptr++], buf.val[ptr++], 
+                    buf.val[ptr++], buf.val[ptr++] } =  flow_db[flow_id].tx_param.last_seqno;
+
+                    flow_db[flow_id].rx_param.rcv_isn = flow_db[flow_id].tx_param.last_seqno;
+
+                    flow_db[flow_id].data_length = pack_db[token].data_length;
+
+               }
+
+
+
+
+                   flow_db[flow_id].tx_param.last_seqno = {(flow_db[flow_id].rx_param.rcv_isn) + (flow_db[flow_id].data_length)};
+                  
+
+
+                    '{ buf.val[ptr++], buf.val[ptr++], 
+                    buf.val[ptr++], buf.val[ptr++] } = cfg_reg[CFG_TCP_ACK];
+
+                    tmp32[15:0] = {cfg_reg[CFG_TCP_LEN], 6'b000000, pack_db[token].fl_state.tcp_flags} ;
+                    '{ buf.val[ptr++], buf.val[ptr++] } = tmp32[15:0];
+
+                    tmp32 = cfg_reg[CFG_TCP_WIN];
+                    '{ buf.val[ptr++], buf.val[ptr++] } = tmp32[15:0];
+
+
+                    //tmp32 = cfg_reg[CFG_TCP_CSM];
+                    '{ buf.val[ptr++], buf.val[ptr++] } = 16'h00;
+
+                    tmp32 = cfg_reg[CFG_TCP_URG];
+                    '{ buf.val[ptr++], buf.val[ptr++] } = tmp32[15:0];
+
+               }  // end if TCP pkt 
+ 
+        } // end if( pack_db[token].frame.frame_type[1] == 1)  
+        else {
+                // No L3/L4 Header   
+                printf("pcg_fa.vr: No L3 header selected\n");
+		len = ptr;	
+		ptr = ptr+2;
+	}
+
+	he = ptr-1;
+
+
+        tcp_length = pack_db[token].data_length -he -4;
+
+
+	if(pack_db[token].frame.data_type != DAT_FC_PAUSE)
+		'{buf.val[ptr++], buf.val[ptr++]} = token;	
+
+	data_gen(	pack_db[token].frame.data_type,
+			pack_db[token].frame.data_seed,
+			pack_db[token].data_length,
+			buf, ptr, pack_db[token].options, this, tagged, INTER_FEDX);
+
+        // Insert Len value for L2 Header    
+	if( len > 0 ) {
+		if( check_option( pack_db[token].options, O_FRM_LEN_ERR1) )
+			'{buf.val[len], buf.val[len+1] } = cfg_reg[CFG_FRM_LEN];
+		else {
+			if(pack_db[token].frame.type == -1) {
+				'{buf.val[len], buf.val[len+1] } = ptr - (he+1);
+			} else
+				'{buf.val[len], buf.val[len+1] } = pack_db[token].frame.type;	
+		}
+	}
+
+       //Add TCP Checksum
+
+       printf("TCP hdr start is %d/n",tcp_hdr_start);
+
+                       tmp16_tcpck = tcp_chksum(tcp_psu_hdr,buf,tcp_hdr_start,ptr);
+                       '{buf.val[he-3],buf.val[he-2]} = tmp16_tcpck; 
+
+	if(INTER_FEDX) pack_db_add_header(token,buf,2,he);	// Start at byte 2 (skip control word)
+	else           pack_db_add_header(token,buf,0,he);	// Start at byte 0
+
+        // Insert CRC   
+	if(INTER_FEDX)
+		tmp32 = crc_gen(buf, 2, ptr);	
+	else
+		tmp32 = crc_gen(buf, 0, ptr);
+
+	if( check_option( pack_db[token].options, O_CRC_ERR) )	tmp32 = tmp32 ^ cfg_reg[CFG_CRC_MASK];
+	'{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = tmp32;
+	pack_db[token].pack_crc = tmp32;
+
+	if(INTER_FEDX) {
+		tmp32 = crc_gen(buf, 0, ptr);
+		if( check_option( pack_db[token].options, O_IF_CRC_ERR) ) tmp32 = tmp32 ^ cfg_reg[CFG_CRC_MASK];
+		'{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = tmp32;
+		pack_db[token].ifedx_crc = tmp32;
+	}
+
+	pack_db[token].frame_len = ptr;
+
+
+
+
+
+} // end task   
+
+
+
+function bit [15:0] ipv4_cksum( byte_array m, integer len){
+
+   integer i,j;
+   bit [15:0] tmp[20];
+   bit [15:0] tmp_inv[20];
+   bit [15:0] cksum;
+
+
+   cksum = 0;
+
+   for (  j=1; j<20; j=j+2)
+      tmp[j] = {m.val[len-j], m.val[len-(j+1)]};
+
+
+
+  cksum = { tmp[19] + tmp[17] + tmp[15] + tmp[13] + tmp[11] + tmp[9] + tmp[7] + tmp[5] + tmp[3] + tmp[1]};
+
+   cksum = (cksum & 16'hFFFF) + ( cksum >> 16); 
+
+  if (cksum > 16'hFFFF)
+    cksum -= 16'hFFFF;
+
+ipv4_cksum = ~cksum;
+
+}
+
+function bit [15:0] tcp_chksum( bit[95:0]psu_hdr,byte_array d, integer start, integer len){
+
+integer i,j,k;
+bit [15:0] tmp[];
+bit [15:0] tcp_tmp[6];
+bit [15:0] sum_hdr;
+
+for ( j=0; j<5; j++)
+ tcp_tmp[j] = tcp_tmp[j]; 
+printf("Starting TCP Chksum function \n");
+
+for (i=start;i<len;i=i+2)
+   tmp[i] = {d.val[i],d.val[i+1]}; 
+
+tcp_tmp[0] = psu_hdr[95:80];
+tcp_tmp[1] = psu_hdr[79:64];
+tcp_tmp[2] = psu_hdr[63:48];
+tcp_tmp[3] = psu_hdr[47:32];
+tcp_tmp[4] = psu_hdr[31:16];
+tcp_tmp[5] = psu_hdr[15:0];
+
+//for ( k=0; k<5; k++)
+// sum_hdr += tcp_tmp[k]; 
+
+ sum_hdr = tcp_tmp[0] + tcp_tmp[1] + tcp_tmp[2] + tcp_tmp[3] + tcp_tmp[4]  ;
+
+tcp_chksum = sum_hdr;
+
+}
+
+

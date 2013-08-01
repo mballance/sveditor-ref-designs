@@ -1,0 +1,254 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuDmaURRdLkPEUStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class DmaURRdLkPEUStr extends DmaURBasePEUStr {
+
+
+  // ******************************************************************
+  // The Test Environment objects need to execute the strategy.
+  // ******************************************************************
+  local PEUTestEnv              _env;
+  local integer                 _errQueue;
+  
+
+  // ******************************************************************
+  // TLP Fields - These fields will be randomized using the parameters
+  // in the following section, and obeying the constraints defined
+  // within this class.
+  //
+  // Request & Completion Field Pairs
+  // ******************************************************************  
+  local         bit [1:0]       _format_req;
+  local         bit [1:0]       _format_cpl;
+  local         bit [4:0]       _type_req;
+  local         bit [4:0]       _type_cpl;
+
+  local         bit [2:0]       _tc;
+  
+  local         bit             _td_req;
+  local         bit             _td_cpl;
+  local         bit             _ep_req;
+  local         bit             _ep_cpl;
+
+  local         bit [1:0]       _attr;
+  local rand    bit [9:0]       _len_req;
+  local         bit [9:0]       _len_cpl;  
+  local         bit [15:0]      _req_id;
+  local         bit [7:0]       _tag;
+  local rand    bit [31:0]      _addr_lsb;
+  local         bit [31:0]      _addr_msb;
+
+  local rand    bit [3:0]       _last_dwbe;
+  local rand    bit [3:0]       _first_dwbe;
+
+  local         bit [15:0]      _cpl_id;
+  local         bit [2:0]       _cpl_status;
+  local         bit             _bcm;
+  local         bit [11:0]      _byte_count;
+  local         bit [6:0]       _lower_addr;
+  local         integer         _data;
+
+
+  // ******************************************************************
+  // Constructor
+  // ******************************************************************
+  public task new(PEUTestEnv a_env, (integer a_errQueue = 'bx));
+
+  
+  // ******************************************************************
+  // Execute the strategy.  
+  // ******************************************************************
+   public task Execute();  
+}
+
+
+
+//-------------------------------------------------------------------
+// Method Name: 
+// Description: 
+//-------------------------------------------------------------------
+task DmaURRdLkPEUStr::new(PEUTestEnv a_env, (integer a_errQueue = 'bx)) { 
+
+  
+  super.new(a_env);
+  this._env = a_env;
+  this._errQueue = a_errQueue;
+}
+
+
+
+//-------------------------------------------------------------------
+// Method Name: 
+// Description: 
+//-------------------------------------------------------------------
+task DmaURRdLkPEUStr::Execute() {
+
+
+  bit [PEC_PCI__HDR]            reqHdr;
+  bit [PEC_PCI__HDR]            cplHdr;
+
+  
+  randcase {
+    1 : this._format_req = PEC_PCI__FMT_NO_DATA_3DW;
+    1 : this._format_req = PEC_PCI__FMT_NO_DATA_4DW;
+  }
+  
+  this._format_cpl = PEC_PCI__FMT_NO_DATA_3DW;
+  
+  this._type_req   = PEC_PCI__TYPE_MEM_LK;
+  this._type_cpl   = PEC_PCI__TYPE_CPL_LK;
+
+  //this._tc         = urandom_range(3'b_111, 3'b_000);
+  this._tc         = 3'b_000;
+  
+  this._td_req     = urandom_range(1'b_1, 1'b_0);
+  this._td_cpl     = 1'b_0;
+
+  randcase {
+    this._ep_req_prob_false : this._ep_req = 1'b_0;
+    this._ep_req_prob_true  : this._ep_req = 1'b_1;
+  }
+  
+  this._ep_cpl     = 1'b_0;
+
+  this._attr       = urandom_range(2'b_11, 2'b_00);
+  this._len_req    = urandom_range(1023,0);
+  this._len_cpl    = 10'h_0;  
+  this._req_id     = urandom_range(16'h_FFFF, 16'h_0001);
+    //Denali can hold a TLP from being transmitted if a previous TLP
+    // with the same tag and Request ID has not completed yet. This only
+    // should happen with error TLPs. To help with this make all bad REQs
+    // PEC_PCI__REQ_ID[0] = 1
+    this._req_id[0] = 1'b1;
+
+  //this._tag        = urandom_range(8'h_FF, 8'h_00);
+  _env.allocDmaTag( this._tag );
+  this._addr_lsb   = urandom();
+  this._addr_msb   = urandom_range(32'h_FFFF_FFFF, 32'h_0000_0001);
+
+  this._addr_lsb[11:2] = 0;
+
+  
+  randcase{
+     1:this._last_dwbe = 4'b0001;
+     1:this._last_dwbe = 4'b0011;
+     1:this._last_dwbe = 4'b0111;
+     1:this._last_dwbe = 4'b1111;
+  }
+  randcase{
+     1:this._first_dwbe = 4'b1000;
+     1:this._first_dwbe = 4'b1100;
+     1:this._first_dwbe = 4'b1110;
+     1:this._first_dwbe = 4'b1111;
+  }
+
+  this._cpl_id     = 16'h_0000;
+  this._cpl_status = PEC_PCI__CPL_STATUS_UR;
+  this._bcm        = urandom_range(1'h_1, 1'h_0);
+  this._byte_count = 12'h_004;
+  this._lower_addr = 7'b_000_0000;
+  
+  this._data       = urandom_range(255, 0);
+
+  reqHdr [PEC_PCI__HDR]            = {128{1'b_0}};  
+  reqHdr [PEC_PCI__FMT]            = this._format_req;
+  reqHdr [PEC_PCI__TYPE]           = this._type_req;
+  reqHdr [PEC_PCI__TC]             = this._tc;
+  reqHdr [PEC_PCI__TD]             = this._td_req;
+  reqHdr [PEC_PCI__EP]             = this._ep_req;
+  reqHdr [PEC_PCI__ATTR]           = this._attr;
+  reqHdr [PEC_PCI__LEN]            = this._len_req;
+  reqHdr [PEC_PCI__REQ_ID]         = this._req_id;
+  reqHdr [PEC_PCI__TLP_TAG]        = this._tag;
+  reqHdr [PEC_PCI__LAST_DWBE]      = this._last_dwbe;
+  reqHdr [PEC_PCI__FIRST_DWBE]     = this._first_dwbe;
+  reqHdr [PEC_PCI__ADDR]           = (this._format_req[0] === 1'b1) ?
+    ({this._addr_msb, this._addr_lsb[31:2], 2'b_00}) :
+    ({this._addr_lsb[31:2], 2'b_00, 32'h_0000_0000});
+printf( "len=%h addr=%h\n", reqHdr[PEC_PCI__LEN], reqHdr[PEC_PCI__ADDR] );
+
+  cplHdr [PEC_PCI__HDR]            = {128{1'b_0}};
+  cplHdr [PEC_PCI__FMT]            = this._format_cpl;
+  cplHdr [PEC_PCI__TYPE]           = this._type_cpl;
+  cplHdr [PEC_PCI__TC]             = this._tc;
+  cplHdr [PEC_PCI__TD]             = this._td_cpl;
+  cplHdr [PEC_PCI__EP]             = this._ep_cpl;
+  cplHdr [PEC_PCI__ATTR]           = this._attr;
+  cplHdr [PEC_PCI__LEN]            = this._len_cpl;
+  cplHdr [PEC_PCI__CPL_ID]         = this._cpl_id;
+  cplHdr [PEC_PCI__CPL_STATUS]     = this._cpl_status;
+  cplHdr [PEC_PCI__BCM]            = this._bcm;
+  cplHdr [PEC_PCI__BYTECOUNT]      = this._byte_count;
+  cplHdr [PEC_PCI__CPL_REQ_ID]     = this._req_id;
+  cplHdr [PEC_PCI__CPL_TAG]        = this._tag;
+  cplHdr [PEC_PCI__LOWADDR]        = this._lower_addr;
+
+  this._env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLkReq );
+  this._env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLkEP );
+
+  if ( super.f_abortErrTlp )
+    {
+    this._env.drivePCIE(reqHdr, this._data, *, *, *, 1);  
+    this._env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLkReq );
+    this._env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLkEP );
+    this._env.waitIngressLatency(reqHdr);
+    }
+  else
+    {
+    this._env.reserveIngressCredits(reqHdr);
+    this._env.drivePCIE(reqHdr, this._data);  
+    this._env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLkReq );
+    this._env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLkEP );
+    this._env.consumeIngressCredits(reqHdr);
+    this._env.expectILU(reqHdr, this._data);
+
+    mailbox_put(this._errQueue, e_ERR_ue_ur);
+    mailbox_put(this._errQueue, reqHdr );
+  
+    this._env.driveILU(cplHdr, 0, this._data);
+    this._env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLST_LKUR_2 );
+    this._env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLBC_MRdLk32_2 );
+    this._env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLBC_MRdLk64_2 );
+    this._env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_MRdLk32_2 );
+    this._env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_MRdLk64_2 );
+    this._env.expectPCIE(cplHdr, this._data); 
+    this._env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLST_LKUR_2 );
+    this._env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLBC_MRdLk32_2 );
+    this._env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLBC_MRdLk64_2 );
+    this._env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_MRdLk32_2 );
+    this._env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLLA_MRdLk64_2 );
+    }
+
+    _env.freeDmaTag( this._tag );
+}

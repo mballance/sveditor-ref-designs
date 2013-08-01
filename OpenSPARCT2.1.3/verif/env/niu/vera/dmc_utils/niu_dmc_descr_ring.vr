@@ -1,0 +1,326 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_dmc_descr_ring.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "niu_dmc_descr.vrh"
+#include "niu_mem.vrh"
+#include "pio_driver.vrh"
+#include "dmc_memory_map.vri"
+
+extern CSparseMem SparseMem;
+
+#define BYTES_PER_RBR_ENTRY 4
+#define BYTES_PER_TBR_ENTRY 64
+
+class CDescrRing {
+   bit [63:0] ring_start_addr;
+   bit [63:0] ring_current_addr;
+   integer ring_size;
+   integer desc_ring_tail_ptr;
+   integer id ;
+   integer address_incr;
+   integer ring_page_id;
+   integer xlate_on;
+
+    bit rg_wrapp = 1'b0;
+    bit ring_wrapped = 1'b0;
+
+    VeraList_Cdescriptor desc_ring;
+    function integer get_ring_size() {
+            get_ring_size = desc_ring.size();
+	}
+    task new(integer i = 0) {
+	   id = i;
+           desc_ring = new();
+    }
+    task add_descriptor(Cdescriptor desc){}
+    task reclaim_buffers(integer n){}
+
+    task initRing( bit [63:0] address, integer size, (integer xlate = 0), (integer page = 0),
+                  (integer for_tx_only = 0)) 
+    {
+        xlate_on = xlate;
+        ring_page_id = page;
+	ring_start_addr	 = address;
+        if(for_tx_only)
+	   ring_current_addr=64'h0; 
+        else 
+	  ring_current_addr =ring_start_addr; 
+        ring_size = size;
+	printf(" DEBUG ring initialized !! start addresss - %x, current_addr - %x , size - %x xlate - %d \n",ring_start_addr,ring_current_addr, ring_size,xlate_on);
+    }
+
+   function integer isRingEmpty() {
+     if(get_ring_size()) isRingEmpty = 0;
+     else isRingEmpty = 1;
+   }
+
+   function integer isRingFull() {
+     if(get_ring_size() < ring_size ) isRingFull = 0;
+     else isRingFull = 1;
+   }
+}
+
+
+
+class CRxDescrRing extends CDescrRing {
+
+       VeraList_CRxdescriptor desc_ring;
+        integer initial_kick;
+	bit [63:0] last_address;
+	task new(integer i = 0) {
+	   address_incr = 4;
+	   id = i;
+	   initial_kick = 1;
+           desc_ring = new();
+        }
+	function CRxdescriptor front() {
+	  front = desc_ring.front();
+        }
+   	task pop_front(){
+      	  desc_ring.pop_front();
+   	}
+        task push_back( CRxdescriptor desc ) {
+	  desc_ring.push_back(desc);
+       }
+	function CRxdescriptor back() { 
+	  back = desc_ring.back();
+	  //printf(" in CRxDescrRing: address - %x \n",back.blk_addr);
+        }
+	function integer get_ring_size() {
+            get_ring_size = desc_ring.size();
+	}
+	task add_descriptor(CRxdescriptor desc);
+
+	task reclaim_buffers(integer n);
+
+}
+
+task CRxDescrRing::reclaim_buffers(integer n){
+CRxdescriptor desc;
+bit[43:0] pkt_address;
+bit[43:0] xlate_address;
+integer status;
+integer pkt_page_id;
+integer i;
+
+if(get_ring_size() < n) {
+  printf("ERROR CRxDescrRing::reclaim_buffers:   Cannot reclaim any buffers- ring size - %d n- %d\n",get_ring_size(),n);
+  return;
+} else {
+ for(i=0;i<n;i++) {
+  desc = this.front();
+  pkt_address = {desc.blk_addr, 12'h0};
+  pkt_page_id= desc.pkt_page_id;
+  this.desc_ring.pop_front();
+  xlate_address = SparseMem.xlate_addr(pkt_address,pkt_page_id,0);
+
+  printf("debug: Pkt address to be deleted - %x \n",pkt_address);
+  status = SparseMem.free_addr(xlate_address,1,pkt_page_id);
+  printf("debug: xlate address to be deleted - %x %d \n",xlate_address,status);
+}
+printf(" debug:  New ring size after reclaiming is %d \n",get_ring_size());
+
+
+}
+}
+
+task CRxDescrRing::add_descriptor(CRxdescriptor desc){
+
+	// Always add at the tail of the ring
+	// Hardware reads from the head of the ring
+	
+	CRxdescriptor last_desc;
+	bit [63:0] address,new_address,translated_address;
+        bit [31:0] mask_address;
+	// printf(" DEBUG CDescrRing::add_descriptor !! start addresss - %x, current_addr - %x , size - %x addr_incr - %d  \n",ring_start_addr,ring_current_addr, ring_size,address_incr);
+
+	if(initial_kick & (get_ring_size()==0))  {
+	   address = ring_start_addr;
+           desc.sw_address = address;
+	   last_address =  desc.sw_address;
+           //new_address is the software address
+           // translated_address = translate_address(address);
+           translated_address = (address);
+           desc.address = translated_address;
+	   initial_kick = 0;
+	} else {
+	   // last_desc = back();
+	   // address = last_desc.sw_address;
+	     address = last_address ;
+           //printf("Ven_DG val of prev_desc_addr %0h\n", address);
+           if(address >= (ring_start_addr + (ring_size*BYTES_PER_RBR_ENTRY - address_incr))) { 
+           	new_address = ring_start_addr;
+           } else  {
+	        new_address = address + address_incr; // 8 bytes /descriptor
+           }
+           //printf("Ven_DG2 val of curr_desc_addr %0h\n", new_address);
+           // new_address is the software address
+           // translate this address using the translation logic
+           desc.sw_address = new_address;
+	   last_address =  desc.sw_address;
+           // translated_address = translate_address(new_address);
+           translated_address = (new_address);
+           desc.address = translated_address;
+         }
+	   push_back(desc);
+	   desc.add(xlate_on,ring_page_id); // Writes this into the memory
+           if(desc.sw_address >= (ring_start_addr + (ring_size*BYTES_PER_RBR_ENTRY - address_incr))) {
+	         ring_current_addr = 0;
+                 rg_wrapp = 1'b1;
+                 if(~ring_wrapped)
+                   ring_wrapped = 1'b1;
+                 else
+                   ring_wrapped = 1'b0;
+                 printf("Ven_DG RNG_WRAP %0b\n",ring_wrapped);
+           } else { 
+	         ring_current_addr = (desc.sw_address - ring_start_addr) + address_incr;
+                 rg_wrapp = 1'b0;
+           } 
+           //printf("Ven_DG2 val of kick_for_curr_desc %0h\n", ring_current_addr);
+
+}
+
+class CTxDescrRing extends CDescrRing {
+
+       VeraList_CTxdescriptor desc_ring;
+       integer tx_init_kick;
+	task new(integer i = 0) {
+	   address_incr = 8;
+	   id = i;
+           tx_init_kick = 1;
+           desc_ring = new();
+        }
+	function CTxdescriptor back() { 
+	  back = desc_ring.back();
+        }
+	function CTxdescriptor front() {
+	  front = desc_ring.front();
+        }
+        task push_back( CTxdescriptor desc ) {
+	  desc_ring.push_back(desc);
+       }
+       function integer get_ring_size() {
+            get_ring_size = desc_ring.size();
+	}
+	task add_descriptor(CTxdescriptor desc);
+	task reclaim_buffers(integer n);
+
+}
+
+task CTxDescrRing::reclaim_buffers(integer n){
+
+CTxdescriptor desc;
+bit[43:0] pkt_address;
+bit[43:0] xlate_address;
+integer status;
+integer pkt_page_id;
+integer i;
+
+if(get_ring_size() < n) {
+  printf("::reclaim_buffers:   Cannot reclaim any buffers- ring size - %d n- %d\n",get_ring_size(),n);
+  return;
+} else {
+ for(i=0;i<n;i++) {
+  desc = this.front();
+  pkt_address = desc.sad;
+  pkt_address = pkt_address;
+  pkt_page_id= desc.pkt_page_id;
+  this.desc_ring.pop_front();
+  xlate_address = SparseMem.xlate_addr(pkt_address,pkt_page_id,0);
+
+  printf("debug: Pkt address to be deleted - %x \n",pkt_address);
+  status = SparseMem.free_addr(xlate_address,1,pkt_page_id);
+  printf("debug: xlate address to be deleted - %x %d \n",xlate_address,status);
+}
+printf(" debug:  New ring size after reclaiming is %d \n",get_ring_size());
+
+}
+
+
+}
+
+task CTxDescrRing::add_descriptor(CTxdescriptor desc){
+
+	// Always add at the tail of the ring
+	// Hardware reads from the head of the ring
+	
+	CTxdescriptor last_desc;
+	bit [63:0] address,new_address,translated_address;
+        bit [31:0] mask_address;
+	printf(" DEBUG CDescrRing::add_descriptor !! start addresss - %x, current_addr - %x , size - %x addr_incr - %d xlate_on - %d  \n",ring_start_addr,ring_current_addr, ring_size,address_incr, xlate_on);
+
+	if(tx_init_kick & (get_ring_size()==0)) {
+	   address = ring_start_addr;
+           desc.sw_address = address;
+           //new_address is the software address
+           // translated_address = translate_address(address);
+           translated_address = (address);
+           desc.address = translated_address;
+           tx_init_kick = 0;
+	} else {
+	   last_desc = back();
+	   address = last_desc.sw_address;
+           //printf("Ven_DG val of prev_desc_addr %0h\n", address);
+           if(address >= (ring_start_addr + (ring_size*BYTES_PER_TBR_ENTRY - address_incr))) { 
+           	new_address = ring_start_addr;
+           } else  {
+	        new_address = address + address_incr; // 8 bytes /descriptor
+           }
+           //printf("Ven_DG2 val of curr_desc_addr %0h\n", new_address);
+           // new_address is the software address
+           // translate this address using the translation logic
+           desc.sw_address = new_address;
+           // translated_address = translate_address(new_address);
+           translated_address = (new_address);
+           desc.address = translated_address;
+         }
+	   push_back(desc);
+	   desc.add(xlate_on,ring_page_id); // Writes this into the memory
+           if(desc.sw_address >= (ring_start_addr + (ring_size*BYTES_PER_TBR_ENTRY - address_incr))) {
+	         ring_current_addr = 0;
+                 rg_wrapp = 1'b1;
+                 if(~ring_wrapped)
+                   ring_wrapped = 1'b1;
+                 else
+                   ring_wrapped = 1'b0;
+                 printf("Ven_DG RNG_WRAP %0b\n",ring_wrapped);
+           } else { 
+	         ring_current_addr = (desc.sw_address - ring_start_addr) + address_incr;
+                 rg_wrapp = 1'b0;
+           } 
+           //printf("Ven_DG2 val of kick_for_curr_desc %0h\n", ring_current_addr);
+
+}
+

@@ -1,0 +1,258 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilu_peu.if.vri
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#ifndef ILU_PEU_IF_VRI
+#define ILU_PEU_IF_VRI
+
+#include "top_defines.vri"
+//#include "dmu.h"
+
+interface if_ILU_PEU {
+  //------------------------------------------------------------------------
+  //  Clock and Reset Signals
+  //------------------------------------------------------------------------
+#ifdef	N2_FC
+#ifdef DMU_GATE
+  input               iol2clk         CLOCK                     verilog_node "`DMU.iol2clk";// inputclock 375 MHz
+  input	              j2d_por_l       INPUT_EDGE INPUT_SKEW	verilog_node "`DMU.rst_por_";
+  input               j2d_rst_l       INPUT_EDGE INPUT_SKEW	verilog_node "`DMU.rst_wmr_";
+#else
+  input		      iol2clk         CLOCK			verilog_node "`ILU.l1clk";// inputclock 375 MHz
+  input	              j2d_por_l       INPUT_EDGE INPUT_SKEW	verilog_node "`PEU.rst_por_";
+  input               j2d_rst_l       INPUT_EDGE INPUT_SKEW	verilog_node "`PEU.rst_wmr_";
+#endif // DMU_GATE
+#else
+  input		      iol2clk         CLOCK;// inputclock 375 MHz
+
+  output	      j2d_por_l       OUTPUT_EDGE OUTPUT_SKEW	verilog_node "`PEU.rst_por_";
+  output	      j2d_rst_l       OUTPUT_EDGE OUTPUT_SKEW	verilog_node "`PEU.rst_wmr_";
+
+#endif 
+
+  //------------------------------------------------------------------------
+  //   data path -
+  //     note: k2y_buf_addr_vld_monitor & y2k_buf_addr_vld_monitor are added 
+  //           for the use in DMU-ILU monitor only
+  //------------------------------------------------------------------------
+//  output			        k2y_buf_addr_vld_monitor			verilog_node "MAQ";
+#ifndef	N2_FC
+  output [7:0]        k2y_buf_addr   OUTPUT_EDGE OUTPUT_SKEW	verilog_node "`ILU.k2y_buf_addr";// read pointer to IDB
+  output [127:0]      k2y_buf_data   OUTPUT_EDGE OUTPUT_SKEW	verilog_node "`ILU.k2y_buf_data";// payload
+  output [3:0]        k2y_buf_dpar   OUTPUT_EDGE OUTPUT_SKEW	verilog_node "`ILU.k2y_buf_dpar";// word parity for the payload
+#endif 
+#ifdef DMU_GATE
+  input  [127:0]      y2k_buf_data   INPUT_EDGE INPUT_SKEW      verilog_node "`DMU.y2k_buf_data";// 16-byte data
+  input  [3:0]        y2k_buf_dpar   INPUT_EDGE INPUT_SKEW      verilog_node "`DMU.y2k_buf_dpar";// data parity
+  input  [7:0]        y2k_buf_addr   INPUT_EDGE INPUT_SKEW      verilog_node "`DMU.y2k_buf_addr";// read address to DOU
+#else
+  input  [127:0]      y2k_buf_data   INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_buf_data";// 16-byte data    
+  input  [3:0]        y2k_buf_dpar   INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_buf_dpar";// data parity
+//  input	y2k_buf_addr_vld_monitor			verilog_node "MAQ";
+  input  [7:0]        y2k_buf_addr   INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_buf_addr";// read address to DOU
+#endif // DMU_GATE
+  //------------------------------------------------------------------------
+  //   record interface to TMU
+  //------------------------------------------------------------------------
+#ifndef	N2_FC
+  output              k2y_rcd_deq     OUTPUT_EDGE OUTPUT_SKEW	verilog_node "`ILU.k2y_rcd_deq";// ingress record fifo dequeue
+  output [125:0]      k2y_rcd         OUTPUT_EDGE OUTPUT_SKEW	verilog_node "`ILU.k2y_rcd";// egress PEC rcd
+  output              k2y_rcd_enq     OUTPUT_EDGE OUTPUT_SKEW	verilog_node "`ILU.k2y_rcd_enq";// egress enqueue for PEC rcd
+#endif 
+#ifdef DMU_GATE
+  input  [125:0]      y2k_rcd         INPUT_EDGE INPUT_SKEW     verilog_node "{`DMU.y2k_rcd,10'h0}";// ingress PEC record
+  input               y2k_rcd_enq     INPUT_EDGE INPUT_SKEW     verilog_node "`DMU.y2k_rcd_enq";// ingress PEC record enqueue
+  input               y2k_rcd_deq     INPUT_EDGE INPUT_SKEW     verilog_node "`DMU.y2k_rcd_deq";// egress rcd fifo dequeue
+#else
+  //DMU is 116 bits wide so add 10'b0 to LSB when hooking up to DMUXtr in ilu_peu_top.vcon
+  input  [125:0]      y2k_rcd         INPUT_EDGE INPUT_SKEW	verilog_node "{`ILU.y2k_rcd,10'h0}";// ingress PEC record
+  input		      y2k_rcd_enq     INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_rcd_enq";// ingress PEC record enqueue
+  input		      y2k_rcd_deq     INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_rcd_deq";// egress rcd fifo dequeue 
+#endif // DMU_GATE
+  //------------------------------------------------------------------------
+  //   release interface with TMU
+  //------------------------------------------------------------------------
+#ifndef	N2_FC
+  output [8:0]        k2y_rel_rcd     OUTPUT_EDGE OUTPUT_SKEW	verilog_node "`ILU.k2y_rel_rcd";// ingress 1 PCIE FC data credit (16-byte data) w/ d_ptr
+  output              k2y_rel_enq     OUTPUT_EDGE OUTPUT_SKEW	verilog_node "`ILU.k2y_rel_enq";     // ingress enqueue for release record
+#endif 
+#ifdef DMU_GATE
+  input  [8:0]        y2k_rel_rcd     INPUT_EDGE INPUT_SKEW     verilog_node "{`DMU.ilu_eil_relgen_y2k_rel_rcd_reg_8_.q, `DMU.ilu_eil_relgen_y2k_rel_rcd_reg_7_.q, `DMU.ilu_eil_relgen_y2k_rel_rcd_reg_6_.q, `DMU.ilu_eil_relgen_y2k_rel_rcd_reg_5_.q, `DMU.ilu_eil_relgen_y2k_rel_rcd_reg_4_.q, `DMU.ilu_eil_relgen_y2k_rel_rcd_reg_3_.q, `DMU.ilu_eil_relgen_y2k_rel_rcd_reg_2_.q, `DMU.ilu_eil_relgen_y2k_rel_rcd_reg_1_.q, `DMU.ilu_eil_relgen_y2k_rel_rcd_reg_0_.q}";//egress release rcd
+
+  input               y2k_rel_enq     INPUT_EDGE INPUT_SKEW     verilog_node "`DMU.y2k_rel_enq";// egress enqueue for release rcd
+#else
+
+  input  [8:0]        y2k_rel_rcd     INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_rel_rcd";// egress release rcd
+  input		      y2k_rel_enq     INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_rel_enq";// egress enqueue for release rcd
+#endif // DMU_GATE  
+  //------------------------------------------------------------------------
+  //   DOU DMA Rd Cpl Buffer status rcd interface with CLU
+  //------------------------------------------------------------------------
+#ifndef	N2_FC
+  output [5:0]        k2y_dou_dptr    OUTPUT_EDGE OUTPUT_SKEW	verilog_node "`ILU.k2y_dou_dptr";
+  output	      k2y_dou_err     OUTPUT_EDGE OUTPUT_SKEW	verilog_node "`ILU.k2y_dou_err";
+  output	      k2y_dou_vld     OUTPUT_EDGE OUTPUT_SKEW	verilog_node "`ILU.k2y_dou_vld";
+#endif 
+  //------------------------------------------------------------------------
+  //   DMU misc. interface
+  //------------------------------------------------------------------------
+#ifdef DMU_GATE
+  input  [2:0]        y2k_mps         INPUT_EDGE INPUT_SKEW     verilog_node "`DMU.y2k_mps";// max. payld size to CMU
+  input               y2k_int_l       INPUT_EDGE INPUT_SKEW     verilog_node "`DMU.y2k_int_l";// interrupt req to IMU
+  input               p2d_drain       INPUT_EDGE INPUT_SKEW     verilog_node "`DMU.p2d_drain"; // drain req to ILU
+#else
+  input  [2:0] 	      y2k_mps         INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_mps";// max. payld size to CMU
+  input		      y2k_int_l       INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_int_l";// interrupt req to IMU
+  input		      p2d_drain       INPUT_EDGE INPUT_SKEW     verilog_node "`ILU.p2d_drain"; // drain req to ILU 
+#endif // DMU_GATE
+
+  //------------------------------------------------------------------------
+  //  CSR ring to DMU
+  //------------------------------------------------------------------------
+#ifdef DMU_GATE
+  output [31:0]       k2y_csr_ring_out OUTPUT_EDGE OUTPUT_SKEW	verilog_node "`DMU.k2y_csr_ring_out";
+  input  [31:0]       y2k_csr_ring_in  INPUT_EDGE INPUT_SKEW	verilog_node "`DMU.y2k_csr_ring_in";
+#else
+  output [31:0]       k2y_csr_ring_out OUTPUT_EDGE OUTPUT_SKEW	verilog_node "`ILU.k2y_csr_ring_out";
+  input  [31:0]       y2k_csr_ring_in  INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_csr_ring_in";
+#endif // DMU_GATE    	  
+  
+  //------------------------------------------------------------------------
+  //  debug ports
+  //------------------------------------------------------------------------
+#ifndef	N2_FC
+  output [5:0]        k2y_dbg_sel_a  OUTPUT_EDGE OUTPUT_SKEW	verilog_node "`ILU.k2y_dbg_sel_a";
+  output [5:0]        k2y_dbg_sel_b  OUTPUT_EDGE OUTPUT_SKEW	verilog_node "`ILU.k2y_dbg_sel_b";
+#endif
+#ifdef DMU_GATE
+  input  [7:0]        y2k_dbg_a      INPUT_EDGE  INPUT_SKEW     verilog_node "`DMU.y2k_dbg_a";
+  input  [7:0]        y2k_dbg_b      INPUT_EDGE  INPUT_SKEW     verilog_node "`DMU.y2k_dbg_b";
+#else
+  input  [7:0]        y2k_dbg_a      INPUT_EDGE  INPUT_SKEW	verilog_node "`ILU.y2k_dbg_a";
+  input  [7:0]        y2k_dbg_b      INPUT_EDGE  INPUT_SKEW	verilog_node "`ILU.y2k_dbg_b";
+#endif // DMU_GATE
+}  // end of interface if_ILU_PEU
+
+
+
+interface if_ILU_PEU_PCIE {
+  //Clock
+  input		      refclk         CLOCK			verilog_node "`TOP.PCIE_Clock_250";// inputclock 250 MHz
+  // Denali Clocks
+//  input               DEN_CLK_TX      INPUT_EDGE INPUT_SKEW	verilog_node "`TOP.DEN_CLK_TX";
+  input               DEN_CLK_RX      INPUT_EDGE INPUT_SKEW	verilog_node "`TOP.DEN_CLK_RX";
+ 
+  // Misc Port in FNXPCIEXactor
+  output              DEN_RESET       OUTPUT_EDGE  OUTPUT_SKEW	verilog_node "`TOP.DEN_RESET";
+  
+  //The Recieve Detect signals were used in FNX , Included here but not connected to N2
+  output              RCV_DET_MODE    OUTPUT_EDGE  OUTPUT_SKEW;//1bit
+  output [7:0]        RCV_DET_LANES   OUTPUT_EDGE  OUTPUT_SKEW	verilog_node "`TOP.RCV_DET_LANES"; //8bit
+  output [7:0]        ELEC_IDLE_LANES OUTPUT_EDGE  OUTPUT_SKEW; //8bit
+//  output [7:0]        RCV_DET_LANES   PRZ          OUTPUT_SKEW	verilog_node "`TOP.TX_P"; //8bit
+
+ 
+}  // end of interface if_ILU_PEU
+
+interface if_ILU_PEU_PCIE_RX {
+   //Clock
+   input    refclk      CLOCK                   verilog_node "`TOP.DEN_CLK_TX";// inputclock 250 MHz
+   // Denali Clocks
+   input    DEN_CLK_TX  INPUT_EDGE INPUT_SKEW   verilog_node "`TOP.DEN_CLK_TX";
+}
+
+
+#ifndef N2_FC
+#ifndef N2_IOS
+interface if_ILU_PEU_blunt_end_clock {
+  // Clock
+  input blunt_end_clock  CLOCK             verilog_node "`TOP.blunt_end_clock";
+ // RX and TX signals
+  input [7:0]    TX          PSAMPLE       verilog_node "`TOP.TX_P";
+  input [7:0]    RX          PSAMPLE       verilog_node "`TOP.RX_P";
+#ifndef PEU_SYSTEMC_T2
+  input [9:0]    PSR_TX      PSAMPLE       verilog_node "`TOP.cpu.peu.peu_psr_td_b0sds0[9:0]";
+  input [9:0]    PSR_RX      PSAMPLE       verilog_node "`TOP.cpu.peu.psr_peu_rd_b0sds0[9:0]";
+#endif
+}
+#endif
+#endif
+
+interface if_denali_root_monitor_PCIE {
+  //Clock
+  input	   refclk         CLOCK 	verilog_node "`TOP.PCIE_Clock_250";// inputclock 250 MHz
+  // Denali Clocks
+  input  denali_root_monitor_CLK_TX      INPUT_EDGE INPUT_SKEW	verilog_node "`TOP.denali_root_monitor_CLK_TX";
+  input  denali_root_monitor_CLK_RX      INPUT_EDGE INPUT_SKEW	verilog_node "`TOP.denali_root_monitor_CLK_RX";
+ 
+  // Misc Port in FNXPCIEXactor
+  input denali_root_monitor_RESET       INPUT_EDGE  INPUT_SKEW	verilog_node "`TOP.denali_root_monitor_RESET";
+  
+ 
+}  // end of interface if_ILU_PEU
+
+
+
+//Used for injecting errors to EHB
+interface EHB {
+                input  reqEmpty PSAMPLE #-1;
+                input  reqFull  PSAMPLE #-1;
+                input  cplEmpty PSAMPLE #-1;
+                input  cplFull  PSAMPLE #-1;
+                output errReq  PHOLD #1;
+                output  [3:0] errSel  PHOLD #1;
+                output  [7:0] errTag  PHOLD #1;
+                input  [127:0] errHdr PSAMPLE #-1;
+                input  errForced PSAMPLE #-1;
+                input  errAck PSAMPLE #-1;
+                input clk CLOCK; }
+
+//Used for injecting errors to IHB
+interface IHB {
+                input  empty PSAMPLE #-1;
+                input  full  PSAMPLE #-1;
+                output errReq  PHOLD #1;
+                output  [3:0] errSel  PHOLD #1;
+                output  [7:0] errTag  PHOLD #1;
+                input  errAck PSAMPLE #-1;
+                input  [127:0] errHdr PSAMPLE #-1;
+                input  errForced PSAMPLE #-1;
+                input  err PSAMPLE #-1;
+                input clk CLOCK; }
+
+
+ 
+ 
+#endif  // ILU_PEU_IF_VRI
+
+  

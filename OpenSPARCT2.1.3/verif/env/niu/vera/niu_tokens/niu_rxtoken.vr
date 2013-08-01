@@ -1,0 +1,130 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_rxtoken.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+
+// Check these
+#include "pcg_defines.vri"
+#include "pcg_types.vri"
+#include "pack_db.vrh"
+#include "flow_db.vrh"
+#include "flow_db_tasks.vrh"
+#include "pg_top_pp.vrh"
+#include "pc_top_pp.vrh"
+#include "pcg_token.vrh"
+#include "niu_rxtoken.vri"
+#include "niu_errclass.vrh"
+
+
+class CRxTestClass {
+   integer valid;
+   integer noOfsemIds;
+   integer semId[];
+   integer test_defines;
+   CNiuErrors errors;
+   task new((integer i = 0)) {
+   	valid = i;
+	test_defines = 0;
+        errors = new();
+   }
+}
+class CRxErrorInfo {
+   // Members for Network Errors
+   integer error_code;
+   integer error_data;
+   // Members for Internal Errors
+     
+   // Members for Host Errors
+     
+   task new() {
+      error_code =0; // no error
+   }
+   
+}
+
+class CRxToken { // This should be extended from the main token ..
+   integer id;
+   integer dma_num;
+   integer port_num;
+   integer pkt_length;
+   integer pkt_type; // To indicate if this packetis to be dropped by rdmc or not
+   integer valid;
+   CpgToken pgToken;
+   integer last_packet;
+
+   CRxErrorInfo error_info; 
+   CRxTestClass rx_test_class;
+   
+  // byte array for 18B control header information
+   byte_array rx_cntl_hdr;
+ 
+  // DMA Related variables
+   integer jumbo_pkt; // To be used for descriptor sche
+   integer header_length;
+   bit [63:0] packet_start_address[3];
+   bit [63:0] packet_virtaddress[3];
+   bit [63:0] packet_end_address[3];
+   bit [63:0] cr_address;
+
+   integer NoOfScatter;
+   bit [1:0] bufsz;
+   integer bytesperchunk[3];
+
+   task new(integer i = -1) {
+         id = i;
+         jumbo_pkt = 0;
+         last_packet = 0;
+         valid = 0;
+         header_length = 0;
+	 error_info = new();
+	 rx_test_class = new();
+ 	 rx_cntl_hdr = new();
+   }
+
+   task print() {
+    printf(" TOKEN DEBUG id - %d port_num - %d dma_num - %d \n",id,port_num,dma_num);
+   }
+  function integer getPktClass() {
+	// Encoding based upon RDMC completion ring entry
+  integer frame_class;
+  frame_class = pgToken.pack_db.frame.frame_class;
+  getPktClass = frame_class;
+  }
+  function integer getErrorCode() {
+    getErrorCode = error_info.error_code;
+  }
+
+
+}

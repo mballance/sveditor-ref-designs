@@ -1,0 +1,362 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: N2DMAPEUCtx.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class DMAPEUCtx extends PEUCtxBase 
+  {
+  public string f_mode;				// To allow non 'random' noise
+  // local integer f_index;
+  integer f_index;
+  local bit[3:0] f_first;
+  local bit[3:0] f_last;
+  local bit[2:0] f_rc;
+  local integer f_len;
+
+  integer f_rdWeight;				// Relative # of memory-reads
+  integer f_wrWeight;				// Relative # of memory-writes
+  integer f_msgWeight;				// Relative # of messages
+  integer f_poisonPct;				// % of memory-reads w bad data
+  integer f_maxPayloadPct;			// % of memory-writes w max data
+
+  task new( string a_name, PEUTestEnv a_env, string a_mode )
+    {
+    super.new(a_name,a_env);
+    f_mode = a_mode;
+    f_index = 0;
+    f_first = 0;
+    f_last = 0;
+    f_len = 0;
+    f_rc = 0;
+    f_rdWeight = 0;
+    f_wrWeight = 0;
+    f_msgWeight = 0;
+    f_poisonPct = 0;
+    f_maxPayloadPct = -1;
+    }
+
+  task Execute()
+    {
+    super.Execute();
+    }
+
+  protected function CTStrategyBase ProvideStrategy()
+    {
+    PEUStrBase nullStr;
+    DmaWrPEUStr dmaWr;
+    DmaRdPEUStr dmaRd;
+    DmaMsgPEUStr dmaMsg;
+    integer dwbe;
+    integer maxLen;
+
+					// If the "StratStop" (within the base
+					// context class) has been set, then
+					// just return a base context which
+					// does nothing.
+    if ( this.StratStop ) 
+      {
+      nullStr = new( f_env );
+      ProvideStrategy = nullStr;
+      }
+
+					// The directed (memory) write test
+                                        // does every possible DWBE.  That's
+					// any "firstDWBE" for 1-DW payloads
+					// (including zero), and any non-zero
+					// DWBE (first and last) for 2-DWs on
+					// a quad-word boundary, and any of the
+					// four contiguous DWBE values for all
+					// other payloads.
+    else if ( f_mode == "write" )
+      {
+      dmaWr = new( f_env );
+					// len=1... any firstDWBE value
+      if ( f_index == 0 )
+        {
+        dmaWr.SetLen(1);
+        dmaWr.SetFirstDWBE(f_first);
+        f_first = f_first + 1;
+        if ( f_first == 0 ) f_index = f_index + 1;
+        }
+
+					// len=2 on QW boundary... any non-zero
+					// firstDWBE and lastDWBE value
+      else if ( f_index == 1 )
+        {
+        if ( f_first == 0 ) f_first = 1;
+        if ( f_last == 0 ) f_last = 1;
+        dmaWr.SetLen(2);
+        dmaWr.SetAddrBndy( 8 * (urandom()%8) );
+        dmaWr.SetLastDWBE( f_last );
+        dmaWr.SetFirstDWBE( f_first );
+        f_last = f_last + 1;
+        if ( f_last == 0 ) f_first = f_first + 1;
+        if ( f_first == 0 ) f_index = f_index + 1;
+        }
+
+					// Otherwise, hit every length and every
+					// contiguous first/lastDWBE value
+      else if ( f_index <= 16 )
+        {
+        if ( f_first == 0 ) f_first = 4'hf;
+        if ( f_last == 0 ) f_last = 4'hf;
+        dmaWr.SetLen( f_index );
+        if ( f_index == 2 ) dmaWr.SetAddrBndy( 4 );
+        dmaWr.SetLastDWBE( f_last );
+        dmaWr.SetFirstDWBE( f_first );
+        f_last = f_last >> 1;
+        if ( f_last == 0 ) f_first = f_first << 1;
+        if ( f_first == 0 ) f_index = f_index + 1;
+        }
+
+      // If we fell through, then anything will do.
+      ProvideStrategy = dmaWr;
+      }
+
+					// The directed memory-read test
+                                        // does every possible length and 
+					// offset through a 64-byte cache line.
+    else if ( f_mode == "read" || f_mode == "readUC" )
+      {
+      dmaRd = new( f_env );
+
+      if ( f_len == 0 || f_len + f_index >= 16 )
+        {
+        f_len = f_len + 1;
+        f_index = 0;
+        }
+      else
+        {
+        f_index = f_index + 1;
+        }
+      if ( f_len > 16 ) 
+        {
+        f_len = 1;
+        }
+      
+      dmaRd.SetLen( f_len );
+      dmaRd.SetAddrBndy( 4*f_index );
+      if ( f_mode == "readUC" ) dmaRd.SetUC( f_index % 2 );
+
+      ProvideStrategy = dmaRd;
+      }
+
+                                        // The "max read"  is used for injected
+                                        // retry parity errors. It just does
+                                        // reads of the maximum size allowed
+    else if ( f_mode == "max read" )
+      {
+      dmaRd = new( f_env );
+      dmaRd.SetLen( 512 );
+      ProvideStrategy = dmaRd;
+      }
+
+					// The "bulk write" test makes sure that
+					// the lengths up to the maximum are
+					// supported, and that the ILU can
+					// handle cases where the IDB wraps.
+    else if ( f_mode == "bulk write" )
+      {
+      dmaWr = new( f_env );
+      maxLen = f_env.getMaxPayloadSize();
+
+      f_index = f_index + 1;
+      if ( f_index*4 < maxLen )
+        dmaWr.SetLen( f_index + 1 );
+
+      ProvideStrategy = dmaWr;
+      }
+
+					// The "bulk read" test makes sure that
+					// the ILU wraps around the DOU.
+    else if ( f_mode == "bulk read" )
+      {
+      dmaRd = new( f_env );
+      maxLen = f_env.getMaxPayloadSize();
+
+					// The first strategy will perform a
+					// 2DW read which crosses the DOU
+					// block boundary (or RCB).
+      f_index = f_index + 1;
+//      if ( f_index == 1 )
+//        {
+//        dmaRd.SetLen( f_index + 1 );
+
+//        }
+
+					// Try max request-size 
+      if ( f_index == 1 )
+        {
+        dmaRd.SetLen( f_env.getMaxRequestSize() / 4 );
+        }
+//      else if ( f_index < 64 && f_index*4 < maxLen )
+//        dmaRd.SetLen( f_index + 1 );
+      else if( f_index < (f_env.getMaxRequestSize()/4) ) 
+        {
+        dmaRd.SetLen( f_index );
+        }
+      else 
+        {
+        dmaRd.SetLen( (f_env.getMaxRequestSize()/4) % f_index );
+        }
+
+      ProvideStrategy = dmaRd;
+      }
+
+					// The "bulk read" test makes sure that
+					// the ILU wraps around the DOU.
+    else if ( f_mode == "err read" )
+      {
+      dmaRd = new( f_env );
+      maxLen = f_env.getMaxRequestSize();
+
+					// A multiple of 3, 5, or 7? A single
+					// DOU-block request.
+      f_index = f_index + 1;
+      if ( f_index % 3 == 0 || f_index % 5 == 0 || f_index % 7 == 0 )
+        {
+        dmaRd.SetLen( (f_index % 16) + 1 );
+        }
+
+					// Try every request-size up to the max.
+      else if ( f_index < 64 && f_index*4 < maxLen )
+        dmaRd.SetLen( f_index + 1 );
+      else if ( (f_index-63)*16 <= maxLen )
+        dmaRd.SetLen( (f_index-63)*16 );
+
+					// Not every request is poisoned.
+      if ( urandom()%100 < f_poisonPct ) dmaRd.f_poison = 1;
+
+      ProvideStrategy = dmaRd;
+      }
+
+					// The directed message test
+                                        // does every valid message code and 
+					// every valid routing code.
+                                        // N2 - Since each message type only has
+                                        //  one valid routing code - change this
+                                        //  test 
+    else if ( f_mode == "message" )
+      {
+      dmaMsg = new( f_env );
+      dmaMsg.SetRoutingCode( f_rc );
+      case( f_index )
+        {
+        0: dmaMsg.SetMsgCode( PEC_PCI__MSG_CODE_ASSERT_INTA );
+        1: dmaMsg.SetMsgCode( PEC_PCI__MSG_CODE_ASSERT_INTB );
+        2: dmaMsg.SetMsgCode( PEC_PCI__MSG_CODE_ASSERT_INTC );
+        3: dmaMsg.SetMsgCode( PEC_PCI__MSG_CODE_ASSERT_INTD );
+        4: dmaMsg.SetMsgCode( PEC_PCI__MSG_CODE_DEASSERT_INTA );
+        5: dmaMsg.SetMsgCode( PEC_PCI__MSG_CODE_DEASSERT_INTB );
+        6: dmaMsg.SetMsgCode( PEC_PCI__MSG_CODE_DEASSERT_INTC );
+        7: dmaMsg.SetMsgCode( PEC_PCI__MSG_CODE_DEASSERT_INTD );
+        8: dmaMsg.SetMsgCode( PEC_PCI__MSG_CODE_PM_PME );
+        9: dmaMsg.SetMsgCode( PEC_PCI__MSG_CODE_PM_TO_ACK );
+        10: dmaMsg.SetMsgCode( PEC_PCI__MSG_CODE_ERR_COR );
+        11: dmaMsg.SetMsgCode( PEC_PCI__MSG_CODE_ERR_NONFATAL );
+        12: dmaMsg.SetMsgCode( PEC_PCI__MSG_CODE_ERR_FATAL );
+        13: dmaMsg.SetMsgCode( PEC_PCI__MSG_CODE_VENDOR_TYPE_1 );
+        // PEC_PCI__MSG_CODE_ATTN is not supported by FIRE
+        }
+
+        if( f_index <= 7 ){
+           dmaMsg.SetRoutingCode( 3'b100 );
+        }
+        else if( f_index == 8 ){
+           dmaMsg.SetRoutingCode( 3'b000 );
+        }
+        else if( f_index == 9 ){
+           dmaMsg.SetRoutingCode( 3'b101 );
+        }
+        else if( f_index >= 10 && f_index <= 12 ){
+           dmaMsg.SetRoutingCode( 3'b000 );
+        }
+//N2 review        else if( f_index == 13 ){
+//N2 review           dmaMsg.SetRoutingCode( 3'b000 );
+//N2 review           dmaMsg.SetRoutingCode( 3'b010 );
+//N2 review           dmaMsg.SetRoutingCode( 3'b011 );
+//N2 review           dmaMsg.SetRoutingCode( 3'b100 );
+//N2 review        }
+      f_index = f_index + 1;
+//N2 review VENDOR_TYPE_1       if ( f_index > 13 )
+      if ( f_index > 12 )
+        {
+        f_index = 0;
+        //N2 f_rc = f_rc + 1;
+        }
+
+      ProvideStrategy = dmaMsg;
+      }
+
+					// A random test? Then just supply any
+					// legit request or message.
+    else
+      {
+      if ( f_wrWeight < 0 ) f_wrWeight = 0;
+      if ( f_rdWeight < 0 ) f_rdWeight = 0;
+      if ( f_msgWeight < 0 ) f_msgWeight = 0;
+      if ( f_wrWeight + f_rdWeight + f_msgWeight == 0 ) 
+        {
+        f_wrWeight = 10;
+        f_rdWeight = 10;
+        f_msgWeight = 5;
+        }
+      randcase
+        {
+        f_wrWeight: { 
+                    dmaWr = new( f_env ); 
+                    ProvideStrategy = dmaWr; 
+                    if ( f_maxPayloadPct >= 0
+                      && urandom()%100 < f_maxPayloadPct )
+                      {
+                      dmaWr.SetLen( f_env.getMaxPayloadSize() / 4 );
+                      }
+                    }
+        f_rdWeight: { 
+                    dmaRd = new( f_env ); 
+                    if ( urandom()%100 < f_poisonPct ) dmaRd.f_poison = 1;
+                    ProvideStrategy = dmaRd;
+                    }
+        f_msgWeight:{ 
+                    dmaMsg = new( f_env ); 
+                    ProvideStrategy = dmaMsg; 
+                    }
+        }
+      }
+    } /* end ProvideStrategy */
+    
+  protected function CTStrategyBase FinalizeParms( CTStrategyBase a_strategy )
+    {
+    FinalizeParms = a_strategy;
+    } /* end FinalizeParms */
+
+  } /* end DMAPECCtx */ 

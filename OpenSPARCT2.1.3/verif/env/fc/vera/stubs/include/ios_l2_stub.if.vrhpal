@@ -1,0 +1,86 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ios_l2_stub.if.vrhpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#inc "ios_l2_stub_inc.pal"
+
+#ifndef INC_IOS_IF_VRH
+#define INC_IOS_IF_VRH
+
+#include "top_defines.vrh"
+
+.for($b=0; $b<$BANKS; $b++) {
+interface l2_${b}_req {
+ input          clk     CLOCK                          verilog_node "`SII.l2clk";
+ input          req_vld INPUT_EDGE      INPUT_SKEW     verilog_node "`SII.sii_l2t${b}_req_vld";
+ input [31:0]   req     INPUT_EDGE      INPUT_SKEW     verilog_node "`SII.sii_l2t${b}_req";
+ input [6:0]    ecc     INPUT_EDGE      INPUT_SKEW     verilog_node "`SII.sii_l2b${b}_ecc";
+}
+
+.}
+
+.for($b=0; $b<8; $b++) {
+interface fc_l2b${b}_sio{
+#ifndef GATESIM
+ input		clk	     CLOCK                     verilog_node "`CPU.l2b${b}.gclk";
+ //input	clk	     CLOCK    verilog_node "`CPU.l2b${b}.rdmard.l2clk"; // doesn't toggle when the bank is disabled
+ input		l2t_ctag_vld INPUT_EDGE	INPUT_SKEW     verilog_node "`CPU.l2b${b}.rdmard.l2t_l2b_ctag_en_c7_reg";
+ input [31:0]	l2t_ctag     INPUT_EDGE	INPUT_SKEW     verilog_node "`CPU.l2b${b}.rdmard.l2t_l2b_ctag_c7";
+ input		l2t_data_vld INPUT_EDGE	INPUT_SKEW     verilog_node "`CPU.l2b${b}.rdmard.l2t_l2b_we_c8";
+ input [623:0]	l2t_data     INPUT_EDGE	INPUT_SKEW     verilog_node "`CPU.l2b${b}.rdmard.l2d_l2b_decc_out_c8";
+#else
+ input		clk	CLOCK		verilog_node "`SIO.l2clk";
+ input		l2_ctag_vld INPUT_EDGE	INPUT_SKEW	verilog_node "`SIO.l2b${b}_sio_ctag_vld";
+ input [31:0]	l2_data	INPUT_EDGE	INPUT_SKEW	verilog_node "`SIO.l2b${b}_sio_data";
+#endif
+}
+.}
+
+.for($b=0; $b<8; $b++) {
+interface fc_l2b${b}_sio_fcerr{
+ input          clk     CLOCK           verilog_node "`SIO.l2clk";
+ input          l2_ctag_vld INPUT_EDGE  INPUT_SKEW      verilog_node "`SIO.l2b${b}_sio_ctag_vld";
+ input [31:0]   l2_data INPUT_EDGE      INPUT_SKEW      verilog_node "`SIO.l2b${b}_sio_data";
+}
+.}
+
+interface ncu_pb {
+ input	pm	INPUT_EDGE      INPUT_SKEW      verilog_node "`SII.ncu_sii_pm";
+ input	ba01	INPUT_EDGE      INPUT_SKEW      verilog_node "`SII.ncu_sii_ba01";
+ input	ba23	INPUT_EDGE      INPUT_SKEW      verilog_node "`SII.ncu_sii_ba23";
+ input	ba45	INPUT_EDGE      INPUT_SKEW      verilog_node "`SII.ncu_sii_ba45";
+ input	ba67	INPUT_EDGE      INPUT_SKEW      verilog_node "`SII.ncu_sii_ba67";
+}
+
+#endif
+

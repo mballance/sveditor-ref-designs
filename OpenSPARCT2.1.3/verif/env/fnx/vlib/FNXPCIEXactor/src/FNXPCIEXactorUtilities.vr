@@ -1,0 +1,884 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: FNXPCIEXactorUtilities.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+// FNX Basic Utilities Library
+#include "FNXBasicUtilities.vrh"
+
+// DenaliPCIE libary
+#include "DenaliPCIE.vri"
+
+// FNXPCIEXactor library
+#include "FNXPCIEXactorDefines.vri"
+
+// report library
+#include "cReport.vrh"
+#include "FNXPCIEXactorReportMacros.vri"
+
+class FNXPCIEXactorUtilities {
+
+  // Base Class and Method Names For QR Macros
+  local string ClassName  = "FNXPCIEXactorUtilities";
+  local string MethodName = null;
+
+  // private members
+  local ReportClass MyReport;
+  local string XactorName;
+
+  // public members
+  FNXRandomUtil RandUtil;
+  
+  // constructor
+  task new( ReportClass _Report, string _XactorName );
+
+  // public methods
+  function integer FindXValues( bit [FNX_PCIE_XTR_EXPECT_PKT_MAX-1:0] Pkt );
+  function bit PacketEquals( bit [FNX_PCIE_XTR_EXPECT_PKT_MAX-1:0] PktA, 
+                             bit [FNX_PCIE_XTR_EXPECT_PKT_MAX-1:0] PktB );
+  function bit TypeIsMsg( bit [FNX_PCIE_XTR_CMN_TYPE_WIDTH-1:0] type );
+  function bit TypeIsMsgD( bit [FNX_PCIE_XTR_CMN_TYPE_WIDTH-1:0] type );
+  function bit FmtTypeIsMsg( bit [FNX_PCIE_XTR_CMN_FMT_TYPE_WIDTH-1:0] fmtType);
+  function bit FmtTypeIsMsgD( bit [FNX_PCIE_XTR_CMN_FMT_TYPE_WIDTH-1:0] fmtType );
+
+  // denali utility methods (bits -> enums)
+  function denaliPcieTlpMsgTypeT MsgCodeToType( bit [FNX_PCIE_XTR_MSG_MESSAGE_CODE_WIDTH-1:0] msg_code );
+  function denaliPcieTlpVDMsgRoutingTypeT MsgRoutingToType( bit [FNX_PCIE_XTR_MSG_ROUTING_WIDTH-1:0] msg_routing );
+  function denaliPcieDllpTypeT DllpTypeToType( bit [FNX_PCIE_XTR_DLLP_TYPE_WIDTH-1:0] DllpType );
+
+  // denali utility methods (integers -> strings)
+  function string denaliRegNumToStr( integer regNum );
+
+  // pcie code -> string conversion methods
+  function string PktTypeToStr( bit [FNX_PCIE_XTR_PKT_TYPE_WIDTH-1:0] pktType );
+  function string DenPktTypeToStr( denaliPciePktTypeT pktType );
+  function string FmtToStr( bit [FNX_PCIE_XTR_CMN_FORMAT_WIDTH-1:0] fmt );
+  function string TypeToStr( bit[FNX_PCIE_XTR_CMN_TYPE_WIDTH-1:0] type );
+  function string FmtTypeToStr( bit[FNX_PCIE_XTR_CMN_FMT_TYPE_WIDTH-1:0] fmtType );
+  function string MsgCodeToStr( bit [FNX_PCIE_XTR_MSG_MESSAGE_CODE_WIDTH-1:0] MsgCode );
+  function string MsgRoutingToStr( bit [FNX_PCIE_XTR_MSG_ROUTING_WIDTH-1:0] MsgRouting );
+  function string CmplStatusToStr( bit[FNX_PCIE_XTR_CMPL_CMPL_STATUS_WIDTH-1:0] CmplStatus );
+  function string DllpTypeToStr( bit [FNX_PCIE_XTR_DLLP_TYPE_WIDTH-1:0] DllpType );
+
+  // misc string conversion methods
+  function string PyldToStr( bit [7:0] pyld[*], string prefixStr, string name );
+  function string ByteStreamToStr( bit[8:0] byteStrm[*], string prefixStr, string name );
+  function string DenaliPktToStr( denaliPciePacket denPkt, integer portNum );
+
+  // denali utility methods (enums -> integer encodings)
+  function integer denaliFCTypeToInt( denaliPcieFcTypeT denFcType );
+
+  // denali utility methods (integer encodings -> enums)
+  function denaliPcieFcTypeT FCEncToDenaliType( integer fcEnc );
+}
+
+
+// constructor
+task FNXPCIEXactorUtilities::new( ReportClass _Report, string _XactorName ) {
+  MyReport = _Report;
+  XactorName = _XactorName;
+  RandUtil = new(MyReport);
+}
+
+// This function returns 1 if X's or Z's are found within the given bit array.
+function integer FNXPCIEXactorUtilities::FindXValues( bit [FNX_PCIE_XTR_EXPECT_PKT_MAX-1:0] Pkt)
+{
+  FindXValues = (^Pkt) === 1'bx;
+}
+
+// This function returns 1 if PktA and PktB are the same. It allows "wildcards"
+function bit FNXPCIEXactorUtilities::PacketEquals( bit [FNX_PCIE_XTR_EXPECT_PKT_MAX-1:0] PktA, 
+						   bit [FNX_PCIE_XTR_EXPECT_PKT_MAX-1:0] PktB )
+{  
+  if (PktA =?= PktB)
+    PacketEquals = 1'b1;  
+  else
+    PacketEquals = 1'b0;
+}
+
+function denaliPcieTlpMsgTypeT FNXPCIEXactorUtilities::MsgCodeToType( bit [FNX_PCIE_XTR_MSG_MESSAGE_CODE_WIDTH-1:0] msg_code )
+{
+  case (msg_code) {
+    FNX_PCIE_XTR_MSG_CODE_INTX_ASSERT_A         : MsgCodeToType = DENALI_PCIE_TL_MSG_INTX_ASSERT_A;
+    FNX_PCIE_XTR_MSG_CODE_INTX_ASSERT_B         : MsgCodeToType = DENALI_PCIE_TL_MSG_INTX_ASSERT_B;
+    FNX_PCIE_XTR_MSG_CODE_INTX_ASSERT_C         : MsgCodeToType = DENALI_PCIE_TL_MSG_INTX_ASSERT_C;
+    FNX_PCIE_XTR_MSG_CODE_INTX_ASSERT_D         : MsgCodeToType = DENALI_PCIE_TL_MSG_INTX_ASSERT_D;
+    FNX_PCIE_XTR_MSG_CODE_INTX_DEASSERT_A       : MsgCodeToType = DENALI_PCIE_TL_MSG_INTX_DEASSERT_A;
+    FNX_PCIE_XTR_MSG_CODE_INTX_DEASSERT_B       : MsgCodeToType = DENALI_PCIE_TL_MSG_INTX_DEASSERT_B;
+    FNX_PCIE_XTR_MSG_CODE_INTX_DEASSERT_C       : MsgCodeToType = DENALI_PCIE_TL_MSG_INTX_DEASSERT_C;
+    FNX_PCIE_XTR_MSG_CODE_INTX_DEASSERT_D       : MsgCodeToType = DENALI_PCIE_TL_MSG_INTX_DEASSERT_D;
+    FNX_PCIE_XTR_MSG_CODE_PM_ACTIVE_STATE_NAK   : MsgCodeToType = DENALI_PCIE_TL_MSG_PM_Active_State_Nak;
+    FNX_PCIE_XTR_MSG_CODE_PM_PME                : MsgCodeToType = DENALI_PCIE_TL_MSG_PM_PME;
+    FNX_PCIE_XTR_MSG_CODE_PME_TURN_OFF          : MsgCodeToType = DENALI_PCIE_TL_MSG_PME_Turn_Off;
+    FNX_PCIE_XTR_MSG_CODE_PME_TO_ACK            : MsgCodeToType = DENALI_PCIE_TL_MSG_PME_TO_Ack;
+    FNX_PCIE_XTR_MSG_CODE_ERR_COR               : MsgCodeToType = DENALI_PCIE_TL_MSG_ERR_COR;
+    FNX_PCIE_XTR_MSG_CODE_ERR_NONFATAL          : MsgCodeToType = DENALI_PCIE_TL_MSG_ERR_NONFATAL;
+    FNX_PCIE_XTR_MSG_CODE_ERR_FATAL             : MsgCodeToType = DENALI_PCIE_TL_MSG_ERR_FATAL;
+    FNX_PCIE_XTR_MSG_CODE_LOCK_UNLOCK           : MsgCodeToType = DENALI_PCIE_TL_MSG_LOCK_Unlock;
+    FNX_PCIE_XTR_MSG_CODE_SLOT_POWER_LIMIT      : MsgCodeToType = DENALI_PCIE_TL_MSG_SLOT_Power_Limit;
+    FNX_PCIE_XTR_MSG_CODE_VD_TYPE0              : MsgCodeToType = DENALI_PCIE_TL_MSG_VD_Type0;
+    FNX_PCIE_XTR_MSG_CODE_VD_TYPE1              : MsgCodeToType = DENALI_PCIE_TL_MSG_VD_Type1;
+    FNX_PCIE_XTR_MSG_CODE_HP_POWER_ON           : MsgCodeToType = DENALI_PCIE_TL_MSG_HP_Power_On;
+    FNX_PCIE_XTR_MSG_CODE_HP_POWER_OFF          : MsgCodeToType = DENALI_PCIE_TL_MSG_HP_Power_Off;
+    FNX_PCIE_XTR_MSG_CODE_HP_POWER_BLINK        : MsgCodeToType = DENALI_PCIE_TL_MSG_HP_Power_Blink;
+    FNX_PCIE_XTR_MSG_CODE_HP_ATTENTION_PRESSED  : MsgCodeToType = DENALI_PCIE_TL_MSG_HP_Attention_Pressed;
+    FNX_PCIE_XTR_MSG_CODE_HP_ATTENTION_ON       : MsgCodeToType = DENALI_PCIE_TL_MSG_HP_Attention_On;
+    FNX_PCIE_XTR_MSG_CODE_HP_ATTENTION_OFF      : MsgCodeToType = DENALI_PCIE_TL_MSG_HP_Attention_Off;
+    FNX_PCIE_XTR_MSG_CODE_HP_ATTENTION_BLINK    : MsgCodeToType = DENALI_PCIE_TL_MSG_HP_Attention_Blink;
+    default : MsgCodeToType = DENALI_PCIE_TL_MSG_UNKNOWN;
+  }
+}
+
+function denaliPcieTlpVDMsgRoutingTypeT FNXPCIEXactorUtilities::MsgRoutingToType( bit [FNX_PCIE_XTR_MSG_ROUTING_WIDTH-1:0] msg_routing )
+{
+  case (msg_routing) {
+    FNX_PCIE_XTR_MSG_ROUTING_ROUTED_TO_ROOT_CMPLX  : MsgRoutingToType = DENALI_PCIE_TL_VDMSG_ROUT_to_RC;
+    FNX_PCIE_XTR_MSG_ROUTING_ROUTED_BY_ID          : MsgRoutingToType = DENALI_PCIE_TL_VDMSG_ROUT_by_ID;
+    FNX_PCIE_XTR_MSG_ROUTING_BCAST_FROM_ROOT_CMPLX : MsgRoutingToType = DENALI_PCIE_TL_VDMSG_ROUT_RC_broadcast;
+    FNX_PCIE_XTR_MSG_ROUTING_LOCAL                 : MsgRoutingToType = DENALI_PCIE_TL_VDMSG_ROUT_local_terminate;
+    FNX_PCIE_XTR_MSG_ROUTING_ROUTED_BY_ADDR,
+      FNX_PCIE_XTR_MSG_ROUTING_GNR_TO_ROOT_CMPLX : MsgRoutingToType = DENALI_PCIE_TL_VDMSG_ROUT_Unknown;
+    default : MsgRoutingToType = DENALI_PCIE_TL_VDMSG_ROUT_Unknown;
+  }
+}
+
+function denaliPcieDllpTypeT FNXPCIEXactorUtilities::DllpTypeToType( bit [FNX_PCIE_XTR_DLLP_TYPE_WIDTH-1:0] DllpType )
+{
+  case (DllpType) {
+    FNX_PCIE_XTR_DLLP_TYPE_ACK                 : DllpTypeToType = DENALI_PCIE_DL_ACK;
+    FNX_PCIE_XTR_DLLP_TYPE_NAK                 : DllpTypeToType = DENALI_PCIE_DL_NAK;
+    FNX_PCIE_XTR_DLLP_TYPE_PM_ENTER_L1         : DllpTypeToType = DENALI_PCIE_DL_PM_ENTER_L1;
+    FNX_PCIE_XTR_DLLP_TYPE_PM_ENTER_L23        : DllpTypeToType = DENALI_PCIE_DL_PM_ENTER_L23;
+    FNX_PCIE_XTR_DLLP_TYPE_PM_ACTIVE_ST_REQ_L1 : DllpTypeToType = DENALI_PCIE_DL_PM_ACTIVE_STATE_REQUEST_L1;
+    FNX_PCIE_XTR_DLLP_TYPE_PM_REQUEST_ACK      : DllpTypeToType = DENALI_PCIE_DL_PM_REQUEST_ACK;
+    FNX_PCIE_XTR_DLLP_TYPE_VENDOR              : DllpTypeToType = DENALI_PCIE_DL_VENDOR;   
+    default : {
+      case (DllpType[FNX_PCIE_XTR_DLLP_FC_TYPE_TYPE_INT_SLC]) {
+	FNX_PCIE_XTR_FC_DLLP_TYPE_INIT_FC1_P    : DllpTypeToType = DENALI_PCIE_DL_INIT_FC1_P;
+	FNX_PCIE_XTR_FC_DLLP_TYPE_INIT_FC1_NP   : DllpTypeToType = DENALI_PCIE_DL_INIT_FC1_NP;
+	FNX_PCIE_XTR_FC_DLLP_TYPE_INIT_FC1_CPL  : DllpTypeToType = DENALI_PCIE_DL_INIT_FC1_CPL;
+	FNX_PCIE_XTR_FC_DLLP_TYPE_INIT_FC2_P    : DllpTypeToType = DENALI_PCIE_DL_INIT_FC2_P;
+	FNX_PCIE_XTR_FC_DLLP_TYPE_INIT_FC2_NP   : DllpTypeToType = DENALI_PCIE_DL_INIT_FC2_NP;
+	FNX_PCIE_XTR_FC_DLLP_TYPE_INIT_FC2_CPL  : DllpTypeToType = DENALI_PCIE_DL_INIT_FC2_CPL;
+	FNX_PCIE_XTR_FC_DLLP_TYPE_UPDATE_FC_P   : DllpTypeToType = DENALI_PCIE_DL_UPDATE_FC_P;
+	FNX_PCIE_XTR_FC_DLLP_TYPE_UPDATE_FC_NP  : DllpTypeToType = DENALI_PCIE_DL_UPDATE_FC_NP;
+	FNX_PCIE_XTR_FC_DLLP_TYPE_UPDATE_FC_CPL : DllpTypeToType = DENALI_PCIE_DL_UPDATE_FC_CPL;
+	default : DllpTypeToType = DENALI_PCIE_DL_UNKNOWN;
+      }
+    }
+  }
+}
+
+function string FNXPCIEXactorUtilities::PktTypeToStr( bit [FNX_PCIE_XTR_PKT_TYPE_WIDTH-1:0] pktType )
+{
+  case (pktType) {
+    FNX_PCIE_XTR_PKT_TYPE_TLP          : PktTypeToStr = "TLP";
+    FNX_PCIE_XTR_PKT_TYPE_RAW_TLP      : PktTypeToStr = "RAW_TLP";
+    FNX_PCIE_XTR_PKT_TYPE_DLP          : PktTypeToStr = "DLP";
+    FNX_PCIE_XTR_PKT_TYPE_RAW_DLP      : PktTypeToStr = "RAW_DLP";
+    FNX_PCIE_XTR_PKT_TYPE_DLLP         : PktTypeToStr = "DLLP";
+    FNX_PCIE_XTR_PKT_TYPE_PLP          : PktTypeToStr = "PLP";
+    FNX_PCIE_XTR_PKT_TYPE_PLLP         : PktTypeToStr = "PLLP";
+    FNX_PCIE_XTR_PKT_TYPE_ORDERED_SET  : PktTypeToStr = "ORDERED_SET";
+    FNX_PCIE_XTR_PKT_TYPE_RAW_DATA     : PktTypeToStr = "RAW_DATA";
+    FNX_PCIE_XTR_PKT_TYPE_TRAINING_SET : PktTypeToStr = "TRAINING_SET";
+    default : PktTypeToStr = "UNKNOWN";
+  }
+}
+
+function string FNXPCIEXactorUtilities::DenPktTypeToStr( denaliPciePktTypeT pktType )
+{  
+  case (pktType) {
+    DENALI_PCIE__Tlp         : DenPktTypeToStr = "TLP";
+    DENALI_PCIE__RawTlp      : DenPktTypeToStr = "RAW_TLP";
+    DENALI_PCIE__Dlp         : DenPktTypeToStr = "DLP";
+    DENALI_PCIE__RawDlp      : DenPktTypeToStr = "RAW_DLP";
+    DENALI_PCIE__RawDllp     : DenPktTypeToStr = "RAW_DLLP";
+    DENALI_PCIE__Dllp        : DenPktTypeToStr = "DLLP";
+    DENALI_PCIE__Plp         : DenPktTypeToStr = "PLP";
+    DENALI_PCIE__Pllp        : DenPktTypeToStr = "PLLP";
+    DENALI_PCIE__OrderedSet  : DenPktTypeToStr = "ORDERED_SET";
+    DENALI_PCIE__RawData     : DenPktTypeToStr = "RAW_DATA";
+    default : DenPktTypeToStr = "UNKNOWN";
+  }
+}
+
+function string FNXPCIEXactorUtilities::FmtToStr( bit [FNX_PCIE_XTR_CMN_FORMAT_WIDTH-1:0] fmt )
+{
+  string tmp;
+
+  sprintf(tmp, "(%0d'b%b)", FNX_PCIE_XTR_CMN_FORMAT_WIDTH, fmt); 
+
+  case (fmt) {
+    2'b00 : FmtToStr = { "DWs=3,Pyld=N", tmp };
+    2'b01 : FmtToStr = { "DWs=4,Pyld=N", tmp };
+    2'b10 : FmtToStr = { "DWs=3,Pyld=Y", tmp };
+    2'b11 : FmtToStr = { "DWs=4,Pyld=Y", tmp };
+    default : FmtToStr = { "UNKNOWN", tmp };
+  }
+}
+
+function string FNXPCIEXactorUtilities::TypeToStr( bit[FNX_PCIE_XTR_CMN_TYPE_WIDTH-1:0] type )
+{
+  string tmp;
+
+  sprintf(tmp, "(%0d'b%b)", FNX_PCIE_XTR_CMN_TYPE_WIDTH, type);
+
+  TypeToStr = null;
+  if (TypeIsMsg(type) || TypeIsMsgD(type))
+    TypeToStr = { "Msg/MsgD", tmp };
+  
+  if (TypeToStr === null) {
+    case (type) {
+      FNX_PCIE_XTR_TYPE_MRD      : TypeToStr = { "MRd", tmp };
+      FNX_PCIE_XTR_TYPE_MRDLK    : TypeToStr = { "MRdLk", tmp };
+      FNX_PCIE_XTR_TYPE_MWR      : TypeToStr = { "MWr", tmp };
+      FNX_PCIE_XTR_TYPE_IORD     : TypeToStr = { "IORd", tmp };
+      FNX_PCIE_XTR_TYPE_IOWR     : TypeToStr = { "IOWr", tmp };
+      FNX_PCIE_XTR_TYPE_CFGRD0,
+	FNX_PCIE_XTR_TYPE_CFGWR0 : TypeToStr = { "CfgRd0/CfgWr0", tmp };
+      FNX_PCIE_XTR_TYPE_CFGRD1,
+	FNX_PCIE_XTR_TYPE_CFGWR1 : TypeToStr = { "CfgRd1/CfgWr1", tmp };
+      FNX_PCIE_XTR_TYPE_CPL,
+	FNX_PCIE_XTR_TYPE_CPLD   : TypeToStr = { "CplD/CplD", tmp };
+      FNX_PCIE_XTR_TYPE_CPLLK,
+	FNX_PCIE_XTR_TYPE_CPLDLK : TypeToStr = { "CplLk/CplDLk", tmp };
+      default : TypeToStr = { "UNKNOWN", tmp };
+    }
+  }
+}
+
+function string FNXPCIEXactorUtilities::FmtTypeToStr( bit[FNX_PCIE_XTR_CMN_FMT_TYPE_WIDTH-1:0] fmtType )
+{
+  string tmp;
+
+  sprintf(tmp, "(%0d'b%b)", FNX_PCIE_XTR_CMN_FMT_TYPE_WIDTH, fmtType);
+  
+  FmtTypeToStr = null;
+  if (FmtTypeIsMsg(fmtType))
+    FmtTypeToStr = { "Msg", tmp };
+  if (FmtTypeIsMsgD(fmtType))
+    FmtTypeToStr = { "MsgD", tmp };
+
+  if (FmtTypeToStr === null) {
+    case (fmtType) {
+      FNX_PCIE_XTR_FMT_TYPE_MRD_32   : FmtTypeToStr = { "MRd32", tmp };
+      FNX_PCIE_XTR_FMT_TYPE_MRD_64   : FmtTypeToStr = { "MRd64", tmp };
+      FNX_PCIE_XTR_FMT_TYPE_MRDLK_32 : FmtTypeToStr = { "MRdLk32", tmp };
+      FNX_PCIE_XTR_FMT_TYPE_MRDLK_64 : FmtTypeToStr = { "MRdLk64", tmp };
+      FNX_PCIE_XTR_FMT_TYPE_MWR_32   : FmtTypeToStr = { "MWr32", tmp };
+      FNX_PCIE_XTR_FMT_TYPE_MWR_64   : FmtTypeToStr = { "MWr64", tmp };
+      FNX_PCIE_XTR_FMT_TYPE_IORD     : FmtTypeToStr = { "IORd", tmp };
+      FNX_PCIE_XTR_FMT_TYPE_IOWR     : FmtTypeToStr = { "IOWr", tmp };
+      FNX_PCIE_XTR_FMT_TYPE_CFGRD0   : FmtTypeToStr = { "CfgRd0", tmp };
+      FNX_PCIE_XTR_FMT_TYPE_CFGWR0   : FmtTypeToStr = { "CfgWr0", tmp };
+      FNX_PCIE_XTR_FMT_TYPE_CFGRD1   : FmtTypeToStr = { "CfgRd1", tmp };
+      FNX_PCIE_XTR_FMT_TYPE_CFGWR1   : FmtTypeToStr = { "CfgWr1", tmp };
+      FNX_PCIE_XTR_FMT_TYPE_CPL      : FmtTypeToStr = { "Cpl", tmp };
+      FNX_PCIE_XTR_FMT_TYPE_CPLD     : FmtTypeToStr = { "CplD", tmp };
+      FNX_PCIE_XTR_FMT_TYPE_CPLLK    : FmtTypeToStr = { "CplLk", tmp };
+      FNX_PCIE_XTR_FMT_TYPE_CPLDLK   : FmtTypeToStr = { "CplDLk", tmp };
+      default : FmtTypeToStr = { "UNKNOWN", tmp };
+    }
+  }
+}
+
+function string FNXPCIEXactorUtilities::MsgCodeToStr( bit [FNX_PCIE_XTR_MSG_MESSAGE_CODE_WIDTH-1:0] MsgCode )
+{
+  string tmp;
+
+  sprintf(tmp, "(%0d'h%h)", FNX_PCIE_XTR_MSG_MESSAGE_CODE_WIDTH, MsgCode );
+
+  case (MsgCode) {
+    FNX_PCIE_XTR_MSG_CODE_INTX_ASSERT_A        : MsgCodeToStr = { "INTX_ASSERT_A", tmp };
+    FNX_PCIE_XTR_MSG_CODE_INTX_ASSERT_B        : MsgCodeToStr = { "INTX_ASSERT_B", tmp };
+    FNX_PCIE_XTR_MSG_CODE_INTX_ASSERT_C        : MsgCodeToStr = { "INTX_ASSERT_C", tmp };
+    FNX_PCIE_XTR_MSG_CODE_INTX_ASSERT_D        : MsgCodeToStr = { "INTX_ASSERT_D", tmp };
+    FNX_PCIE_XTR_MSG_CODE_INTX_DEASSERT_A      : MsgCodeToStr = { "INTX_DEASSERT_A", tmp };
+    FNX_PCIE_XTR_MSG_CODE_INTX_DEASSERT_B      : MsgCodeToStr = { "INTX_DEASSERT_B", tmp };
+    FNX_PCIE_XTR_MSG_CODE_INTX_DEASSERT_C      : MsgCodeToStr = { "INTX_DEASSERT_C", tmp };
+    FNX_PCIE_XTR_MSG_CODE_INTX_DEASSERT_D      : MsgCodeToStr = { "INTX_DEASSERT_D", tmp };
+    FNX_PCIE_XTR_MSG_CODE_PM_ACTIVE_STATE_NAK  : MsgCodeToStr = { "PM_ACTIVE_STATE_NAK", tmp };
+    FNX_PCIE_XTR_MSG_CODE_PM_PME               : MsgCodeToStr = { "PM_PME", tmp };
+    FNX_PCIE_XTR_MSG_CODE_PME_TURN_OFF         : MsgCodeToStr = { "PME_TURN_OFF", tmp };
+    FNX_PCIE_XTR_MSG_CODE_PME_TO_ACK           : MsgCodeToStr = { "PME_TO_ACK", tmp };
+    FNX_PCIE_XTR_MSG_CODE_ERR_COR              : MsgCodeToStr = { "ERR_COR", tmp };
+    FNX_PCIE_XTR_MSG_CODE_ERR_NONFATAL         : MsgCodeToStr = { "ERR_NONFATAL", tmp };
+    FNX_PCIE_XTR_MSG_CODE_ERR_FATAL            : MsgCodeToStr = { "ERR_FATAL", tmp };
+    FNX_PCIE_XTR_MSG_CODE_LOCK_UNLOCK          : MsgCodeToStr = { "UNLOCK", tmp };
+    FNX_PCIE_XTR_MSG_CODE_SLOT_POWER_LIMIT     : MsgCodeToStr = { "SET_SLOT_POWER_LIMIT", tmp };
+    FNX_PCIE_XTR_MSG_CODE_VD_TYPE0             : MsgCodeToStr = { "VENDOR_DEFINED_TYPE_0", tmp };
+    FNX_PCIE_XTR_MSG_CODE_VD_TYPE1             : MsgCodeToStr = { "VENDOR_DEFINED_TYPE_1", tmp };
+    FNX_PCIE_XTR_MSG_CODE_HP_POWER_ON          : MsgCodeToStr = { "POWER_INDICATOR_ON", tmp };
+    FNX_PCIE_XTR_MSG_CODE_HP_POWER_OFF         : MsgCodeToStr = { "POWER_INDICATOR_OFF", tmp };
+    FNX_PCIE_XTR_MSG_CODE_HP_POWER_BLINK       : MsgCodeToStr = { "POWER_INDICATOR_BLINK", tmp };
+    FNX_PCIE_XTR_MSG_CODE_HP_ATTENTION_PRESSED : MsgCodeToStr = { "ATTENTION_BUTTON_PRESSED", tmp };
+    FNX_PCIE_XTR_MSG_CODE_HP_ATTENTION_ON      : MsgCodeToStr = { "ATTENTION_INDICATOR_ON", tmp };
+    FNX_PCIE_XTR_MSG_CODE_HP_ATTENTION_OFF     : MsgCodeToStr = { "ATTENTION_INDICATOR_OFF", tmp };
+    FNX_PCIE_XTR_MSG_CODE_HP_ATTENTION_BLINK   : MsgCodeToStr = { "ATTENTION_INDICATOR_BLINK", tmp };
+    default : MsgCodeToStr = { "UNKNOWN", tmp };
+  }
+}
+
+function string FNXPCIEXactorUtilities::MsgRoutingToStr( bit [FNX_PCIE_XTR_MSG_ROUTING_WIDTH-1:0] MsgRouting )
+{
+  string tmp;
+
+  sprintf(tmp, "(%0d'h%h)", FNX_PCIE_XTR_MSG_ROUTING_WIDTH, MsgRouting );
+
+  case (MsgRouting) {
+    FNX_PCIE_XTR_MSG_ROUTING_ROUTED_TO_ROOT_CMPLX  : MsgRoutingToStr = { "ROUTED_TO_RC", tmp };
+    FNX_PCIE_XTR_MSG_ROUTING_ROUTED_BY_ADDR        : MsgRoutingToStr = { "ROUTED_BY_ADDR", tmp };
+    FNX_PCIE_XTR_MSG_ROUTING_ROUTED_BY_ID          : MsgRoutingToStr = { "ROUTED_BY_ID", tmp };
+    FNX_PCIE_XTR_MSG_ROUTING_BCAST_FROM_ROOT_CMPLX : MsgRoutingToStr = { "BC_FROM_RC", tmp };
+    FNX_PCIE_XTR_MSG_ROUTING_LOCAL                 : MsgRoutingToStr = { "LOCAL", tmp };
+    FNX_PCIE_XTR_MSG_ROUTING_GNR_TO_ROOT_CMPLX     : MsgRoutingToStr = { "GATHERED_AND_ROUTED_TO_RC", tmp };
+    default : MsgRoutingToStr = { "UNKNOWN", tmp };
+  }
+}
+
+function string FNXPCIEXactorUtilities::CmplStatusToStr( bit[FNX_PCIE_XTR_CMPL_CMPL_STATUS_WIDTH-1:0] CmplStatus )
+{
+  string tmp;
+
+  sprintf(tmp, "(%0d'b%b)", FNX_PCIE_XTR_CMPL_CMPL_STATUS_WIDTH, CmplStatus);
+
+  case (CmplStatus) {
+    FNX_PCIE_XTR_CMPL_STATUS_SC  : CmplStatusToStr = { "SC", tmp };
+    FNX_PCIE_XTR_CMPL_STATUS_UR  : CmplStatusToStr = { "UR", tmp };
+    FNX_PCIE_XTR_CMPL_STATUS_CRS : CmplStatusToStr = { "CRS", tmp };
+    FNX_PCIE_XTR_CMPL_STATUS_CA  : CmplStatusToStr = { "CA", tmp };  
+    default : CmplStatusToStr = { "UNKNOWN", tmp };
+  }  
+}
+
+function string FNXPCIEXactorUtilities::DllpTypeToStr( bit [FNX_PCIE_XTR_DLLP_TYPE_WIDTH-1:0] DllpType )
+{
+  string tmp;
+
+  sprintf(tmp, "(%0d'h%h)", FNX_PCIE_XTR_DLLP_TYPE_WIDTH, DllpType);
+
+  case (DllpType) {
+    FNX_PCIE_XTR_DLLP_TYPE_ACK                 : DllpTypeToStr = { "ACK", tmp };
+    FNX_PCIE_XTR_DLLP_TYPE_NAK                 : DllpTypeToStr = { "NAK", tmp };
+    FNX_PCIE_XTR_DLLP_TYPE_PM_ENTER_L1         : DllpTypeToStr = { "PM_ENTER_L1", tmp };
+    FNX_PCIE_XTR_DLLP_TYPE_PM_ENTER_L23        : DllpTypeToStr = { "PM_ENTER_L23", tmp };
+    FNX_PCIE_XTR_DLLP_TYPE_PM_ACTIVE_ST_REQ_L1 : DllpTypeToStr = { "PM_ACTIVE_ST_REQ_L1", tmp };
+    FNX_PCIE_XTR_DLLP_TYPE_PM_REQUEST_ACK      : DllpTypeToStr = { "REQUEST_ACK", tmp };
+    FNX_PCIE_XTR_DLLP_TYPE_VENDOR              : DllpTypeToStr = { "VENDOR", tmp };   
+    default : {
+      case (DllpType[FNX_PCIE_XTR_DLLP_FC_TYPE_TYPE_INT_SLC]) {
+	FNX_PCIE_XTR_FC_DLLP_TYPE_INIT_FC1_P    : DllpTypeToStr = { "INIT_FC1_P", tmp };
+	FNX_PCIE_XTR_FC_DLLP_TYPE_INIT_FC1_NP   : DllpTypeToStr = { "INIT_FC1_NP", tmp };
+	FNX_PCIE_XTR_FC_DLLP_TYPE_INIT_FC1_CPL  : DllpTypeToStr = { "INIT_FC1_CPL", tmp };
+	FNX_PCIE_XTR_FC_DLLP_TYPE_INIT_FC2_P    : DllpTypeToStr = { "INIT_FC2_P", tmp };
+	FNX_PCIE_XTR_FC_DLLP_TYPE_INIT_FC2_NP   : DllpTypeToStr = { "INIT_FC2_NP", tmp };
+	FNX_PCIE_XTR_FC_DLLP_TYPE_INIT_FC2_CPL  : DllpTypeToStr = { "INIT_FC2_CPL", tmp };
+	FNX_PCIE_XTR_FC_DLLP_TYPE_UPDATE_FC_P   : DllpTypeToStr = { "UPDATE_FC_P", tmp };
+	FNX_PCIE_XTR_FC_DLLP_TYPE_UPDATE_FC_NP  : DllpTypeToStr = { "UPDATE_FC_NP", tmp };
+	FNX_PCIE_XTR_FC_DLLP_TYPE_UPDATE_FC_CPL : DllpTypeToStr = { "UPDATE_FC_CPL", tmp };
+	default : DllpTypeToStr = { "UNKNOWN", tmp };
+      }
+    }
+  }
+}
+
+function bit FNXPCIEXactorUtilities::TypeIsMsg( bit [FNX_PCIE_XTR_CMN_TYPE_WIDTH-1:0] type )
+{
+  if (type[FNX_PCIE_XTR_TYPE_MSG_FIXED_SLC] === FNX_PCIE_XTR_TYPE_MSG_FIXED)
+    TypeIsMsg = 1;
+  else
+    TypeIsMsg = 0;
+}
+
+function bit FNXPCIEXactorUtilities::TypeIsMsgD( bit [FNX_PCIE_XTR_CMN_TYPE_WIDTH-1:0] type )
+{  
+  if (type[FNX_PCIE_XTR_TYPE_MSGD_FIXED_SLC] === FNX_PCIE_XTR_TYPE_MSGD_FIXED)
+    TypeIsMsgD = 1;
+  else
+    TypeIsMsgD = 0;
+}
+
+function bit FNXPCIEXactorUtilities::FmtTypeIsMsg( bit [FNX_PCIE_XTR_CMN_FMT_TYPE_WIDTH-1:0] fmtType )
+{
+  if (fmtType[FNX_PCIE_XTR_FMT_TYPE_MSG_FIXED_SLC] === FNX_PCIE_XTR_FMT_TYPE_MSG_FIXED)
+    FmtTypeIsMsg = 1;
+  else
+    FmtTypeIsMsg = 0;
+}
+
+function bit FNXPCIEXactorUtilities::FmtTypeIsMsgD( bit [FNX_PCIE_XTR_CMN_FMT_TYPE_WIDTH-1:0] fmtType )
+{  
+  if (fmtType[FNX_PCIE_XTR_FMT_TYPE_MSGD_FIXED_SLC] === FNX_PCIE_XTR_FMT_TYPE_MSGD_FIXED)
+    FmtTypeIsMsgD = 1;
+  else
+    FmtTypeIsMsgD = 0;
+}
+
+
+function string FNXPCIEXactorUtilities::ByteStreamToStr( bit[8:0] byteStrm[*], string prefixStr, string name )
+{
+  integer i, j, k;
+  bit [31:0] byteStrm_dws[*], byteStrm_dw;
+  integer numLines, numDWs, extraBytes;
+  bit [7:0] pos1, pos2;
+  bit [8:0] tmpByte;
+
+  sprintf( ByteStreamToStr, "%s         --- %s DWs ---\n", prefixStr, name );
+
+  // Place Byte Stream Into DWs Array
+  k = 0;
+  byteStrm_dws = new[ (byteStrm.size()/4) ];
+  for (i=0; i < byteStrm_dws.size(); i++) {
+    for (j=3; j >= 0; j--) {
+      tmpByte = byteStrm[k++];
+      byteStrm_dw[j*8+7:j*8] = tmpByte[7:0];
+    }
+    byteStrm_dws[i] = byteStrm_dw;
+  }
+
+  // Number of DWs on Last Byte Stream String Line
+  numDWs = byteStrm_dws.size() % 4;
+  
+  // Number of Four DW Lines in String
+  numLines = byteStrm_dws.size() / 4;
+
+  // Number of Bytes in Partial DWs
+  extraBytes = byteStrm.size() % 4;
+
+  // Place Four DW Byte Stream Lines in String
+  k = 0;
+  for (i=0; i < numLines; i++) {
+    pos1 = i*4;
+    pos2 = (i*4)+3;
+    ByteStreamToStr = { ByteStreamToStr, 
+		   psprintf( "%s %h->%h  %h %h %h %h\n",
+			     prefixStr, pos1, pos2, byteStrm_dws[i*4], byteStrm_dws[(i*4)+1], 
+			     byteStrm_dws[(i*4)+2], byteStrm_dws[(i*4)+3] ) };
+  }
+  
+  // Place Last Byte Stream Line in String
+  if (numDWs !== 0) {
+    pos1 = numLines*4;
+    pos2 = numLines*4 + numDWs - 1;
+    if (extraBytes > 0)
+      pos2++;
+    ByteStreamToStr = { ByteStreamToStr, 
+			psprintf( "%s %h->%h  ", 
+				  prefixStr, pos1, pos2 ) };
+    for (i=numLines*4; i < byteStrm_dws.size(); i++)
+      ByteStreamToStr = { ByteStreamToStr, psprintf("%h ", byteStrm_dws[i]) };
+  }
+
+  // Place Partial DW in String
+  if (extraBytes !== 0) {
+    if (numDWs == 0) {
+      pos1 = pos2+1;
+      pos2 = pos1+extraBytes/4;
+      ByteStreamToStr = { ByteStreamToStr, 
+			  psprintf( "%s %h->%h  ",
+				    prefixStr, pos1, pos2 ) };
+    }
+    k = byteStrm.size() - extraBytes;
+    for (i=0; i < extraBytes; i++) {
+      tmpByte = byteStrm[k++];
+      ByteStreamToStr = { ByteStreamToStr, 
+			  psprintf( "%h", tmpByte[7:0] ) };
+    }
+  }
+}
+
+function string FNXPCIEXactorUtilities::DenaliPktToStr( denaliPciePacket denPkt,
+							integer portNum )
+{
+  string tmp, prefixStr, userDataStr;
+  FNXPCIEXactorBasePacket fnxPkt;
+  FNXPCIEXactorBaseUserData userData;
+  denaliPciePktTypeT pktType;
+  denaliPcieTlpIdInfo reqId, cplId, cfgId;
+  denaliPcieErrorTypeT errType;
+  string errTypeStr;
+  bit [8:0] rawData[*];
+  bit [7:0] pyld[*];
+  
+  // All Possible Denali Packet Classes
+  denaliPcieRawDlpPacket  rawDlpPkt;
+  denaliPcieDlpPacket     dlpPkt;
+  denaliPcieTlpPacket     tlpPkt;
+  denaliPcieTlpMsgPacket  tlpMsgPkt;
+  denaliPcieTlpCplPacket  tlpCplPkt;
+  denaliPcieTlpReqPacket  tlpReqPkt;
+  denaliPcieTlpMemPacket  tlpMemPkt;
+  denaliPcieTlpIoPacket   tlpIOPkt;
+  denaliPcieTlpCfgPacket  tlpCfgPkt;
+  denaliPcieOrderedSet    orderedSet;
+  denaliPcieTrainingSet   trainingSet;
+  denaliPcieRawPacket     rawPkt;
+  denaliPcieDllpPacket    dllpPkt;
+  denaliPciePlPacket      plPkt;
+  denaliPciePllpPacket    pllpPkt;
+  denaliPciePlpPacket     plpPkt;
+  
+  if ( denPkt === null ) {
+    DenaliPktToStr = "NULL";
+    return;
+  }
+
+  userDataStr = "";
+  // If Denali Packet Contains an Embedded FNX Packet Return FNX Packet Contents
+  if ( denPkt.getUserData() != null ) {
+    
+    // Retrieve FNX PCIE Packet From Denali Packet's User Data
+    cast_assign( userData, denPkt.getUserData() );
+    fnxPkt = userData.pkt;
+
+    if (fnxPkt != null) {
+      
+      // [review jbanta 10/13/03] Only Print Supported FNX PCIE Packet Types For Now
+      if ( (fnxPkt.PktType == FNX_PCIE_XTR_PKT_TYPE_TLP) || (fnxPkt.PktType == FNX_PCIE_XTR_PKT_TYPE_DLLP) ) {
+	
+	// Retrieve String From FNX PCIE Packet and Return
+	userDataStr = { " User Data's FNX Packet Contents:\n", fnxPkt.PktToStr() };
+      }
+    }
+  }
+  
+  pktType = denPkt.getPktType();
+  sprintf( prefixStr, "DEN_PCIE_%s_%0d", DenPktTypeToStr(pktType), portNum );
+
+  // Extract Error Encoding From Denali Packet and Place Into String
+  if (cast_assign( errType, denPkt.getErr(), CHECK ))
+    sprintf( errTypeStr, "%s(%0d)", errType, denPkt.getErr()  );
+  else
+    sprintf( errTypeStr, "%s(%0d)", "UNKNOWN_ENCODING", denPkt.getErr() );
+  
+  // Add Fields Common To All Denali Packet Classes to String
+  sprintf( tmp, "%s errInject=%s  pktDataLen='h%0h  err=%s\n",
+	   prefixStr, denPkt.getErrInject(), denPkt.getPktDataLen(), errTypeStr );
+  DenaliPktToStr = { DenaliPktToStr, tmp };
+
+  // Add DLLP/PLLP Specific Fields to String
+  if ( (pktType === DENALI_PCIE__Dllp) || (pktType === DENALI_PCIE__Pllp) ) {
+
+    // Extract DLLP Packet From Denali DLLP/PLLP Packet
+    if (pktType === DENALI_PCIE__Dllp)
+      cast_assign( dllpPkt, denPkt );
+    if (pktType === DENALI_PCIE__Pllp) {
+      cast_assign( pllpPkt, denPkt );
+      dllpPkt = pllpPkt.getDllp();
+    }
+    sprintf( tmp, "%s Type=%s SeqNum='h%h  VC='h%h\n",
+	     prefixStr, dllpPkt.getDllpType(), dllpPkt.getSeqNum(), dllpPkt.getVc() );
+    DenaliPktToStr = { DenaliPktToStr, tmp };
+    sprintf( tmp, "%s HdrFC='h%h  DataFC='h%h  LCRC16='h%h  Vendor='h%h",
+	     prefixStr, dllpPkt.getHdrFc(), dllpPkt.getDataFc(), dllpPkt.getLcrc(), dllpPkt.getVendorValue() );
+    DenaliPktToStr = { DenaliPktToStr, tmp };
+    return;
+  }
+
+  // Add PLP/DLP/TLP Specific Fields to String
+  if ( (pktType === DENALI_PCIE__Tlp) || 
+       (pktType === DENALI_PCIE__Plp) ||
+       (pktType === DENALI_PCIE__Dlp) ) {
+    
+    // Extract TLP Packet From Denali TLP/PLP/DLP Packet
+    if (pktType === DENALI_PCIE__Plp) {
+      cast_assign( plpPkt, denPkt );
+      dlpPkt = plpPkt.getDlp();
+      tlpPkt = dlpPkt.getTlp();
+    }
+    if (pktType === DENALI_PCIE__Dlp) {
+      cast_assign( dlpPkt, denPkt );
+      tlpPkt = dlpPkt.getTlp();
+    }
+    if (pktType === DENALI_PCIE__Tlp)
+      cast_assign( tlpPkt, denPkt );
+
+    // Add Common TLP Fields To String
+    sprintf( tmp, "%s Type=%s  TC=%0d'h%h  TD=%0d'b%b\n",
+	     prefixStr, tlpPkt.getTlpType(), FNX_PCIE_XTR_CMN_TC_WIDTH, tlpPkt.getTrafficClass(), 
+	     FNX_PCIE_XTR_CMN_TD_WIDTH, tlpPkt.getHasDigest() );
+    DenaliPktToStr = { DenaliPktToStr, tmp };
+    sprintf( tmp, "%s EP=%0d'b%b  Attr=%0d'b%b Length=%0d'h%h\n",
+	     prefixStr, FNX_PCIE_XTR_CMN_EP_WIDTH, tlpPkt.getIsPoisoned(),
+	     FNX_PCIE_XTR_CMN_ATTR_WIDTH, tlpPkt.getAttr(),
+	     FNX_PCIE_XTR_CMN_LENGTH_WIDTH, tlpPkt.getLength() );
+    DenaliPktToStr = { DenaliPktToStr, tmp };	     
+    
+    // Add TLP Request Packet Fields To String
+    if (cast_assign( tlpReqPkt, tlpPkt, CHECK)) {
+      reqId = tlpReqPkt.getRequesterId();
+      sprintf( tmp, "%s ReqID: BusNum=%0d'h%h  DeviceNum=%0d'h%h  FuncNum=%0d'h%h\n",
+	       prefixStr, FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH, reqId.getBusNumber(),
+	       FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH, reqId.getDeviceNumber(),
+	       FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH, reqId.getFunctionNumber() );
+      DenaliPktToStr = { DenaliPktToStr, tmp };
+      sprintf( tmp, "%s Tag=%0d'h%h(Gen=%0d)  ByteEnables: LastDW=%0d'b%b  FirstDW=%0d'b%b\n",
+	       prefixStr, FNX_PCIE_XTR_REQ_TAG_WIDTH, tlpReqPkt.getTransactionIdTag(),
+	       tlpReqPkt.getModelGensTag(),
+	       FNX_PCIE_XTR_BE_LAST_DW_BE_WIDTH, tlpReqPkt.getLastBe(),
+	       FNX_PCIE_XTR_BE_FIRST_DW_BE_WIDTH, tlpReqPkt.getFirstBe() );
+      DenaliPktToStr = { DenaliPktToStr, tmp };
+
+      // Add Memory Request TLP Packet Fields to String
+      if (cast_assign( tlpMemPkt, tlpPkt, CHECK)) {
+	sprintf( tmp, "%s Address: High=%0d'h%h  Low=%0d'h%h\n",
+		 prefixStr, FNX_PCIE_XTR_ADDR_UPPER_ADDR_WIDTH, tlpMemPkt.getAddressHigh(),
+		 FNX_PCIE_XTR_ADDR_LOWER_ADDR_WIDTH, tlpMemPkt.getAddress() );
+	DenaliPktToStr = { DenaliPktToStr, tmp };
+      }
+
+      // Add IO Request TLP Packet Fields to String
+      if (cast_assign( tlpIOPkt, tlpPkt, CHECK)) {
+	sprintf( tmp, "%s Address: Low=%0d'h%h\n",
+		 prefixStr, FNX_PCIE_XTR_ADDR_LOWER_ADDR_WIDTH, tlpIOPkt.getAddress() );
+	DenaliPktToStr = { DenaliPktToStr, tmp };
+      }
+      
+      // Add Config Request TLP Packet Fields to String
+      if (cast_assign( tlpCfgPkt, tlpPkt, CHECK)) {
+	cfgId = tlpCfgPkt.getCompleterId();
+	sprintf( tmp, "%s CfgID: BusNum=%0d'h%h  DeviceNum=%0d'h%h  FuncNum=%0d'h%h\n",
+		 prefixStr, FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH, cfgId.getBusNumber(),
+		 FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH, cfgId.getDeviceNumber(),
+		 FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH, cfgId.getFunctionNumber() );
+	DenaliPktToStr = { DenaliPktToStr, tmp };
+	sprintf( tmp, "%s Register: ExtNum=%0d'h%h  Num=%0d'h%h\n",
+		 prefixStr, FNX_PCIE_XTR_CFG_EXT_REG_NUM_WIDTH, tlpCfgPkt.getExtRegisterNumber(),
+		 FNX_PCIE_XTR_CFG_REG_NUM_WIDTH, tlpCfgPkt.getRegisterNumber() );
+	DenaliPktToStr = { DenaliPktToStr, tmp };
+      }
+    }
+    
+    // Add Message Request Packet Fields to String
+    if (cast_assign( tlpMsgPkt, tlpPkt, CHECK)) {
+      reqId = tlpMsgPkt.getRequesterId();
+      sprintf( tmp, "%s ReqID: BusNum=%0d'h%h  DeviceNum=%0d'h%h  FuncNum=%0d'h%h\n",
+	       prefixStr, FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH, reqId.getBusNumber(),
+	       FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH, reqId.getDeviceNumber(),
+	       FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH, reqId.getFunctionNumber() );
+      DenaliPktToStr = { DenaliPktToStr, tmp };
+      sprintf( tmp, "%s Tag=%0d'h%h(Gen=%0d)  MsgCode=%s  VdMsgRouting=%s\n",
+	       prefixStr, FNX_PCIE_XTR_REQ_TAG_WIDTH, tlpMsgPkt.getTransactionIdTag(),
+	       tlpMsgPkt.getModelGensTag(), tlpMsgPkt.getMessageType(), tlpMsgPkt.getVdMsgRouting() );
+      DenaliPktToStr = { DenaliPktToStr, tmp };
+    }
+    
+    // Add Completion Packet Fields to String
+    if (cast_assign( tlpCplPkt, tlpPkt, CHECK)) {
+      cplId = tlpCplPkt.getCompleterId();
+      sprintf( tmp, "%s CplID: BusNum=%0d'h%h  DeviceNum=%0d'h%h  FuncNum=%0d'h%h\n",
+	       prefixStr, FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH, cplId.getBusNumber(),
+	       FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH, cplId.getDeviceNumber(),
+	       FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH, cplId.getFunctionNumber() );
+      DenaliPktToStr = { DenaliPktToStr, tmp };
+      reqId = tlpCplPkt.getRequesterId();
+      sprintf( tmp, "%s ReqID: BusNum=%0d'h%h  DeviceNum=%0d'h%h  FuncNum=%0d'h%h\n",
+	       prefixStr, FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH, reqId.getBusNumber(),
+	       FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH, reqId.getDeviceNumber(),
+	       FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH, reqId.getFunctionNumber() );
+      DenaliPktToStr = { DenaliPktToStr, tmp };
+      sprintf( tmp, "%s Tag=%0d'h%h(Gen=%0d)  BCM=%0d'b%b  ByteCount=%0d'h%h  CplStatus=%0d'h%h  LowerAddr=%0d'h%h\n",
+	       prefixStr, FNX_PCIE_XTR_REQ_TAG_WIDTH, tlpCplPkt.getTransactionIdTag(),
+	       tlpCplPkt.getModelGensTag(), FNX_PCIE_XTR_CMPL_BCM_WIDTH, tlpCplPkt.getBcm(),
+	       FNX_PCIE_XTR_CMPL_BYTE_COUNT_WIDTH, tlpCplPkt.getByteCount(),
+	       FNX_PCIE_XTR_CMPL_CMPL_STATUS_WIDTH, tlpCplPkt.getCompletionStatus(),
+	       FNX_PCIE_XTR_CMPL_LOWER_ADDR_WIDTH, tlpCplPkt.getLowAddress() );   
+      DenaliPktToStr = { DenaliPktToStr, tmp };
+    }
+
+    if( cast_assign( dlpPkt, denPkt, CHECK ) ){
+      sprintf( tmp, "%s SeqNum =%0d'h%h  \n", prefixStr, 12, dlpPkt.getTlpSeqNum() );
+      DenaliPktToStr = { DenaliPktToStr, tmp };
+    }
+
+    
+    // Add Packet Payload to String
+    tlpPkt.getPayload( pyld );
+    if (pyld.size() > 0)
+      DenaliPktToStr = { DenaliPktToStr, PyldToStr( pyld, prefixStr, "Payload" ) };
+    
+    return;
+  }
+
+  // Add RAW TLP/DLLP/Data Specific Fields to String
+  if ( (pktType === DENALI_PCIE__RawTlp) ||
+       (pktType === DENALI_PCIE__RawDllp) ||
+       (pktType === DENALI_PCIE__RawData) ) {
+    
+    cast_assign( rawPkt, denPkt);
+    rawPkt.getPktData( rawData );
+    DenaliPktToStr = { DenaliPktToStr, ByteStreamToStr( rawData, prefixStr, "Raw Packet Data" ) };
+    return;
+  }  
+
+  // Add RAW DLP Specific Fields to String
+  if (pktType === DENALI_PCIE__RawDlp) {
+    
+    cast_assign( rawDlpPkt, denPkt );
+    sprintf( tmp, "%s SeqNum=%h  LCRC32=%h\n", prefixStr, rawDlpPkt.getTlpSeqNum(), rawDlpPkt.getLcrc() );
+    DenaliPktToStr = { DenaliPktToStr, tmp };
+    rawDlpPkt.getPktData( rawData );
+    DenaliPktToStr = { DenaliPktToStr, ByteStreamToStr( rawData, prefixStr, "Raw Packet Data" ) };
+    return;
+  }
+
+  // Add Ordered Set Specific Fields to String
+  if (pktType === DENALI_PCIE__OrderedSet) {
+    
+    cast_assign( orderedSet, denPkt );
+
+    sprintf( tmp, "%s OSType=%s\n", prefixStr, orderedSet.getOsType() );
+    DenaliPktToStr = { DenaliPktToStr, tmp };
+    
+    if (cast_assign( trainingSet, denPkt, CHECK)) {
+      sprintf( prefixStr, "DEN_PCIE_TRAINING_SET_%0d", portNum );
+      trainingSet.getLinkNumber( rawData );
+      DenaliPktToStr = { DenaliPktToStr, ByteStreamToStr( rawData, prefixStr, "Link Number" ), "\n" };
+      trainingSet.getLaneNumber( rawData );
+      DenaliPktToStr = { DenaliPktToStr, ByteStreamToStr( rawData, prefixStr, "Lane Number" ), "\n" };
+      trainingSet.getNumFts( rawData );
+      DenaliPktToStr = { DenaliPktToStr, ByteStreamToStr( rawData, prefixStr, "NumFts" ), "\n" };
+      trainingSet.getDataRate( rawData );
+      DenaliPktToStr = { DenaliPktToStr, ByteStreamToStr( rawData, prefixStr, "Data Rate" ), "\n" };
+      trainingSet.getTrainingControl( rawData );
+      DenaliPktToStr = { DenaliPktToStr, ByteStreamToStr( rawData, prefixStr, "Training Control" ), "\n" };
+      trainingSet.getIdentifier( rawData );
+      DenaliPktToStr = { DenaliPktToStr, ByteStreamToStr( rawData, prefixStr, "Identifier" ) };
+      return;
+    }
+
+    orderedSet.getSymbolCount( rawData );
+    DenaliPktToStr = { DenaliPktToStr, ByteStreamToStr( rawData, prefixStr, "Symbol Count" ) };
+    return;
+  }
+
+  DenaliPktToStr = { DenaliPktToStr, userDataStr };
+}
+
+function string FNXPCIEXactorUtilities::PyldToStr( bit [7:0] pyld[*], string prefixStr, string name )
+{
+  integer i, j, k;
+  bit [FNX_PCIE_XTR_DW_WIDTH-1:0] pyld_dws[*], pyld_dw;
+  integer numLines, numDWs;
+  bit [7:0] pos1, pos2;
+
+  sprintf( PyldToStr, "%s         --- %s DWs ---\n", 
+	   prefixStr, name );
+
+  // Place Payload Into DWs Array
+  k = 0;
+  pyld_dws = new[ (pyld.size()/4) ];
+  for (i=0; i < pyld_dws.size(); i++) {
+    for (j=3; j >= 0; j--)
+      pyld_dw[j*8+7:j*8] = pyld[k++];
+    pyld_dws[i] = pyld_dw;
+  }
+
+  // Number of DWs on Last Payload String Line
+  numDWs = pyld_dws.size() % 4;
+  
+  // Number of Four DW Lines in String
+  numLines = pyld_dws.size() / 4;
+
+  // Place Four DW Payload Lines in String
+  k = 0;
+  for (i=0; i < numLines; i++) {
+    pos1 = i*4;
+    pos2 = (i*4)+3;
+    PyldToStr = { PyldToStr, 
+		  psprintf( "%s %h->%h  %h %h %h %h\n",
+			    prefixStr, pos1, pos2, pyld_dws[i*4], pyld_dws[(i*4)+1], 
+			    pyld_dws[(i*4)+2], pyld_dws[(i*4)+3] ) };
+  }
+  
+  // Place Last Payload Line in String
+  if (numDWs !== 0) {
+    pos1 = numLines*4;
+    pos2 = numLines*4 + numDWs - 1;
+    PyldToStr = { PyldToStr, 
+		  psprintf( "%s %h->%h ", 
+			    prefixStr, pos1, pos2 ) };
+    for (i=numLines*4; i < pyld_dws.size(); i++)
+      PyldToStr = { PyldToStr, psprintf(" %h", pyld_dws[i]) };
+    PyldToStr = { PyldToStr, "\n" };
+  }
+}
+
+function string FNXPCIEXactorUtilities::denaliRegNumToStr( integer regNum )
+{
+  denaliPcieRegNumT denRegT;
+  integer regOffset;
+  string regOffsetStr;
+  
+  regOffset = regNum/PCIE_REG_NUM_MAXIMUM;
+  if (regOffset != 0)
+    sprintf( regOffsetStr, "(OFFSET=%0d)", regOffset );
+  else
+    regOffsetStr = "";
+  
+  if (cast_assign( denRegT, regNum % PCIE_REG_NUM_MAXIMUM, CHECK))
+    sprintf( denaliRegNumToStr, "%s%s", denRegT, regOffsetStr );
+  else
+    sprintf( denaliRegNumToStr, "UNKNOWN_VALUE(%0d)", regNum );
+}
+
+function integer FNXPCIEXactorUtilities::denaliFCTypeToInt( denaliPcieFcTypeT denFcType ) {
+  string MethodName = "denaliFCTypeToInt";
+  
+  case (denFcType) {
+    PCIE_FCTYPE_PH    : denaliFCTypeToInt = FNX_PCIE_XTR_FC_TYPE_PH;
+    PCIE_FCTYPE_PD    : denaliFCTypeToInt = FNX_PCIE_XTR_FC_TYPE_PD;
+    PCIE_FCTYPE_NPH   : denaliFCTypeToInt = FNX_PCIE_XTR_FC_TYPE_NPH;
+    PCIE_FCTYPE_NPD   : denaliFCTypeToInt = FNX_PCIE_XTR_FC_TYPE_NPD;
+    PCIE_FCTYPE_CPLH  : denaliFCTypeToInt = FNX_PCIE_XTR_FC_TYPE_CPLH;
+    PCIE_FCTYPE_CPLD  : denaliFCTypeToInt = FNX_PCIE_XTR_FC_TYPE_CPLD;
+    PCIE_FCTYPE_TOTAL : denaliFCTypeToInt = -1;
+    default : PCIEX_QR_ERR( "%s-> Hit Default Case Element denFcType=%0d", XactorName, denFcType );
+  }
+}
+
+function denaliPcieFcTypeT FNXPCIEXactorUtilities::FCEncToDenaliType( integer fcEnc ) {
+  string MethodName = "FCEncToDenaliType";
+
+  case (fcEnc) {
+    FNX_PCIE_XTR_FC_TYPE_PH   : FCEncToDenaliType = PCIE_FCTYPE_PH;
+    FNX_PCIE_XTR_FC_TYPE_PD   : FCEncToDenaliType = PCIE_FCTYPE_PD;
+    FNX_PCIE_XTR_FC_TYPE_NPH  : FCEncToDenaliType = PCIE_FCTYPE_NPH;
+    FNX_PCIE_XTR_FC_TYPE_NPD  : FCEncToDenaliType = PCIE_FCTYPE_NPD;
+    FNX_PCIE_XTR_FC_TYPE_CPLH : FCEncToDenaliType = PCIE_FCTYPE_CPLH;
+    FNX_PCIE_XTR_FC_TYPE_CPLD : FCEncToDenaliType = PCIE_FCTYPE_CPLD;
+    default : PCIEX_QR_ERR( "%s-> Hit Default Case Element fcEnc=%0d", XactorName, fcEnc );
+  }
+}

@@ -1,0 +1,193 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuIngressDmaRdStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class DmaRdPEUStr extends PEUStrBase 
+  {
+  integer f_len;				// The packet's payload length
+  bit[3:0] f_firstDWBE;				// It's "first DWBE" field
+  bit[3:0] f_lastDWBE;				// It's "last DWBE" field
+  integer f_bndy;	 			// The address' boundary
+  bit f_lenSpecified;				// Was a length specified?
+  bit f_firstSpecified;				// Was a "firstDWBE" specified?
+  bit f_lastSpecified;				// Was a "lastDWBE" specified?
+  bit f_bndySpecified;				// Was an addr bndy specified?
+  bit f_poison;					// Is the completion poisoned?
+  bit f_UR;					// Is the completion UR?
+  bit f_CA;					// Is the completion CA?
+
+  task new( PEUTestEnv a_env )
+    {
+    super.new( a_env );
+    f_lenSpecified = 0;
+    f_firstSpecified = 0;
+    f_lastSpecified = 0;
+    f_bndySpecified = 0;
+    f_poison = 0;
+    f_UR = 0;
+    f_CA = 0;
+    }
+  task SetLen( integer a_len )
+    {
+    f_len = a_len;
+    f_lenSpecified = 1;
+    }
+  task SetFirstDWBE( bit[3:0] a_dwbe )
+    {
+    f_firstDWBE = a_dwbe;
+    f_firstSpecified = 1;
+    }
+  task SetLastDWBE( bit[3:0] a_dwbe )
+    {
+    f_lastDWBE = a_dwbe;
+    f_lastSpecified = 1;
+    }
+  task SetAddrBndy( integer a_bndy )
+    {
+    f_bndy = a_bndy;
+    f_bndySpecified = 1;
+    }
+  task SetPoisonedPayload()
+    {
+    f_poison = 1;
+    }
+  task SetUC( bit isUR )
+    {
+    if ( isUR )
+      f_UR = 1;
+    else
+      f_CA = 1;
+    }
+  task Execute()
+    {
+    bit[PEC_PCI__HDR] ingressHdr;		// The ingress TLP's header
+    integer ingressData;			// A payload descriptor
+    bit[7:0] ingressTag;			// The tag for the TLP
+    bit[PEC_PCI__HDR] egressHdr;		// The egress TLP's header
+    integer egressData;				// The completion payload
+    bit[7:0] egressAddr;			// The payload's DOU address 
+    integer dwTotal;				// #DWs required for completion
+    integer dwDone;				// #DWs completed so far
+
+					// First, get in line for a DMA tag...
+    f_env.allocDmaTag( ingressTag );
+
+					// Then build a TLP
+    if ( f_lenSpecified )
+      f_env.genIngressRdReq( ingressTag, ingressHdr, ingressData, f_len );
+    else
+      f_env.genIngressRdReq( ingressTag, ingressHdr, ingressData );
+
+					// ...and set fields as requested
+                                        // by the caller.
+    if ( f_bndySpecified )
+      f_env.setAddrBndy( ingressHdr, f_bndy, 64 );
+    //N2 Set the DWBE after setAddrBndy since it adjusts the DWBE now
+    if ( f_firstSpecified )
+      ingressHdr[PEC_PCI__FIRST_DWBE] = f_firstDWBE;
+    if ( f_lastSpecified )
+      ingressHdr[PEC_PCI__LAST_DWBE] = f_lastDWBE;
+
+					// Send the read-request through the
+                                        // ingress pipeline.
+    f_env.reserveIngressCredits( ingressHdr );
+    f_env.drivePCIE( ingressHdr, ingressData );
+    f_env.consumeIngressCredits( ingressHdr );
+    f_env.expectILU( ingressHdr, ingressData );
+
+					// Now send a completion to our
+					// original request through the
+					// egress pipeline.
+					// An unsuccesful completion is simple.
+    if ( !sync( CHECK, f_env.ev_drainStateEnd ) ){ //If drainStateEnd then finish strategy
+    if ( f_UR || f_CA )
+      {
+      f_env.genEgressCpl( ingressHdr, egressHdr, egressData );
+      egressHdr[PEC_PCI__FMT_DATA] = 0;
+      if ( f_UR )
+        egressHdr[PEC_PCI__CPL_STATUS] = PEC_PCI__CPL_STATUS_UR;
+      else
+        egressHdr[PEC_PCI__CPL_STATUS] = PEC_PCI__CPL_STATUS_CA;
+      f_env.driveILU( egressHdr, 0, egressData );
+      f_env.expectPCIE( egressHdr, egressData );
+      }
+
+					// Just one completion for a simple 
+					// memory-read request...
+    else if ( ingressHdr[PEC_PCI__LEN] > 0
+           && 4*ingressHdr[PEC_PCI__LEN] <= f_env.getMaxPayloadSize() )
+      {
+      f_env.genEgressCpl( ingressHdr, egressHdr, egressData );
+      if ( f_poison ) f_env.poisonPayload( egressData );
+      f_env.allocCplData( ingressHdr[PEC_PCI__LEN], 
+                          egressHdr[PEC_PCI__LOWADDR],
+                          egressAddr );
+      f_env.driveILU( egressHdr, egressAddr, egressData );
+      if ( f_poison ) egressHdr[PEC_PCI__EP] = 1;
+      if ( !sync( CHECK, f_env.ev_drainStateEnd ) ){
+         f_env.expectPCIE( egressHdr, egressData );
+      }
+      }
+					// ...or as many as it takes for a
+					// complex ('bulk') request.
+    else 
+      {
+      dwTotal = ingressHdr[PEC_PCI__LEN];
+      if ( dwTotal == 0 ) dwTotal = 1024;
+      dwDone = 0;
+      while( dwTotal > dwDone )
+        {
+        f_env.genEgressPartialCpl( ingressHdr, egressHdr, egressData, dwDone );
+        dwDone = dwDone + egressHdr[PEC_PCI__LEN];
+        if ( f_poison ) f_env.poisonPayload( egressData );
+        f_env.allocCplData( egressHdr[PEC_PCI__LEN], 
+                            egressHdr[PEC_PCI__LOWADDR],
+                            egressAddr );
+
+        repeat( urandom_range( f_env.Scenario.ilupeuDmaMRdCplDelayMax, f_env.Scenario.ilupeuDmaMRdCplDelayMin)) @(posedge CLOCK);
+        f_env.driveILU( egressHdr, egressAddr, egressData );
+        if ( f_poison ) egressHdr[PEC_PCI__EP] = 1;
+        if ( !sync( CHECK, f_env.ev_drainStateEnd ) ){
+           f_env.expectPCIE( egressHdr, egressData );
+        }else{
+           dwTotal = dwDone;
+        }
+        }
+      }
+    }
+
+    /* The environment frees the completion's DOU space */
+    /* So we only have to free the tag. */
+    f_env.freeDmaTag( ingressTag );
+    } /* end Execute */
+  } /* end DmaRdPECStr */

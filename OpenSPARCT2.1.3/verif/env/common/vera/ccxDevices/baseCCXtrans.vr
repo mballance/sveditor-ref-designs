@@ -1,0 +1,227 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: baseCCXtrans.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <globals.vri>
+// #include <ccxDefines.vri>
+// #include <cmp.vri>
+#include <ccxDevicesDefines.vri>
+#include <defines.vri>
+#include <std_display_defines.vri>
+
+#include <baseParamsClass.vrh>
+#include <sparcParams.vrh>
+#include <baseUtilsClass.vrh>
+#include <sparcBenchUtils.vrh>
+#include <std_display_class.vrh>
+#include <basePktClass.vrh>
+#include <cpxPktClass.vrh>
+#include <pcxPktClass.vrh>
+#include <ccxDevBaseBFM.vrh>
+#include <ccxDevMemBFM.vrh>
+#include <ccxDevSpcBFM.vrh>
+#include <memArray.vrh>
+#include <ccx_tag_class.vrh>
+
+
+#include <utilsClass.vrh>
+
+// uncomment to debug
+//#define CCXBASETRANS_DEBUG
+
+
+#define CLASSNAME BaseCCXtrans
+#define CLASSNAMEQ "BaseCCXtrans"
+
+// BFMs
+// gCcxDevice[] 0-16 !== null
+
+// virtual ports
+// EXTERN ccxPort gPcxPort[17];
+// EXTERN ccxPort gCpxPort[17];
+
+class CLASSNAME {
+
+  local string className = CLASSNAMEQ;
+  protected StandardDisplay dbg;
+  protected ccxPort anyMemPort; // generic
+  protected ccxPort anySpcPort; // generic
+  protected reg l2BFMs;
+  protected reg [7:0] spcBfms; // these ports have BFMs
+  
+  // PCX things to randomize
+//   rand protected reg         valid = 1; // 129
+//   rand protected reg [4:0]   rqtyp;
+//   rand protected reg         nc = 0;
+//   rand protected reg [2:0]   cpuId = 0; // 122:120
+//   rand protected reg [2:0]   tid;
+//   rand protected reg         inv = 0;   // 116  invalidate
+//   rand protected reg         pf = 0;    // 115  prefetch/BST block store
+//   rand protected reg         l1wayBis = 0; // 114 L1 way/BIS block init store/MAid
+//   rand protected reg [1:0]   l1wayMMUid = 0;
+//   rand protected reg [7:0]   size = 0;
+//   rand protected reg [39:0]  addr;
+//   rand protected reg [63:0]  data = 0;  // 63:0
+
+  // CPX things to randomize
+  
+  
+  // constraints
+  
+
+  task new(StandardDisplay dbgHndl, reg l2BFMs);
+
+  task sendIntr(reg [5:0] tid, reg [1:0] type,
+                reg [5:0] vect, integer sendPort = DEV_NCU);
+  task bogusEvict(reg [7:0] targets, reg [7:0] sendPorts,
+                  reg [39:0] evictPA = 40'h0);
+  task ifillPair(integer target, reg [7:0] sendPorts,
+                 reg [127:0] data0 = 128'h0,
+                 reg [127:0] data1 = 128'h0);
+  task spcCheck(string msg);
+  task pickCore(var integer num, var reg [7:0] mask);  
+}
+
+task CLASSNAME::new(StandardDisplay dbgHndl, reg l2BFMs) {
+  integer i;
+  
+  srandom(gSeed,this);
+  this.dbg = dbgHndl;
+  this.l2BFMs = l2BFMs;
+  spcBfms = 0;
+  for (i=0;i<8;i++) if (gCcxDevice[i] !== null) spcBfms[i] = 1;
+}
+
+// generic call to send intr from NCU port.
+task CLASSNAME::sendIntr(reg [5:0] tid,
+                         reg [1:0] type,
+                         reg [5:0] vect,
+                         integer sendPort = DEV_NCU)
+{
+  CpxPkt     reqPkt;
+
+  reqPkt = new();
+  reqPkt.createIntr(tid,type,vect); // INTR_RESET,INTR_POR
+  reqPkt.sendPorts = 1 << sendPort;
+  reqPkt.targetPorts = 1 << tid[5:3];
+  PR_NORMAL(CLASSNAMEQ, MON_NORMAL,
+            psprintf ("Send Interrupt to C%0d T%0d  type=%b  vector=%b",
+                      tid[5:3],tid[2:0],type,vect));
+  reqPkt.send(1);
+}
+
+
+
+// send a pair of IFILL resp
+task CLASSNAME::ifillPair(integer target, reg [7:0] sendPorts,
+                          reg [127:0] data0 = 128'h0,
+                          reg [127:0] data1 = 128'h0) { 
+
+  CpxPkt    pkt,pkt2;
+
+  pkt = new();
+  pkt.tid = random();
+  pkt.sendPorts = sendPorts << 8;
+  pkt.rtntyp = CPX_IFILL;
+  pkt.rtntypU = U_CPX_IFILL;     
+  pkt.l2miss = 0;
+  pkt.targetPorts = 1<<target;
+  pkt.data = data0;
+  
+  pkt2 = new();
+  pkt2 = pkt.object_copy();
+  pkt2.data = data1;
+  pkt2.atmIf2 = 1;
+    
+  pkt.send(1); // doit
+  pkt2.send(1); // doit
+
+  PR_NORMAL(CLASSNAMEQ, MON_NORMAL,
+            psprintf ("Sending IFILL resp pkt pair to target=%0d, data0=0x%h, data1=0x%h",
+                      target,data0,data1));
+
+}
+
+// enqueue noop eviction from a port to some port.
+task CLASSNAME::bogusEvict(reg [7:0] targets, reg [7:0] sendPorts,
+                           reg [39:0] evictPA = 40'h0)
+{
+  
+  CpxPkt    pkt;
+
+  pkt = new();
+  //pktRecv = new();
+  pkt.tid = random();
+  pkt.sendPorts = sendPorts << 8;
+  pkt.rtntyp = CPX_EVICT;
+  pkt.rtntypU = U_CPX_EVICT;     
+  pkt.addr = evictPA;
+  pkt.l2miss = 0;
+  pkt.targetPorts = targets;
+  pkt.data = 0;
+
+  // end to end checking
+  // pktRecv.signature = pkt.makeSignature();
+  // pktRecv.targetPorts = 
+  // pktRecv.recv();
+
+  
+  pkt.send(1); // doit
+    
+  PR_NORMAL(CLASSNAMEQ, MON_NORMAL,
+            psprintf ("Sending bogus EVICTION pkt to targets=0b%b, a=0x%h, vec=0x%h",
+                      pkt.targetPorts,0,0));
+
+}
+
+task CLASSNAME::spcCheck(string msg) {
+
+  if (! spcBfms) PR_ALWAYS(CLASSNAMEQ, MON_ALWAYS,
+             psprintf ("%s needs at least 1 SPC BFM!", msg)); 
+  if (! spcBfms) PR_ERROR(CLASSNAMEQ, MON_ERROR,
+             psprintf ("%s needs at least 1 SPC BFM!", msg));
+  repeat (25) @(posedge CLOCK);
+  error("%s needs at least 1 SPC BFM!", msg);
+}
+
+// pick a random existing core BFM
+task CLASSNAME::pickCore(var integer num, var reg [7:0] mask) {
+
+  spcCheck("pickCore");
+  mask = 0;
+  while (!mask) {
+    num = urandom_range(7,0);
+    mask = (1 << num) & spcBfms;
+  }
+}

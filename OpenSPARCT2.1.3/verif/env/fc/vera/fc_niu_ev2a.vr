@@ -1,0 +1,644 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: fc_niu_ev2a.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "niu_pktgen_csr_ev2a.vrh"
+
+#include "std_display_class.vrh"
+extern StandardDisplay gDbg;
+#define STD_DISP gDbg
+
+#include "memArray.vrh"
+extern MemArray gMem;
+
+#include "niu_mem.vrh"
+extern CSparseMem SparseMem;
+
+#ifdef FC_NO_PEU_VERA
+#ifdef USE_BOBO
+extern hdl_task bobo_write_64bit (bit [39:0] pa,
+                                  bit [63:0] data64
+                                  );
+#else
+#ifndef FC_NO_PEU_VERA
+extern hdl_task pep_write_32bit (bit [39:0] pa,
+                                 bit [31:0] data32
+                                 );
+#endif
+#endif // USE_BOBO
+#endif // FC_NO_PEU_VERA
+
+
+/* Utility function used by other Fc_Niu_Ev2a functions */
+task Fc_Niu_Ev2a_write1 (bit [63:0] data,
+                         bit [63:0] memArray_addr,
+                         string func_name)
+{
+    bit [7:0] be = 8'hff;
+    bit [63:0] Rdata0;
+
+    Rdata0 = {data[7:0],
+              data[15:8],
+              data[23:16],
+              data[31:24],
+              data[39:32],
+              data[47:40],
+              data[55:48],
+              data[63:56]};
+    SparseMem.WriteMem(memArray_addr, Rdata0, be);
+    PR_INFO("fc_niu_ev2a", MON_INFO,
+            psprintf("MAQ-Debug : %s Addr = 64'h%h, Data = %h, Rdata = %h \n ",
+                     func_name, memArray_addr, data, Rdata0 ));
+    gMem.writeBM (memArray_addr, data, be);
+#ifdef FC_NO_PEU_VERA
+#ifdef USE_BOBO
+    bobo_write_64bit(memArray_addr[39:0], Rdata0[63:0]);
+#else
+#ifndef FC_NO_PEU_VERA
+    pep_write_32bit (memArray_addr[39:0], Rdata0[31:0]);
+    pep_write_32bit (memArray_addr[39:0]+40'h4, Rdata0[63:32]);
+#endif
+#endif // USE_BOBO
+#endif // FC_NO_PEU_VERA
+}
+
+
+task Fc_Niu_Ev2a_setRxDmaCfig_1 (bit [63:0] data)
+{
+    Fc_Niu_Ev2a_write1(data, NIU_PKTGEN_CSR_EV2A_RXDMA_CFIG1_0,
+                       "setRxDmaCfig_1");
+    /*
+//  SparseMem.WriteMem(64'h200000800, data,8'hff);
+//  printf("MAQ-Debug : setRxDmaCfig_1 Addr = 64'h200000800, Data = %h \n ", data );
+    data_tmp0  = data;
+    Rdata0 = {data_tmp0[7:0],data_tmp0[15:8],data_tmp0[23:16],data_tmp0[31:24],data_tmp0[39:32],data_tmp0[47:40],data_tmp0[55:48],data_tmp0[63:56]};
+    SparseMem.WriteMem(64'hc100000800, Rdata0,8'hff);
+    printf("MAQ-Debug : setRxDmaCfig_1 Addr = 64'hc100000800, Data = %h \n ", data );
+    printf("MAQ-Debug : setRxDmaCfig_1 Addr = 64'hc100000800, Data(Rdata) = %h \n ", Rdata0 );
+  
+    memArray_addr = 64'hc100000800;
+    be      = 8'hff;
+    gMem.writeBM (memArray_addr[63:0], data, be);
+    printf("KHH-Debug : gMem.WriteBM setRxDmaCfig_1 Addr = 64'hc100000800, Data = %h \n ", data);
+    */
+}
+
+
+task Fc_Niu_Ev2a_setRxDmaCfig_1_1 (bit [63:0] data)
+{
+    Fc_Niu_Ev2a_write1(data, NIU_PKTGEN_CSR_EV2A_RXDMA_CFIG1_1,
+                       "setRxDmaCfig_1_1");
+    /*
+//  SparseMem.WriteMem(64'h200000a00, {32'h0000_0000, 24'h800000, mailbox_address[39:32]},8'hff);
+//  printf("MAQ-Debug : setRxDmaCfig_1_1 Addr = 64'h200000a00, Data = %h \n ", {32'h0000_0000, 24'h800000, mailbox_address[39:32]});
+    data_tmp1 = {32'h0000_0000, 24'h800000, mailbox_address[39:32]};
+    Rdata1 = {data_tmp1[7:0],data_tmp1[15:8],data_tmp1[23:16],data_tmp1[31:24],data_tmp1[39:32],data_tmp1[47:40],data_tmp1[55:48],data_tmp1[63:56]};
+    SparseMem.WriteMem(64'hc100000a00, Rdata1,8'hff);
+    printf("MAQ-Debug : setRxDmaCfig_1_1 Addr = 64'hc100000a00, Data = %h \n ", {32'h0000_0000, 24'h800000, mailbox_address[39:32]});
+    printf("MAQ-Debug : setRxDmaCfig_1_1 Addr = 64'hc100000a00, Data(Rdata) = %h \n ", Rdata1);
+
+    memArray_addr = 64'hc100000a00;
+    be      = 8'hff;
+    gMem.writeBM (memArray_addr[63:0], {32'h0000_0000, 24'h800000, mailbox_address[39:32]}, be);
+    printf("KHH-Debug : gMem.WriteBM setRxDmaCfig_1_1 Addr = 64'hc100000a00, Data = %h \n ", {32'h0000_0000, 24'h800000, mailbox_address[39:32]});
+    */
+}
+
+
+task Fc_Niu_Ev2a_setRxDmaCfig_2 (bit [63:0] data)
+{
+    Fc_Niu_Ev2a_write1(data, NIU_PKTGEN_CSR_EV2A_RXDMA_CFIG2,
+                       "RXDMA_CFIG2_START");
+    /*
+    bit [7:0] be = 8'hff;
+    bit [63:0] memArray_addr;
+    bit [63:0] data_tmp0;
+    bit [63:0] Rdata0;
+
+//  SparseMem.WriteMem(64'h200000900, {32'h0000_0000, mailbox_address[31:6], 6'h00},8'hff);
+//  printf("MAQ-Debug : RXDMA_CFIG2_START Addr = 64'h200000900, Data = %h \n ", {32'h0000_0000, mailbox_address[31:6], 6'h00} );
+    data_tmp0 = {32'h0000_0000, mailbox_address[31:6], 6'h00};
+    Rdata0 = {data_tmp0[7:0],data_tmp0[15:8],data_tmp0[23:16],data_tmp0[31:24],data_tmp0[39:32],data_tmp0[47:40],data_tmp0[55:48],data_tmp0[63:56]};
+    SparseMem.WriteMem(64'hc100000900, Rdata0,8'hff);
+    printf("MAQ-Debug : RXDMA_CFIG2_START Addr = 64'hc100000900, Data = %h \n ", {32'h0000_0000, mailbox_address[31:6], 6'h00} );
+    printf("MAQ-Debug : RXDMA_CFIG2_START Addr = 64'hc100000900, Data(Rdata) = %h \n ", Rdata0 );
+
+    memArray_addr = 64'hc100000900;
+    be      = 8'hff;
+    gMem.writeBM (memArray_addr[63:0], {32'h0000_0000, mailbox_address[31:6], 6'h00}, be);
+    printf("KHH-Debug : gMem.WriteBM RXDMA_CFIG2_START Addr = 64'hc100000900, Data = %h \n ", {32'h0000_0000, mailbox_address[31:6], 6'h00});
+    */
+}
+
+
+task Fc_Niu_Ev2a_SetPage0Registers (bit [31:0] mask,
+                                    bit [31:0] value,
+                                    bit [31:0] reloc)
+{
+    Fc_Niu_Ev2a_write1({32'h0,mask}, NIU_PKTGEN_CSR_EV2A_RX_LOG_MASK1,
+                       "RX_LOG_MASK1_START");
+    Fc_Niu_Ev2a_write1({32'h0,value}, NIU_PKTGEN_CSR_EV2A_RX_LOG_VAL1,
+                       "RX_LOG_VAL1_START");
+    Fc_Niu_Ev2a_write1({32'h0,reloc}, NIU_PKTGEN_CSR_EV2A_RX_LOG_RELO1,
+                       "RX_LOG_RELO1_START");
+    /*
+    bit [7:0] be = 8'hff;
+    bit [63:0] memArray_addr;
+    bit [63:0] Rdata0;
+    bit [63:0] Rdata1;
+    bit [63:0] Rdata2;
+    bit [63:0] data_tmp0;
+    bit [63:0] data_tmp1;
+    bit [63:0] data_tmp2;
+
+//  SparseMem.WriteMem(64'h200000100, {32'h0,mask},8'hff);
+//  SparseMem.WriteMem(64'h200000200, {32'h0,value},8'hff);
+//  SparseMem.WriteMem(64'h200000300, {32'h0,reloc},8'hff);
+//  printf("MAQ-Debug : RX_LOG_MASK1_START Addr = 64'h200000100, Data = %h \n ", {32'h0,mask} );
+//  printf("MAQ-Debug : RX_LOG_VAL1_START Addr = 64'h200000100, Data = %h \n ", {32'h0,value} );
+//  printf("MAQ-Debug : RX_LOG_RELO1_START Addr = 64'h200000100, Data = %h \n ", {32'h0,reloc} );
+    data_tmp0 = {32'h0,mask};
+    data_tmp1 = {32'h0,value};
+    data_tmp2 = {32'h0,reloc};
+    Rdata0 = {data_tmp0[7:0],data_tmp0[15:8],data_tmp0[23:16],data_tmp0[31:24],data_tmp0[39:32],data_tmp0[47:40],data_tmp0[55:48],data_tmp0[63:56]};
+    Rdata1 = {data_tmp1[7:0],data_tmp1[15:8],data_tmp1[23:16],data_tmp1[31:24],data_tmp1[39:32],data_tmp1[47:40],data_tmp1[55:48],data_tmp1[63:56]};
+    Rdata2 = {data_tmp2[7:0],data_tmp2[15:8],data_tmp2[23:16],data_tmp2[31:24],data_tmp2[39:32],data_tmp2[47:40],data_tmp2[55:48],data_tmp2[63:56]};
+    SparseMem.WriteMem(64'hc100000100, Rdata0,8'hff);
+    SparseMem.WriteMem(64'hc100000200, Rdata1,8'hff);
+    SparseMem.WriteMem(64'hc100000300, Rdata2,8'hff);
+    printf("MAQ-Debug : RX_LOG_MASK1_START Addr = 64'hc100000100, Data = %h \n ", {32'h0,mask} );
+    printf("MAQ-Debug : RX_LOG_VAL1_START Addr = 64'hc100000200, Data = %h \n ", {32'h0,value} );
+    printf("MAQ-Debug : RX_LOG_RELO1_START Addr = 64'hc100000300, Data = %h \n ", {32'h0,reloc} );
+    printf("MAQ-Debug : RX_LOG_MASK1_START Addr = 64'hc100000100, Data(Rdata) = %h \n ", Rdata0 );
+    printf("MAQ-Debug : RX_LOG_VAL1_START Addr = 64'hc100000200, Data(Rdata) = %h \n ", Rdata1 );
+    printf("MAQ-Debug : RX_LOG_RELO1_START Addr = 64'hc100000300, Data(Rdata) = %h \n ", Rdata2 );
+
+    memArray_addr = 64'hc100000100;
+    be      = 8'hff;
+    gMem.writeBM (memArray_addr[63:0], {32'h0,mask}, be);
+
+    memArray_addr = 64'hc100000200;
+    gMem.writeBM (memArray_addr[63:0], {32'h0,value}, be);
+
+    memArray_addr = 64'hc100000300;
+    gMem.writeBM (memArray_addr[63:0], {32'h0,reloc}, be);
+    printf("KHH-Debug : gMem.WriteBM RX_LOG_MASK1_START Addr = 64'hc100000100, Data = %h \n ", {32'h0,mask});
+    printf("KHH-Debug : gMem.WriteBM RX_LOG_VAL1_START  Addr = 64'hc100000200, Data = %h \n ", {32'h0,value});
+    printf("KHH-Debug : gMem.WriteBM RX_LOG_RELO1_START Addr = 64'hc100000300, Data = %h \n ", {32'h0,reloc});
+    */
+}
+
+
+task Fc_Niu_Ev2a_SetPage1Registers (bit [31:0] mask,
+                                    bit [31:0] value,
+                                    bit [31:0] reloc)
+{
+    Fc_Niu_Ev2a_write1({32'h0,mask}, NIU_PKTGEN_CSR_EV2A_RX_LOG_MASK2,
+                       "RX_LOG_MASK2_START");
+    Fc_Niu_Ev2a_write1({32'h0,value}, NIU_PKTGEN_CSR_EV2A_RX_LOG_VAL2,
+                       "RX_LOG_VAL2_START");
+    Fc_Niu_Ev2a_write1({32'h0,reloc}, NIU_PKTGEN_CSR_EV2A_RX_LOG_RELO2,
+                       "RX_LOG_RELO2_START");
+    /*
+    bit [63:0] memArray_addr;
+    bit [7:0] be = 8'hff;
+    bit [63:0] Rdata0;
+    bit [63:0] Rdata1;
+    bit [63:0] Rdata2;
+    bit [63:0] data_tmp0;
+    bit [63:0] data_tmp1;
+    bit [63:0] data_tmp2;
+
+//  SparseMem.WriteMem(64'h200000c00, {32'h0,mask},8'hff);
+//  SparseMem.WriteMem(64'h200000d00, {32'h0,value},8'hff);
+//  SparseMem.WriteMem(64'h200000e00, {32'h0,reloc},8'hff);
+//  printf("MAQ-Debug : RX_LOG_MASK2_START Addr = 64'h200000c00, Data = %h \n ", {32'h0,mask} );
+//  printf("MAQ-Debug : RX_LOG_VAL2_START Addr = 64'h200000d00, Data = %h \n ", {32'h0,value} );
+//  printf("MAQ-Debug : RX_LOG_RELO2_START Addr = 64'h200000e00, Data = %h \n ", {32'h0,reloc} );
+    data_tmp0 = {32'h0,mask};
+    data_tmp1 = {32'h0,value};
+    data_tmp2 = {32'h0,reloc};
+    Rdata0 = {data_tmp0[7:0],data_tmp0[15:8],data_tmp0[23:16],data_tmp0[31:24],data_tmp0[39:32],data_tmp0[47:40],data_tmp0[55:48],data_tmp0[63:56]};
+    Rdata1 = {data_tmp1[7:0],data_tmp1[15:8],data_tmp1[23:16],data_tmp1[31:24],data_tmp1[39:32],data_tmp1[47:40],data_tmp1[55:48],data_tmp1[63:56]};
+    Rdata2 = {data_tmp2[7:0],data_tmp2[15:8],data_tmp2[23:16],data_tmp2[31:24],data_tmp2[39:32],data_tmp2[47:40],data_tmp2[55:48],data_tmp2[63:56]};
+    SparseMem.WriteMem(64'hc100000c00, Rdata0,8'hff);
+    SparseMem.WriteMem(64'hc100000d00, Rdata1,8'hff);
+    SparseMem.WriteMem(64'hc100000e00, Rdata2,8'hff);
+    printf("MAQ-Debug : RX_LOG_MASK2_START Addr = 64'hc100000c00, Data = %h \n ", {32'h0,mask} );
+    printf("MAQ-Debug : RX_LOG_VAL2_START Addr = 64'hc100000d00, Data = %h \n ", {32'h0,value} );
+    printf("MAQ-Debug : RX_LOG_RELO2_START Addr = 64'hc100000e00, Data = %h \n ", {32'h0,reloc} );
+    printf("MAQ-Debug : RX_LOG_MASK2_START Addr = 64'hc100000c00, Data(Rdata) = %h \n ", Rdata0 );
+    printf("MAQ-Debug : RX_LOG_VAL2_START Addr = 64'hc100000d00, Data(Rdata) = %h \n ", Rdata1 );
+    printf("MAQ-Debug : RX_LOG_RELO2_START Addr = 64'hc100000e00, Data(Rdata) = %h \n ", Rdata2 );
+
+    memArray_addr = 64'hc100000c00;
+    be      = 8'hff;
+    gMem.writeBM (memArray_addr[63:0], {32'h0,mask}, be);
+
+    memArray_addr = 64'hc100000d00;
+    gMem.writeBM (memArray_addr[63:0], {32'h0,value}, be);
+
+    memArray_addr = 64'hc100000e00;
+    gMem.writeBM (memArray_addr[63:0], {32'h0,reloc}, be);
+    printf("KHH-Debug : gMem.WriteBM RX_LOG_MASK2_START Addr = 64'hc100000c00, Data = %h \n ", {32'h0,mask});
+    printf("KHH-Debug : gMem.WriteBM RX_LOG_VAL2_START  Addr = 64'hc100000d00, Data = %h \n ", {32'h0,value});
+    printf("KHH-Debug : gMem.WriteBM RX_LOG_RELO2_START Addr = 64'hc100000e00, Data = %h \n ", {32'h0,reloc});
+    */
+}
+
+
+task Fc_Niu_Ev2a_setRxLogPgVld (bit [63:0] data)
+{
+    Fc_Niu_Ev2a_write1(data, NIU_PKTGEN_CSR_EV2A_RX_LOG_PAGE_VLD,
+                       "RX_LOG_PAGE_VLD");
+    /*
+    bit [63:0] Rdata0;
+    bit [63:0] data_tmp0;
+    bit [63:0] memArray_addr;
+    bit [7:0] be = 8'hff;
+
+//	SparseMem.WriteMem(64'h200000400, data,8'hff);
+//	printf("MAQ-Debug : RX_LOG_PAGE_VLD Addr = 64'h200000400, Data = %h \n ", data );
+        data_tmp0 = data;
+        Rdata0 = {data_tmp0[7:0],data_tmp0[15:8],data_tmp0[23:16],data_tmp0[31:24],data_tmp0[39:32],data_tmp0[47:40],data_tmp0[55:48],data_tmp0[63:56]};
+        SparseMem.WriteMem(64'hc100000400, Rdata0,8'hff);
+        printf("MAQ-Debug : RX_LOG_PAGE_VLD Addr = 64'hc100000400, Data = %h \n ", data );
+        printf("MAQ-Debug : RX_LOG_PAGE_VLD Addr = 64'hc100000400, Data(Rdata) = %h \n ", Rdata0 );
+
+        memArray_addr = 64'hc100000400;
+        be      = 8'hff;
+        gMem.writeBM (memArray_addr[63:0], data, be);
+        printf("KHH-Debug : gMem.WriteBM RX_LOG_PAGE_VLD Addr = 64'hc100000400, Data = %h \n ", data);
+    */
+}
+
+
+task Fc_Niu_Ev2a_setRbrConfig_A (bit [63:0] data)
+{
+    Fc_Niu_Ev2a_write1(data, NIU_PKTGEN_CSR_EV2A_RBR_CFIG_A,
+                       "setRbrConfig_A");
+    /*
+    bit [63:0] Rdata0;
+    bit [63:0] data_tmp0;
+    bit [63:0] memArray_addr;
+    bit [7:0] be = 8'hff;
+
+//  SparseMem.WriteMem(64'h200000500, config_rbr_data1,8'hff);
+//  printf("MAQ-Debug : setRbrConfig_A Addr = 64'h200000500, Data = %h \n ", config_rbr_data1 );
+    data_tmp0 = config_rbr_data1;
+    Rdata0 = {data_tmp0[7:0],data_tmp0[15:8],data_tmp0[23:16],data_tmp0[31:24],data_tmp0[39:32],data_tmp0[47:40],data_tmp0[55:48],data_tmp0[63:56]};
+    SparseMem.WriteMem(64'hc100000500, Rdata0,8'hff);
+    printf("MAQ-Debug : setRbrConfig_A Addr = 64'hc100000500, Data = %h \n ", config_rbr_data1 );
+    printf("MAQ-Debug : setRbrConfig_A Addr = 64'hc100000500, Data(Rdata) = %h \n ", Rdata0 );
+
+//  peutest.env.N2fcWrMem(64'hc100000500, config_rbr_data1[31:0],8'hf);
+//  printf("KHH-Debug : setRbrConfig_A Addr = 64'hc100000500, Data = %h \n ", config_rbr_data1[31:0]);
+//  peutest.env.N2fcWrMem(64'hc100000504, config_rbr_data1[63:32],8'hf);
+//  printf("KHH-Debug : setRbrConfig_A Addr = 64'hc100000504, Data = %h \n ", config_rbr_data1[63:32]);
+
+//  SparseMem.WriteMem(64'hc100000500, config_rbr_data1,8'hff);
+//  printf("MAQ-Debug : setRbrConfig_A Addr = 64'hc100000500, Data = %h \n ", config_rbr_data1 );
+  
+    memArray_addr = 64'hc100000500;
+    be      = 8'hff;
+    gMem.writeBM (memArray_addr[63:0], config_rbr_data1, be);
+    printf("KHH-Debug : gMem.WriteBM setRbrConfig_A Addr = 64'hc100000500, Data = %h \n ", config_rbr_data1[31:0]);
+    */
+}
+
+
+task Fc_Niu_Ev2a_setRbrConfig_B (bit [63:0] data)
+{
+    Fc_Niu_Ev2a_write1(data, NIU_PKTGEN_CSR_EV2A_RBR_CFIG_B,
+                       "setRbrConfig_B");
+    /*
+    bit [63:0] Rdata0;
+    bit [63:0] data_tmp0;
+    bit [63:0] memArray_addr;
+    bit [7:0] be = 8'hff;
+
+//  SparseMem.WriteMem(64'h200000600, data,8'hff);
+//  printf("MAQ-Debug : setRbrConfig_B Addr = 64'h200000600, Data = %h \n ", data );
+    data_tmp0 = data;
+    Rdata0 = {data_tmp0[7:0],data_tmp0[15:8],data_tmp0[23:16],data_tmp0[31:24],data_tmp0[39:32],data_tmp0[47:40],data_tmp0[55:48],data_tmp0[63:56]};
+    SparseMem.WriteMem(64'hc100000600, Rdata0,8'hff);
+    printf("MAQ-Debug : setRbrConfig_B Addr = 64'hc100000600, Data = %h \n ", data );
+    printf("MAQ-Debug : setRbrConfig_B Addr = 64'hc100000600, Data(Rdata) = %h \n ", Rdata0 );
+
+    memArray_addr = 64'hc100000600;
+    be      = 8'hff;
+    gMem.writeBM (memArray_addr[63:0], data, be);
+    printf("KHH-Debug : gMem.WriteBM setRbrConfig_B Addr = 64'hc100000600, Data = %h \n ", data);
+    */
+}
+
+
+task Fc_Niu_Ev2a_setRxRingKick (bit [63:0] data)
+{
+    Fc_Niu_Ev2a_write1(data, NIU_PKTGEN_CSR_EV2A_RBR_KICK,
+                       "setRxRingKick");
+    /*
+    bit [63:0] memArray_addr;
+    bit [63:0] Rdata0;
+    bit [63:0] data_tmp0;
+    bit [7:0] be = 8'hff;
+
+//	SparseMem.WriteMem(64'h200000b00, data,8'hff);
+//	printf("MAQ-Debug : setRxRingKick Addr = 64'h200000b00, Data = %h \n ", data );
+        data_tmp0 = data;
+        Rdata0 = {data_tmp0[7:0],data_tmp0[15:8],data_tmp0[23:16],data_tmp0[31:24],data_tmp0[39:32],data_tmp0[47:40],data_tmp0[55:48],data_tmp0[63:56]};
+        SparseMem.WriteMem(64'hc100000b00, Rdata0,8'hff);
+        printf("MAQ-Debug : setRxRingKick Addr = 64'hc100000b00, Data = %h \n ", data );
+        printf("MAQ-Debug : setRxRingKick Addr = 64'hc100000b00, Data(Rdata) = %h \n ", Rdata0 );
+
+        memArray_addr = 64'hc100000b00;
+        be      = 8'hff;
+        gMem.writeBM (memArray_addr[63:0], data, be);
+        printf("KHH-Debug : gMem.WriteBM setRxRingKick Addr = 64'hc100000b00, Data = %h \n ", data);
+    */
+}
+
+
+task Fc_Niu_Ev2a_setRcrConfig_A (bit [63:0] data)
+{
+    Fc_Niu_Ev2a_write1(data, NIU_PKTGEN_CSR_EV2A_RCR_CFIG_A,
+                       "setRcrConfig_A");
+    /*
+    bit[63:0] Rdata0;
+    bit[63:0] data_tmp0;
+    bit [63:0] memArray_addr;
+    bit [7:0] be = 8'hff;
+
+//  SparseMem.WriteMem(64'h200000700, data,8'hff);
+//  printf("MAQ-Debug : setRcrConfig_A Addr = 64'h200000700, Data = %h \n ", data );
+    data_tmp0 = data;
+    Rdata0 = {data_tmp0[7:0],data_tmp0[15:8],data_tmp0[23:16],data_tmp0[31:24],data_tmp0[39:32],data_tmp0[47:40],data_tmp0[55:48],data_tmp0[63:56]};
+    SparseMem.WriteMem(64'hc100000700, Rdata0,8'hff);
+    printf("MAQ-Debug : setRcrConfig_A Addr = 64'hc100000700, Data = %h \n ", data );
+    printf("MAQ-Debug : setRcrConfig_A Addr = 64'hc100000700, Data(Rdata) = %h \n ", Rdata0 );
+
+    memArray_addr = 64'hc100000700;
+    be      = 8'hff;
+    gMem.writeBM (memArray_addr[63:0], data, be);
+    printf("KHH-Debug : gMem.WriteBM setRcrConfig_A Addr = 64'hc100000700, Data = %h \n ", data);
+    */
+}
+
+
+////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////
+
+task Fc_Niu_Ev2a_setTxRingConfig (bit [63:0] data)
+{
+    Fc_Niu_Ev2a_write1(data, NIU_PKTGEN_CSR_EV2A_TX_RNG_CFIG,
+                       "setTxRingConfig");
+    /*
+    bit [63:0] data_tmp0;
+    bit [63:0] Rdata0;
+    bit [63:0] memArray_addr;
+    bit [7:0] be = 8'hff;
+
+    data_tmp0  = data;
+    Rdata0 = {data_tmp0[7:0],data_tmp0[15:8],data_tmp0[23:16],data_tmp0[31:24],data_tmp0[39:32],data_tmp0[47:40],data_tmp0[55:48],data_tmp0[63:56]};
+//  SparseMem.WriteMem(64'h100000000, config_data,8'hff);
+    SparseMem.WriteMem(64'hc100001000, Rdata0,8'hff);
+    printf("MAQ-Debug : setTxRingConfig Addr = 64'hc100001000, Data = %h \n ", data );
+    printf("MAQ-Debug : setTxRingConfig Addr = 64'hc100001000, Data(Rdata) = %h \n ", Rdata0);
+
+    memArray_addr = 64'hc100001000;
+    be      = 8'hff;
+    gMem.writeBM (memArray_addr[63:0], data, be);
+    printf("KHH-Debug : gMem.WriteBM setTxRingConfig Addr = 64'hc100001000, Data = %h \n ", config_data);
+    */
+}
+
+
+task Fc_Niu_Ev2a_setTxRingKick (bit [63:0] data)
+{
+    Fc_Niu_Ev2a_write1(data, NIU_PKTGEN_CSR_EV2A_TX_RNG_KICK,
+                       "setTxRingKick");
+    /*
+   bit [63:0] data_tmp0;
+   bit [63:0] Rdata0;
+   bit [63:0] memArray_addr;
+   bit [7:0] be = 8'hff;
+
+// Write the Kick data for Core to program
+    data_tmp0  = ac_data;
+    Rdata0 = {data_tmp0[7:0],data_tmp0[15:8],data_tmp0[23:16],data_tmp0[31:24],data_tmp0[39:32],data_tmp0[47:40],data_tmp0[55:48],data_tmp0[63:56]};
+//  SparseMem.WriteMem(64'h100000100, ac_data,8'hff);
+    SparseMem.WriteMem(64'hc100001100, Rdata0,8'hff);
+    printf("MAQ-Debug : setTxRingKick Addr = 64'hc100001100, Data = %h \n ", ac_data );
+    printf("MAQ-Debug : setTxRingKick Addr = 64'hc100001100, Data(Rdata) = %h \n ", Rdata0);
+
+    memArray_addr = 64'hc100001100;
+    be      = 8'hff;
+    gMem.writeBM (memArray_addr[63:0], ac_data, be);
+    printf("KHH-Debug : gMem.WriteBM setTxRingKick = 64'hc100001100, Data = %h \n ", ac_data);
+    */
+}
+
+
+task Fc_Niu_Ev2a_SetTxLPValid (bit [63:0] data)
+{
+    Fc_Niu_Ev2a_write1(data, NIU_PKTGEN_CSR_EV2A_TX_LOG_PAGE_VLD,
+                       "SetTxLPValid");
+    /*
+   bit [63:0] data_tmp0;
+   bit [63:0] Rdata0;
+   bit [63:0] memArray_addr;
+   bit [7:0] be = 8'hff;
+
+    data_tmp0  = data;
+    Rdata0 = {data_tmp0[7:0],data_tmp0[15:8],data_tmp0[23:16],data_tmp0[31:24],data_tmp0[39:32],data_tmp0[47:40],data_tmp0[55:48],data_tmp0[63:56]};
+//  SparseMem.WriteMem(64'h100000800, data,8'hff);
+    SparseMem.WriteMem(64'hc100001800, Rdata0,8'hff);
+    printf("MAQ-Debug : SetTxLPValid Addr = 64'hc100001800, Data = %h \n ", data );
+    printf("MAQ-Debug : SetTxLPValid Addr = 64'hc100001800, Data(Rdata) = %h \n ", Rdata0);
+
+    memArray_addr = 64'hc100001800;
+    be      = 8'hff;
+    gMem.writeBM (memArray_addr[63:0], data, be);
+    printf("KHH-Debug : gMem.WriteBM SetTxLPValid = 64'hc100001800, Data = %h \n ", data);
+    */
+}
+
+
+task Fc_Niu_Ev2a_SetTxLPMask1 (bit [63:0] data)
+{
+    Fc_Niu_Ev2a_write1(data, NIU_PKTGEN_CSR_EV2A_TX_LOG_MASK1,
+                       "SetTxLPMask1");
+    /*
+   bit [63:0] data_tmp0;
+   bit [63:0] Rdata0;
+   bit [63:0] memArray_addr;
+   bit [7:0] be = 8'hff;
+
+    data_tmp0  = data;
+    Rdata0 = {data_tmp0[7:0],data_tmp0[15:8],data_tmp0[23:16],data_tmp0[31:24],data_tmp0[39:32],data_tmp0[47:40],data_tmp0[55:48],data_tmp0[63:56]};
+//  SparseMem.WriteMem(64'h100000200, data,8'hff);
+    SparseMem.WriteMem(64'hc100001200, Rdata0,8'hff);
+    printf("MAQ-Debug : SetTxLPMask1 Addr = 64'hc100001200, Data = %h \n ", data );
+    printf("MAQ-Debug : SetTxLPMask1 Addr = 64'hc100001200, Data(Rdata) = %h \n ", Rdata0);
+
+    memArray_addr = 64'hc100001200;
+    be      = 8'hff;
+    gMem.writeBM (memArray_addr[63:0], data, be);
+    printf("KHH-Debug : gMem.WriteBM SetTxLPMask1 = 64'hc100001200, Data = %h \n ", data);
+    */
+}
+
+
+task Fc_Niu_Ev2a_SetTxLPValue1 (bit [63:0] data)
+{
+    Fc_Niu_Ev2a_write1(data, NIU_PKTGEN_CSR_EV2A_TX_LOG_VALUE1,
+                       "SetTxLPValue1");
+    /*
+   bit [63:0] data_tmp0;
+   bit [63:0] Rdata0;
+   bit [63:0] memArray_addr;
+   bit [7:0] be = 8'hff;
+
+    data_tmp0  = data;
+    Rdata0 = {data_tmp0[7:0],data_tmp0[15:8],data_tmp0[23:16],data_tmp0[31:24],data_tmp0[39:32],data_tmp0[47:40],data_tmp0[55:48],data_tmp0[63:56]};
+//  SparseMem.WriteMem(64'h100000300, data,8'hff);
+    SparseMem.WriteMem(64'hc100001300, Rdata0,8'hff);
+    printf("MAQ-Debug : SetTxLPValue1 Addr = 64'hc100001300, Data = %h \n ", data );
+    printf("MAQ-Debug : SetTxLPValue1 Addr = 64'hc100001300, Data(Rdata) = %h \n ", Rdata0);
+
+    memArray_addr = 64'hc100001300;
+    be      = 8'hff;
+    gMem.writeBM (memArray_addr[63:0], data, be);
+    printf("KHH-Debug : gMem.WriteBM SetTxLPValue1 = 64'hc100001300, Data = %h \n ", data);
+    */
+}
+
+
+task Fc_Niu_Ev2a_SetTxLPMask2 (bit [63:0] data)
+{
+    Fc_Niu_Ev2a_write1(data, NIU_PKTGEN_CSR_EV2A_TX_LOG_MASK2,
+                       "SetTxLPMask2");
+    /*
+   bit [63:0] data_tmp0;
+   bit [63:0] Rdata0;
+   bit [63:0] memArray_addr;
+   bit [7:0] be = 8'hff;
+
+    data_tmp0  = data;
+    Rdata0 = {data_tmp0[7:0],data_tmp0[15:8],data_tmp0[23:16],data_tmp0[31:24],data_tmp0[39:32],data_tmp0[47:40],data_tmp0[55:48],data_tmp0[63:56]};
+//  SparseMem.WriteMem(64'h100000500, data,8'hff);
+    SparseMem.WriteMem(64'hc100001500, Rdata0,8'hff);
+    printf("MAQ-Debug : SetTxLPMask2 Addr = 64'hc100001500, Data = %h \n ", data );
+    printf("MAQ-Debug : SetTxLPMask2 Addr = 64'hc100001500, Data(Rdata) = %h \n ", Rdata0);
+
+    memArray_addr = 64'hc100001500;
+    be      = 8'hff;
+    gMem.writeBM (memArray_addr[63:0], data, be);
+    printf("KHH-Debug : gMem.WriteBM SetTxLPMask2 = 64'hc100001500, Data = %h \n ", data);
+    */
+}
+
+
+task Fc_Niu_Ev2a_SetTxLPValue2 (bit [63:0] data)
+{
+    Fc_Niu_Ev2a_write1(data, NIU_PKTGEN_CSR_EV2A_TX_LOG_VALUE2,
+                       "SetTxLPValue2");
+    /*
+   bit [63:0] data_tmp0;
+   bit [63:0] Rdata0;
+   bit [63:0] memArray_addr;
+   bit [7:0] be = 8'hff;
+
+    data_tmp0  = data;
+    Rdata0 = {data_tmp0[7:0],data_tmp0[15:8],data_tmp0[23:16],data_tmp0[31:24],data_tmp0[39:32],data_tmp0[47:40],data_tmp0[55:48],data_tmp0[63:56]};
+//  SparseMem.WriteMem(64'h100000600, data,8'hff);
+    SparseMem.WriteMem(64'hc100001600, Rdata0,8'hff);
+    printf("MAQ-Debug : SetTxLPValue2 Addr = 64'hc100001600, Data = %h \n ", data );
+    printf("MAQ-Debug : SetTxLPValue2 Addr = 64'hc100001600, Data(Rdata) = %h \n ", Rdata0);
+
+    memArray_addr = 64'hc100001600;
+    be      = 8'hff;
+    gMem.writeBM (memArray_addr[63:0], data, be);
+    printf("KHH-Debug : gMem.WriteBM SetTxLPValue2 = 64'hc100001600, Data = %h \n ", data);
+    */
+}
+
+
+task Fc_Niu_Ev2a_SetTxLPRELOC1 (bit [63:0] data)
+{
+    Fc_Niu_Ev2a_write1(data, NIU_PKTGEN_CSR_EV2A_TX_LOG_PAGE_RELO1,
+                       "SetTxLPRELOC1");
+    /*
+   bit [63:0] data_tmp0;
+   bit [63:0] Rdata0;
+   bit [63:0] memArray_addr;
+   bit [7:0] be = 8'hff;
+
+    data_tmp0  = data;
+    Rdata0 = {data_tmp0[7:0],data_tmp0[15:8],data_tmp0[23:16],data_tmp0[31:24],data_tmp0[39:32],data_tmp0[47:40],data_tmp0[55:48],data_tmp0[63:56]};
+//  SparseMem.WriteMem(64'h100000400, data,8'hff);
+    SparseMem.WriteMem(64'hc100001400, Rdata0,8'hff);
+    printf("MAQ-Debug : SetTxLPRELOC1 Addr = 64'hc100001400, Data = %h \n ", data );
+    printf("MAQ-Debug : SetTxLPRELOC1 Addr = 64'hc100001400, Data(Rdata) = %h \n ", Rdata0);
+
+    memArray_addr = 64'hc100001400;
+    be      = 8'hff;
+    gMem.writeBM (memArray_addr[63:0], data, be);
+    printf("KHH-Debug : gMem.WriteBM SetTxLPRELOC1 = 64'hc100001400, Data = %h \n ", data);
+    */
+}
+
+
+task Fc_Niu_Ev2a_SetTxLPRELOC2 (bit [63:0] data)
+{
+    Fc_Niu_Ev2a_write1(data, NIU_PKTGEN_CSR_EV2A_TX_LOG_PAGE_RELO2,
+                       "SetTxLPRELOC2");
+    /*
+   bit [63:0] data_tmp0;
+   bit [63:0] Rdata0;
+   bit [63:0] memArray_addr;
+   bit [7:0] be = 8'hff;
+
+    data_tmp0  = data;
+    Rdata0 = {data_tmp0[7:0],data_tmp0[15:8],data_tmp0[23:16],data_tmp0[31:24],data_tmp0[39:32],data_tmp0[47:40],data_tmp0[55:48],data_tmp0[63:56]};
+//  SparseMem.WriteMem(64'h100000700, data,8'hff);
+    SparseMem.WriteMem(64'hc100001700, Rdata0,8'hff);
+    printf("MAQ-Debug : SetTxLPRELOC2 Addr = 64'hc100001700, Data = %h \n ", data );
+    printf("MAQ-Debug : SetTxLPRELOC2 Addr = 64'hc100001700, Data(Rdata) = %h \n ", Rdata0);
+
+    memArray_addr = 64'hc100001700;
+    be      = 8'hff;
+    gMem.writeBM (memArray_addr[63:0], data, be);
+    printf("KHH-Debug : gMem.WriteBM SetTxLPRELOC2 = 64'hc100001700, Data = %h \n ", data);
+    */
+}

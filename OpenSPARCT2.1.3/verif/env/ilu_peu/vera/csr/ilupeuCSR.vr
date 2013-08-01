@@ -1,0 +1,180 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuCSR.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "CCCXactor.vrh"
+
+class ilupeuCSR {
+
+  local integer		offset;
+
+  protected ReportClass           _report;
+
+  CSRCollection         CSR;
+
+  // Declare csr transactor
+  CCCXactor                CSRRingXactor;
+
+  // Declare access methods
+  StubAccessMethod  	   StubMethod;
+  OmniAccessMethod	   OmniMethod;
+  DaemonAccessMethod	   DaemonMethod;
+  // Need 3 access methods for the 3 different "rings"
+  CCCAccessMethod          PioFastMethod;
+  CCCAccessMethod          PioMedMethod;
+  CCCAccessMethod          PioSlowMethod;
+  CCCAccessMethod          JTAGMethod;
+
+  CSRAccessMethod	   ilupeuMethodArray[];
+
+  task new(ReportClass a_rpt);
+
+  // Tasks for changing access methods based on fast,med,slow
+  task set_ILU_default_access_methods(integer method);
+  task set_PTL_default_access_methods(integer method);
+  task set_LPU_default_access_methods(integer method);
+
+}
+
+task ilupeuCSR::new (ReportClass a_rpt) {
+  _report = a_rpt;
+
+  // Instantiate transactor
+  CSRRingXactor = new(RingXactorDataInBind, RingXactorDataOutBind, _report, 1);
+
+  StubMethod    = new;
+  OmniMethod    = new(0);                               // index=0, not used?
+  DaemonMethod  = new(0);                               // index=0, not used?
+  // change timeouts for the 3 methods?
+  
+  PioFastMethod = new(_report, CSRRingXactor, 3, 500, 1);     // bus id = 3, timeout = 50
+  PioMedMethod  = new(_report, CSRRingXactor, 2, 500, 1);     // bus id = 2, timeout = 50
+  PioSlowMethod = new(_report, CSRRingXactor, 1, 500, 1);     // bus id = 1, timeout = 50
+  JTAGMethod    = new(_report, CSRRingXactor, 0, 500, 1);     // bus id = 0, timeout = 50
+
+  ilupeuMethodArray[CSRT_STUB]     = StubMethod;
+  ilupeuMethodArray[CSRT_OMNI]     = OmniMethod;
+  ilupeuMethodArray[CSRT_DAEMON]   = DaemonMethod;
+  ilupeuMethodArray[FIRE_PIO_FAST] = PioFastMethod;
+  ilupeuMethodArray[FIRE_PIO_MED]  = PioMedMethod;
+  ilupeuMethodArray[FIRE_PIO_SLOW] = PioSlowMethod;
+  ilupeuMethodArray[FIRE_JTAG]     = JTAGMethod;
+
+  CSR = new(ilupeuMethodArray);
+}
+
+task ilupeuCSR::set_ILU_default_access_methods (integer method) {
+CSR.fire_dlc_ilu_cib_csr_a_pec_int_en.set_default_access_method(method);
+CSR.fire_dlc_ilu_cib_csr_a_pec_en_err.set_default_access_method(method);
+CSR.fire_dlc_ilu_cib_csr_a_ilu_int_en.set_default_access_method(method);
+CSR.fire_dlc_ilu_cib_csr_a_ilu_log_en.set_default_access_method(method);
+CSR.fire_dlc_ilu_cib_csr_a_ilu_en_err.set_default_access_method(method);
+CSR.fire_dlc_ilu_cib_csr_a_ilu_log_err_rw1c_alias.set_default_access_method(method);
+CSR.fire_dlc_ilu_cib_csr_a_ilu_log_err_rw1s_alias.set_default_access_method(method);
+CSR.fire_dlc_ilu_cib_csr_a_ilu_diagnos.set_default_access_method(method);
+}
+
+task ilupeuCSR::set_PTL_default_access_methods (integer method) {
+CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_ici.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_replay_tim_thresh.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_slt_cap.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_link_cfg.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_icr.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_force_ltssm.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_oe_log.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_event_err_int_en.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_ue_err_rw1s_alias.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_lnk_sts.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_event_err_log_en.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_oe_int_en.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_ue_err_rw1c_alias.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_oe_en_err.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_symbol_num.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_replay_timer.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_rue_hdr1.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_rue_hdr2.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_prf0.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_prf1.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_oe_err_rw1s_alias.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_prf2.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_ce_int_en.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_ce_en_err.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_sts.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_tue_hdr1.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_tue_hdr2.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_dev_sts.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_trn_off.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_oe_err_rw1c_alias.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_roe_hdr1.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_roe_hdr2.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_prfc.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_ce_log.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_event_err_int_sts.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_peu_dlpl_serdes_rev.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_toe_hdr1.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_toe_hdr2.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_acknak_thresh.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_ven_dllp_msg.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_lane_skew.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_ue_int_en.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_core_status.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_lnk_cap.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_ue_en_err.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_event_err_sts_clr_rw1s_alias.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_lnk_ctl.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_ce_err_rw1s_alias.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_serdes_pll.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_acknak_timer.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_event_err_sts_clr_rw1c_alias.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_diag.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_symbol_timer.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_link_ctl.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_ce_err_rw1c_alias.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_erb.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_ecc.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_ue_log.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_ctl.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_ecl.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_ica.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_dev_cap.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_dbg_sel_a.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_dbg_sel_b.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_dev_ctl.set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_serdes_xmitter_lane_ctl[offset].set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_serdes_receiver_lane_status[offset].set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_serdes_xmitter_lane_status[offset].set_default_access_method(method);
+CSR.fire_plc_tlu_ctb_tlr_csr_a_serdes_receiver_lane_ctl[offset].set_default_access_method(method);
+}
+
+task ilupeuCSR::set_LPU_default_access_methods (integer method) {
+}

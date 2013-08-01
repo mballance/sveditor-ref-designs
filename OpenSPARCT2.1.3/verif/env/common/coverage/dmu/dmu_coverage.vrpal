@@ -1,0 +1,795 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: dmu_coverage.vrpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#inc "dmu_cov_inc.pal";
+
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+
+#include "std_display_class.vrh"
+#include "std_display_defines.vri"
+
+#include "dmu_cov.if.vrh"
+#include "dmu_cov_ports_binds.vrh"
+
+extern event dmu_diag_done;
+
+
+class dmu_coverage {
+  // for dispmon
+  StandardDisplay dbg;
+  local string 	  myname;
+
+#include "dmu_cov_defines.vrh"
+
+  // ----------- start of coverage object 1 ----------------
+  // this coverage group samples on dmu clock
+
+  event dmu_clu_cl2ps_sample_evnt_trig;
+  event dmu_clu_ps2pm_sample_evnt_trig;
+  event dmu_d2j_cmd_vld_sample_evnt_trig;
+
+  coverage_group ncu_dmu_pio_coverage_group {
+
+    const_sample_reference = 1;	// ref. to sample vars. is constant
+    sample_event           = sync (ANY, pio_sample_evnt_trig );
+
+    #include "ncu_dmu_pio_sample.vrh"
+  }
+
+  coverage_group dmu_sii_coverage_group {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, dmu_sii_sample_evnt_trig );
+
+#ifndef DMU_INTF_COV
+    #include "dmu_sii_sample.vrh"
+#endif
+  } // dmu_sii_coverage_group
+ 
+  // ----------- coverage_group ----------------
+  coverage_group sio_dmu_coverage_group {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, sio_dmu_sample_evnt_trig );
+
+#ifndef DMU_INTF_COV
+    #include "sio_dmu_sample.vrh"
+#endif
+  } // siu_dmu_coverage_group
+
+  coverage_group dmu_ilu_iHdr_coverage_group {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, ilu_dmu_iHdr_sample_evnt_trig );
+
+    #include "dmu_ilu_ingress_sample.vrh"
+
+  } // ilu_dmu_ingress_coverage_group
+
+//coverage_group dmu_ilu_ingress_dp_coverage_group
+//  {
+//    const_sample_reference = 1; // ref. to sample vars. is constant
+//    sample_event           = sync (ANY, dmu_ilu_ingress_dp_sample_evnt_trig );
+//
+//#ifndef DMU_INTF_COV
+////    #include "dmu_ilu_ingress_dp_sample.vrh"
+//#endif
+//
+//  } // dmu_ilu_ingress_dp_coverage_group
+//
+//coverage_group dmu_ilu_ingress_rel_coverage_group
+//  {
+//    const_sample_reference = 1; // ref. to sample vars. is constant
+//    sample_event           = sync (ANY, dmu_ilu_ingress_rel_sample_evnt_trig );
+//
+//#ifndef DMU_INTF_COV
+////    #include "dmu_ilu_ingress_rel_sample.vrh"
+//#endif
+//
+//  } // dmu_ilu_ingress_rel_coverage_group
+
+  coverage_group dmu_ilu_iBufAddr_coverage_group {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event = sync (ANY, dmu_ilu_iBufAddr_sample_evnt_trig );
+#ifndef DMU_INTF_COV
+    #include "dmu_ilu_ingress_data_sample.vrh"
+#endif
+  }
+
+  coverage_group dmu_ilu_iRelRcd_coverage_group {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, dmu_ilu_iRel_sample_evnt_trig);
+
+#ifndef DMU_INTF_COV
+    #include "dmu_ilu_rel_sample.vrh"
+#endif
+  }
+
+  coverage_group dmu_ilu_eHdr_coverage_group {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, dmu_ilu_eHdr_sample_evnt_trig );
+
+#ifndef DMU_INTF_COV
+    #include "dmu_ilu_egress_sample.vrh"
+#endif
+  } // dmu_ilu_egress_coverage_group
+
+  coverage_group dmu_ilu_eBufAddr_coverage_group {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event = sync (ANY, ilu_dmu_eBufAddr_sample_evnt_trig);
+#ifndef DMU_INTF_COV
+     #include "dmu_ilu_egress_data_sample.vrh"
+#endif
+  } 
+
+  coverage_group dmu_ilu_eRelRcd_coverage_group {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, ilu_dmu_eRel_sample_evnt_trig);
+
+#ifndef DMU_INTF_COV
+    #include "dmu_ilu_egress_rel_sample.vrh"
+#endif
+  }
+
+  coverage_group dmu_ncu_error_coverage_group {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event = @(posedge dmu_ncu_error_if.clk);
+
+#ifndef DMU_INTF_COV
+    #include "dmu_ncu_error_sample.vrh"
+#endif
+  }
+ 
+  coverage_group dmu_sii_wrack_coverage_group {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event = @(posedge dmu_coverage_ifc.dmu_gclk);
+
+#ifndef DMU_INTF_COV
+    sample dmu_siu_intf_DMA_WrackTag_cov (dmu_coverage_ifc.dmuwrack_tag)
+    {
+      m_state (0:15) if (dmu_coverage_ifc.dmuwrack_vld == 1'b1);
+    }
+    sample dmu_siu_intf_DMA_WrackTagPar_cov (dmu_coverage_ifc.dmuwrack_par)
+    {
+      m_state (0:1) if (dmu_coverage_ifc.dmuwrack_vld == 1'b1);
+    }
+#endif
+  }
+ 
+  coverage_group dmu_ncu_wrack_coverage_group {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event = @(posedge dmu_cov_dmupio.clk);
+
+#ifndef DMU_INTF_COV
+    sample dmu_ncu_intf_PIOWrackTag_cov (dmu_cov_dmupio.dmu_ncu_wrack_tag)
+    {
+      m_state (0:15) if (dmu_cov_dmupio.dmu_ncu_wrack_vld == 1'b1);
+    }
+    sample dmu_ncu_intf_PIOWrackTagPar_cov (dmu_cov_dmupio.dmu_ncu_wrack_par)
+    {
+      m_state (0:1) if (dmu_cov_dmupio.dmu_ncu_wrack_vld);
+    }
+#endif
+  }
+ 
+  coverage_group dmu_ncu_mondo_coverage_group {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event = @(posedge dmu_ncu_mondo_if.clk);
+
+#ifndef DMU_INTF_COV
+    sample dmu_ncu_intf_MondoAck_cov (dmu_ncu_mondo_if.ncu_dmu_mondo_id)
+    {
+      m_state (0:63) if (dmu_ncu_mondo_if.ncu_dmu_mondo_ack == 1'b1);
+    }
+    sample dmu_ncu_intf_MondoNack_cov (dmu_ncu_mondo_if.ncu_dmu_mondo_id)
+    {
+      m_state (0:63) if (dmu_ncu_mondo_if.ncu_dmu_mondo_nack == 1'b1);
+    }
+    sample dmu_ncu_intf_MondoPar_cov (dmu_ncu_mondo_if.ncu_dmu_mondo_id_par)
+    {
+      m_state ACK_PAR  (0:1) if (dmu_ncu_mondo_if.ncu_dmu_mondo_ack == 1'b1);
+      m_state NACK_PAR (0:1) if (dmu_ncu_mondo_if.ncu_dmu_mondo_nack == 1'b1);
+    }
+#endif
+  }
+ 
+  coverage_group dmu_ncu_iommuinv_coverage_group {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event = sync (ANY, iommu_inv_sample_evnt_trig);
+
+    // Only PA[38:0] will toggle since PA[39] must be 0 for cacheable address
+    // this equates to bits 32:0 on the inv_addr
+
+#ifndef DMU_INTF_COV
+    sample dmu_ncu_intf_IommuInv_cov (ncu_iommu_inv_addr[32:0])
+    {
+. &toggle(33);
+    }
+#endif
+  }
+
+  coverage_group dmu_ncu_csr_coverage_group {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event = @(posedge dmu_ncu_csr_if.clk);
+
+#ifndef DMU_INTF_COV
+    sample dmu_ncu_intf_csr_stall_cov ({dmu_ncu_csr_if.dmu_ncu_stall,dmu_ncu_csr_if.ncu_dmu_stall})
+    {
+      m_state (1:3);
+    }
+#endif
+  }
+ 
+  
+coverage_group dmu_clu_cm2cl_rcd_coverage_group
+  {
+                sample_event = @(posedge dmu_clu_coverage.cm2cl_rcd_full);
+#ifndef DMU_INTF_COV
+                sample dmu_clu_cm2cl_rcd_full (dmu_clu_coverage.cm2cl_rcd_full)
+                {
+                 state s_1 (1'b1);
+                }
+#endif
+  } 
+
+coverage_group dmu_pmu_pm2cm_rcd_coverage_group
+  {
+                sample_event = @(posedge dmu_pmu_coverage.pm2cm_rcd_full);
+#ifndef DMU_INTF_COV
+                sample dmu_pmu_pm2cm_rcd_full (dmu_pmu_coverage.pm2cm_rcd_full)
+                {
+                 state s_1 (1'b1);
+                }
+#endif
+  } 
+
+coverage_group dmu_pmu_cl2pm_rcd_coverage_group
+  {
+                sample_event = @(posedge dmu_pmu_coverage.cl2pm_rcd_full);
+#ifndef DMU_INTF_COV
+                sample dmu_pmu_cl2pm_rcd_full (dmu_pmu_coverage.cl2pm_rcd_full)
+                {
+                 state s_1 (1'b1);
+                }
+#endif
+  } 
+
+coverage_group dmu_psb_ps2pm_coverage_group
+  {
+                sample_event = @(posedge dmu_psb_coverage.ps2pm_i_full);
+#ifndef DMU_INTF_COV
+                sample dmu_psb_ps2pm_i_full (dmu_psb_coverage.ps2pm_i_full)
+                {
+                 state s_1 (1'b1);
+                }
+#endif
+  } 
+
+coverage_group dmu_clu_cl2ps_coverage_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event = sync (ANY, dmu_clu_cl2ps_sample_evnt_trig );
+#ifndef DMU_INTF_COV
+    #include "dmu_clu_sample.vrh"
+#endif
+  } 
+
+coverage_group dmu_clu_ps2pm_coverage_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event = sync (ANY, dmu_clu_ps2pm_sample_evnt_trig );
+#ifndef DMU_INTF_COV
+    #include "dmu_psb_sample.vrh"
+#endif
+  } 
+
+coverage_group dmu_cmu_maxpyld_coverage_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = @(posedge dmu_dmc_coverage.l2clk);
+
+#ifndef DMU_INTF_COV
+    #include "dmu_cmu_maxpyld_sample.vrh"
+#endif
+  }
+
+coverage_group dmu_cmu_coverage_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, dmu_cmu_sample_evnt_trig );
+
+#ifndef DMU_INTF_COV
+    #include "dmu_cmu_sample.vrh"
+#endif
+  }
+
+coverage_group dmu_im2di_addr_coverage_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event = sync (ANY, dmu_im2di_sample_evnt_trig );
+#ifndef DMU_INTF_COV
+    #include "dmu_im2di_sample.vrh"
+#endif
+  } 
+
+coverage_group dmu_cl2di_addr_coverage_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event = sync (ANY, dmu_cl2di_sample_evnt_trig );
+#ifndef DMU_INTF_COV
+    #include "dmu_cl2di_sample.vrh"
+#endif
+  } 
+
+coverage_group dmu_d2j_cmd_vld_coverage_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event = sync (ANY, dmu_d2j_cmd_vld_sample_evnt_trig );
+#ifndef DMU_INTF_COV
+    #include "dmu_d2j_cmd_sample.vrh"
+#endif
+  } 
+
+//coverage_group dmu_intcnt_fsm_coverage_group
+//  {
+//    const_sample_reference = 1; // 
+//    sample_event           = @(posedge dmu_intcnt_fsm_if.clk);
+//
+//    #include "dmu_int_controller.vrh"
+//  }
+
+#ifdef FC_COVERAGE 
+coverage_group dmu_int_relocation_coverage_group
+  {
+    const_sample_reference = 1; //
+    sample_event           = @(posedge dmu_int_relocation_if.clk);
+
+    #include "dmu_int_relocation_sample.vrh"
+  }
+#endif
+coverage_group dmu_peu_intf_intr_msi_msg_cov_group
+  {
+    const_sample_reference = 1; //
+    sample_event           = @(negedge dmu_cov_ios.clk);
+
+    sample dmu_peu_intf_intr_msi_msg_cov (dmu_cov_ios.rcd_is_msi){
+	 state (1'b1);
+    }
+
+  }
+
+
+  task new(StandardDisplay dbg);
+  task set_cov_cond_bits ();
+  task set_dmu_cov_points ();
+  task set_ilu_dmu_cov_points ();
+  task set_dmu_ilu_cov_points ();
+  task set_pio_cov_point (string myname, dmu_cov_pio_port piopt); 
+
+}
+
+/////////////////////////////////////////////////////////////////
+// Class creation 
+/////////////////////////////////////////////////////////////////
+task dmu_coverage::new(StandardDisplay dbg)
+{
+  // for dispmon
+  reg [3:0] dummy_data;
+
+  bit coverage_on;
+  integer j;
+
+  myname = "dmu_coverage";
+  this.dbg = dbg;
+  //dbg = new();
+
+  if (get_plus_arg (CHECK, "dmu_coverage") ||
+    get_plus_arg (CHECK, "coverage_on")) {
+    coverage_on = 1;
+  } else {
+    coverage_on = 0;
+  }
+
+  if (coverage_on) {
+
+    dmu_sii_coverage_group     = new();
+    sio_dmu_coverage_group     = new();
+    ncu_dmu_pio_coverage_group = new();
+
+    fork
+      set_cov_cond_bits ();
+      set_pio_cov_point ({myname, ".cpx"}, dmu_cov_pio_dw_bind);
+      set_ilu_dmu_cov_points ();
+      set_dmu_ilu_cov_points ();
+      set_dmu_cov_points ();
+    join none
+
+    dbg.dispmon(myname, MON_INFO, psprintf("Coverage turned on for DMU objects"));
+    //printf("\n\n %d :Coverage turned on for DMU objects\n\n");
+
+    fork {
+      sync(ANY,dmu_diag_done);
+      dbg.dispmon(myname, MON_INFO, psprintf("After dmu_diag_done"));
+      coverage_save_database(1);
+      dbg.dispmon(myname, MON_INFO, psprintf("Coverage for DMU objects generated", get_time(LO)));
+    } join none
+  } // if coverage_on
+} // dmu_coverage::new()
+
+
+///////////////////////////////////////////////////////////////////////////
+// This task is a psuedo coverage object that combines a few conditions
+// so that the actual coverage objects' state space doesn't get too big
+//////////////////////////////////////////////////////////////////////////
+
+task dmu_coverage:: set_cov_cond_bits () {
+//------------------- DMU_INTERFACE ---------------------------------
+  bit dmureq;
+  integer dmu_this_cmd_cycle, dmu_last_cmd_cycle;
+
+  integer sio_dmu_last_cmd_cycle, sio_dmu_this_cmd_cycle;
+
+  dmu_this_cmd_cycle 		= get_cycle(dmu_coverage_ifc.dmu_gclk);
+  sio_dmu_this_cmd_cycle        = get_cycle(dmu_coverage_ifc.dmu_gclk);
+
+  
+  fork
+  {
+    while (1) {
+      @ (posedge dmu_coverage_ifc.dmu_gclk);
+
+      //---------------DMU-SII---------------------
+      if( dmu_coverage_ifc.dmureq )
+      {
+        dmubypass       = dmu_coverage_ifc.dmubypass;
+        dmudata         = dmu_coverage_ifc.dmudata;
+	dmu_sii_byte_en	= dmu_coverage_ifc.dmube;
+	dmu_sii_parity	= dmu_coverage_ifc.dmuparity;
+        dmu_sii_datareq = dmu_coverage_ifc.dmudatareq;
+        dmu_sii_datareq16 = dmu_coverage_ifc.dmudatareq16;
+	dmu_sii_reqtype = {dmu_sii_datareq,dmu_sii_datareq16};
+
+
+        dmu_last_cmd_cycle = dmu_this_cmd_cycle;
+        dmu_this_cmd_cycle = get_cycle(dmu_coverage_ifc.dmu_gclk);
+
+        dmu_back_to_back   = dmu_this_cmd_cycle - dmu_last_cmd_cycle;
+
+        dmu_cmd = dmudata[127:122];
+        dmc_tag = dmudata[79:64];
+	dmu_sii_even_addr_par = dmudata[83];        
+	dmu_sii_odd_addr_par = dmudata[84];        
+	dmu_sii_pio_cpl_to_err = dmudata[82];        
+	dmu_sii_pio_cpl_bus_err = dmudata[81];        
+	dmu_sii_pio_cpl_ue_err = dmudata[80];        
+
+        last_dmu_cmd = this_dmu_cmd;
+        this_dmu_cmd = {dmu_cmd,dmubypass};
+
+        dbg.dispmon(myname, MON_INFO, psprintf("dmurequest comes in"));
+        if(last_dmu_cmd_valid) {
+          // only sample when both "last_dmu_cmd" and "this_dmu_cmd"
+          // contain valid data, so the first command is never sampled
+          trigger (dmu_sii_sample_evnt_trig);
+          dbg.dispmon(myname, MON_INFO, psprintf("dmu_sample_evnt_triggered"));
+        }
+        else
+        {
+          last_dmu_cmd_valid = 1'b1;
+        }
+      } //dmu_coverage_ifc.dmureq
+
+
+      /************** SIO-DMU *****************/
+      if( dmu_coverage_ifc.sio_dmu_req )
+      {
+        sio_dmu_data    = dmu_coverage_ifc.sio_dmu_data;
+
+	sio_dmu_rd_return_ue      = sio_dmu_data[81];
+	sio_dmu_rd_return_de      = sio_dmu_data[80];
+        dmu_id_out                = sio_dmu_data[79:64];
+	sio_dmu_rd_return_ctagecc = sio_dmu_data[61:56];
+
+        dbg.dispmon(myname, MON_INFO, psprintf("siu request comes in to dmu"));
+        sio_dmu_last_cmd_cycle = sio_dmu_this_cmd_cycle;
+        sio_dmu_this_cmd_cycle = get_cycle(dmu_coverage_ifc.dmu_gclk);
+
+        sio_dmu_back_to_back = sio_dmu_this_cmd_cycle - sio_dmu_last_cmd_cycle;
+ 
+        sio_dmu_last_cmd = sio_dmu_this_cmd;
+        sio_dmu_this_cmd = sio_dmu_data[127:122];
+
+        if(sio_dmu_last_cmd_valid) {
+          // only sample when both "last_dmu_cmd" and "this_dmu_cmd"
+          // contain valid data, so the first command is never sampled
+         trigger (sio_dmu_sample_evnt_trig);
+         dbg.dispmon(myname, MON_INFO, psprintf("sio_dmu_sample_evnt_triggered"));
+        }
+        else
+        {
+          sio_dmu_last_cmd_valid = 1'b1;
+        }
+      } // dmu_coverage_ifc.sio_dmu_req
+
+
+   } // while (1)
+  } // fork
+  join none
+}  // task dmu_intf_coverage
+
+task dmu_coverage::set_pio_cov_point (string myname, dmu_cov_pio_port piopt) {
+
+  reg [63:0] rev_hdr, inv_addr;
+  reg data_valid;
+  data_valid = 0;
+  ncu_pio_b2b=0;
+  while (1) {
+        @(posedge piopt.\$clk);
+
+        if (piopt.\$hdr_vld) {
+            rev_hdr = piopt.\$data;
+	    ncu_pio_credit = rev_hdr[59:56];
+	    ncu_pio_wr     = rev_hdr[60];    // 1= PIO Read, 0= PIO Write
+	    ncu_pio_size   = rev_hdr[50:48]; // for PIO READSds 
+	    ncu_pio_bmsk   = rev_hdr[55:48]; // for PIO WRITES
+	    ncu_pio_cmap   = rev_hdr[49:48]; 	    ncu_pio_bufid  = rev_hdr[47:46]; 	    ncu_pio_cpu    = rev_hdr[45:40];
+	    ncu_pio_cmd    = rev_hdr[37:36]; // 11= MEM64, 10= MEM32, 01=IO, 00=Cnfg
+	    ncu_pio_add    = rev_hdr[35:0];
+ 	    ncu_pio_b2b++;
+	    if (!rev_hdr[54]){ data_valid = 1;	}
+	    trigger (pio_sample_evnt_trig);
+            dbg.dispmon(myname, MON_INFO, psprintf("from ncu_dmu_pio_coverage: wr  %h credid %h size %h, bufid %h cpuid %h b2b_cnt %0d",
+                   ncu_pio_wr, ncu_pio_credit, ncu_pio_size, ncu_pio_bufid, ncu_pio_cpu, ncu_pio_b2b));
+        } else if (data_valid){
+		data_valid = 0;
+	} else {
+	  ncu_pio_b2b = 0;
+	}
+
+        if (piopt.\$mmu_vld) {
+          inv_addr = piopt.\$data;
+          ncu_iommu_inv_addr = inv_addr[39:6];
+          trigger (iommu_inv_sample_evnt_trig);
+          dbg.dispmon(myname, MON_INFO, psprintf("iommu inv event triggered: addr %h",ncu_iommu_inv_addr));
+        }
+  }
+} 
+// This task covers all the ingress record, buffer data, release transactions
+task dmu_coverage:: set_ilu_dmu_cov_points () {
+  reg [115:0] pec_ingress_rcd;
+
+  while (1) {
+    @(posedge ilu_dmu_coverage.clk);
+
+    // Ingress PEC record
+    if (ilu_dmu_coverage.y2k_rcd_enq) {
+      pec_ingress_rcd       = ilu_dmu_coverage.y2k_rcd[115:0];
+      // field definitions per Fire ASIC spec, pg 7-586, table 7-1
+      ilu_dmu_hdr_F         = pec_ingress_rcd[115:114];
+      ilu_dmu_hdr_Type      = pec_ingress_rcd[113:109];
+      ilu_dmu_hdr_F_Type    = pec_ingress_rcd[115:109];
+      ilu_dmu_hdr_TC        = pec_ingress_rcd[108:106];
+      ilu_dmu_hdr_Atr       = pec_ingress_rcd[105:104];
+      ilu_dmu_hdr_Len       = pec_ingress_rcd[103:94];
+      ilu_dmu_hdr_ReqID     = pec_ingress_rcd[93:78];
+      ilu_dmu_hdr_TLPTag    = pec_ingress_rcd[77:70];
+      ilu_dmu_hdr_LastDWBE  = pec_ingress_rcd[69:66];
+      ilu_dmu_hdr_FirstDWBE = pec_ingress_rcd[65:62];
+      ilu_dmu_hdr_Addr      = pec_ingress_rcd[61:0];
+      ilu_dmu_mps           = ilu_dmu_coverage.mps; // max payload size
+      if ( ilu_dmu_hdr_F_Type[6:3] == 4'b0110){ 
+	 ilu_dmu_hdr_msg_code = pec_ingress_rcd [69:62];
+	}
+     
+      if (ilu_dmu_hdr_F_Type == 7'b0110100){
+	  if (ilu_dmu_hdr_msg_code == 8'b00100000){
+		assert_inta_b2b++;
+		if (assert_inta_b2b >= 2){
+			intx_dup_reg[0] = 1'b1;
+		}
+	  } else if (ilu_dmu_hdr_msg_code == 8'b00100100){
+		assert_inta_b2b = 0;
+	  }	
+	  if (ilu_dmu_hdr_msg_code == 8'b00100001){
+		assert_intb_b2b++;
+		if (assert_intb_b2b >= 2){
+			intx_dup_reg[1] = 1'b1;
+		}
+	  } else if (ilu_dmu_hdr_msg_code == 8'b00100101){
+		assert_intb_b2b = 0;
+	  }	
+	  if (ilu_dmu_hdr_msg_code == 8'b00100010){
+		assert_intc_b2b++;
+		if (assert_intc_b2b >= 2){
+			intx_dup_reg[2] = 1'b1;
+		}
+	  } else if (ilu_dmu_hdr_msg_code == 8'b00100110){
+		assert_intc_b2b = 0;
+	  }	
+	  if (ilu_dmu_hdr_msg_code == 8'b00100011){
+		assert_intd_b2b++;
+		if (assert_intd_b2b >= 2){
+			intx_dup_reg[3] = 1'b1;
+		}
+	  } else if (ilu_dmu_hdr_msg_code == 8'b00100111){
+		assert_intd_b2b = 0;
+	  }	
+	  if (ilu_dmu_hdr_msg_code == 8'b00100100){
+		de_assert_inta_b2b++;
+		if (de_assert_inta_b2b >= 2){
+			intx_dup_reg[4] = 1'b1;
+		}
+	  } else if (ilu_dmu_hdr_msg_code == 8'b00100000){
+		de_assert_inta_b2b = 0;
+	  }	
+	  if (ilu_dmu_hdr_msg_code == 8'b00100101){
+		de_assert_intb_b2b++;
+		if (de_assert_intb_b2b >= 2){
+			intx_dup_reg[5] = 1'b1;
+		}
+	  } else if (ilu_dmu_hdr_msg_code == 8'b00100001){
+		de_assert_intb_b2b = 0;
+	  }	
+	  if (ilu_dmu_hdr_msg_code == 8'b00100110){
+		de_assert_intc_b2b++;
+		if (de_assert_intc_b2b >= 2){
+			intx_dup_reg[6] = 1'b1;
+		}
+	  } else if (ilu_dmu_hdr_msg_code == 8'b00100010){
+		de_assert_intc_b2b = 0;
+	  }	
+	  if (ilu_dmu_hdr_msg_code == 8'b00100111){
+		de_assert_intd_b2b++;
+		if (de_assert_intd_b2b >= 2){
+			intx_dup_reg[7] = 1'b1;
+		}
+	  } else if (ilu_dmu_hdr_msg_code == 8'b00100011){
+		de_assert_intd_b2b = 0;
+	  }	
+      }
+      
+      ilu_dmu_b2b++;
+      trigger (ilu_dmu_iHdr_sample_evnt_trig);
+      dbg.dispmon(myname, MON_INFO, psprintf("from ilu_dmu_ingress_coverage: mps %x ilu_dmu_coverage.mps %x",
+             ilu_dmu_mps, ilu_dmu_coverage.mps));
+    } else {
+      ilu_dmu_b2b = 0;
+    }
+
+    // Ingress data pull from PEU IDB to DMU DIU
+    if (ilu_dmu_coverage.k2y_buf_addr_vld) {
+      //ilu_dmu_edp_addr = ilu_dmu_coverage.k2y_buf_addr;
+      trigger (dmu_ilu_iBufAddr_sample_evnt_trig);
+    }
+	
+    // Ingress release record
+    if (ilu_dmu_coverage.k2y_rel_enq) {
+      dmu_ilu_irel_rcd = ilu_dmu_coverage.k2y_rel_rcd;
+      trigger (dmu_ilu_iRel_sample_evnt_trig);
+    }
+
+  }
+}
+
+// This task covers all the egress record, buffer data, release transactions
+task dmu_coverage:: set_dmu_ilu_cov_points () {
+  reg [123:0] pec_egress_rcd;
+
+  while (1) {
+    @(posedge dmu_ilu_coverage.clk);
+
+    // Egress PEC record
+    if (dmu_ilu_coverage.k2y_rcd_enq) {
+      pec_egress_rcd       = dmu_ilu_coverage.k2y_rcd[123:0];
+      dmu_ilu_hdr_F         = pec_egress_rcd[123:122];
+      dmu_ilu_hdr_Type      = pec_egress_rcd[121:117];
+      dmu_ilu_hdr_F_Type    = pec_egress_rcd[123:117];
+      dmu_ilu_hdr_TC        = pec_egress_rcd[116:114];
+      dmu_ilu_hdr_Atr       = pec_egress_rcd[113:112];
+      dmu_ilu_hdr_Len       = pec_egress_rcd[111:102];
+      dmu_ilu_hdr_ReqID     = pec_egress_rcd[101:86];
+      dmu_ilu_hdr_TLPTag    = pec_egress_rcd[85:78];
+      dmu_ilu_hdr_LastDWBE  = pec_egress_rcd[77:74];
+      dmu_ilu_hdr_FirstDWBE = pec_egress_rcd[73:70];
+      dmu_ilu_hdr_Addr      = pec_egress_rcd[69:6];
+      dmu_ilu_hdr_Dptr      = pec_egress_rcd[5:0];
+      dmu_ilu_b2b++;
+      trigger (dmu_ilu_eHdr_sample_evnt_trig);
+      dbg.dispmon(myname, MON_INFO, psprintf("from dmu_ilu_egress_coverage:"));
+    } else {
+      dmu_ilu_b2b = 0;
+    }
+
+    // Egress data pull from DMU DOU to PEU EDB
+    if (dmu_ilu_coverage.y2k_buf_addr_vld) {
+      //dmu_ilu_idp_addr = dmu_ilu_coverage.y2k_buf_addr;
+      trigger (ilu_dmu_eBufAddr_sample_evnt_trig);
+    }
+
+    // Egress release record
+    if (dmu_ilu_coverage.y2k_rel_enq) {
+      ilu_dmu_erel_rcd = dmu_ilu_coverage.y2k_rel_rcd;
+      trigger (ilu_dmu_eRel_sample_evnt_trig);
+    }
+
+  }
+} 
+
+
+task dmu_coverage:: set_dmu_cov_points () {
+        reg [92:0] cmu_ingress_rcd;
+  while (1) {
+        @(posedge dmu_dmc_coverage.l2clk);
+
+      if (dmu_clu_coverage.cl2ps_e_req) {
+          trigger (dmu_clu_cl2ps_sample_evnt_trig);
+      }
+
+      if (dmu_psb_coverage.ps2pm_i_gnt) {
+          trigger (dmu_clu_ps2pm_sample_evnt_trig);
+      }
+
+      if (dmu_dmc_coverage.im2di_wr) {
+	    diu_im2di_addr = dmu_dmc_coverage.im2di_addr;
+	    diu_im2di_bmask = dmu_dmc_coverage.im2di_bmask;
+	    trigger (dmu_im2di_sample_evnt_trig);
+	}
+
+      if (dmu_dmc_coverage.cl2di_rd) {
+	    diu_cl2di_addr = dmu_dmc_coverage.cl2di_addr;
+	    trigger (dmu_cl2di_sample_evnt_trig);
+	}
+
+      if (dmu_dmc_coverage.d2j_cmd_vld) {
+	    trigger (dmu_d2j_cmd_vld_sample_evnt_trig);
+	}
+
+        if (dmu_cmu_coverage.cm2pm_rcd_enq) {
+           cmu_ingress_rcd      = dmu_cmu_coverage.cm2pm_rcd[92:0];
+           dmu_cmu_Type         = cmu_ingress_rcd[92:86];
+           dmu_cmu_Len          = cmu_ingress_rcd[85:76];
+           dmu_cmu_Byte         = cmu_ingress_rcd[75:64];
+           dmu_cmu_Cntxt        = cmu_ingress_rcd[63:59];
+           dmu_cmu_Pkseq        = cmu_ingress_rcd[58:54];
+           dmu_cmu_Addr         = cmu_ingress_rcd[53:13];
+           dmu_cmu_Addr_err     = cmu_ingress_rcd[12:12];
+           dmu_cmu_b2b++;
+           trigger (dmu_cmu_sample_evnt_trig);
+           dbg.dispmon(myname, MON_INFO, psprintf("from cmu_ingress_coverage:"));
+        } else {
+          dmu_cmu_b2b = 0;
+        }
+
+
+   }
+} 
+

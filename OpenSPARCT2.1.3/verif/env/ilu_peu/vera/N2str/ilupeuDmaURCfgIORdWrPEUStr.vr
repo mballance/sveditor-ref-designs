@@ -1,0 +1,255 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuDmaURCfgIORdWrPEUStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class DmaURCfgIORdWrPEUStr extends DmaURBasePEUStr {
+
+
+  // ******************************************************************
+  // The Test Environment objects need to execute the strategy.
+  // ******************************************************************
+  protected PEUTestEnv              _env;
+  protected integer                 _errQueue;
+
+
+  // ******************************************************************
+  // TLP Fields - These fields will be randomized using the parameters
+  // in the following section, and obeying the constraints defined
+  // within this class.
+  // ******************************************************************  
+  protected         bit [1:0]       _format_req;
+  protected         bit [1:0]       _format_cpl;
+  protected         bit [4:0]       _type_req;
+  protected         bit [4:0]       _type_cpl;
+
+  protected         bit [2:0]       _tc;
+  
+  protected         bit             _td_req;
+  protected         bit             _td_cpl;
+  protected         bit             _ep_req;
+  protected         bit             _ep_cpl;
+
+  protected         bit [1:0]       _attr;
+  protected         bit [9:0]       _len_req;
+  protected         bit [9:0]       _len_cpl;
+  protected         bit [15:0]      _req_id;
+  protected         bit [7:0]       _tag;
+  protected         bit [31:0]      _addr_lsb;
+
+  protected         bit [3:0]       _last_dwbe;
+  protected         bit [3:0]       _first_dwbe;
+
+  protected         bit [15:0]      _cpl_id;
+  protected         bit [2:0]       _cpl_status;
+  protected         bit             _bcm;
+  protected         bit [11:0]      _byte_count;
+  protected         bit [6:0]       _lower_addr;
+  protected         integer         _data;
+
+  bit [PEC_PCI__HDR]            reqHdr;
+  bit [PEC_PCI__HDR]            cplHdr;
+
+  // ******************************************************************
+  // Constructor
+  // ******************************************************************
+  public task new(PEUTestEnv a_env, (integer a_errQueue = 'bx));
+
+  // ******************************************************************
+  // Break this out as common class fullchip and ios can use
+  // ******************************************************************
+  public task SetPacketParams();
+
+  
+  // ******************************************************************
+  // Execute the strategy.  
+  // ******************************************************************
+  public task Execute();  
+}
+
+
+
+//-------------------------------------------------------------------
+// Method Name: 
+// Description: 
+//-------------------------------------------------------------------
+task DmaURCfgIORdWrPEUStr::new(PEUTestEnv a_env, (integer a_errQueue = 'bx)) {
+
+  
+  super.new(a_env);
+  this._env = a_env;
+  this._errQueue = a_errQueue;
+}
+
+
+
+//-------------------------------------------------------------------
+// Method Name: 
+// Description: 
+//-------------------------------------------------------------------
+task DmaURCfgIORdWrPEUStr::SetPacketParams() {
+
+  randcase {
+    1 : this._format_req = PEC_PCI__FMT_NO_DATA_3DW;
+    1 : this._format_req = PEC_PCI__FMT_DATA_3DW;
+  }
+  
+  this._format_cpl = PEC_PCI__FMT_NO_DATA_3DW;
+
+  randcase {
+    1 : this._type_req = PEC_PCI__TYPE_CFG0;
+    1 : this._type_req = PEC_PCI__TYPE_CFG1;
+    1 : this._type_req = PEC_PCI__TYPE_IO;
+  }
+
+  this._type_cpl   = PEC_PCI__TYPE_CPL;
+
+  this._tc         = 3'b_000;
+  this._td_req     = urandom_range(1'b_1, 1'b_0);
+  this._td_cpl     = 1'b_0;
+
+  randcase {
+    this._ep_req_prob_false : this._ep_req = 1'b_0;
+    this._ep_req_prob_true  : this._ep_req = 1'b_1;
+  }
+
+  this._ep_cpl     = 1'b_0;
+
+  this._attr       = 2'b_00;
+  this._len_req    = 10'h_001;
+  this._len_cpl    = 10'h_000;
+  this._req_id     = urandom_range(16'h_FFFF, 16'h_0001);
+//  this._tag        = urandom_range(8'h_FF, 8'h_00);
+  //Make unique so Denali doesn't hold paket hostage
+  _env.allocDmaTag( this._tag );
+
+  this._addr_lsb   = urandom();
+  if (this._type_req == PEC_PCI__TYPE_CFG0) this._addr_lsb[15:12] = 4'b_0000;
+  if (this._type_req == PEC_PCI__TYPE_CFG1) this._addr_lsb[15:12] = 4'b_0000;
+
+  this._last_dwbe  = 4'b_0000;
+  this._first_dwbe = urandom_range(4'h_F, 4'h_0);
+
+  this._cpl_id     = 16'h_0000;
+  this._cpl_status = PEC_PCI__CPL_STATUS_UR;
+  this._bcm        = urandom_range(1'h_1, 1'h_0);
+  this._byte_count = 12'h_004;
+  this._lower_addr = 7'b_000_0000;
+
+  this._data       = urandom_range(255, 0);  
+
+
+  
+  reqHdr [PEC_PCI__HDR]            = {128{1'b_0}};  
+  reqHdr [PEC_PCI__FMT]            = this._format_req;
+  reqHdr [PEC_PCI__TYPE]           = this._type_req;
+  reqHdr [PEC_PCI__TC]             = this._tc;
+  reqHdr [PEC_PCI__TD]             = this._td_req;
+  reqHdr [PEC_PCI__EP]             = this._ep_req;
+  reqHdr [PEC_PCI__ATTR]           = this._attr;
+  reqHdr [PEC_PCI__LEN]            = this._len_req;
+  reqHdr [PEC_PCI__REQ_ID]         = this._req_id;
+  reqHdr [PEC_PCI__TLP_TAG]        = this._tag;
+  reqHdr [PEC_PCI__LAST_DWBE]      = this._last_dwbe;
+  reqHdr [PEC_PCI__FIRST_DWBE]     = this._first_dwbe;
+  reqHdr [PEC_PCI__ADDR32]         = { this._addr_lsb[31:2], 2'b_00 };
+
+  cplHdr [PEC_PCI__HDR]            = {128{1'b_0}};
+  cplHdr [PEC_PCI__FMT]            = this._format_cpl;
+  cplHdr [PEC_PCI__TYPE]           = this._type_cpl;
+  cplHdr [PEC_PCI__TC]             = this._tc;
+  cplHdr [PEC_PCI__TD]             = this._td_cpl;
+  cplHdr [PEC_PCI__EP]             = this._ep_cpl;
+  cplHdr [PEC_PCI__ATTR]           = this._attr;
+  cplHdr [PEC_PCI__LEN]            = this._len_cpl;
+  cplHdr [PEC_PCI__CPL_ID]         = this._cpl_id;
+  cplHdr [PEC_PCI__CPL_STATUS]     = this._cpl_status;
+  cplHdr [PEC_PCI__BCM]            = this._bcm;
+  cplHdr [PEC_PCI__BYTECOUNT]      = this._byte_count;
+  cplHdr [PEC_PCI__CPL_REQ_ID]     = this._req_id;
+  cplHdr [PEC_PCI__CPL_TAG]        = this._tag;
+  cplHdr [PEC_PCI__LOWADDR]        = this._lower_addr;
+
+}
+
+task DmaURCfgIORdWrPEUStr::Execute() {
+
+  SetPacketParams();
+
+  if( this._type_req === PEC_PCI__TYPE_IO ){
+	this._env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr(PCIE_TL_NONFATAL_TLP_MF_vlIOExpEp);
+  }else{
+	this._env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr(PCIE_TL_NONFATAL_TLP_MF_vlCfgTx);
+	this._env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr(PCIE_TL_NONFATAL_TLP_MF_vlCfg0);
+  }
+
+  if( (this._format_req === PEC_PCI__FMT_NO_DATA_3DW) && this._ep_req ){
+     this._env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr(PCIE_TL_NONFATAL_TLP_MF_vlPoison);
+  }
+
+  if ( super.f_abortErrTlp )
+    {
+    this._env.drivePCIE(reqHdr, this._data, *, *, *, 1 );
+    if( this._type_req === PEC_PCI__TYPE_IO ){
+	this._env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr(PCIE_TL_NONFATAL_TLP_MF_vlIOExpEp);
+    }else{
+       this._env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr(PCIE_TL_NONFATAL_TLP_MF_vlCfgTx);
+    }
+    this._env.waitIngressLatency( reqHdr );
+    }
+  else
+    {
+    this._env.reserveIngressCredits(reqHdr);
+    this._env.drivePCIE(reqHdr, this._data);
+    if( this._type_req === PEC_PCI__TYPE_IO ){
+	this._env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr(PCIE_TL_NONFATAL_TLP_MF_vlIOExpEp);
+    }else{
+       this._env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr(PCIE_TL_NONFATAL_TLP_MF_vlCfgTx);
+	this._env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr(PCIE_TL_NONFATAL_TLP_MF_vlCfg0);
+    }
+    this._env.consumeIngressCredits(reqHdr);
+    this._env.expectILU(reqHdr, this._data);
+
+    if ( this._errQueue != 0 )
+	{
+        mailbox_put(this._errQueue, e_ERR_ue_ur);
+	mailbox_put(this._errQueue, reqHdr);
+	}
+
+    this._env.driveILU(cplHdr, 0, this._data);
+    this._env.expectPCIE(cplHdr, this._data);
+    }
+ 
+    //Free up the Tags
+    _env.freeDmaTag( this._tag );
+
+}

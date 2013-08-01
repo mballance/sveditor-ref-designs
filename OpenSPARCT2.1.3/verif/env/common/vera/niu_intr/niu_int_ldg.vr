@@ -1,0 +1,559 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_int_ldg.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "pio_memory_map.vri"
+#include "niu_int_dev.vrh"
+#include "pio_driver.vrh"
+#include "niu_int_qmgr.vrh"
+
+extern niu_gen_pio gen_pio_drv;
+extern  Mesg be_msg;
+
+class CNiuLdg {
+        bit[6:0] sid;
+        integer test_controlled_isr = 0;
+	integer function_no=0;
+	integer dis_pio_virt=1; // This needs to be set correctly
+        integer device68_already_bound=0;
+        integer multi_device_68bound = 0;
+        integer gid;
+        integer rearm = 0;
+        integer pending_flag = 0;
+        integer no_of_isrs_spawned;
+        integer REARM_TIMEOUT = 1000; 
+        local bit ArmStatus;
+        local bit [5:0] timerStatus;
+	local bit [8:0] error_mask;
+        bit[68:0] active_devices;
+        bit[15:0] error_devices_bound;
+        CNiuIntrDev IntrDev[69];
+        CNiuIntrDev IntrErrDev[16]; // 16 extra devices for error
+        bit[63:0] lastreadLDSV0,lastreadLDSV1,lastreadLDSV2;
+        task new(integer i);
+        task ldgbind( CNiuIntrDev dev, (integer active = 1)) ;
+        task setSid(bit[6:0] s) ;
+        task SetIntrMgm(bit arm, bit[5:0] timer ) ;
+	task ReArmIntrMgm( (integer rearm_wait=100) , (integer rearm_timeout=1000)   ) ;
+	virtual task ldgIsr((integer blanket_int=0),(CniuGenIntrMsg IntrMsg=null)  );
+        task CheckIntrDev((integer blanket_int=0),(CniuGenIntrMsg IntrMsg=null)  );
+        function bit[63:0] PioReadLDSV0() ;
+        function bit[63:0] PioReadLDSV1() ;
+        function bit[63:0] PioReadLDSV2() ;
+	local function bit [63:0] getPIOAddress(bit[63:0] orig_address,(integer pass_through=1));
+        function integer LaunchDev68Isr(bit [15:0] error_state,bit[1:0] ldf_flags);
+        task clrArm((integer check= 0)) ;
+        task incIsrCnt() { no_of_isrs_spawned++;
+	printf("CNiuLdg:incIsrCnt cnt - %d \n",no_of_isrs_spawned);
+        }  
+        function integer getIsrCnt() { getIsrCnt = no_of_isrs_spawned; }
+ 	task SetPendingFlag() {pending_flag=1;}
+  	task ClrPendingFlag() {pending_flag=0;}
+        function integer isPending();
+
+        function integer getDevIsrCnt(integer id ) ;
+	task setDevIsrCnt(integer id); 
+        function integer isISRDone(integer id) ;
+        task resetISRDone(integer id) ;
+	task SetErrMask ( bit [8:0] mask ) ;
+	function bit[31:0] PioReadErrState () ;
+        function bit[31:0] getErrState() ;
+	task mask_all_devices();
+	task unmask_all_devices();
+        task ldgunbind( integer dev_id) ;
+
+
+}
+
+
+task CNiuLdg::SetErrMask ( bit [8:0] mask ) {
+// Applicable for device #68 only
+   bit [63:0] address, wdata;
+   if(active_devices[68]) {
+      address = SYS_ERR_MASK;
+      wdata = {55'h0,mask};
+      gen_pio_drv.pio_wr(address,wdata);
+      error_mask = mask;
+    }
+}
+
+function bit[31:0] CNiuLdg::PioReadErrState () {
+  bit [63:0] address, rdata;
+  address = SYS_ERR_STAT;
+  gen_pio_drv.pio_rd(address,rdata);
+  PioReadErrState = rdata[31:0];
+}
+
+task CNiuLdg::new(integer i) {
+   gid = i;
+   active_devices = 0;
+   lastreadLDSV0 = 0;
+   lastreadLDSV1 = 0;
+   lastreadLDSV2 = 0;
+   error_mask  = 9'h1ff;
+   no_of_isrs_spawned = 0;
+}
+task CNiuLdg::ldgunbind( integer dev_id) {
+
+   if(dev_id==68) {
+    // Not supported yet
+    printf("CNiuLdg::ldgunbind ERROR Not Supported for device #68!!! \n");
+   } else {
+    if(active_devices[dev_id]) {
+      IntrDev[dev_id].setGid(0); // remove the old group association
+      IntrDev[dev_id] = null;
+      active_devices[dev_id]= 0;
+    } else {
+      printf("CNiuLdg::ldgunbind ERROR Device %d Not bound!!! \n",dev_id);
+    }    
+
+   }
+}
+
+task CNiuLdg::ldgbind( CNiuIntrDev dev, (integer active = 1)) {
+integer ii;
+
+/* Need to do differnetly for device 68
+There can be multiple of these therefore we cannot overwrite the previous one*/
+
+/*
+if(device68_already_bound & (dev.dev_id==68) ) {
+ if(dev.getErrId()==-1) {
+   printf("ERROR Test seems to be binding multiple device 68 without setting proper id. Cannot bind!! FIX IT\n");
+ } else {
+   IntrErrDev[dev.getErrId()] = dev; 
+   error_devices_bound[dev.getErrId()] = 1;
+   // remove the old one..
+   // This is done only to mainitain compatibility with some of the old testcases
+   if(IntrDev[68].getErrId()==-1) {
+     printf("ERROR Test seems to be binding multiple device 68 without setting proper id. Cannot bind!! FIX IT\n");
+   } else {
+     IntrErrDev[IntrDev[68].getErrId()] = IntrDev[68]; 
+     error_devices_bound[IntrDev[68].getErrId()] = 1;
+   }
+   multi_device_68bound = 1;
+ }
+} else {
+ IntrDev[dev.getid()] = dev; 
+ if(dev.dev_id==68) device68_already_bound=1;
+
+}
+*/
+if (dev.dev_id==68) {
+   if(dev.getErrId()==-1) {
+	// old testcases
+        if (get_plus_arg (CHECK,"NIU_INTR_COPY"))
+         IntrDev[dev.getid()] = dev.object_copy();
+        else
+          IntrDev[dev.getid()] = dev; 
+   } else {
+     IntrErrDev[dev.getErrId()] = dev; 
+     error_devices_bound[dev.getErrId()] = 1;
+     multi_device_68bound = 1;
+     printf("CNiuLdg::ldgbind DEBUG: Binding device error id - %d to group - %d \n",dev.getErrId(),gid);
+   }
+} else {
+ IntrDev[dev.getid()] = dev; 
+}
+if(active) {
+     active_devices[dev.getid()] = 1;
+ } 
+ dev.setGid(gid);
+  
+
+   // Check for correctness of function no
+}
+task CNiuLdg::setSid(bit[6:0] s) {
+   sid = s;
+   function_no = sid[6:5];
+   printf(" CNiuLdg::setSid LDG - %d Bound to function - %d \n",gid,function_no);
+}
+task CNiuLdg::ReArmIntrMgm( (integer rearm_wait=100) , (integer rearm_timeout=1000)   ) {
+  
+  bit[63:0] address, wdata,rdata;
+  integer rearm_timeout_reached;
+  integer poll_cnt;
+  integer not_done;
+  bit[5:0] timer;
+
+  not_done = 0;
+  rearm_timeout_reached = 0;
+  timer = timerStatus;   fork {
+    while(not_done==0) {
+       rdata = 0;
+       rdata[31] = 1'b1;
+      while( rdata[31] & (rearm_timeout_reached==0) ) {
+        gen_pio_drv.pio_rd(address,rdata);
+        repeat(rearm_wait) @(posedge CLOCK);
+        poll_cnt++;
+        if(poll_cnt > rearm_timeout) {
+         printf("ERROR  CNiuLdg::SetIntrMgm: ReArm Counter Timeout!!   Exiting loop cnt - %d\n",poll_cnt);
+         rearm_timeout_reached = 1;
+         not_done = 1;
+         return;
+        }
+      }
+     if(rearm_timeout==0) {
+        address = LDGIMGN + 8192*gid;
+        wdata = {32'h0,1'b1,25'h0,timer};
+        gen_pio_drv.pio_wr(address,wdata);
+     }
+     repeat(50) @(posedge CLOCK);
+    }
+   
+   }join none // end fork 
+}
+task CNiuLdg::SetIntrMgm(bit arm, bit[5:0] timer  ) {
+  bit[63:0] address, wdata,rdata;
+  integer rearm_timeout;
+  integer poll_cnt;
+  integer not_done;
+  ArmStatus = arm;
+  timerStatus = timer;
+  address = LDGIMGN + 8192*gid;
+  wdata = {32'h0,arm,25'h0,timer};
+  gen_pio_drv.pio_wr(address,wdata);
+ 
+/* TBD */ 
+/* Function to expect an interrupt based upon the arm bit , timer*/
+ 
+}
+function bit [63:0] CNiuLdg::getPIOAddress(bit[63:0] orig_address, (integer pass_through=1)) {
+  integer func;
+  if(pass_through){
+    getPIOAddress = orig_address;
+  } else {
+	getPIOAddress = 64'h0;
+	getPIOAddress[4:0] = orig_address[4:0];
+	getPIOAddress[11:5] = gid & 7;
+	getPIOAddress[15:12] = ((gid/8)%2)? 4'h6:4'h2;
+	func = gid/16; // This needs to match with what has been programmed;
+	if(func!==function_no) {
+	 printf("CNiuLdg::getPIOAddress TEST ERROR - Incorrect programming!!!\n");
+	 getPIOAddress = 64'hx;
+	} else {
+	   if(func==0) {
+            getPIOAddress = FUNC0_VIR + getPIOAddress;
+	   } else if(func==1){
+            getPIOAddress = FUNC1_VIR + getPIOAddress;
+	   } else if(func==2){
+            getPIOAddress = FUNC2_VIR + getPIOAddress;
+	   } else if(func==3) {
+            getPIOAddress = FUNC3_VIR + getPIOAddress;
+	   } else {
+            getPIOAddress = 64'hx;
+	  }
+	}
+   
+  }
+
+}
+
+function bit[63:0] CNiuLdg::PioReadLDSV0() {
+   bit[63:0] address, rdata;
+   address = getPIOAddress(LDSV0 + 8192*gid,dis_pio_virt);
+   gen_pio_drv.pio_rd(address,rdata);
+  /* Add functions here to check the correctness of rdata based upon various settings*/
+  /* Only devices  bound to this group should be setting their bits */
+  printf(" DEBUG CNiuLdg::PioReadLDSV0 Address - %x data - %x id - %d\n",address,rdata,gid);
+  PioReadLDSV0 = rdata;
+  lastreadLDSV0 = rdata;
+}
+function bit[63:0] CNiuLdg::PioReadLDSV1() {
+   bit[63:0] address, rdata;
+   address = getPIOAddress(LDSV1 + 8192*gid,dis_pio_virt);
+   gen_pio_drv.pio_rd(address,rdata);
+  /* Add functions here to check the correctness of rdata based upon various settings*/
+  printf(" DEBUG CNiuLdg::PioReadLDSV1 Address - %x data - %x id - %d\n",address,rdata,gid);
+  PioReadLDSV1 = rdata;
+  lastreadLDSV1 = rdata;
+}
+function bit[63:0] CNiuLdg::PioReadLDSV2() {
+   bit[63:0] address, rdata;
+   address = getPIOAddress(LDSV2 + 8192*gid,dis_pio_virt);
+   gen_pio_drv.pio_rd(address,rdata);
+  /* Add functions here to check the correctness of rdata based upon various settings*/
+  printf(" DEBUG CNiuLdg::PioReadLDSV2 Address - %x data - %x id - %d\n",address,rdata,gid);
+  PioReadLDSV2 = rdata;
+  lastreadLDSV2 = rdata;
+}
+task CNiuLdg::clrArm((integer check= 0)) {
+  bit [63:0] address,rdata;
+  ArmStatus = 0;
+  // Function to be called only after interrupt has been received
+  if(check) {
+    address = LDGIMGN + 8192*gid;
+    gen_pio_drv.pio_rd(address,rdata);
+    if(rdata[31]!==0) {
+    printf("ERROR - Arm bit expected tobe cleared !!! \n");
+    }
+  }
+  
+}
+
+
+/* Function for Spawing off various ISRs */
+
+task CNiuLdg::ldgIsr((integer blanket_int=0),(CniuGenIntrMsg IntrMsg=null) ) {
+
+   CheckIntrDev(blanket_int);
+}
+
+task CNiuLdg::CheckIntrDev((integer blanket_int=0),(CniuGenIntrMsg IntrMsg=null) ) {
+ bit[63:0] ldsv0,ldsv1,ldsv2;
+ bit [68:0] intr_dev_id_ldf0;
+ bit [68:0] intr_dev_id_ldf1;
+ bit [68:0] intr_dev_id;
+ bit [8:0] error_state;
+ shadow integer i;
+ shadow integer status;
+ integer isrs_active;
+
+// get a list of all the interrupting devices
+/* May need some modification here based upon s/w feedback*/
+//
+
+  printf(" CNiuLdg::CheckIntrDev id - %d active_devices - %x \n",gid,active_devices);
+  // read state vector 
+  SetPendingFlag();
+
+
+  ldsv0 = PioReadLDSV0();
+  ldsv1 = PioReadLDSV1();
+  ldsv2 = PioReadLDSV2();
+
+  // compare this against the set of active devices
+   // and spawns off the isrs
+
+  intr_dev_id_ldf0[63:0] = ldsv0 & active_devices[63:0];
+  intr_dev_id_ldf1[63:0] = ldsv1 & active_devices[63:0];
+  intr_dev_id_ldf0[68:64] = ldsv2[4:0] & active_devices[68:64];  
+  intr_dev_id_ldf1[68:64] = ldsv2[9:5] & active_devices[68:64];  
+
+  intr_dev_id = intr_dev_id_ldf0 | intr_dev_id_ldf1;
+  
+  printf(" CNiuLdg::CheckIntrDev gid - %d ldsv0 - %x \n",gid,ldsv0);
+  printf(" CNiuLdg::CheckIntrDev gid - %d ldsv1 - %x \n",gid,ldsv1);
+  printf(" CNiuLdg::CheckIntrDev gid - %d ldsv2 - %x \n",gid,ldsv2);
+  printf(" CNiuLdg::CheckIntrDev gid - %d intr_dev_id - %x \n",gid,intr_dev_id);
+
+  if(active_devices[68] & intr_dev_id[68]) {
+  // For interrupts from device 68
+  //  read the state and check with the mask 
+   error_state = PioReadErrState();
+   if((error_state === 32'h0)) {
+    be_msg.print(e_mesg_error,"CNiuLdg","CheckIntrDev","ERROR Device #68 ERR_STAT Incorrect ! ERR_STAT - %x MASK - %x \n",error_state, error_mask);
+   }
+  }
+  isrs_active = 0;
+   for(i =0;i< 68;i++) { // handle only upto device 67
+     if(active_devices[i]) {
+        if(intr_dev_id[i]) {
+         printf(" Interrupt Received from DeviceId - %d Flags:  ldf1-%b  ldf0-%b \n",i,intr_dev_id_ldf1[i],intr_dev_id_ldf0[i]); 
+
+	  isrs_active++;
+          IntrDev[i].incIsrCnt();
+          this.incIsrCnt();
+	  fork {
+	   status = IntrDev[i].isr({intr_dev_id_ldf1[i],intr_dev_id_ldf0[i]}); 
+          }join none
+        }
+     }
+   }
+   // handle 68 seperately here
+
+   if(intr_dev_id[68]) {
+      // first check if 68 is bound to this group
+      if(active_devices[68]) {
+       isrs_active = isrs_active + LaunchDev68Isr(error_state,{intr_dev_id_ldf1[i],intr_dev_id_ldf0[i]});
+      } else {
+        be_msg.print(e_mesg_error,"CNiuLdg","CheckIntrDev","ERROR Device #68 Interorted in wrong LDG - %d! \n",gid);
+      } // endif active_devices
+   } // endif intr_dev_id
+
+
+  
+   if(blanket_int) {
+	
+   } else {
+      if(isrs_active==0){
+   //  printf("ERROR - Incorrect Message Received from Hardware !\n");
+       be_msg.print(e_mesg_error,"CNiuLdg","CheckIntrDev","ERROR - Incorrect Message Received from Hardware !\n");
+      }
+   }
+
+  if(rearm & (isrs_active!=0)) {
+   wait_child();
+   SetIntrMgm(ArmStatus , timerStatus);
+  }
+  
+  ClrPendingFlag();
+
+}
+function integer CNiuLdg::LaunchDev68Isr(bit [15:0] error_state,bit[1:0] ldf_flags) {
+  shadow integer i;
+  integer status;
+
+  LaunchDev68Isr =0;
+  if(multi_device_68bound) {
+    for(i=0;i<16;i++) {
+      if(error_state[i]) {
+        if(error_devices_bound[i]==0) {
+	  printf("CNiuLdg::LaunchDev68Isr:: ERROR ERR_STAT- Set for devices not bound!! ERR_STAT - %x  group = %d \n",error_state,gid); 
+          LaunchDev68Isr = -1;
+          return;
+        }
+      }
+    }
+    for(i=0;i<16;i++) {
+      if(error_state[i]) {
+         IntrErrDev[i].incIsrCnt();
+         this.incIsrCnt();
+	 
+         fork {
+	    printf("CNiuLdg::LaunchDev68Isr::DEBUG Launching ISR for error id - %d \n",i);
+            status = IntrErrDev[i].isr(ldf_flags);
+         }join none
+         LaunchDev68Isr++; 
+      } // end if error_state
+    }  // end for
+  } else {
+     IntrDev[68].incIsrCnt();
+     this.incIsrCnt();
+     fork {
+        status = IntrDev[68].isr(ldf_flags);
+     }join none
+     LaunchDev68Isr = 1;
+  }
+
+}
+
+function integer CNiuLdg::getDevIsrCnt(integer id ) { 
+         if(active_devices[id]) 
+           getDevIsrCnt = IntrDev[id].getIsrCnt(); 
+         else getDevIsrCnt = -1;
+}
+task CNiuLdg::setDevIsrCnt(integer id) {
+         if(active_devices[id])
+           IntrDev[id].setIsrCnt();
+}
+function integer CNiuLdg::isISRDone(integer id) {
+	  if(active_devices[id]){
+	   isISRDone= IntrDev[id].isr_done;
+	  } else {
+	    isISRDone = 0;
+	  }
+}
+task CNiuLdg::resetISRDone(integer id) {
+          if(active_devices[id]){
+           IntrDev[id].isr_done = 0;
+	    //active_devices[id] = 0;
+          } 
+}
+function bit[31:0] CNiuLdg::getErrState() { 
+         if(active_devices[68]) 
+	   getErrState = IntrDev[68].getErrState();
+         else getErrState = 0;
+}
+function integer CNiuLdg::isPending() {
+  bit [68:0] flags;
+  bit [15:0] error_dev_flags;
+  bit done;
+  integer i;
+  integer count;
+  bit flags_set;
+  // check pending flags all the devices bound to this group
+  // Also check the local pending flag
+
+  flags = 0;
+  error_dev_flags = 0;
+  for(i=0;i<69;i++) {
+   if(active_devices[i]) flags[i] = 1;
+   else flags[i] = 0;
+  }
+  if(multi_device_68bound ) {
+   for(i=0;i<16;i++) {
+    if(error_devices_bound[i]) error_dev_flags[i] = 1;
+    else  error_dev_flags[i] = 0;
+   }
+   
+  }
+  count =0;
+  isPending = 1;
+  done = 0;
+  while(done==0) {
+
+   for(i=0;i<68;i++) {
+     if(active_devices[i] & (flags[i]==1) )
+       flags[i] = IntrDev[i].isPending() ;
+   }
+   if(multi_device_68bound & active_devices[68]) { 
+     for(i=0;i<16;i++) {
+       if(error_devices_bound[i] & error_dev_flags[i] ) 
+         error_dev_flags[i] = IntrErrDev[i].isPending();
+     }
+     flags[68] = 0;
+   } else {
+	// for backward compatibility
+    if(active_devices[68] & (flags[68]==1) )
+     flags[68] = IntrDev[68].isPending() ;
+   }
+
+   if((flags==0)&&(error_dev_flags==0)) done = 1;
+
+   isPending = 0;
+   count++;
+   if(count>100) { 
+       printf("CNiuLdg::isPending!! ERROR Pending flag not cleared for group - %d!! Count - %d \n",gid,count);
+       done = 1;
+       isPending = -1;
+   }
+   repeat(100) @(posedge CLOCK);
+  }
+}
+task CNiuLdg::mask_all_devices() {
+    integer i;
+     for(i=0;i<69;i++) {
+       if(active_devices[i]) 
+	IntrDev[i].pioSetMasks(3'h3); // may need to be enhanced!
+     }
+}
+task CNiuLdg::unmask_all_devices(){
+    integer i;
+     for(i=0;i<69;i++) {
+       if(active_devices[i]) 
+	IntrDev[i].pioSetMasks(3'h0);
+     }
+}

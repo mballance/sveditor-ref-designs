@@ -1,0 +1,1304 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: bmac_util.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "mac_defines.vri"
+#include "bmac_memory_map.vri"
+#include "pio_driver.vrh"
+#include "mac_pio_class.vrh"
+#include "xpcs_memory_map.vri"
+
+extern mac_pio_cl mac_pio_class;
+//extern pio_drv pio_driver_class;
+extern bit reset_complete;
+
+class bmac_util_class {
+  task new();
+  function bit check_cmd(bit [63:0]cmd, bit [63:0] opt);
+  task get_mac_debug_level(var integer  mac_debug, var integer mac_quick,var integer mac_verbose );
+  task bmac_init(integer iport, bit [63:0] cmd);
+  task bmac_init_sub(integer iport, bit [63:0] cmd); 
+  task tx_bmac_reset(integer iport, bit [39:0] base_addr, integer MAC_INIT_DEBUG);
+  task rx_bmac_reset(integer iport, bit [39:0] base_addr, integer MAC_INIT_DEBUG);
+  task init_all_reg(integer iport, bit[63:0] cmd, bit [39:0] base_addr);
+  task init_essential_reg_only(integer iport, bit[63:0] cmd, bit [39:0] base_addr);
+  task setup_reg(integer iport, bit[63:0] cmd, bit [39:0] addr, bit [31:0] data,bit [31:0] verify_mask);
+  task mac_pci_rd(bit [39:0] addr, var bit [31:0] exp_value);
+  task mac_pci_rd_cmp(bit [39:0] addr, bit [31:0] exp_value, bit [31:0] data_mask);
+  function bit[39:0] get_mac_reg_base(integer iport);
+  function bit[(16*12)-1:0]  get_bmac_reg_name(integer id);
+  function bit[32:0] get_bmac_reg_adr(integer id);
+  function bit[32:0] bmac_reg_addr (integer sel);
+  function bit[31:0] bmac_reg_mask (integer sel);
+  function bit[31:0] bmac_reg_default (integer sel);
+  function integer  flen(integer sel); 
+  function integer  flen_j(integer sel); 
+  task set_host_info_1(integer mac_id,bit[31:0] ctrl_word);
+  task wr_ipp_mac_reg(integer mac_id,bit[39:0] addr, bit[31:0]wr_data);
+  task rd_ipp_mac_reg(integer mac_id,bit[39:0] addr, var bit[31:0]rd_data, bit compare);
+  task ipp_shadow_rd (bit[39:0] addr, var bit[31:0] rd_data,\
+                      var  bit[31:0] data_mask, var bit data_valid);
+  task rx_pkt_count_check(integer pkt_cnt);
+  task tx_pkt_count_check(integer pkt_cnt);
+  local function integer getPortID(bit [39:0] addr) {
+		case(addr[19:12]) {
+                  8'h80:getPortID = 0;
+                  8'h82:getPortID = 0;
+                  8'h84:getPortID = 0;
+                  8'h86:getPortID = 1;
+                  8'h88:getPortID = 1;
+                  8'h8a:getPortID = 1;
+                  8'h8c:getPortID = 2;
+                  8'h8e:getPortID = 2;
+                  8'h90:getPortID = 3;
+                  8'h92:getPortID = 3;
+                }
+	}
+}
+
+task bmac_util_class::new() { }
+
+function bit  bmac_util_class :: check_cmd(bit [63:0]cmd, bit [63:0] opt){
+  if((cmd & opt) > 0)	check_cmd=1;
+  else			check_cmd=0;	
+}
+
+task bmac_util_class::get_mac_debug_level(var integer mac_debug, var integer mac_quick, var integer mac_verbose) {
+  mac_debug = 0;
+  if( get_plus_arg( CHECK, "MAC_TEST_DEBUG") ) {
+    mac_debug = get_plus_arg(NUM, "MAC_TEST_DEBUG" );
+  }
+  mac_quick = get_plus_arg( CHECK, "MAC_QUICK_TEST");
+  mac_verbose = get_plus_arg( CHECK, "MAC_VERBOSE_TEST");
+}
+
+
+task bmac_util_class::bmac_init(integer iport, bit[63:0] cmd) {
+  integer mac_debug,mac_quick,mac_verbose;
+  integer MAC_INIT_DEBUG;
+  bit [31:0] data;
+  bit [39:0] base_addr;
+
+  get_mac_debug_level(mac_debug,mac_quick,mac_verbose);
+  MAC_INIT_DEBUG = check_cmd(cmd, MI_DEBUG) | mac_debug;
+
+  printf("bmac_init:MAC%0d Setting up registers\n", iport);
+  cmd[0] = 0;	// RX_MAC_RESET
+  cmd[1] = 0;	// TX_MAC_RESET
+
+  base_addr = get_mac_reg_base(iport);
+
+  //programming the PA size as not resetable by SW reset and so gate sims have a problem
+  setup_reg(iport, cmd, base_addr + MAC_PA_SIZE, 32'h0000_0007, 32'h0000_03ff );
+
+  if(check_cmd(cmd, MAC_CONF_1000)) data = 32'h0019;
+  if(check_cmd(cmd, MAC_CONF_100))  data = 32'h0091;
+  if(check_cmd(cmd, MAC_CONF_10))   data = 32'h0011;
+  data[1]=check_cmd(cmd, MAC_LOOPBACK);
+
+  //printf("bmac_init:MAC%0d Writing XIF_CONFIG Reg=0x%0h time=%0d\n", iport, data, get_time(LO));
+  setup_reg(iport, cmd, base_addr + MAC_XIF_CONFIG, data, 32'hffff_ffe6);
+  
+  bmac_init_sub(iport, RX_MAC_RESET | TX_MAC_RESET | cmd);
+  setup_reg(iport, cmd, base_addr + BRxMAC_FRM_CNT, 32'h0000_0000, 32'h0000_ffff );
+  printf("bmac_init:MAC%0d DONE time=%0d\n", iport, get_time(LO));
+}
+
+
+task bmac_util_class::bmac_init_sub(integer iport, bit[63:0] cmd) {
+  bit [39:0] base_addr;
+  bit [31:0] data, data1,data2, rx_data, tx_data;
+  integer MAC_INIT_DEBUG;
+  integer mac_debug,mac_quick,mac_verbose;
+
+  get_mac_debug_level(mac_debug,mac_quick,mac_verbose);
+  base_addr = get_mac_reg_base(iport);
+  MAC_INIT_DEBUG = check_cmd(cmd,MI_DEBUG) | mac_debug;
+
+  //MAC RESET CODE
+  fork
+    if( check_cmd(cmd,TX_MAC_RESET) )	tx_bmac_reset(iport,base_addr,MAC_INIT_DEBUG);
+    if( check_cmd(cmd,RX_MAC_RESET) )	rx_bmac_reset(iport,base_addr,MAC_INIT_DEBUG);
+  join all
+
+  //MAC COUNTERS INITIALIZE
+  if( check_cmd(cmd,MAC_INIT_ALL_REG) ) {
+    if (get_plus_arg(CHECK, "ESSENTIAL_PIO_WRITES_ONLY"))
+      init_essential_reg_only(iport, cmd, base_addr);
+    else
+      init_all_reg(iport, cmd, base_addr);
+  }
+
+  //MAC CONFIG CODE
+  if( check_cmd(cmd,MAC_CONF_10) | check_cmd(cmd,MAC_CONF_100) | check_cmd(cmd,MAC_CONF_1000) ) {
+    bit [47:0] tmp48;
+
+    if( check_cmd(cmd, MAC_SHORT_PKT) ) {
+      setup_reg(iport, cmd, base_addr + BMAC_MIN, {4'h0,8'h7,10'h40,10'h17}, 32'hffff_ffff);
+      setup_reg(iport, cmd, base_addr + BMAC_MAX, {2'h0, 14'h0,2'h0,14'h0024}, 32'hffff_ffff);
+    } 
+    else {
+#ifdef VEGA_CHIP_LEVEL
+      setup_reg(iport, cmd, base_addr + BMAC_MIN, {4'h0,8'h7,10'h40,10'h20}, 32'hffff_ffff);
+      if(get_plus_arg(CHECK,"JUMBO_FRAME_EN"))
+        setup_reg(iport, cmd, base_addr + BMAC_MAX, {2'h0,14'h0,2'h0,14'h3fff}, 32'hffff_ffff);
+      else 
+        setup_reg(iport, cmd, base_addr + BMAC_MAX, {2'h0,14'h0,2'h0,14'h05EE}, 32'hffff_ffff);
+#else
+      setup_reg(iport, cmd, base_addr + BMAC_MIN, {4'h0,8'h7,10'h40,10'h20}, 32'hffff_ffff);
+      if(get_plus_arg(CHECK,"JUMBO_FRAME_EN"))
+        setup_reg(iport, cmd, base_addr + BMAC_MAX, {2'h0,14'h0,2'h0,14'h3FFF}, 32'hffff_ffff);
+      else 
+        setup_reg(iport, cmd, base_addr + BMAC_MAX, {2'h0,14'h0,2'h0,14'h05EE}, 32'hffff_ffff);
+#endif
+    }
+
+    data = 32'h0000_0007;
+    setup_reg(iport, cmd, base_addr + TxMAC_CONFIG, data, 32'hffff_ffff);
+    printf("bmac_init:Waiting for MAC[%0d] Disable to complete ...\n",iport);
+
+    //mac_pci_rd(base_addr + TxMAC_CONFIG, data);
+    //	while(data[0] == 1  ) {
+    //			repeat(10) @(CLOCK);
+    //			mac_pci_rd(base_addr + TxMAC_CONFIG, data);
+    //		   }
+
+    repeat(10) @(CLOCK);
+
+    data1 = 32'h0000_0009;
+    data1[9] = get_plus_arg(CHECK, "RX_DROP_PKT_CHECK");
+    data1[7] = check_cmd(cmd, MAC_ER_CK_EN) ? 0 : 1;
+    setup_reg(iport, cmd, base_addr + RxMAC_CONFIG, data1,32'hffff_ffff);
+
+    //mac_pci_rd(base_addr + RxMAC_CONFIG, data1);
+    //	while(data[0] == 1  ) {
+    //			repeat(10) @(CLOCK);
+    //			mac_pci_rd(base_addr + RxMAC_CONFIG, data1);
+    //
+    //			   }
+
+    repeat(10) @(CLOCK);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// mac reset Tasks
+////////////////////////////////////////////////////////////////////////////////
+
+task bmac_util_class::tx_bmac_reset(integer iport, bit[39:0] base_addr, integer MAC_INIT_DEBUG) {
+  bit[31:0] tx_data;
+
+  // Assert Reset on TX
+  mac_pio_class.bmac_pio_wr(base_addr + BTxMAC_SW_RST, 32'h01);
+  printf("bmac_init:MAC%0d Writing BTxMAC_SW_RST=1 (%h)\n", iport, base_addr+BTxMAC_SW_RST);
+
+  repeat(10) @(CLOCK);
+  printf("bmac_init:Waiting for TX MAC%0d to reset. time=%0d\n", iport, get_time(LO));
+
+  // Wait for Reset on TX Mac to complete
+  mac_pio_class.mac_pio_rd(base_addr + BTxMAC_SW_RST, tx_data);
+  while(tx_data != 0) {
+    repeat(5) @(CLOCK);
+    mac_pio_class.mac_pio_rd(base_addr + BTxMAC_SW_RST, tx_data);
+  }
+
+  printf("bmac_init:TX MAC%0d reset complete.\n", iport);
+  repeat(10) @(CLOCK);
+}
+
+
+task bmac_util_class::rx_bmac_reset(integer iport, bit[39:0] base_addr, integer MAC_INIT_DEBUG) {
+  bit[31:0] rx_data;
+
+  // Assert Reset on RX Mac
+  mac_pio_class.bmac_pio_wr(base_addr + BRxMAC_SW_RST, 32'h01);
+  printf("bmac_init:MAC%0d Writing BRxMAC_SW_RST=1 (%h)\n", iport, base_addr+BRxMAC_SW_RST );
+
+  repeat(10) @(CLOCK);
+  printf("bmac_init:Waiting for RX MAC%0d to reset. time=%0d\n", iport, get_time(LO));
+
+  // Wait for Reset on RX Mac to complete
+  mac_pio_class.mac_pio_rd(base_addr + BRxMAC_SW_RST, rx_data);
+  while(rx_data != 0) {
+    repeat(5) @(CLOCK);
+    mac_pio_class.mac_pio_rd(base_addr + BRxMAC_SW_RST, rx_data);
+  }
+
+  printf("bmac_init:RX MAC%0d reset complete.\n", iport);
+  repeat(10) @(CLOCK);
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// init_all_reg Task
+////////////////////////////////////////////////////////////////////////////////
+
+task bmac_util_class :: init_all_reg(integer iport, bit[63:0] cmd, bit [39:0] base_addr) {
+  bit [47:0] tmp48;
+
+  setup_reg(iport, cmd, base_addr + BTxMAC_STAT_MSK, 32'h0000_01ff,32'hffff_ffff);
+  setup_reg(iport, cmd, base_addr + BRxMAC_STAT_MSK,32'h0000_00ff,	32'hffff_ffff);
+  setup_reg(iport, cmd, base_addr + BMAC_C_S_MSK,	32'hffff_fff7,	32'hffff_ffff);
+  setup_reg(iport, cmd, base_addr + MAC_SEND_PAUSE, 32'h0000_1BF0, 32'h000f_ffff );
+  setup_reg(iport, cmd, base_addr + BMAC_MIN, 32'h0000_0040, 32'h0000_03ff );
+  if(get_plus_arg(CHECK,"JUMBO_FRAME_EN"))
+    setup_reg(iport, cmd, base_addr + BMAC_MAX, 32'h2000_3FFF, 32'hffff_ffff );
+  else 
+    setup_reg(iport, cmd, base_addr + BMAC_MAX, 32'h2000_05EE, 32'hffff_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_PA_SIZE, 32'h0000_0007, 32'h0000_03ff );
+  setup_reg(iport, cmd, base_addr + MAC_CTRL_TYPE, 32'h0000_8808, 32'h0000_ffff );
+
+
+  setup_reg(iport, cmd, base_addr + MAC_IPG0, 32'h0000_0000, 32'h0000_00ff );
+  setup_reg(iport, cmd, base_addr + MAC_IPG1, 32'h0000_0008, 32'h0000_00ff );
+  setup_reg(iport, cmd, base_addr + MAC_IPG2, 32'h0000_0004, 32'h0000_00ff );
+  setup_reg(iport, cmd, base_addr + MAC_SLOT_TIME, 32'h0000_0040,	32'h0000_03ff );
+  setup_reg(iport, cmd, base_addr + MAC_JAM_SIZE, 32'h0000_0004, 32'h0000_001f );
+  setup_reg(iport, cmd, base_addr + MAC_ATTMPT_LMT, 32'h0000_0010, 32'h0000_00ff );
+
+  setup_reg(iport, cmd, base_addr + BMAC_COL_CNT,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + BMAC_OA_COL_CNT,32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + BMAC_EX_COL_CNT,32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + BMAC_LT_COL_CNT,32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_DEF_TIMER,32'h0000_0000,	32'h0000_ffff );
+
+
+
+
+  setup_reg(iport, cmd, base_addr + BMAC_ADDR0,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + BMAC_ADDR1,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + BMAC_ADDR2,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR3,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR4,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR5,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR6,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR7,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR8,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR9,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR10,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR11,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR12,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR13,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR14,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR15,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR16,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR17,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR18,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR19,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR20,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR21,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR22,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADDR23,	32'h0000_0000,	32'h0000_ffff );
+
+  setup_reg(iport, cmd, base_addr + MAC_FC_ADDR0,	32'h0000_0001,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_FC_ADDR1,	32'h0000_C200,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_FC_ADDR2,	32'h0000_0180,	32'h0000_ffff );
+
+  setup_reg(iport, cmd, base_addr + MAC_ADD_FILT0, 32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADD_FILT1, 32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADD_FILT2, 32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADD_FILT12_MASK, 32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADD_FILT00_MASK, 32'h0000_0000,	32'h0000_ffff );
+
+  setup_reg(iport, cmd, base_addr + MAC_HASH_TBL0, 32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_HASH_TBL1, 32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_HASH_TBL2, 32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_HASH_TBL3, 32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_HASH_TBL4, 32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_HASH_TBL5, 32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_HASH_TBL6, 32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_HASH_TBL7, 32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_HASH_TBL8, 32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_HASH_TBL9, 32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_HASH_TBL10, 32'h0000_0000,32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_HASH_TBL11, 32'h0000_0000,32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_HASH_TBL12, 32'h0000_0000,32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_HASH_TBL13, 32'h0000_0000,32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_HASH_TBL14, 32'h0000_0000,32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_HASH_TBL15, 32'h0000_0000,32'h0000_ffff );
+
+  setup_reg(iport, cmd, base_addr + BRxMAC_FRM_CNT,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_LEN_ER_CNT,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + BMAC_AL_ER_CNT,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + BMAC_CRC_ER_CNT,	32'h0000_0000,	32'h0000_00ff );
+  setup_reg(iport, cmd, base_addr + BMAC_CD_VIO_CNT,	32'h0000_0000,	32'h0000_00ff );
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// init_essential_reg_only Task
+//
+////////////////////////////////////////////////////////////////////////////////
+
+task bmac_util_class :: init_essential_reg_only(integer iport, bit[63:0] cmd, bit [39:0] base_addr) {
+  bit [47:0] tmp48;
+
+  setup_reg(iport, cmd, base_addr + BTxMAC_STAT_MSK, 32'h0000_01ff,32'hffff_ffff);
+  setup_reg(iport, cmd, base_addr + BRxMAC_STAT_MSK,32'h0000_00ff,	32'hffff_ffff);
+  setup_reg(iport, cmd, base_addr + BMAC_C_S_MSK,	32'hffff_fff7,	32'hffff_ffff);
+  setup_reg(iport, cmd, base_addr + MAC_SEND_PAUSE, 32'h0000_1BF0, 32'h000f_ffff );
+  setup_reg(iport, cmd, base_addr + BMAC_MIN, 32'h0000_0040, 32'h0000_03ff );
+  if(get_plus_arg(CHECK,"JUMBO_FRAME_EN"))
+    setup_reg(iport, cmd, base_addr + BMAC_MAX, 32'h2000_3FFF, 32'hffff_ffff );
+  else 
+    setup_reg(iport, cmd, base_addr + BMAC_MAX, 32'h2000_05EE, 32'hffff_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_PA_SIZE, 32'h0000_0007, 32'h0000_03ff );
+  setup_reg(iport, cmd, base_addr + MAC_CTRL_TYPE, 32'h0000_8808, 32'h0000_ffff );
+
+
+  setup_reg(iport, cmd, base_addr + MAC_IPG0, 32'h0000_0000, 32'h0000_00ff );
+  setup_reg(iport, cmd, base_addr + MAC_IPG1, 32'h0000_0008, 32'h0000_00ff );
+  setup_reg(iport, cmd, base_addr + MAC_IPG2, 32'h0000_0004, 32'h0000_00ff );
+  setup_reg(iport, cmd, base_addr + MAC_SLOT_TIME, 32'h0000_0040,	32'h0000_03ff );
+  setup_reg(iport, cmd, base_addr + MAC_JAM_SIZE, 32'h0000_0004, 32'h0000_001f );
+  setup_reg(iport, cmd, base_addr + MAC_ATTMPT_LMT, 32'h0000_0010, 32'h0000_00ff );
+
+  setup_reg(iport, cmd, base_addr + BMAC_COL_CNT,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + BMAC_OA_COL_CNT,32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + BMAC_EX_COL_CNT,32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + BMAC_LT_COL_CNT,32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_DEF_TIMER,32'h0000_0000,	32'h0000_ffff );
+
+
+  setup_reg(iport, cmd, base_addr + MAC_FC_ADDR0,	32'h0000_0001,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_FC_ADDR1,	32'h0000_C200,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_FC_ADDR2,	32'h0000_0180,	32'h0000_ffff );
+
+  setup_reg(iport, cmd, base_addr + MAC_ADD_FILT0, 32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADD_FILT1, 32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADD_FILT2, 32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADD_FILT12_MASK, 32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_ADD_FILT00_MASK, 32'h0000_0000,	32'h0000_ffff );
+
+  setup_reg(iport, cmd, base_addr + BRxMAC_FRM_CNT,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + MAC_LEN_ER_CNT,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + BMAC_AL_ER_CNT,	32'h0000_0000,	32'h0000_ffff );
+  setup_reg(iport, cmd, base_addr + BMAC_CRC_ER_CNT,	32'h0000_0000,	32'h0000_00ff );
+  setup_reg(iport, cmd, base_addr + BMAC_CD_VIO_CNT,	32'h0000_0000,	32'h0000_00ff );
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// setup_reg Task
+//
+////////////////////////////////////////////////////////////////////////////////
+
+task bmac_util_class :: setup_reg(integer iport, bit[63:0] cmd, bit [39:0] addr, bit [31:0] data, bit [31:0] verify_mask) {
+  bit [31:0] data2;
+
+  if(check_cmd(cmd, MI_DEBUG))
+    printf("bmac_init:MAC%0d Writing %s Reg=0x%0h (%h) time=%0d\n", iport, get_bmac_reg_name(addr[11:0]), data, addr, get_time(LO));
+
+  mac_pio_class.bmac_pio_wr(addr, data);
+
+  if(check_cmd(cmd,MAC_REG_VERIFY)) {	// This is just for basic SANITY testing
+    mac_pio_class.mac_pio_rd(addr, data2);
+    if((data & verify_mask) != (data2 & verify_mask))
+      printf("Error: bmac_init: Register Write Verify: Register %s (%h), Wrote: %h Read: %h Mask: %h\n",
+             get_bmac_reg_name(addr[11:0]),addr,data,data2,verify_mask);
+  }
+}
+
+task bmac_util_class :: set_host_info_1 (integer mac_id,bit[31:0] ctrl_word ) {
+
+  bit [39:0] base_addr;
+
+  base_addr = get_mac_reg_base(mac_id);
+  if(get_plus_arg( CHECK, "RX_DROP_PKT_CHECK"))
+     mac_pio_class.bmac_pio_wr(base_addr + RxMAC_CONFIG,   32'h0000_0201);
+  else
+     mac_pio_class.bmac_pio_wr(base_addr + RxMAC_CONFIG,   32'h0000_0001);
+
+  mac_pio_class.bmac_pio_wr(base_addr + BMAC_ALTAD_CMPEN, 32'h0000_FFFF);
+
+  mac_pio_class.bmac_pio_wr(base_addr + BMAC_HOST_INF1, ctrl_word);
+
+
+}
+
+task bmac_util_class :: wr_ipp_mac_reg(integer mac_id, bit[39:0] addr, bit[31:0] wr_data) {
+  bit [39:0] base_addr;
+  base_addr = get_mac_reg_base(mac_id);
+  mac_pio_class.bmac_pio_wr(base_addr + addr, wr_data);
+}
+
+task bmac_util_class :: rd_ipp_mac_reg(integer mac_id,bit[39:0] addr, \
+                                       var bit[31:0]rd_data, bit compare) {
+
+  bit [39:0] base_addr;
+  base_addr = get_mac_reg_base(mac_id);
+
+
+  mac_pio_class.bmac_pio_rd(base_addr + addr, rd_data, compare);
+
+
+}
+task bmac_util_class :: ipp_shadow_rd (bit[39:0] addr, var bit[31:0] rd_data,\
+                                       var  bit[31:0] data_mask, var bit data_valid) {
+  integer port_id;
+  port_id = getPortID(addr);
+  
+  mac_pio_class.mac_shadow_class[port_id].get_data(addr,rd_data,data_mask,data_valid);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// mac_pci_rd Task
+//
+////////////////////////////////////////////////////////////////////////////////
+
+task bmac_util_class :: mac_pci_rd(bit [39:0] addr, var bit [31:0] exp_value) {
+  semaphore_get(WAIT, mac_pio_class.pio_drv_mac.pio_access, 1);
+  mac_pio_class.pio_drv_mac.address    = addr;
+  mac_pio_class.pio_drv_mac.rd_wr      = 1'b1;
+  mac_pio_class.pio_drv_mac.cfg_access = 1'b0;
+  //pio_driver.exp_data   = exp_value;
+  //pio_driver.data_mask  = 0;
+  //pio_driver.data_mask  = 32'hffff_ffff;
+  //pio_driver.exp_data_valid = 1'b1;
+  trigger(ONE_SHOT, mac_pio_class.pio_drv_mac.pio_start);
+  sync(ALL, mac_pio_class.pio_drv_mac.pio_complete);
+  exp_value = mac_pio_class.pio_drv_mac.rd_data;
+  semaphore_put(mac_pio_class.pio_drv_mac.pio_access, 1);
+}
+
+
+
+task bmac_util_class :: mac_pci_rd_cmp(bit [39:0] addr, bit [31:0] exp_value, bit [31:0] data_mask) {
+  semaphore_get(WAIT, mac_pio_class.pio_drv_mac.pio_access, 1);
+  mac_pio_class.pio_drv_mac.address    = addr;
+  mac_pio_class.pio_drv_mac.rd_wr      = 1'b1;
+  mac_pio_class.pio_drv_mac.cfg_access = 1'b0;
+  //pio_driver_class.exp_data   = exp_value;
+  //pio_driver_class.data_mask  = data_mask;
+  //pio_driver_class.exp_data_valid = 1'b1;
+  trigger(ONE_SHOT, mac_pio_class.pio_drv_mac.pio_start);
+  sync(ALL, mac_pio_class.pio_drv_mac.pio_complete);
+
+  /****
+       if ((pio_driver.rd_data & pio_driver.data_mask) !== (pio_driver.exp_data & pio_driver.data_mask)) {
+       printf("Error: Register %s (%h) data mismatch: \n",get_bmac_reg_name(addr[11:0]),addr);
+       printf("       Expected: %h  Got: %h  Mask: %h\n",pio_driver.exp_data,
+       pio_driver.rd_data, pio_driver.data_mask);
+       printf("\n");
+       }
+  *****/
+
+  semaphore_put(mac_pio_class.pio_drv_mac.pio_access, 1);
+}
+
+function bit[39:0] bmac_util_class :: get_mac_reg_base(integer iport) {
+
+  case(iport) {
+    0: get_mac_reg_base = MAC0_BASE;
+    1: get_mac_reg_base = MAC1_BASE;
+    2: get_mac_reg_base = MAC2_BASE;
+    3: get_mac_reg_base = MAC3_BASE;
+    default: error("Error: Invalid PORT (%0d) for get_mac_reg_base task.\n",iport);
+  }
+
+}
+
+function bit[(16*12)-1:0] bmac_util_class :: get_bmac_reg_name(integer id) {
+  case(id) {
+
+    BTxMAC_SW_RST:          get_bmac_reg_name = "BTxMAC_SW_RST"; 
+    BRxMAC_SW_RST:          get_bmac_reg_name = "BRxMAC_SW_RST"; 
+    MAC_SEND_PAUSE:         get_bmac_reg_name = "MAC_SEND_PAUSE"; 
+    BTxMAC_STATUS:          get_bmac_reg_name = "BTxMAC_STATUS"; 
+    BRxMAC_STATUS:          get_bmac_reg_name = "BRxMAC_STATUS"; 
+    BMAC_CTRL_STAT:         get_bmac_reg_name = "BMAC_CTRL_STAT"; 
+    BTxMAC_STAT_MSK:        get_bmac_reg_name = "BTxMAC_STAT_MSK"; 
+    BRxMAC_STAT_MSK:        get_bmac_reg_name = "BRxMAC_STAT_MSK"; 
+    BMAC_C_S_MSK:           get_bmac_reg_name = "BMAC_C_S_MSK"; 
+    TxMAC_CONFIG:           get_bmac_reg_name = "TxMAC_CONFIG"; 
+    RxMAC_CONFIG:           get_bmac_reg_name = "RxMAC_CONFIG"; 
+    MAC_CTRL_CONFIG:        get_bmac_reg_name = "MAC_CTRL_CONFIG"; 
+    MAC_XIF_CONFIG:         get_bmac_reg_name = "MAC_XIF_CONFIG"; 
+    MAC_IPG0:               get_bmac_reg_name = "MAC_IPG0"; 
+    MAC_IPG1:               get_bmac_reg_name = "MAC_IPG1"; 
+    MAC_IPG2:               get_bmac_reg_name = "MAC_IPG2"; 
+    MAC_SLOT_TIME:          get_bmac_reg_name = "MAC_SLOT_TIME"; 
+    BMAC_MIN:               get_bmac_reg_name = "BMAC_MIN"; 
+    BMAC_MAX:               get_bmac_reg_name = "BMAC_MAX"; 
+    MAC_PA_SIZE:            get_bmac_reg_name = "MAC_PA_SIZE"; 
+    MAC_JAM_SIZE:           get_bmac_reg_name = "MAC_JAM_SIZE"; 
+    MAC_ATTMPT_LMT:         get_bmac_reg_name = "MAC_ATTMPT_LMT"; 
+    MAC_CTRL_TYPE:          get_bmac_reg_name = "MAC_CTRL_TYPE"; 
+    BMAC_ADDR0:             get_bmac_reg_name = "BMAC_ADDR0"; 
+    BMAC_ADDR1:             get_bmac_reg_name = "BMAC_ADDR1"; 
+    BMAC_ADDR2:             get_bmac_reg_name = "BMAC_ADDR2"; 
+    MAC_ADDR3:              get_bmac_reg_name = "MAC_ADDR3"; 
+    MAC_ADDR4:              get_bmac_reg_name = "MAC_ADDR4"; 
+    MAC_ADDR5:              get_bmac_reg_name = "MAC_ADDR5"; 
+    MAC_ADDR6:              get_bmac_reg_name = "MAC_ADDR6"; 
+    MAC_ADDR7:              get_bmac_reg_name = "MAC_ADDR7"; 
+    MAC_ADDR8:              get_bmac_reg_name = "MAC_ADDR8"; 
+    MAC_ADDR9:              get_bmac_reg_name = "MAC_ADDR9"; 
+    MAC_ADDR10:             get_bmac_reg_name = "MAC_ADDR10"; 
+    MAC_ADDR11:             get_bmac_reg_name = "MAC_ADDR11"; 
+    MAC_ADDR12:             get_bmac_reg_name = "MAC_ADDR12"; 
+    MAC_ADDR13:             get_bmac_reg_name = "MAC_ADDR13"; 
+    MAC_ADDR14:             get_bmac_reg_name = "MAC_ADDR14"; 
+    MAC_ADDR15:             get_bmac_reg_name = "MAC_ADDR15"; 
+    MAC_ADDR16:             get_bmac_reg_name = "MAC_ADDR16"; 
+    MAC_ADDR17:             get_bmac_reg_name = "MAC_ADDR17"; 
+    MAC_ADDR18:             get_bmac_reg_name = "MAC_ADDR18"; 
+    MAC_ADDR19:             get_bmac_reg_name = "MAC_ADDR19"; 
+    MAC_ADDR20:             get_bmac_reg_name = "MAC_ADDR20"; 
+    MAC_ADDR21:             get_bmac_reg_name = "MAC_ADDR21"; 
+    MAC_ADDR22:             get_bmac_reg_name = "MAC_ADDR22"; 
+    MAC_ADDR23:             get_bmac_reg_name = "MAC_ADDR23"; 
+    MAC_ADDR24:             get_bmac_reg_name = "MAC_ADDR24"; 
+    MAC_ADDR25:             get_bmac_reg_name = "MAC_ADDR25"; 
+    MAC_ADDR26:             get_bmac_reg_name = "MAC_ADDR26"; 
+    MAC_ADDR27:             get_bmac_reg_name = "MAC_ADDR27"; 
+    MAC_ADDR28:             get_bmac_reg_name = "MAC_ADDR28"; 
+    MAC_ADDR29:             get_bmac_reg_name = "MAC_ADDR29"; 
+    MAC_ADDR30:             get_bmac_reg_name = "MAC_ADDR30"; 
+    MAC_ADDR31:             get_bmac_reg_name = "MAC_ADDR31"; 
+    MAC_ADDR32:             get_bmac_reg_name = "MAC_ADDR32"; 
+    MAC_ADDR33:             get_bmac_reg_name = "MAC_ADDR33"; 
+    MAC_ADDR34:             get_bmac_reg_name = "MAC_ADDR34"; 
+    MAC_ADDR35:             get_bmac_reg_name = "MAC_ADDR35"; 
+    MAC_ADDR36:             get_bmac_reg_name = "MAC_ADDR36"; 
+    MAC_ADDR37:             get_bmac_reg_name = "MAC_ADDR37"; 
+    MAC_ADDR38:             get_bmac_reg_name = "MAC_ADDR38"; 
+    MAC_ADDR39:             get_bmac_reg_name = "MAC_ADDR39"; 
+    MAC_ADDR40:             get_bmac_reg_name = "MAC_ADDR40"; 
+    MAC_ADDR41:             get_bmac_reg_name = "MAC_ADDR41"; 
+    MAC_ADDR42:             get_bmac_reg_name = "MAC_ADDR42"; 
+    MAC_ADDR43:             get_bmac_reg_name = "MAC_ADDR43"; 
+    MAC_ADDR44:             get_bmac_reg_name = "MAC_ADDR44"; 
+    MAC_FC_ADDR0:           get_bmac_reg_name = "MAC_FC_ADDR0"; 
+    MAC_FC_ADDR1:           get_bmac_reg_name = "MAC_FC_ADDR1"; 
+    MAC_FC_ADDR2:           get_bmac_reg_name = "MAC_FC_ADDR2"; 
+    MAC_ADD_FILT0:          get_bmac_reg_name = "MAC_ADD_FILT0"; 
+    MAC_ADD_FILT1:          get_bmac_reg_name = "MAC_ADD_FILT1"; 
+    MAC_ADD_FILT2:          get_bmac_reg_name = "MAC_ADD_FILT2"; 
+    MAC_ADD_FILT12_MASK:    get_bmac_reg_name = "MAC_ADD_FILT12_MASK"; 
+    MAC_ADD_FILT00_MASK:    get_bmac_reg_name = "MAC_ADD_FILT00_MASK"; 
+    MAC_HASH_TBL0:          get_bmac_reg_name = "MAC_HASH_TBL0"; 
+    MAC_HASH_TBL1:          get_bmac_reg_name = "MAC_HASH_TBL1"; 
+    MAC_HASH_TBL2:          get_bmac_reg_name = "MAC_HASH_TBL2"; 
+    MAC_HASH_TBL3:          get_bmac_reg_name = "MAC_HASH_TBL3"; 
+    MAC_HASH_TBL4:          get_bmac_reg_name = "MAC_HASH_TBL4"; 
+    MAC_HASH_TBL5:          get_bmac_reg_name = "MAC_HASH_TBL5"; 
+    MAC_HASH_TBL6:          get_bmac_reg_name = "MAC_HASH_TBL6"; 
+    MAC_HASH_TBL7:          get_bmac_reg_name = "MAC_HASH_TBL7"; 
+    MAC_HASH_TBL8:          get_bmac_reg_name = "MAC_HASH_TBL8"; 
+    MAC_HASH_TBL9:          get_bmac_reg_name = "MAC_HASH_TBL9"; 
+    MAC_HASH_TBL10:         get_bmac_reg_name = "MAC_HASH_TBL10"; 
+    MAC_HASH_TBL11:         get_bmac_reg_name = "MAC_HASH_TBL11"; 
+    MAC_HASH_TBL12:         get_bmac_reg_name = "MAC_HASH_TBL12"; 
+    MAC_HASH_TBL13:         get_bmac_reg_name = "MAC_HASH_TBL13"; 
+    MAC_HASH_TBL14:         get_bmac_reg_name = "MAC_HASH_TBL14"; 
+    MAC_HASH_TBL15:         get_bmac_reg_name = "MAC_HASH_TBL15"; 
+    BMAC_COL_CNT:           get_bmac_reg_name = "BMAC_COL_CNT"; 
+    BMAC_OA_COL_CNT:        get_bmac_reg_name = "BMAC_OA_COL_CNT"; 
+    BMAC_EX_COL_CNT:        get_bmac_reg_name = "BMAC_EX_COL_CNT"; 
+    BMAC_LT_COL_CNT:        get_bmac_reg_name = "BMAC_LT_COL_CNT"; 
+    MAC_DEF_TIMER:          get_bmac_reg_name = "MAC_DEF_TIMER"; 
+    BMAC_PK_ATT_CNT:        get_bmac_reg_name = "BMAC_PK_ATT_CNT"; 
+    BRxMAC_FRM_CNT:         get_bmac_reg_name = "BRxMAC_FRM_CNT"; 
+    MAC_LEN_ER_CNT:         get_bmac_reg_name = "MAC_LEN_ER_CNT"; 
+    BMAC_AL_ER_CNT:         get_bmac_reg_name = "BMAC_AL_ER_CNT"; 
+    BMAC_CRC_ER_CNT:        get_bmac_reg_name = "BMAC_CRC_ER_CNT"; 
+    BMAC_CD_VIO_CNT:        get_bmac_reg_name = "BMAC_CD_VIO_CNT"; 
+    MAC_RND_SEED:           get_bmac_reg_name = "MAC_RND_SEED"; 
+    BMAC_SM_REG:            get_bmac_reg_name = "BMAC_SM_REG"; 
+    BMAC_ALTAD_CMPEN:	get_bmac_reg_name =  "BMAC_ALTAD_CMPEN";
+    BMAC_HOST_INFO:		get_bmac_reg_name = "BMAC_HOST_INFO";
+    BMAC_HOST_INF1:		get_bmac_reg_name = "BMAC_HOST_INF1";
+    BMAC_HOST_INF2:		get_bmac_reg_name = "BMAC_HOST_INF2";
+    BMAC_HOST_INF3:		get_bmac_reg_name = "BMAC_HOST_INF3";
+    BMAC_HOST_INF4:		get_bmac_reg_name = "BMAC_HOST_INF4";
+    BMAC_HOST_INF5:		get_bmac_reg_name = "BMAC_HOST_INF5";
+    BMAC_HOST_INF6:		get_bmac_reg_name = "BMAC_HOST_INF6";
+    BMAC_HOST_INF7:		get_bmac_reg_name = "BMAC_HOST_INF7";
+    BTxMAC_BYTE_CNT:        get_bmac_reg_name = "BTxMAC_BYTE_CNT"; 
+    BTxMAC_FRM_CNT:         get_bmac_reg_name = "BTxMAC_FRM_CNT"; 
+    BRxMAC_BYTE_CNT:        get_bmac_reg_name = "BRxMAC_BYTE_CNT"; 
+  }
+}
+
+function bit[32:0] bmac_util_class :: get_bmac_reg_adr(integer id) {
+  case(id) {
+    0: get_bmac_reg_adr = BTxMAC_SW_RST;
+    1: get_bmac_reg_adr = BRxMAC_SW_RST;
+    2: get_bmac_reg_adr = MAC_SEND_PAUSE;
+    //3: get_bmac_reg_adr = BTxMAC_STATUS;
+    //4: get_bmac_reg_adr = BRxMAC_STATUS;
+    //5: get_bmac_reg_adr = BMAC_CTRL_STAT;
+    3: get_bmac_reg_adr = BTxMAC_STAT_MSK;
+    4: get_bmac_reg_adr = BRxMAC_STAT_MSK;
+    5: get_bmac_reg_adr = BMAC_C_S_MSK;
+    6: get_bmac_reg_adr = TxMAC_CONFIG;
+    7: get_bmac_reg_adr = RxMAC_CONFIG;
+    8: get_bmac_reg_adr = MAC_CTRL_CONFIG;
+    9: get_bmac_reg_adr = MAC_XIF_CONFIG;
+    10: get_bmac_reg_adr = MAC_IPG0;
+    11: get_bmac_reg_adr = MAC_IPG1;
+    12: get_bmac_reg_adr = MAC_IPG2;
+    13: get_bmac_reg_adr = MAC_SLOT_TIME;
+    14: get_bmac_reg_adr = BMAC_MIN;
+    15: get_bmac_reg_adr = BMAC_MAX;
+    16: get_bmac_reg_adr = MAC_PA_SIZE;
+    17: get_bmac_reg_adr = MAC_JAM_SIZE;
+    18: get_bmac_reg_adr = MAC_ATTMPT_LMT;
+    19: get_bmac_reg_adr = MAC_CTRL_TYPE;
+    20: get_bmac_reg_adr = BMAC_ADDR0;
+    21: get_bmac_reg_adr = BMAC_ADDR1;
+    22: get_bmac_reg_adr = BMAC_ADDR2;
+    23: get_bmac_reg_adr = MAC_ADDR3;
+    24: get_bmac_reg_adr = MAC_ADDR4;
+    25: get_bmac_reg_adr = MAC_ADDR5;
+    26: get_bmac_reg_adr = MAC_ADDR6;
+    27: get_bmac_reg_adr = MAC_ADDR7;
+    28: get_bmac_reg_adr = MAC_ADDR8;
+    29: get_bmac_reg_adr = MAC_ADDR9;
+    30: get_bmac_reg_adr = MAC_ADDR10;
+    31: get_bmac_reg_adr = MAC_ADDR11;
+    32: get_bmac_reg_adr = MAC_ADDR12;
+    33: get_bmac_reg_adr = MAC_ADDR13;
+    34: get_bmac_reg_adr = MAC_ADDR14;
+    35: get_bmac_reg_adr = MAC_ADDR15;
+    36: get_bmac_reg_adr = MAC_ADDR16;
+    37: get_bmac_reg_adr = MAC_ADDR17;
+    38: get_bmac_reg_adr = MAC_ADDR18;
+    39: get_bmac_reg_adr = MAC_ADDR19;
+    40: get_bmac_reg_adr = MAC_ADDR20;
+    41: get_bmac_reg_adr = MAC_ADDR21;
+    42: get_bmac_reg_adr = MAC_ADDR22;
+    43: get_bmac_reg_adr = MAC_ADDR23;
+    44: get_bmac_reg_adr = MAC_ADDR24;
+    45: get_bmac_reg_adr = MAC_ADDR25;
+    46: get_bmac_reg_adr = MAC_ADDR26;
+    47: get_bmac_reg_adr = MAC_ADDR27;
+    48: get_bmac_reg_adr = MAC_ADDR28;
+    49: get_bmac_reg_adr = MAC_ADDR29;
+    50: get_bmac_reg_adr = MAC_ADDR30;
+    51: get_bmac_reg_adr = MAC_ADDR31;
+    52: get_bmac_reg_adr = MAC_ADDR32;
+    53: get_bmac_reg_adr = MAC_ADDR33;
+    54: get_bmac_reg_adr = MAC_ADDR34;
+    55: get_bmac_reg_adr = MAC_ADDR35;
+    56: get_bmac_reg_adr = MAC_ADDR36;
+    57: get_bmac_reg_adr = MAC_ADDR37;
+    58: get_bmac_reg_adr = MAC_ADDR38;
+    59: get_bmac_reg_adr = MAC_ADDR39;
+    60: get_bmac_reg_adr = MAC_ADDR40;
+    61: get_bmac_reg_adr = MAC_ADDR41;
+    62: get_bmac_reg_adr = MAC_ADDR42;
+    63: get_bmac_reg_adr = MAC_ADDR43;
+    64: get_bmac_reg_adr = MAC_ADDR44;
+    65: get_bmac_reg_adr = MAC_FC_ADDR0;
+    66: get_bmac_reg_adr = MAC_FC_ADDR1;
+    67: get_bmac_reg_adr = MAC_FC_ADDR2;
+    68: get_bmac_reg_adr = MAC_ADD_FILT0;
+    69: get_bmac_reg_adr = MAC_ADD_FILT1;
+    70: get_bmac_reg_adr = MAC_ADD_FILT2;
+    71: get_bmac_reg_adr = MAC_ADD_FILT12_MASK;
+    72: get_bmac_reg_adr = MAC_ADD_FILT00_MASK;
+    73: get_bmac_reg_adr = MAC_HASH_TBL0;
+    74: get_bmac_reg_adr = MAC_HASH_TBL1;
+    75: get_bmac_reg_adr = MAC_HASH_TBL2;
+    76: get_bmac_reg_adr = MAC_HASH_TBL3;
+    77: get_bmac_reg_adr = MAC_HASH_TBL4;
+    78: get_bmac_reg_adr = MAC_HASH_TBL5;
+    79: get_bmac_reg_adr = MAC_HASH_TBL6;
+    80: get_bmac_reg_adr = MAC_HASH_TBL7;
+    81: get_bmac_reg_adr = MAC_HASH_TBL8;
+    82: get_bmac_reg_adr = MAC_HASH_TBL9;
+    83: get_bmac_reg_adr = MAC_HASH_TBL10;
+    84: get_bmac_reg_adr = MAC_HASH_TBL11;
+    85: get_bmac_reg_adr = MAC_HASH_TBL12;
+    86: get_bmac_reg_adr = MAC_HASH_TBL13;
+    87: get_bmac_reg_adr = MAC_HASH_TBL14;
+    88: get_bmac_reg_adr = MAC_HASH_TBL15;
+    89: get_bmac_reg_adr = BMAC_COL_CNT;
+    90: get_bmac_reg_adr = BMAC_OA_COL_CNT;
+    91: get_bmac_reg_adr = BMAC_EX_COL_CNT;
+    92: get_bmac_reg_adr = BMAC_LT_COL_CNT;
+    93: get_bmac_reg_adr = MAC_DEF_TIMER;
+    //97: get_bmac_reg_adr = BMAC_PK_ATT_CNT;
+    94: get_bmac_reg_adr = BRxMAC_FRM_CNT;
+    95: get_bmac_reg_adr = MAC_LEN_ER_CNT;
+    96: get_bmac_reg_adr = BMAC_AL_ER_CNT;
+    97: get_bmac_reg_adr = BMAC_CRC_ER_CNT;
+    98: get_bmac_reg_adr = BMAC_CD_VIO_CNT;
+    99: get_bmac_reg_adr = MAC_RND_SEED;
+    //104: get_bmac_reg_adr = BMAC_SM_REG;
+    100: get_bmac_reg_adr = BMAC_ALTAD_CMPEN;
+    101: get_bmac_reg_adr = BMAC_HOST_INFO;
+    102: get_bmac_reg_adr = BMAC_HOST_INF1;
+    103: get_bmac_reg_adr = BMAC_HOST_INF2;
+    104: get_bmac_reg_adr = BMAC_HOST_INF3;
+    105: get_bmac_reg_adr = BMAC_HOST_INF4;
+    106: get_bmac_reg_adr = BMAC_HOST_INF5;
+    107: get_bmac_reg_adr = BMAC_HOST_INF6;
+    108: get_bmac_reg_adr = BMAC_HOST_INF7;
+    109: get_bmac_reg_adr = BTxMAC_BYTE_CNT;
+    110: get_bmac_reg_adr = BTxMAC_FRM_CNT;
+    111: get_bmac_reg_adr = BRxMAC_BYTE_CNT;
+    112: get_bmac_reg_adr = BMAC_SM_REG;
+
+    default: error("Error: Invalid register ID (%0d) for get_bmac_reg_adr.\n",id);
+  }
+}
+
+function bit[32:0] bmac_util_class :: bmac_reg_addr (integer sel) {
+  integer n,m;
+  bit [39:0] base_addr;
+
+  n = sel%BMAC_TOTAL_REGS;
+  m = (sel-n) / BMAC_TOTAL_REGS;
+
+  base_addr = get_mac_reg_base(m);
+  bmac_reg_addr = base_addr + get_bmac_reg_adr(n);
+}
+
+
+function bit[31:0]  bmac_util_class :: bmac_reg_mask (integer sel) {
+  integer n;
+
+  n = sel%BMAC_TOTAL_REGS;
+
+  case(n) {
+
+    0: bmac_reg_mask = BTxMAC_SW_RST_MASK;
+    1: bmac_reg_mask = BRxMAC_SW_RST_MASK;
+    2: bmac_reg_mask = MAC_SEND_PAUSE_MASK;
+    // 3: bmac_reg_mask = BTxMAC_STATUS_MASK;
+    // 4: bmac_reg_mask = BRxMAC_STATUS_MASK;
+    //5: bmac_reg_mask = BMAC_CTRL_STAT_MASK;
+    3: bmac_reg_mask = BTxMAC_STAT_MSK_MASK;
+    4: bmac_reg_mask = BRxMAC_STAT_MSK_MASK;
+    5: bmac_reg_mask = BMAC_C_S_MSK_MASK;
+    6: bmac_reg_mask = TxMAC_CONFIG_MASK;
+    7: bmac_reg_mask = RxMAC_CONFIG_MASK;
+    8: bmac_reg_mask = MAC_CTRL_CONFIG_MASK;
+    9: bmac_reg_mask = MAC_XIF_CONFIG_MASK;
+    10: bmac_reg_mask = MAC_IPG0_MASK;
+    11: bmac_reg_mask = MAC_IPG1_MASK;
+    12: bmac_reg_mask = MAC_IPG2_MASK;
+    13: bmac_reg_mask = MAC_SLOT_TIME_MASK;
+    14: bmac_reg_mask = BMAC_MIN_MASK;
+    15: bmac_reg_mask = BMAC_MAX_MASK;
+    16: bmac_reg_mask = MAC_PA_SIZE_MASK;
+    17: bmac_reg_mask = MAC_JAM_SIZE_MASK;
+    18: bmac_reg_mask = MAC_ATTMPT_LMT_MASK;
+    19: bmac_reg_mask = MAC_CTRL_TYPE_MASK;
+    20: bmac_reg_mask = BMAC_ADDR0_MASK;
+    21: bmac_reg_mask = BMAC_ADDR1_MASK;
+    22: bmac_reg_mask = BMAC_ADDR2_MASK;
+    23: bmac_reg_mask = MAC_ADDR3_MASK;
+    24: bmac_reg_mask = MAC_ADDR4_MASK;
+    25: bmac_reg_mask = MAC_ADDR5_MASK;
+    26: bmac_reg_mask = MAC_ADDR6_MASK;
+    27: bmac_reg_mask = MAC_ADDR7_MASK;
+    28: bmac_reg_mask = MAC_ADDR8_MASK;
+    29: bmac_reg_mask = MAC_ADDR9_MASK;
+    30: bmac_reg_mask = MAC_ADDR10_MASK;
+    31: bmac_reg_mask = MAC_ADDR11_MASK;
+    32: bmac_reg_mask = MAC_ADDR12_MASK;
+    33: bmac_reg_mask = MAC_ADDR13_MASK;
+    34: bmac_reg_mask = MAC_ADDR14_MASK;
+    35: bmac_reg_mask = MAC_ADDR15_MASK;
+    36: bmac_reg_mask = MAC_ADDR16_MASK;
+    37: bmac_reg_mask = MAC_ADDR17_MASK;
+    38: bmac_reg_mask = MAC_ADDR18_MASK;
+    39: bmac_reg_mask = MAC_ADDR19_MASK;
+    40: bmac_reg_mask = MAC_ADDR20_MASK;
+    41: bmac_reg_mask = MAC_ADDR21_MASK;
+    42: bmac_reg_mask = MAC_ADDR22_MASK;
+    43: bmac_reg_mask = MAC_ADDR23_MASK;
+    44: bmac_reg_mask = MAC_ADDR24_MASK;
+    45: bmac_reg_mask = MAC_ADDR25_MASK;
+    46: bmac_reg_mask = MAC_ADDR26_MASK;
+    47: bmac_reg_mask = MAC_ADDR27_MASK;
+    48: bmac_reg_mask = MAC_ADDR28_MASK;
+    49: bmac_reg_mask = MAC_ADDR29_MASK;
+    50: bmac_reg_mask = MAC_ADDR30_MASK;
+    51: bmac_reg_mask = MAC_ADDR31_MASK;
+    52: bmac_reg_mask = MAC_ADDR32_MASK;
+    53: bmac_reg_mask = MAC_ADDR33_MASK;
+    54: bmac_reg_mask = MAC_ADDR34_MASK;
+    55: bmac_reg_mask = MAC_ADDR35_MASK;
+    56: bmac_reg_mask = MAC_ADDR36_MASK;
+    57: bmac_reg_mask = MAC_ADDR37_MASK;
+    58: bmac_reg_mask = MAC_ADDR38_MASK;
+    59: bmac_reg_mask = MAC_ADDR39_MASK;
+    60: bmac_reg_mask = MAC_ADDR40_MASK;
+    61: bmac_reg_mask = MAC_ADDR41_MASK;
+    62: bmac_reg_mask = MAC_ADDR42_MASK;
+    63: bmac_reg_mask = MAC_ADDR43_MASK;
+    64: bmac_reg_mask = MAC_ADDR44_MASK;
+    65: bmac_reg_mask = MAC_FC_ADDR0_MASK;
+    66: bmac_reg_mask = MAC_FC_ADDR1_MASK;
+    67: bmac_reg_mask = MAC_FC_ADDR2_MASK;
+    68: bmac_reg_mask = MAC_ADD_FILT0_MASK;
+    69: bmac_reg_mask = MAC_ADD_FILT1_MASK;
+    70: bmac_reg_mask = MAC_ADD_FILT2_MASK;
+    71: bmac_reg_mask = MAC_ADD_FILT12_MASK_MASK;
+    72: bmac_reg_mask = MAC_ADD_FILT00_MASK_MASK;
+    73: bmac_reg_mask = MAC_HASH_TBL0_MASK;
+    74: bmac_reg_mask = MAC_HASH_TBL1_MASK;
+    75: bmac_reg_mask = MAC_HASH_TBL2_MASK;
+    76: bmac_reg_mask = MAC_HASH_TBL3_MASK;
+    77: bmac_reg_mask = MAC_HASH_TBL4_MASK;
+    78: bmac_reg_mask = MAC_HASH_TBL5_MASK;
+    79: bmac_reg_mask = MAC_HASH_TBL6_MASK;
+    80: bmac_reg_mask = MAC_HASH_TBL7_MASK;
+    81: bmac_reg_mask = MAC_HASH_TBL8_MASK;
+    82: bmac_reg_mask = MAC_HASH_TBL9_MASK;
+    83: bmac_reg_mask = MAC_HASH_TBL10_MASK;
+    84: bmac_reg_mask = MAC_HASH_TBL11_MASK;
+    85: bmac_reg_mask = MAC_HASH_TBL12_MASK;
+    86: bmac_reg_mask = MAC_HASH_TBL13_MASK;
+    87: bmac_reg_mask = MAC_HASH_TBL14_MASK;
+    88: bmac_reg_mask = MAC_HASH_TBL15_MASK;
+    89: bmac_reg_mask = BMAC_COL_CNT_MASK;
+    90: bmac_reg_mask = BMAC_OA_COL_CNT_MASK;
+    91: bmac_reg_mask = BMAC_EX_COL_CNT_MASK;
+    92: bmac_reg_mask = BMAC_LT_COL_CNT_MASK;
+    93: bmac_reg_mask = MAC_DEF_TIMER_MASK;
+    //94: bmac_reg_mask = BMAC_PK_ATT_CNT_MASK;
+    94: bmac_reg_mask = BRxMAC_FRM_CNT_MASK;
+    95: bmac_reg_mask = MAC_LEN_ER_CNT_MASK;
+    96: bmac_reg_mask = BMAC_AL_ER_CNT_MASK;
+    97: bmac_reg_mask = BMAC_CRC_ER_CNT_MASK;
+    98: bmac_reg_mask = BMAC_CD_VIO_CNT_MASK;
+    99: bmac_reg_mask = MAC_RND_SEED_MASK;
+    //104: bmac_reg_mask = BMAC_SM_REG_MASK;
+    100: bmac_reg_mask = BMAC_ALTAD_CMPEN_MASK;
+    101: bmac_reg_mask = BMAC_HOST_INFO0_MASK;
+    102: bmac_reg_mask = BMAC_HOST_INFO1_MASK;
+    103: bmac_reg_mask = BMAC_HOST_INFO2_MASK;
+    104: bmac_reg_mask = BMAC_HOST_INFO3_MASK; 
+    105: bmac_reg_mask = BMAC_HOST_INFO4_MASK;
+    106: bmac_reg_mask = BMAC_HOST_INFO5_MASK;
+    107: bmac_reg_mask = BMAC_HOST_INFO6_MASK;
+    108: bmac_reg_mask = BMAC_HOST_INFO7_MASK;
+    109: bmac_reg_mask = BTxMAC_BYTE_CNT_MASK;
+    110: bmac_reg_mask = BTxMAC_FRM_CNT_MASK;
+    111: bmac_reg_mask = BRxMAC_BYTE_CNT_MASK;
+    112: bmac_reg_mask = BMAC_SM_REG_MASK;
+
+
+
+  }
+}
+
+function bit[31:0] bmac_util_class :: bmac_reg_default (integer sel) {
+  integer n;
+
+  n = sel%BMAC_TOTAL_REGS;
+
+  case(n) {
+
+    0: bmac_reg_default = BTxMAC_SW_RST_DEFAULT;
+    1: bmac_reg_default = BRxMAC_SW_RST_DEFAULT;
+    2: bmac_reg_default = MAC_SEND_PAUSE_DEFAULT;
+    //3: bmac_reg_default = BTxMAC_STATUS_DEFAULT;
+    //4: bmac_reg_default = BRxMAC_STATUS_DEFAULT;
+    //5: bmac_reg_default = BMAC_CTRL_STAT_DEFAULT;
+    3: bmac_reg_default = BTxMAC_STAT_MSK_DEFAULT;
+    4: bmac_reg_default = BRxMAC_STAT_MSK_DEFAULT;
+    5: bmac_reg_default = BMAC_C_S_MSK_DEFAULT;
+    6: bmac_reg_default = TxMAC_CONFIG_DEFAULT;
+    7: bmac_reg_default = RxMAC_CONFIG_DEFAULT;
+    8: bmac_reg_default = MAC_CTRL_CONFIG_DEFAULT;
+    9: bmac_reg_default = MAC_XIF_CONFIG_DEFAULT;
+    10: bmac_reg_default = MAC_IPG0_DEFAULT;
+    11: bmac_reg_default = MAC_IPG1_DEFAULT;
+    12: bmac_reg_default = MAC_IPG2_DEFAULT;
+    13: bmac_reg_default = MAC_SLOT_TIME_DEFAULT;
+    14: bmac_reg_default = BMAC_MIN_DEFAULT;
+    15: bmac_reg_default = BMAC_MAX_DEFAULT;
+    16: bmac_reg_default = MAC_PA_SIZE_DEFAULT;
+    17: bmac_reg_default = MAC_JAM_SIZE_DEFAULT;
+    18: bmac_reg_default = MAC_ATTMPT_LMT_DEFAULT;
+    19: bmac_reg_default = MAC_CTRL_TYPE_DEFAULT;
+    20: bmac_reg_default = BMAC_ADDR0_DEFAULT;
+    21: bmac_reg_default = BMAC_ADDR1_DEFAULT;
+    22: bmac_reg_default = BMAC_ADDR2_DEFAULT;
+    23: bmac_reg_default = MAC_ADDR3_DEFAULT;
+    24: bmac_reg_default = MAC_ADDR4_DEFAULT;
+    25: bmac_reg_default = MAC_ADDR5_DEFAULT;
+    26: bmac_reg_default = MAC_ADDR6_DEFAULT;
+    27: bmac_reg_default = MAC_ADDR7_DEFAULT;
+    28: bmac_reg_default = MAC_ADDR8_DEFAULT;
+    29: bmac_reg_default = MAC_ADDR9_DEFAULT;
+    30: bmac_reg_default = MAC_ADDR10_DEFAULT;
+    31: bmac_reg_default = MAC_ADDR11_DEFAULT;
+    32: bmac_reg_default = MAC_ADDR12_DEFAULT;
+    33: bmac_reg_default = MAC_ADDR13_DEFAULT;
+    34: bmac_reg_default = MAC_ADDR14_DEFAULT;
+    35: bmac_reg_default = MAC_ADDR15_DEFAULT;
+    36: bmac_reg_default = MAC_ADDR16_DEFAULT;
+    37: bmac_reg_default = MAC_ADDR17_DEFAULT;
+    38: bmac_reg_default = MAC_ADDR18_DEFAULT;
+    39: bmac_reg_default = MAC_ADDR19_DEFAULT;
+    40: bmac_reg_default = MAC_ADDR20_DEFAULT;
+    41: bmac_reg_default = MAC_ADDR21_DEFAULT;
+    42: bmac_reg_default = MAC_ADDR22_DEFAULT;
+    43: bmac_reg_default = MAC_ADDR23_DEFAULT;
+    44: bmac_reg_default = MAC_ADDR24_DEFAULT;
+    45: bmac_reg_default = MAC_ADDR25_DEFAULT;
+    46: bmac_reg_default = MAC_ADDR26_DEFAULT;
+    47: bmac_reg_default = MAC_ADDR27_DEFAULT;
+    48: bmac_reg_default = MAC_ADDR28_DEFAULT;
+    49: bmac_reg_default = MAC_ADDR29_DEFAULT;
+    50: bmac_reg_default = MAC_ADDR30_DEFAULT;
+    51: bmac_reg_default = MAC_ADDR31_DEFAULT;
+    52: bmac_reg_default = MAC_ADDR32_DEFAULT;
+    53: bmac_reg_default = MAC_ADDR33_DEFAULT;
+    54: bmac_reg_default = MAC_ADDR34_DEFAULT;
+    55: bmac_reg_default = MAC_ADDR35_DEFAULT;
+    56: bmac_reg_default = MAC_ADDR36_DEFAULT;
+    57: bmac_reg_default = MAC_ADDR37_DEFAULT;
+    58: bmac_reg_default = MAC_ADDR38_DEFAULT;
+    59: bmac_reg_default = MAC_ADDR39_DEFAULT;
+    60: bmac_reg_default = MAC_ADDR40_DEFAULT;
+    61: bmac_reg_default = MAC_ADDR41_DEFAULT;
+    62: bmac_reg_default = MAC_ADDR42_DEFAULT;
+    63: bmac_reg_default = MAC_ADDR43_DEFAULT;
+    64: bmac_reg_default = MAC_ADDR44_DEFAULT;
+    65: bmac_reg_default = MAC_FC_ADDR0_DEFAULT;
+    66: bmac_reg_default = MAC_FC_ADDR1_DEFAULT;
+    67: bmac_reg_default = MAC_FC_ADDR2_DEFAULT;
+    68: bmac_reg_default = MAC_ADD_FILT0_DEFAULT;
+    69: bmac_reg_default = MAC_ADD_FILT1_DEFAULT;
+    70: bmac_reg_default = MAC_ADD_FILT2_DEFAULT;
+    71: bmac_reg_default = MAC_ADD_FILT12_MASK_DEFAULT;
+    72: bmac_reg_default = MAC_ADD_FILT00_MASK_DEFAULT;
+    73: bmac_reg_default = MAC_HASH_TBL0_DEFAULT;
+    74: bmac_reg_default = MAC_HASH_TBL1_DEFAULT;
+    75: bmac_reg_default = MAC_HASH_TBL2_DEFAULT;
+    76: bmac_reg_default = MAC_HASH_TBL3_DEFAULT;
+    77: bmac_reg_default = MAC_HASH_TBL4_DEFAULT;
+    78: bmac_reg_default = MAC_HASH_TBL5_DEFAULT;
+    79: bmac_reg_default = MAC_HASH_TBL6_DEFAULT;
+    80: bmac_reg_default = MAC_HASH_TBL7_DEFAULT;
+    81: bmac_reg_default = MAC_HASH_TBL8_DEFAULT;
+    82: bmac_reg_default = MAC_HASH_TBL9_DEFAULT;
+    83: bmac_reg_default = MAC_HASH_TBL10_DEFAULT;
+    84: bmac_reg_default = MAC_HASH_TBL11_DEFAULT;
+    85: bmac_reg_default = MAC_HASH_TBL12_DEFAULT;
+    86: bmac_reg_default = MAC_HASH_TBL13_DEFAULT;
+    87: bmac_reg_default = MAC_HASH_TBL14_DEFAULT;
+    88: bmac_reg_default = MAC_HASH_TBL15_DEFAULT;
+    89: bmac_reg_default = BMAC_COL_CNT_DEFAULT;
+    90: bmac_reg_default = BMAC_OA_COL_CNT_DEFAULT;
+    91: bmac_reg_default = BMAC_EX_COL_CNT_DEFAULT;
+    92: bmac_reg_default = BMAC_LT_COL_CNT_DEFAULT;
+    93: bmac_reg_default = MAC_DEF_TIMER_DEFAULT;
+    //97: bmac_reg_default = BMAC_PK_ATT_CNT_DEFAULT;
+    94: bmac_reg_default = BRxMAC_FRM_CNT_DEFAULT;
+    95: bmac_reg_default = MAC_LEN_ER_CNT_DEFAULT;
+    96: bmac_reg_default = BMAC_AL_ER_CNT_DEFAULT;
+    97: bmac_reg_default = BMAC_CRC_ER_CNT_DEFAULT;
+    98: bmac_reg_default = BMAC_CD_VIO_CNT_DEFAULT;
+    99: bmac_reg_default = MAC_RND_SEED_DEFAULT;
+    //104: bmac_reg_default = BMAC_SM_REG_DEFAULT;
+    100: bmac_reg_default = BMAC_ALTAD_CMPEN_DEFAULT;
+    101: bmac_reg_default = MAC_HASH_TBL0_DEFAULT;  
+    102: bmac_reg_default = MAC_HASH_TBL1_DEFAULT;
+    103: bmac_reg_default = MAC_HASH_TBL2_DEFAULT;
+    104: bmac_reg_default = MAC_HASH_TBL3_DEFAULT;
+    105: bmac_reg_default = MAC_HASH_TBL4_DEFAULT;
+    106: bmac_reg_default = MAC_HASH_TBL5_DEFAULT;
+    107: bmac_reg_default = MAC_HASH_TBL6_DEFAULT;
+    108: bmac_reg_default = MAC_HASH_TBL7_DEFAULT;
+    109: bmac_reg_default = BTxMAC_BYTE_CNT_DEFAULT;
+    110: bmac_reg_default = BTxMAC_FRM_CNT_DEFAULT;
+    111: bmac_reg_default = BRxMAC_BYTE_CNT_DEFAULT;
+    112: bmac_reg_default = BMAC_SM_REG_DEFAULT;
+
+  }
+}
+
+
+function integer  bmac_util_class :: flen(integer sel) {
+  case(sel) {
+
+    00: flen = 22;
+    01: flen = 23;
+    02: flen = 27;
+    03: flen = 28;
+    04: flen = 29;
+    05: flen = 30;
+    06: flen = 31;
+    07: flen = 34;
+    08: flen = 35;
+    09: flen = 38;
+    10: flen = 39;
+    11: flen = 40;
+    12: flen = 41;
+    13: flen = 45;
+    14: flen = 46;
+    15: flen = 49;
+    16: flen = 50;
+    17: flen = 51;
+    18: flen = 52;
+    19: flen = 53;
+    20: flen = 54;
+    21: flen = 55;
+    22: flen = 56;
+    23: flen = 57;
+    24: flen = 58;
+    25: flen = 59;
+    26: flen = 60;
+    27: flen = 61;
+    28: flen = 62;
+    29: flen = 63;
+    30: flen = 64;
+    31: flen = 65;
+    32: flen = 66;
+    33: flen = 67;
+    34: flen = 68;
+    35: flen = 69;
+    36: flen = 70;
+    37: flen = 71;
+    38: flen = 72;
+    39: flen = 87;
+    40: flen = 88;
+    41: flen = 89;
+    42: flen = 90;
+    43: flen = 91;
+    44: flen = 93;
+    45: flen = 95;
+    46: flen = 98;
+    47: flen = 99;
+    48: flen = 100;
+    49: flen = 101;
+    50: flen = 102;
+    51: flen = 103;
+    52: flen = 500;
+    53: flen = 501;
+    54: flen = 502;
+    55: flen = 503;
+    56: flen = 504;
+    57: flen = 505;
+    58: flen = 506;
+    59: flen = 507;
+    60: flen = 508;
+    61: flen = 509;
+    62: flen = 510;
+    63: flen = 511;
+    64: flen = 512;
+    65: flen = 513;
+    66: flen = 514;
+    67: flen = 515;
+    68: flen = 516;
+    69: flen = 517;
+    70: flen = 1019;
+    71: flen = 1020;
+    72: flen = 1021;
+    73: flen = 1022;
+    74: flen = 1023;
+    75: flen = 1024;
+    76: flen = 1025;
+    77: flen = 1026;
+    78: flen = 1027;
+    79: flen = 1028;
+    80: flen = 1490;
+    81: flen = 1491;
+    82: flen = 1492;
+    83: flen = 1493;
+    84: flen = 1494;
+    85: flen = 1495;
+    86: flen = 1496;
+    87: flen = 1497;
+    88: flen = 1498;
+    89: flen = 1499;
+    90: flen = 1510;
+    91: flen = 1511;
+    92: flen = 1512;
+    93: flen = 1513;
+    94: flen = 1514;
+    95: flen = 1515;
+    96: flen = 1516;
+    97: flen = 1517;
+    98: flen = 1518;
+    99: flen = 1519;
+    100: flen = 1520;
+    101: flen = 1521;
+    102: flen = 1522;
+    103: flen = 1523;
+    104: flen = 1524;
+    105: flen = 1525;
+    106: flen = 1526;
+    107: flen = 1527;
+    108: flen = 1528;
+    109: flen = 1529;
+    110: flen = 1530;
+    111: flen = 1531;
+    112: flen = 1532;
+    113: flen = 1533;
+    114: flen = 1534;
+    115: flen = 1535;
+  }
+}
+
+function integer  bmac_util_class :: flen_j(integer sel) {
+  case(sel) {
+
+    00: flen_j = 1800;
+    01: flen_j = 4000;
+    02: flen_j = 512;
+    03: flen_j = 8000;
+    04: flen_j = 128;
+    05: flen_j = 7936;
+    06: flen_j = 16000;
+    07: flen_j = 341;
+    08: flen_j = 13056;
+    09: flen_j = 9237;
+  }
+}
+
+task bmac_util_class :: rx_pkt_count_check(integer pkt_count) {
+
+  bit [15:0] csr_rx_pkt_count;
+  bit [31:0] cfg_rd_data;
+  bit [31:0] rd_data;
+  integer base_addr;
+
+  
+  if ( get_plus_arg(CHECK, "RX_TEST") ) {
+    if ((get_plus_arg (CHECK, "GET_MAC_PORTS=0"))){
+      base_addr = get_mac_reg_base(0);
+      mac_pio_class.xmac_pio_rd( base_addr + XMAC_CONFIG, cfg_rd_data,1'b0 );
+      if (cfg_rd_data[28:27] == 2'b01) {
+        mac_pio_class.bmac_pio_rd(PCS0_BASE + PCS_PACKET_COUNTER,rd_data, 1'b0);
+        csr_rx_pkt_count = rd_data[26:16];
+      }         
+      
+      else if (cfg_rd_data[28:27] == 2'b00) {
+        mac_pio_class.xmac_pio_rd(XPCS0_BASE + XPCS_PACKET_COUNTER,rd_data, 1'b0);
+        csr_rx_pkt_count = rd_data[15:0];
+      } 
+    }
+    
+    else if ((get_plus_arg (CHECK, "GET_MAC_PORTS=1"))){
+      base_addr = get_mac_reg_base(1);
+      mac_pio_class.xmac_pio_rd( base_addr + XMAC_CONFIG, cfg_rd_data,1'b0 );
+      if (cfg_rd_data[28:27] == 2'b01) {
+        mac_pio_class.bmac_pio_rd(PCS1_BASE + PCS_PACKET_COUNTER,rd_data, 1'b0);
+        csr_rx_pkt_count = rd_data[26:16];
+      }
+
+      else if  (cfg_rd_data[28:27] == 2'b00) {
+        mac_pio_class.xmac_pio_rd(XPCS1_BASE + XPCS_PACKET_COUNTER,rd_data, 1'b0);
+        csr_rx_pkt_count = rd_data[15:0];
+      }
+    }
+
+    if (csr_rx_pkt_count != pkt_count) {
+      printf("ERROR :Rx Pkt Counter Error: Expected %0d Obeserved %0d \n", \
+             pkt_count,csr_rx_pkt_count);
+    }
+    else
+      printf("XPCS/PCS packet counter matches the no_of_packets\n");
+  }  
+}
+
+task bmac_util_class :: tx_pkt_count_check(integer pkt_count) {
+
+  bit [15:0] csr_tx_pkt_count;
+  bit [31:0] cfg_rd_data;
+  bit [31:0] rd_data;
+  integer base_addr;
+
+  
+  if ( get_plus_arg(CHECK, "TX_TEST") ) {
+    if ((get_plus_arg (CHECK, "GET_MAC_PORTS=0"))){
+      base_addr = get_mac_reg_base(0);
+      mac_pio_class.xmac_pio_rd( base_addr + XMAC_CONFIG, cfg_rd_data,1'b0 );
+      if (cfg_rd_data[28:27] == 2'b01) {
+        mac_pio_class.bmac_pio_rd(PCS0_BASE + PCS_PACKET_COUNTER,rd_data, 1'b0);
+        csr_tx_pkt_count = rd_data[10:0];
+      }         
+      
+      else if (cfg_rd_data[28:27] == 2'b00) {
+        mac_pio_class.xmac_pio_rd(XPCS0_BASE + XPCS_PACKET_COUNTER,rd_data, 1'b0);
+        csr_tx_pkt_count = rd_data[31:16];
+      } 
+    }
+    
+    else if ((get_plus_arg (CHECK, "GET_MAC_PORTS=1"))){
+      base_addr = get_mac_reg_base(1);
+      mac_pio_class.xmac_pio_rd( base_addr + XMAC_CONFIG, cfg_rd_data,1'b0 );
+      if (cfg_rd_data[28:27] == 2'b01) {
+        mac_pio_class.bmac_pio_rd(PCS1_BASE + PCS_PACKET_COUNTER,rd_data, 1'b0);
+        csr_tx_pkt_count = rd_data[10:0];
+      }
+
+      else if  (cfg_rd_data[28:27] == 2'b00) {
+        mac_pio_class.xmac_pio_rd(XPCS1_BASE + XPCS_PACKET_COUNTER,rd_data, 1'b0);
+        csr_tx_pkt_count = rd_data[31:16];
+      }
+    }
+
+    if (csr_tx_pkt_count != pkt_count) {
+      printf("ERROR :Rx Pkt Counter Error: Expected %0d Obeserved %0d \n", \
+             pkt_count,csr_tx_pkt_count);
+    }
+    else
+      printf("XPCS/PCS packet counter matches the no_of_packets\n");
+  }  
+}
+
+
+
+
+
+
+/*
+
+  class RandPacketLen {
+  rand {
+  integer pack_len;
+
+  }
+  // make the value of len evenly distributed between 20 and 1518
+  constraint size_cons {
+  pack_len in {20:1518 };
+  }
+  }
+*/
+
+

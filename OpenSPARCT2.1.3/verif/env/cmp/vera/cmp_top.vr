@@ -1,0 +1,217 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: cmp_top.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#define PROG_FILE
+
+// defines
+#include <vera_defines.vrh>
+#include <VeraListProgram.vrh>
+#include <ListMacros.vrh>
+
+// CPU rtl defines from ../../../../design/cpu/rtl
+#include <cpu.h>
+
+// interfaces & binds
+#include <cmp_top.if.vrh>
+#include <ccxDevices.if.vrh>
+#include <ccxDevices.binds.vrh>
+#include <MCUStub.if.vrh>
+#include <MCUStub.bind.vrh>
+#include <asmEventsToVera.if.vrh>
+#include <errorCountTasks.if.vrh>
+#include <sparcBenchUtils_if.vrh>
+
+// defines
+#include <defines.vri>
+#include <ccxDevicesDefines.vri>
+#include <plusArgMacros.vri>
+#include <std_display_defines.vri>
+
+// classes refered to in this file
+#include <std_display_class.vrh>
+#include <baseUtilsClass.vrh>
+#include <sparcBenchUtils.vrh>
+#include <utilsClass.vrh>
+#include <baseParamsClass.vrh>
+#include <sparcParams.vrh>
+#include <ccx_tag_class.vrh>
+#include <baseCCXtrans.vrh>
+#include <irritator.vrh>
+
+#include <asmEvent.vrh>
+#include <baseAsmToVeraIntf.vrh>
+#include <asmEventsToVera.vrh>
+#include <asmToVeraIntf.vrh>
+
+
+// verilog tasks/functions that vera is going to call
+#include <verilog_tasks_ncu.vri>
+#include <verilog_tasks_misc.vri>
+#include <seedingVerilogTasks.vri>
+
+// Testcase reference.
+#include <dummyTestcase.vrh>
+
+
+program cmp_test
+{
+
+
+// This is where the global 'extern declerations' are. Typedefs too.
+// Other files needing globals include this.
+#include <globals.vri>
+
+  string MYNAME = "cmp_top";
+
+  TestCase testCase;
+  
+  // vera tasks that verilog calls, if any
+  //#include "vera_tasks.vrh"
+
+
+//-----------------------------------------------------------------------------
+// You must seed the RNG from *top* *BEFORE* class instantiations and forks.
+// YES, this matters in vera > V5, see vera docs. If you don't seed before
+// instantiating a class, that class ALWAYS repeats random numbers which is
+// NOT what you want.
+//-----------------------------------------------------------------------------
+#define HDNLNAME gSeedFileHndl
+#define SEEDNAME gSeed
+#include <seeding.vri>
+
+   
+  //-----------------------------------------------------------------------------
+  // Vars, Classes and forks (POST SEEDING!!!)
+  //-----------------------------------------------------------------------------
+
+  gOutOfBoot = 0;
+  gClkPeriod = 100;
+    
+  // printmon
+  gDbg = new;
+
+  // Check Plusargs, knob/parameter files, config files, etc
+  gParam = new(gDbg);
+  
+  // utils, base utils
+  gUtil = new(gDbg, gClkPeriod);
+
+#ifndef CMP0
+  if (gParam.asmDiagName != null) {
+    // $EVENTs
+    gAsmEventsToVera = new(gDbg,gParam.coreAvilableReg,0,0); // main/common $EVENTs code
+    gAsmEventsToVera.readEventFile("diag.ev");
+  }
+#endif
+
+#ifdef NOL2RTL
+  gL2bfms = 1;
+  gParam.enableMemBFM = 8'hff; // force on
+  // Initialize bench, virtual ports, $EVENTs, etc.
+  gUtil.initTB(0,1,gL2bfms,0);
+#else
+  gL2bfms = 0;
+  // Initialize bench, virtual ports, $EVENTs, etc.
+  gUtil.initTB(1,1,gL2bfms,0);
+#endif
+
+
+  // CCX traffic
+  gIrritator = new(gDbg, gL2bfms);
+
+  // Initialize DUT
+  gUtil.initDut(0);
+  gUtil.resetDut();
+
+  // possibly start these
+  gUtil.sendIntrLoop();
+  if (gL2bfms) gUtil.randEvict();
+
+  gUtil.wait4termination(gParam.maxCycle);
+
+  
+  fork
+    // simulation wrap up, verilog has finished (pass or fail)
+    {
+      if (gParam.asmDiagName !== null) {
+        @(probe_if.sim_status);
+        
+        // Save coverage database on diag passing - GLOBALLY ..
+        if (gParam.coverage_on && !gParam.coverage_off) {
+          if (probe_if.sim_status[ASM_PASS]) {
+            gDbg.dispmon(MYNAME, MON_NORMAL, "Saving Coverage Database ..\n");
+            coverage_save_database(1);
+          }
+        }
+
+        // let vera check for errors, print pass/fail only if
+        // verilog did not see an error!!!
+        if (probe_if.sim_status[ASM_PASS]) gUtil.exitBench();
+        else
+          // have verilog error so just kill time
+          repeat (gDbg.wait_cycle_to_kill) @(posedge CLOCK);
+      }
+    }
+
+    
+    // Initalize Coverage Objects for modules
+
+//------------------- Module coverage ---------------------------------
+#ifdef TLU_COVERAGE
+    {
+      if (( mChkPlusarg(tlu_coverage) || gParam.coverage_on ) &&
+          ! gParam.coverage_off) {
+        gDbg.dispmon(MYNAME, MON_NORMAL, "Instantiating tlu_coverage object\n");
+        tlu_coverage_obj = new(gDbg);
+      }
+    }
+#endif
+
+//------------------- End Module coverage -----------------------------
+
+  {
+    if (gParam.veraDiagName != null && gParam.veraDiagName != "dummyTestcase.vr") {
+      verilog_set_no_verilog_finish(); // only Vera can finish the simulation
+      // Run the testcase
+      testCase = new();
+//breakpoint;
+      void = testCase.start();
+      gUtil.exitBench();
+    }
+  }
+    
+  join all // we will never actually join all in this bench. This is OK.
+
+  
+}  // end program

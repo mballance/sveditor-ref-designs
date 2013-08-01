@@ -1,0 +1,299 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: siu_l2_mon.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "siumon.if.vrh"
+#include "siumon_ports_binds.vrh"
+#include "std_display_class.vrh"
+#include "siu_l2_packet.vrh"
+#include "siu_monitor.vrh"
+
+class siu_l2_monitor {
+	l2_mon_port monitor;
+
+	Siu_L2_Packet snd_packet;
+	Siu_L2_Packet rec_packet;
+	integer snd_mbox, rec_mbox;
+
+	StandardDisplay dbg;
+	string myname;
+	integer myid;
+
+	task new (l2_mon_port monitor, integer snd_mbox, integer rec_mbox, integer myid, StandardDisplay dbg);
+	
+	task monitor_l2_send ();
+	task monitor_l2_recv ();
+
+	function integer get_send_pkt(Cycle_Mode mode, integer cycle);
+	function integer check_send(Cycle_Mode mode);
+	function integer get_recv_pkt(Cycle_Mode mode, integer cycle);
+	function integer check_recv(Cycle_Mode mode);
+}
+
+task siu_l2_monitor::new(l2_mon_port monitor, integer snd_mbox, integer rec_mbox, integer myid, StandardDisplay dbg)
+{
+	this.monitor = monitor;
+
+	snd_packet = new(RDD, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+	rec_packet = new(RDD, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+	
+	this.dbg = dbg;
+	myname = "siu-l2";
+	this.myid = myid;
+	this.snd_mbox = snd_mbox;
+	this.rec_mbox = rec_mbox;
+
+	dbg.dispmon(myname, MON_NORMAL, psprintf ("siu-l2 monitor [%1d] ready", myid));
+
+	fork { monitor_l2_send(); } join none
+	fork { monitor_l2_recv(); } join none
+}
+
+task siu_l2_monitor::monitor_l2_recv()
+{
+Siu_L2_Packet packet;
+integer i, data_cycles;
+integer fail, result, temp;
+
+	while (1)
+	{
+		@(posedge monitor.$clk);
+                if (monitor.$req_vld == 1'b0) {
+                   if (monitor.$dbg_req !== 2'b00)
+                      dbg.dispmon(myname, MON_ERR, psprintf ("l2%1d recv packet dbg_req wrong when no req", myid));
+                }
+                else
+		if (monitor.$req_vld === 1'b1)
+		{
+			data_cycles = 0;
+			fail = 0;
+			temp = 0;
+
+			// header
+			result = get_recv_pkt(HEADER_C, 1);	
+			fail = check_recv(HEADER_C);
+			case (monitor.$req[26:24]) {
+				3'b100: data_cycles = 16; 
+				3'b010: data_cycles = 2;
+				3'b001: data_cycles = 2;
+				default:
+				dbg.dispmon(myname, MON_ERR, psprintf ("l2%1d recv packet type unknown", myid));
+			}
+
+			dbg.dispmon(myname, MON_NORMAL, psprintf ("l2%1d recv pkt=%x ", myid,  rec_packet.id));
+			case (monitor.$req[26:24]) {
+				3'b100: if (monitor.$dbg_req != 2'b10)
+                                           dbg.dispmon(myname, MON_ERR, psprintf ("l2%1d recv packet dbg_req wrong for WRI", myid));
+				3'b010: if (monitor.$dbg_req != 2'b11)
+                                           dbg.dispmon(myname, MON_ERR, psprintf ("l2%1d recv packet dbg_req wrong for WR8", myid));
+				3'b001: if (monitor.$dbg_req != 2'b01)
+                                           dbg.dispmon(myname, MON_ERR, psprintf ("l2%1d recv packet dbg_req wrong for RDD", myid));
+				default:
+				dbg.dispmon(myname, MON_ERR, psprintf ("l2%1d recv packet type wrong", myid));
+			}
+
+			// addr cycles
+			@(posedge monitor.$clk);
+			result = get_recv_pkt(ADDR_C, 1);	
+			fail = check_recv(ADDR_C);
+                        if (monitor.$dbg_req != 2'b00)
+                           dbg.dispmon(myname, MON_ERR, psprintf ("l2%1d recv packet dbg_req wrong at addr cycle", myid));
+
+			// data cycles
+			for (i=0; i<data_cycles; i++)
+			{
+				@(posedge monitor.$clk);
+				result = get_recv_pkt(DATA_C, i);
+				temp = check_recv(DATA_C);
+				fail += temp;
+                                if (monitor.$dbg_req != 2'b00)
+                                   dbg.dispmon(myname, MON_ERR, psprintf ("l2%1d recv packet dbg_req wrong at data cycle", myid));
+			}
+
+		  	dbg.dispmon(myname, MON_NORMAL, psprintf ("l2%1d recv pa=%x", myid, rec_packet.pa));
+
+			if (fail != 0)
+			  dbg.dispmon(myname, MON_ERR, psprintf ("l2%1d recv pkt=%x protocol fail!", myid, rec_packet.id));
+			else
+				mailbox_put(rec_mbox, rec_packet);
+		}
+	}
+}
+
+task siu_l2_monitor::monitor_l2_send()
+{
+integer i, result, fail, temp, data_cycles;
+
+	while (1)
+	{
+		@(posedge monitor.$clk);
+		if (monitor.$ctag_vld === 1'b1)
+		{
+			fail = 0;
+			temp = 0;
+
+			result = get_send_pkt(HEADER_C, 1);
+			fail = check_send(HEADER_C);
+
+			dbg.dispmon(myname, MON_NORMAL, psprintf ("l2%1d send pkt=%x ", myid, snd_packet.id));
+
+			if (monitor.$data[16] === 1'b1)
+				data_cycles = 16;
+			if (monitor.$data[16] === 1'b0)
+				data_cycles = 0;
+			
+			for (i=0; i<data_cycles; i++)
+			{
+				@(posedge monitor.$clk);
+				result = get_send_pkt(DATA_C, i);
+				temp = check_send(DATA_C);
+				fail += temp;
+			}
+
+			if (fail != 0)
+			  dbg.dispmon(myname, MON_ERR, psprintf ("l2%1d send pkt=%x protocol fail!", myid, snd_packet.id));
+			else
+				mailbox_put(snd_mbox, snd_packet);
+		}
+	}
+}
+
+function integer siu_l2_monitor::get_recv_pkt(Cycle_Mode mode, integer cycle)
+{
+
+	if (mode == HEADER_C)
+	{
+		rec_packet.bypass = ~monitor.$req[30];
+		rec_packet.posted = monitor.$req[29];
+		rec_packet.ue = monitor.$req[28];
+		rec_packet.source = monitor.$req[27];
+		case (monitor.$req[26:24]) {
+			3'b100: rec_packet.type = WRI; 
+			3'b010: rec_packet.type = WRM;
+			3'b001: rec_packet.type = RDD;
+			default:
+			dbg.dispmon(myname, MON_ERR, psprintf ("l2%1d recv packet type unknown", myid));
+		}
+		if (monitor.$req[31] === 1'b1)
+		{
+			if (rec_packet.type == WRM) rec_packet.type = JWR; 
+			if (rec_packet.type == RDD) rec_packet.type = JRD; 
+		}
+		rec_packet.id = monitor.$req[23:8];
+		if (rec_packet.type == WRM) 
+			rec_packet.byte_en = monitor.$req[15:8];
+		rec_packet.pa[39:32] = monitor.$req[7:0];	
+	}
+	if (mode == ADDR_C)
+	{
+		rec_packet.pa[31:0] = monitor.$req;	
+	}
+	if (mode == DATA_C)
+	{
+		integer index = cycle/2;
+
+		if (cycle & 1 == 0)
+			rec_packet.data[index] = monitor.$req;
+		else
+			rec_packet.data[index] = {monitor.$req , rec_packet.data[index][31:0]};
+	}
+}
+
+function integer siu_l2_monitor::check_send(Cycle_Mode mode)
+{
+	integer fail = 0;
+
+	if (mode == HEADER_C)
+	{
+	} 
+	if (mode == DATA_C)
+	{
+	}
+
+	check_send = fail;
+}
+
+function integer siu_l2_monitor::get_send_pkt(Cycle_Mode mode, integer cycle)
+{
+	if (mode == HEADER_C)
+	{
+		snd_packet.bypass = ~monitor.$data[23];
+		snd_packet.posted = monitor.$data[22];
+		snd_packet.ue = monitor.$data[21];
+		snd_packet.source = monitor.$data[20];
+		snd_packet.id = monitor.$data[15:0];
+		if (monitor.$data[31] === 1'b1)
+		{
+			if (monitor.$data[16] === 1'b1)
+				snd_packet.type = JRD;
+			else
+				snd_packet.type = JWR;
+		}
+		else
+		{
+			if (monitor.$data[16] === 1'b1)
+				snd_packet.type = RDD;
+			else
+				snd_packet.type = WRI;
+		}
+	}
+	if (mode == DATA_C)
+	{
+		integer index = cycle/2;
+
+		//if (cycle & 1 == 0)
+		if (cycle % 2 == 0)
+			snd_packet.data[index] = monitor.$data;
+		else
+                {
+			snd_packet.data[index] = {snd_packet.data[index][31:0], monitor.$data};
+                        if (snd_packet.type == RDD)
+			dbg.dispmon(myname, MON_NORMAL, psprintf ("l2%1d send pkt=%x  data=%x", myid, snd_packet.id, snd_packet.data[index]));
+                }
+            
+	}
+}
+
+function integer siu_l2_monitor::check_recv(Cycle_Mode mode)
+{
+	integer fail = 0;
+
+	if (mode == HEADER_C)
+	{
+	} 
+	if (mode == DATA_C)
+	{
+	}
+
+	check_recv = fail;
+}

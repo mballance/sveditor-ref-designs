@@ -1,0 +1,357 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: N2ExceptionPEUCtx.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class ExceptionPEUCtx extends PEUCtxBase 
+  {
+  bit f_expectInterrupt;
+
+  local string f_mode;
+  local integer f_index;
+  local integer f_errQueue;
+  local integer f_offset;
+
+  static bit[4:0] f_badType = PEC_PCI__TYPE_MEM;
+  static PEC_ERRtype f_lpuErr = e_ERR_none;
+  static integer  f_count = 0;
+  static bit [1:0] f_injectType = 0;
+
+  task new( string a_name, PEUTestEnv a_env, string a_mode )
+    {
+    super.new(a_name,a_env);
+    f_mode = a_mode;
+    f_index = 0;
+    f_offset = 0;
+    f_errQueue = 0;
+    f_expectInterrupt = 1;
+    }
+
+  task Execute()
+    {
+    super.Execute();
+    }
+
+  task SetOffset( integer a_offs )
+    {
+    f_offset = a_offs;
+    }
+
+  protected function CTStrategyBase ProvideStrategy()
+    {
+    integer seed;
+    PEUStrBase nullStr;
+    ErrChkPEUStr errChk;		// The guy who checks error state
+    EdbErrPEUStr edbErr;		// Generate an EDB parity error
+    EhbErrPEUStr ehbErr;		// Generate an EHB parity error
+    IhbErrPEUStr ihbErr;		// Generate an IHB parity error
+    LinkErrPEUStr linkErr;		// Pull down the "link up" signal
+    LpuErrPEUStr lpuErr;		// Present an LPU-detected error
+    TimeOutPEUStr timeOut;		// Let a non-posted PIO request time out
+    ReplayPEUStr replay;		// Cause a replay to take place by a nak or timeout 
+    InErrPEUStr ingressErr;		// Provide bad parity for an ingress TLP
+    EgrParErrStr egrParErr;		// Egress Injected Parity Errors
+    IngParErrStr ingParErr;		// Ingress Injected Parity Errors
+
+					// If the "StratStop" (within the base
+					// context class) has been set, then
+					// just return a base context which
+					// does nothing.
+    if ( this.StratStop ) 
+      {
+      nullStr = new( f_env );
+      ProvideStrategy = nullStr;
+      }
+
+					// The first strategy? Build a
+					// mailbox and fire up the guy
+					// who'll check interrupt status 
+					// after it's all over.
+					// The test uses "NumStrat" to tell us
+					// how many errors to generate.  
+					// Every error-generating strategy will
+					// add something to the "f_errQueue".
+    else if ( f_index == 0 )
+      {
+      f_index = 1;
+      f_errQueue = alloc( MAILBOX, 0, 1 );
+      errChk = new( f_env, f_errQueue, this.NumStrat-1 );
+
+					// The "errChk" strategy will enable
+					// interrupt checking when it's done.
+      if ( f_expectInterrupt ) f_env.disableInterrupt();
+      ProvideStrategy = errChk;
+      }
+
+					// The directed "EDB parity" test
+                                        // injects a parity error for some
+					// request type (or completion).
+    else if ( f_mode == "EDB" )
+      {
+      edbErr = new( f_env );
+      edbErr.SetErrQueue( f_errQueue );
+      edbErr.SetType( f_badType );
+      ProvideStrategy = edbErr;
+      }
+
+					// The directed "EHB parity" test
+                                        // injects a parity error for some
+					// request type (or completion).
+    else if ( f_mode == "EHB" )
+      {
+      ehbErr = new( f_env );
+      ehbErr.SetErrQueue( f_errQueue );
+      ehbErr.SetType( f_badType );
+      ProvideStrategy = ehbErr;
+      }
+
+					// The directed "IHB parity" test
+                                        // injects a parity error for some
+					// request type (or completion).
+    else if ( f_mode == "IHB" )
+      {
+      ihbErr = new( f_env );
+      ihbErr.SetErrQueue( f_errQueue );
+      ihbErr.SetType( f_badType );
+      ProvideStrategy = ihbErr;
+      }
+
+                                        // injects a parity error 
+                                        //  on a egress PIO packet
+    else if ( f_mode == "EgrPar" )
+	{
+        egrParErr = new( f_env );
+	egrParErr.SetErrQueue( f_errQueue );
+        egrParErr.SetInjectType( f_injectType );
+	ProvideStrategy = egrParErr;
+	}
+
+                                        // injects a parity error
+                                        //  on a ingress packet
+    else if ( f_mode == "IngPar" )
+        {
+        ingParErr = new( f_env );
+        ingParErr.SetErrQueue( f_errQueue );
+        ingParErr.SetInjectType( f_injectType );
+        ProvideStrategy = ingParErr;
+        }
+
+
+					// The directed "link down" test
+                                        // just pulls down the "link up" signal.
+    else if ( f_mode == "Link" )
+      {
+      linkErr = new( f_env );
+      linkErr.SetErrQueue( f_errQueue );
+      ProvideStrategy = linkErr;
+      }
+
+					// A LPU-detected error? Find the next
+					// one and use it!
+    else if ( f_mode == "LPU" )
+      {
+      lpuErr = new( f_env );
+      lpuErr.SetErrQueue( f_errQueue );
+      f_lpuErr++;
+      while( lpuErr.SetError(f_lpuErr) ) f_lpuErr++;
+      ProvideStrategy = lpuErr;
+      }
+
+					// An ingress parity error?
+					// A "header" error is one which appears
+					// in the first 4DWs of the TLP.
+    else if ( f_mode == "ITP data" )
+      {
+      ingressErr = new( f_env );
+      ingressErr.SetErrQueue( f_errQueue );
+      f_count = f_count + 1;
+      if ( f_offset > 0 )
+        ingressErr.SetOffset( f_offset + 16 );
+      else if ( f_offset < 0 )
+        ingressErr.SetOffset( f_offset );
+      else
+        ingressErr.SetOffset( f_count + 16 );
+      ProvideStrategy = ingressErr;
+      }
+
+    else if ( f_mode == "ITP hdr" )
+      {
+      ingressErr = new( f_env );
+      ingressErr.SetErrQueue( f_errQueue );
+      f_count = f_count + 1;
+      ingressErr.SetOffset( (f_count % 16) + 1);
+      ProvideStrategy = ingressErr;
+      }
+
+					// A PIO request times out?
+    else if ( f_mode == "Time-out" )
+      {
+      timeOut = new( f_env );
+      timeOut.SetErrQueue( f_errQueue );
+      ProvideStrategy = timeOut;
+      }
+
+					// A replay caused by a timeout 
+    else if ( f_mode == "Replay-Timeout" )
+      {
+      replay = new( f_env );
+      replay.SetErrQueue( f_errQueue );
+      replay.SetType( "timeout" );
+      ProvideStrategy = replay;
+      }
+					// A replay count rollover caused by a timeout 
+    else if ( f_mode == "Replay-Timeout-Rollover" )
+      {
+      replay = new( f_env );
+      replay.SetErrQueue( f_errQueue );
+      replay.SetType( "timeout" );
+      replay.SetNmbrReplays( 4 );
+      ProvideStrategy = replay;
+      }
+					// A replay count rollover caused by NAKs 
+    else if ( f_mode == "Replay-Nak-Rollover" )
+      {
+      replay = new( f_env );
+      replay.SetErrQueue( f_errQueue );
+      replay.SetType( "nak" );
+      replay.SetNmbrReplays( 4 );
+      ProvideStrategy = replay;
+      }
+					// A random drain-state test? 
+					// Then just supply any nasty exception.
+    else if ( f_mode == "Drain" )
+      {
+      if ( get_plus_arg( CHECK, "vera_random_seed=" ) )
+        seed = get_plus_arg( NUM, "vera_random_seed=" );
+      else
+        seed = 0;
+
+      if ( seed >= 1 && seed <= 4 )
+        {
+           printf( "Exception: An EHB parity error... DW-%0d\n", seed-1 );
+           ehbErr = new( f_env );
+           ehbErr.SetErrQueue( f_errQueue );
+           if ( f_env.nonpostedWriteStalled() )
+             ehbErr.SetType( PEC_PCI__TYPE_CPL );
+           ehbErr.SetMask( 1 << (seed-1) );
+           ProvideStrategy = ehbErr;
+        }
+      else if ( seed >= 5 && seed <= 8 )
+        {
+           printf( "Exception: An IHB parity error... DW-%0d\n", seed-5 );
+           ihbErr = new( f_env );
+           ihbErr.SetErrQueue( f_errQueue );
+           ihbErr.SetMask( 1 << (seed-5) );
+           ProvideStrategy = ihbErr;
+        }
+      else if ( seed >= 9 && seed <= 15 )
+        {
+           printf( "Exception: An EDB parity error... DW-%0d\n", seed-9 );
+           edbErr = new( f_env );
+           edbErr.SetErrQueue( f_errQueue );
+           if ( f_env.nonpostedWriteStalled() )
+             edbErr.SetType( PEC_PCI__TYPE_CPL );
+           edbErr.SetMask( 1 << (seed-9) );
+           edbErr.SetLength( 8 );
+           if ( seed <= 12 ) edbErr.SetBndy( 0 );
+           ProvideStrategy = edbErr;
+        }
+      else if ( seed == 16 )
+        {
+           printf( "Exception: An EDB parity error... only DW\n" );
+           edbErr = new( f_env );
+           edbErr.SetErrQueue( f_errQueue );
+           if ( f_env.nonpostedWriteStalled() )
+             edbErr.SetType( PEC_PCI__TYPE_CPL );
+           edbErr.SetLength( 1 );
+           edbErr.SetMask( 4'b1111 );
+           ProvideStrategy = edbErr;
+        }
+      else randcase
+        {
+        1: { /* ITP header parity */
+           printf( "Exception: An ITP (header) parity error\n" );
+           ingressErr = new( f_env );
+           ingressErr.SetErrQueue( f_errQueue );
+           ingressErr.SetOffset( urandom() % 16 + 1 );
+           ProvideStrategy = ingressErr;
+           }
+    
+        1: { /* Link down */
+           printf( "Exception: The link drops\n" );
+           linkErr = new( f_env );
+           linkErr.SetErrQueue( f_errQueue );
+           ProvideStrategy = linkErr;
+           }
+
+        1: { /* IHB parity */
+           printf( "Exception: An IHB parity error\n" );
+           ihbErr = new( f_env );
+           ihbErr.SetErrQueue( f_errQueue );
+           ProvideStrategy = ihbErr;
+           }
+
+        1: { /* EDB parity */
+           printf( "Exception: An EDB parity error\n" );
+           edbErr = new( f_env );
+           edbErr.SetErrQueue( f_errQueue );
+           if ( f_env.nonpostedWriteStalled() )
+             edbErr.SetType( PEC_PCI__TYPE_CPL );
+           ProvideStrategy = edbErr;
+           }
+    
+        1: { /* EHB parity */
+           printf( "Exception: An EHB parity error\n" );
+           ehbErr = new( f_env );
+           ehbErr.SetErrQueue( f_errQueue );
+           if ( f_env.nonpostedWriteStalled() )
+             ehbErr.SetType( PEC_PCI__TYPE_CPL );
+           ProvideStrategy = ehbErr;
+           }
+        }
+      }
+
+					// None of the above?  A null strategy
+					// does nothing.
+    else
+      {
+      nullStr = new( f_env );
+      ProvideStrategy = nullStr;
+      }
+    } /* end ProvideStrategy */
+    
+  protected function CTStrategyBase FinalizeParms( CTStrategyBase a_strategy )
+    {
+    FinalizeParms = a_strategy;
+    } /* end FinalizeParms */
+
+  } /* end ExceptionPEUCtx */ 

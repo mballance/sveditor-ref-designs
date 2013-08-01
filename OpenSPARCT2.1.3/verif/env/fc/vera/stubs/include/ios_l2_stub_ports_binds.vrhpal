@@ -1,0 +1,107 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ios_l2_stub_ports_binds.vrhpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#inc "ios_l2_stub_inc.pal"
+
+#ifndef INC_IOS_PORTS_BINDS_VRH
+#define INC_IOS_PORTS_BINDS_VRH
+
+#include "top_defines.vrh"
+
+// for L2 STUB interface
+port l2_stub_port {
+        clk;
+        req_vld;
+        req;
+        ecc;
+}
+
+.for($b=0; $b<$BANKS; $b++) {
+bind l2_stub_port l2_stub_bind${b} {
+        clk             l2_${b}_req.clk;
+        req_vld         l2_${b}_req.req_vld;
+        req             l2_${b}_req.req;
+        ecc             l2_${b}_req.ecc;
+}
+
+.}
+
+// for L2 STUB interface
+port fc_l2_sio_port {
+	clk;
+#ifndef GATESIM
+	ctag_vld;
+	data_vld;
+	data;
+	ctag;
+#else
+	ctag_vld;
+	data;
+#endif
+}
+
+.for($b=0; $b<8; $b++) {
+bind fc_l2_sio_port fc_l2_sio_bind${b} {
+#ifndef GATESIM
+	clk		fc_l2b${b}_sio.clk;
+	ctag_vld	fc_l2b${b}_sio.l2t_ctag_vld;
+	data_vld	fc_l2b${b}_sio.l2t_data_vld;
+	data		fc_l2b${b}_sio.l2t_data;
+	ctag		fc_l2b${b}_sio.l2t_ctag;
+#else
+	clk		fc_l2b${b}_sio.clk;
+	ctag_vld	fc_l2b${b}_sio.l2_ctag_vld;
+	data		fc_l2b${b}_sio.l2_data;
+#endif
+}
+
+.}
+
+// for L2 STUB interface used in FC RAS Diags
+port fc_l2_sio_port_fcerr {
+        clk;
+        ctag_vld;
+        data;
+}
+
+.for($b=0; $b<8; $b++) {
+bind fc_l2_sio_port_fcerr fc_l2_sio_fc_err_bind${b} {
+        clk             fc_l2b${b}_sio_fcerr.clk;
+        ctag_vld        fc_l2b${b}_sio_fcerr.l2_ctag_vld;
+        data            fc_l2b${b}_sio_fcerr.l2_data;
+}
+.}
+
+
+#endif

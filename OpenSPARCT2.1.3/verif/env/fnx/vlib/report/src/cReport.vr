@@ -1,0 +1,1018 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: cReport.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "report_info.vrh"
+#include "report_msg_format.vrh"
+
+// Definitions, constants, etc.
+#define REPORT_DEFAULT_PRINT_THRESHOLD		RPRT_INFO
+#define REPORT_DEFAULT_PRINT_LEVEL	        RPRT_INFO
+#define REPORT_DEFAULT_MAX_ERROR_COUNT		1
+#define REPORT_VERA_LOCATION_STRING		"VERA"
+#define REPORT_NO_PLUS_ARG_SPECIFIED_STR	"NONE"
+#define DEATH_CYCLE_DELAY			10
+
+// verilog_tasks for communicating w/ the Report PLI
+extern verilog_task ReportPLI_set_global_print_threshold(integer new_print_threshold, integer locked_by); 
+extern verilog_task ReportPLI_set_max_error_count(integer max_error_count);
+extern verilog_task ReportPLI_inc_global_error_count();
+extern verilog_task ReportPLI_get_global_error_count(var integer ec);
+extern verilog_task ReportPLI_inc_global_warning_count();
+extern verilog_task ReportPLI_get_global_warning_count(var integer wc);
+extern verilog_task ReportPLI_set_short_pathnames(integer short_names);
+extern verilog_task ReportPLI_set_path_prefix(bit [(256*8)-1:0] path_prefix);
+extern verilog_task ReportPLI_disable_fatal_errors(integer num_cycles);
+extern verilog_task ReportPLI_set_show_simulation_time(integer show_sim_time);
+extern verilog_task ReportPLI_set_print_level(bit [(256*8)-1:0] regexp, integer report_type, integer print_level);
+extern verilog_task ReportPLI_set_error_level(bit [(256*8)-1:0] regexp, integer report_type, integer error_level);
+extern verilog_task ReportPLI_set_table_mode(bit [(256*8)-1:0] regexp, integer report_type, integer table_mode);
+extern verilog_task ReportPLI_set_exit_on_error(integer exit_on_error);
+extern verilog_task ReportPLI_get_exit_on_error(var integer exit_on_error);
+extern verilog_task ReportPLI_print_cycles_per_second();
+
+////////////////////////////////////////////////////////////////////////////////
+// The Vera ReportClass header
+//
+class ReportClass
+{
+  ///////////////
+  // Private data
+  
+  // Class Variables (for all reports)
+  //
+  // NOTE:  The Vera ReportClass only tracks the error count for Vera errors.
+  //	    * To obtain the total global error count (Verilog + Vera), 
+  //	      use the method get_total_error_count().
+  //
+  static protected PrintLevel global_print_threshold	= REPORT_DEFAULT_PRINT_THRESHOLD;
+  static protected integer max_error_count			= REPORT_DEFAULT_MAX_ERROR_COUNT;
+  static protected integer vera_error_count			= 0;
+  static protected integer vera_warning_count		= 0;
+  static protected integer use_short_pathnames		= 0;
+  static protected string path_prefix			= "";
+  static protected integer num_remaining_nonfatal_cycles	= 0;
+  static protected integer show_simulation_time		= 0;
+  static protected integer in_death_spiral			= 0;
+
+  // Information about report types from the report_info class
+  static protected integer report_has_been_initialized		= 0;
+  static protected ReportTypeInfo report_info;
+  static protected PrintLevel print_level_per_type[];
+  static protected ErrorLevel error_level_per_type[];
+
+  // For command line overriding
+  static protected integer cmd_line_args_parsed = 0;
+  static protected integer global_print_threshold_locked_by;
+  static protected integer print_level_locked_by[];
+
+  // This semaphore prevents multiple threads from making PLI calls simultaneously.
+  // Vera can't do this since "HDL tasks aren't reentrant".
+  static protected integer pli_semaphore = alloc(SEMAPHORE, 0, 1, 1);
+
+  // Instance variables
+  protected integer table_mode;
+  static protected event deadly_event;
+
+  ///////////////
+  // Public methods
+
+  virtual task report(ReportType report_type, string msg_string, 
+		      (bit [511:0] arg1 = "", bit [511:0] arg2 = "", bit [511:0] arg3 = "",
+		       bit [511:0] arg4 = "", bit [511:0] arg5 = "", bit [511:0] arg6 = "",
+		       bit [511:0] arg7 = "", bit [511:0] arg8 = "", bit [511:0] arg9 = "",
+		       bit [511:0] arg10 = "", bit [511:0] arg11 = "", bit [511:0] arg12 = ""));
+  // Just like report() but always error.
+  virtual task report_error(string msg_string, 
+		     bit [511:0] arg1 = "", bit [511:0] arg2 = "", bit [511:0] arg3 = "",
+		     bit [511:0] arg4 = "", bit [511:0] arg5 = "", bit [511:0] arg6 = "",
+		     bit [511:0] arg7 = "", bit [511:0] arg8 = "", bit [511:0] arg9 = "",
+		     bit [511:0] arg10 = "", bit [511:0] arg11 = "", bit [511:0] arg12 = "");
+  // Just like report() but expects only one argument (a string)
+  virtual task report_string(ReportType report_type, string msg_string);
+  virtual task report_test_complete();
+  
+  // Accessors for class variables
+  virtual task set_global_print_threshold(PrintLevel new_print_threshold, (integer locked_by =  REPORT_LOCKED_BY_NO_ONE));
+  virtual function PrintLevel get_global_print_threshold();
+  virtual task set_max_error_count(integer error_count);
+  virtual function integer get_max_error_count();
+  virtual function integer get_vera_error_count();
+  virtual function integer get_vera_warning_count();
+  virtual task set_short_pathnames(integer use_short);
+  virtual function integer get_short_pathnames();
+  virtual task set_path_prefix(string prefix);
+  virtual function string get_path_prefix();
+  virtual task disable_fatal_errors(integer num_cycles);
+  virtual function integer get_num_remaining_nonfatal_cycles();
+  virtual task set_show_simulation_time(integer show_sim_time);
+  virtual function integer get_show_simulation_time();
+  virtual task set_exit_on_error(integer exit_on_error);
+  virtual function integer get_exit_on_error();
+
+  // Accessors for instance variables
+  virtual task set_print_level(ReportType report_type, PrintLevel new_print_level, (integer locked_by = REPORT_LOCKED_BY_NO_ONE));
+  virtual function PrintLevel get_print_level(ReportType report_type);
+  virtual task set_error_level(ReportType report_type, ErrorLevel new_error_level);
+  virtual function ErrorLevel get_error_level(ReportType report_type);
+  virtual task set_table_mode(integer table_mode);
+  virtual function integer get_table_mode();
+  virtual function bit will_this_print(ReportType report_type);
+
+  // Accessors for Report PLI class variables
+  virtual function integer get_total_error_count();
+  virtual function integer get_total_warning_count();
+
+  // Accessors for Report PLI instance variables
+  virtual task set_verilog_print_level(string regexp, ReportType report_type, PrintLevel print_level);
+  virtual task set_verilog_error_level(string regexp, ReportType report_type, ErrorLevel error_level);
+  virtual task set_verilog_table_mode(string regexp, ReportType report_type, integer table_mode);
+
+  //////////////
+  // Protected methods
+
+  protected virtual task handle_error();
+  protected virtual function string get_location();
+  protected virtual task launch_death_spiral();
+
+  protected task parse_cmd_line_print_threshold();
+  protected task parse_cmd_line_print_mask();
+
+  task new()
+  {
+    integer tmp_var;
+    integer index;
+
+    // Turn table mode (a per-instance variable) off by default.
+    this.table_mode = 0;
+
+    // Do a bunch of things that need to be done only once per test.
+    if (this.report_has_been_initialized == 0)
+      {
+	ReportType type;
+	// Initialize all instance properties.
+	// Populate the print/error level arrays with the correct default values.
+	//
+	// *PERFORMANCE: Only do this once, since the array is populated with
+	//		     values determined at compile time.
+	//
+	this.report_info = new;
+	for(type = __RTYP_FIRST_TYPE; type < __RTYP_LAST_TYPE; type++)
+	  {
+	    //ReportType type = index; //report_info.get_type_by_index(index);
+	    this.print_level_per_type[type] = report_info.get_default_print_level(type);
+	    this.error_level_per_type[type] = report_info.get_default_error_level(type);
+	  }
+		
+	// Parse command line print threshold
+	this.global_print_threshold_locked_by = REPORT_LOCKED_BY_NO_ONE;
+	this.parse_cmd_line_print_threshold(); 
+
+	// Parse command line print mask
+	for (index = 0; index < report_info.num_report_types; index++)
+	  this.print_level_locked_by[index] = REPORT_LOCKED_BY_NO_ONE;
+	this.parse_cmd_line_print_mask();
+
+	// Launch a thread to wait for the "deadly event" triggered by a fatal error.
+	launch_death_spiral();
+
+	// No need to do all this again.
+	this.report_has_been_initialized = 1;
+      }
+  }
+}
+//
+////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////
+// ReportClass method definitions
+//
+
+////////////////////////////////////////////////////////////////////////////////
+// Message display
+
+/*
+  report	      
+
+  Outputs a message with the given report type in a standard format.
+*/
+task ReportClass::report(ReportType report_type, string msg_str,
+			 (bit [511:0] arg1 = "", bit [511:0] arg2 = "", bit [511:0] arg3 = "",
+			  bit [511:0] arg4 = "", bit [511:0] arg5 = "", bit [511:0] arg6 = "",
+			  bit [511:0] arg7 = "", bit [511:0] arg8 = "", bit [511:0] arg9 = "",
+			  bit [511:0] arg10 = "", bit [511:0] arg11 = "", bit [511:0] arg12 = ""))
+{
+  string prefix_str, time_str, location_str;
+  PrintLevel my_print_level = this.print_level_per_type[report_type];
+  ErrorLevel my_error_level = this.error_level_per_type[report_type];
+  
+  // *PERFORMANCE: Return -immediately- if this report will be a NOP.
+  if (my_print_level < this.global_print_threshold)
+    return;
+
+  
+  //    - if fatal errors are disabled, make errors into warnings.
+  if (this.num_remaining_nonfatal_cycles > 0 && my_error_level == RERR_ERROR)
+    prefix_str = report_info.get_prefix(report_type, RERR_MESSAGE);
+  else
+    prefix_str = report_info.get_prefix(report_type, my_error_level);
+
+  // Generate the time string.
+  //    - tack on simulation time if so desired.
+  if (show_simulation_time)
+    {
+      string cycle_str, tick_hi_str, tick_lo_str;
+      sprintf(cycle_str, "%0d", get_cycle());
+      sprintf(tick_hi_str, "%0d", get_time(HI));
+      sprintf(tick_lo_str, "%0d", get_time(LO));
+      time_str = {cycle_str, ",", tick_hi_str, tick_lo_str};	// e.g. "350,768990"
+    }
+  else
+    {
+      sprintf(time_str, "%0d", get_cycle());
+    }
+
+  // Get the location string.
+  location_str = this.get_location();
+
+  // Actually do the output, if the print level is appropriate.
+  if (my_print_level >= this.global_print_threshold)
+    {
+      string regexp_pattern, match_str;
+
+      // review:  Support output redirection here!!!
+
+      // Check for bitfield width specifiers in the message format string.
+      // For example, "%32h" will print only the rightmost 32 bits of a hex number.
+      /*
+	TODO: Figure out how to implement this cleanly.       
+
+	regexp_pattern = "[^%]%([0-9]+)[hHxXoObB]";
+	match_str = msg_str;
+	while (match_str.match(regexp_pattern) == 1)
+	{
+  	   string width_str = match_str.backref(0);
+	   integer width = width_str.atoi();
+	   printf("*** msg_str contains bitfield width specifier %s, giving width of %0d ***\n", match_str.thismatch(), width);
+	   match_str = match_str.postmatch();
+	}
+      */
+
+      
+      if (!this.table_mode)
+	printf(REPORT_MSG_FORMAT_STRING, prefix_str, time_str, location_str);
+
+      // If fatal error, output the error type.
+      if (my_error_level == RERR_ERROR)
+	printf("%s: ", report_info.report_type_to_str(report_type));
+
+      // Print message string
+      printf(msg_str, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12);
+
+      // Print newline (if not in table mode)
+      if (!this.table_mode) printf("\n");
+    }
+
+  // If this message was an error/warning, increment the global error/warning count.
+  // Then increment the Vera-specific error/warning count.
+  if (my_error_level == RERR_ERROR)
+    {
+      integer total_errors, exit_on_error;
+
+      semaphore_get(WAIT, this.pli_semaphore, 1);
+
+      if (num_remaining_nonfatal_cycles == 0)
+	{
+	  // Only do this if fatal errors are not currently disabled!
+	  ReportPLI_inc_global_error_count();
+	  vera_error_count++;
+	}
+
+      ReportPLI_get_global_error_count(total_errors);
+
+      semaphore_put(this.pli_semaphore, 1);
+
+      // If this error pushed us over the maximum error count (as recorded by Verilog)
+      // handle the error and kill the simulation if we're supposed to.      
+
+      if (total_errors >= this.max_error_count)
+	{
+	  this.handle_error();
+	  
+	  trigger(ONE_BLAST, deadly_event);	// unblocks launch_death_spiral()
+	}
+    }
+  else if (my_error_level == RERR_WARNING)
+    {
+      semaphore_get(WAIT, this.pli_semaphore, 1);
+      ReportPLI_inc_global_warning_count();
+      vera_warning_count++;
+      semaphore_put(this.pli_semaphore, 1);
+    }
+}
+
+  // Just like report() but always error.
+task ReportClass::report_error(string msg_string, 
+			bit [511:0] arg1 = "", bit [511:0] arg2 = "", bit [511:0] arg3 = "",
+			bit [511:0] arg4 = "", bit [511:0] arg5 = "", bit [511:0] arg6 = "",
+			bit [511:0] arg7 = "", bit [511:0] arg8 = "", bit [511:0] arg9 = "",
+			bit [511:0] arg10 = "", bit [511:0] arg11 = "", bit [511:0] arg12 = "") {
+  this.report(RTYP_VERA_ERROR, msg_string, arg1, arg2, arg3,
+	      arg4, arg5, arg6,
+	      arg7, arg8, arg9,
+	      arg10, arg11, arg12);
+} // ReportClass.error()
+
+
+/*
+ * report_string
+ */
+task ReportClass::report_string(ReportType report_type, string msg_string)
+{
+  string prefix_str, time_str, location_str;
+  PrintLevel my_print_level = this.print_level_per_type[report_type];
+  ErrorLevel my_error_level = this.error_level_per_type[report_type];
+  
+  // *PERFORMANCE: Return -immediately- if this report will be a NOP.
+  if (my_print_level < this.global_print_threshold)
+    return;
+
+  
+  //    - if fatal errors are disabled, make errors into warnings.
+  if (this.num_remaining_nonfatal_cycles > 0 && my_error_level == RERR_ERROR)
+    prefix_str = report_info.get_prefix(report_type, RERR_MESSAGE);
+  else
+    prefix_str = report_info.get_prefix(report_type, my_error_level);
+
+  // Generate the time string.
+  //    - tack on simulation time if so desired.
+  if (show_simulation_time)
+    {
+      string cycle_str, tick_hi_str, tick_lo_str;
+      sprintf(cycle_str, "%0d", get_cycle());
+      sprintf(tick_hi_str, "%0d", get_time(HI));
+      sprintf(tick_lo_str, "%0d", get_time(LO));
+      time_str = {cycle_str, ",", tick_hi_str, tick_lo_str};	// e.g. "350,768990"
+    }
+  else
+    {
+      sprintf(time_str, "%0d", get_cycle());
+    }
+
+  // Get the location string.
+  location_str = this.get_location();
+
+  // Actually do the output, if the print level is appropriate.
+  if (my_print_level >= this.global_print_threshold)
+    {
+      string regexp_pattern, match_str;
+
+      
+      if (!this.table_mode)
+	printf(REPORT_MSG_FORMAT_STRING, prefix_str, time_str, location_str);
+
+      // If fatal error, output the error type.
+      if (my_error_level == RERR_ERROR)
+	printf("%s: ", report_info.report_type_to_str(report_type));
+
+      // Print message string
+      printf(msg_string);
+
+      // Print newline (if not in table mode)
+      if (!this.table_mode) printf("\n");
+    }
+
+  // If this message was an error/warning, increment the global error/warning count.
+  // Then increment the Vera-specific error/warning count.
+  if (my_error_level == RERR_ERROR)
+    {
+      integer total_errors, exit_on_error;
+
+      semaphore_get(WAIT, this.pli_semaphore, 1);
+
+      if (num_remaining_nonfatal_cycles == 0)
+	{
+	  // Only do this if fatal errors are not currently disabled!
+	  ReportPLI_inc_global_error_count();
+	  vera_error_count++;
+	}
+
+      ReportPLI_get_global_error_count(total_errors);
+
+      semaphore_put(this.pli_semaphore, 1);
+
+      // If this error pushed us over the maximum error count (as recorded by Verilog)
+      // handle the error and kill the simulation if we're supposed to.      
+
+      if (total_errors >= this.max_error_count)
+	{
+	  this.handle_error();
+	  
+	  trigger(ONE_BLAST, deadly_event);	// unblocks launch_death_spiral()
+	}
+    }
+  else if (my_error_level == RERR_WARNING)
+    {
+      semaphore_get(WAIT, this.pli_semaphore, 1);
+      ReportPLI_inc_global_warning_count();
+      vera_warning_count++;
+      semaphore_put(this.pli_semaphore, 1);
+    }  
+}
+
+
+/*
+  report_test_complete
+ */
+task ReportClass::report_test_complete()
+{
+  integer total_errors, total_warnings;
+
+  semaphore_get(WAIT, this.pli_semaphore, 1);
+  ReportPLI_get_global_error_count(total_errors);
+  ReportPLI_get_global_warning_count(total_warnings);
+  semaphore_put(this.pli_semaphore, 1);
+  if (in_death_spiral) {
+    error("Report(%0d) [VERA] Test finished in death spiral!\n", get_cycle());
+  }
+  printf(REPORT_TEST_DONE_FORMAT_STRING, get_cycle(), total_errors, total_warnings);
+  ReportPLI_print_cycles_per_second();
+}
+
+/*
+  handle_error
+ */
+task ReportClass::handle_error()
+{
+  // NOTE: By default, the base ReportClass does nothing to handle errors.
+  this.report(RTYP_REPORT_MSG, "Fatal error encountered!!!");
+}
+
+/*
+  protected virtual function string get_location()
+
+  Returns the location from which this report is being made.
+    NOTE:  This may one day actually be the object+method we're in,
+           but Vera doesn't currently support this.
+ */
+function string ReportClass::get_location()
+{
+  get_location = REPORT_VERA_LOCATION_STRING;
+}
+
+//
+////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////
+// Accessors for class variables
+//
+// NOTE:  Since control changes in Vera override those in Verilog,
+//	  these accessors also call the UDF functions to reconfigure the C+ ReportClass.
+
+/*
+  set_global_print_threshold
+
+  This accessor may be called with a "lock" variable to prevent further changes.
+  This can be used to lock in changes from the command line, for example.
+  NOTE! The lock variable can only be set once; further changes are ignored.
+ */
+task ReportClass::set_global_print_threshold(PrintLevel new_print_threshold, (integer locked_by =  REPORT_LOCKED_BY_NO_ONE))
+{
+  integer int_pl = new_print_threshold;
+  if (this.global_print_threshold_locked_by == REPORT_LOCKED_BY_NO_ONE)
+    {
+      if (locked_by != REPORT_LOCKED_BY_NO_ONE)
+	{
+	  this.report(RTYP_REPORT_MSG, "Locked global print threshold to %s -- further changes will be ignored",
+		      report_info.print_level_to_str(new_print_threshold));	  
+	  this.global_print_threshold_locked_by = locked_by;
+	}
+      else
+	{
+	  // The usual case -- no locks specified or set.
+	  // When we call C++, though, lock their print threshold so only we can change it.
+	  this.report(RTYP_REPORT_MSG, "Changing global print threshold from %s to %s",
+		      report_info.print_level_to_str(this.global_print_threshold), 
+		      report_info.print_level_to_str(new_print_threshold));
+	  locked_by = REPORT_LOCKED_BY_VERA;		
+	}
+      this.global_print_threshold = new_print_threshold;
+
+      // Pass the good news along to C++.
+      
+//      semaphore_get(WAIT, pli_semaphore, 1);
+      ReportPLI_set_global_print_threshold(int_pl, locked_by);
+//      semaphore_put(pli_semaphore, 1);
+    }
+  else
+    {
+      this.report(RTYP_REPORT_MSG, "Can't change global print threshold to %s -- it's locked!",
+		  report_info.print_level_to_str(new_print_threshold));
+    }
+}
+
+/*
+  get_global_print_threshold
+ */
+function PrintLevel ReportClass::get_global_print_threshold()
+{
+  get_global_print_threshold = this.global_print_threshold;
+}
+
+/*
+  set_max_error_count
+ */
+task ReportClass::set_max_error_count(integer error_count)
+{
+  semaphore_get(WAIT, pli_semaphore, 1);
+  ReportPLI_set_max_error_count(error_count);
+  semaphore_put(pli_semaphore, 1);
+  this.report(RTYP_REPORT_MSG, "Changing maximum error count from %0d to %0d",
+	      this.max_error_count, error_count);
+  this.max_error_count = error_count;
+}
+
+/*
+  get_max_error_count
+ */
+function integer ReportClass::get_max_error_count()
+{  
+  get_max_error_count = this.max_error_count;
+}
+
+/*
+  get_vera_error_count
+ */
+function integer ReportClass::get_vera_error_count()
+{
+  get_vera_error_count = this.vera_error_count;
+}
+
+/*
+  get_vera_warning_count
+ */
+function integer ReportClass::get_vera_warning_count()
+{
+  get_vera_warning_count = this.vera_warning_count;
+}
+
+/*
+  set_short_pathnames
+ */
+task ReportClass::set_short_pathnames(integer use_short)
+{
+  semaphore_get(WAIT, pli_semaphore, 1);
+  ReportPLI_set_short_pathnames(use_short);
+  semaphore_put(pli_semaphore, 1);
+  if (use_short)  
+    this.report(RTYP_REPORT_MSG, "Using short pathnames.");  
+  else  
+    this.report(RTYP_REPORT_MSG, "Using long pathnames.");
+
+  this.use_short_pathnames = use_short;
+}
+
+/*
+  get_short_pathnames
+ */
+function integer ReportClass::get_short_pathnames()
+{
+  get_short_pathnames = this.use_short_pathnames;
+}
+
+/*
+  set_path_prefix
+ */
+task ReportClass::set_path_prefix(string prefix)
+{
+  semaphore_get(WAIT, pli_semaphore, 1);
+  ReportPLI_set_path_prefix(prefix);
+  semaphore_put(pli_semaphore, 1);
+  this.report(RTYP_REPORT_MSG, "Setting path prefix to %s", prefix);
+  this.path_prefix = prefix;
+}
+
+/*
+  get_path_prefix
+ */
+function string ReportClass::get_path_prefix()
+{
+  get_path_prefix = this.path_prefix;
+}
+
+/*
+  set_exit_on_error
+ */
+task ReportClass::set_exit_on_error(integer exit)
+{
+  semaphore_get(WAIT, pli_semaphore, 1);
+  ReportPLI_set_exit_on_error(exit);
+  semaphore_put(pli_semaphore, 1);
+}
+
+/*
+  get_exit_on_error
+ */
+function integer ReportClass::get_exit_on_error()
+{
+  integer exit_on_error;
+  semaphore_get(WAIT, pli_semaphore, 1);
+  ReportPLI_get_exit_on_error(exit_on_error);
+  semaphore_put(pli_semaphore, 1);
+  get_exit_on_error = exit_on_error;
+}
+
+/*
+  disable_fatal_errors
+ */
+task ReportClass::disable_fatal_errors(integer num_cycles)
+{
+  semaphore_get(WAIT, pli_semaphore, 1);
+  ReportPLI_disable_fatal_errors(num_cycles);
+  semaphore_put(pli_semaphore, 1);
+  if (num_cycles > 0)
+    {
+      this.report(RTYP_REPORT_MSG, "Disabling fatal errors for %0d cycles.", num_cycles);	      
+      this.num_remaining_nonfatal_cycles = num_cycles;
+
+      // Spawn a thread to count down the number of remaining nonfatal cycles.
+      // NOTE: The nonfatal cycle count for C++ is decremented by the PLI code.
+      fork
+	repeat (num_cycles)
+	  {
+	    this.report(RTYP_REPORT_MSG, "Fatal errors are disabled on this cycle!!!");
+	    this.num_remaining_nonfatal_cycles--;
+	    @(posedge CLOCK);		// review:  Which clock?  What if there is more than one?
+	  }
+      join none
+    }
+}
+
+/*
+  get_num_remaining_nonfatal_cycles
+ */
+function integer ReportClass::get_num_remaining_nonfatal_cycles()
+{
+  get_num_remaining_nonfatal_cycles = this.num_remaining_nonfatal_cycles;
+}
+
+/*
+  set_show_simulation_time
+ */
+task ReportClass::set_show_simulation_time(integer sim_time)
+{
+  semaphore_get(WAIT, pli_semaphore, 1);
+  ReportPLI_set_show_simulation_time(sim_time);
+  semaphore_put(pli_semaphore, 1);
+  if (!sim_time)
+    report(RTYP_REPORT_MSG, "ReportClass: Not displaying simulation time.");
+  else
+    report(RTYP_REPORT_MSG, "ReportClass: Displaying simulation time.");
+  this.show_simulation_time = sim_time;
+}
+
+/*
+  get_show_simulation_time
+ */
+function integer ReportClass::get_show_simulation_time()
+{
+  get_show_simulation_time = this.show_simulation_time;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Accessors for instance variables
+
+/*
+  set_print_level
+	Changes the print level of this message type only
+*/
+task ReportClass::set_print_level(ReportType report_type, PrintLevel new_print_level, (integer locked_by = REPORT_LOCKED_BY_NO_ONE))
+{
+  if (this.print_level_locked_by[report_type] == REPORT_LOCKED_BY_NO_ONE)
+    {
+      if (locked_by != REPORT_LOCKED_BY_NO_ONE)
+	{
+	  report(RTYP_REPORT_MSG, "ReportClass: Locking print level for report type %s to %s -- further changes will be ignored", 
+		 report_info.report_type_to_str(report_type), report_info.print_level_to_str(new_print_level));
+	  this.print_level_locked_by[report_type] = locked_by;
+	}
+      else
+	{
+	  report(RTYP_REPORT_MSG, "ReportClass: Setting print level for report type %s to %s", 
+		 report_info.report_type_to_str(report_type), report_info.print_level_to_str(new_print_level));
+	}
+
+      // If the type is "ALL_REPORTS", set everything. 
+      // Otherwise, just set the desired type.
+      if (report_type == RTYP_ALL_REPORTS)
+	{
+	  ReportType type;
+	  for (type = __RTYP_FIRST_TYPE; type <= __RTYP_LAST_TYPE; type++)
+	    {
+	      print_level_per_type[type] = new_print_level;
+	    }
+	}
+      else
+	{
+	  print_level_per_type[report_type] = new_print_level;
+	}
+    }
+  else
+    {
+      report(RTYP_REPORT_MSG, "Can't change print level for %s to %s -- it's locked!",
+	     report_info.report_type_to_str(report_type), report_info.print_level_to_str(new_print_level));
+    }
+}
+
+/*
+  get_print_level
+	Returns this message type's print level
+*/
+
+function PrintLevel ReportClass::get_print_level(ReportType report_type)
+{
+  get_print_level = print_level_per_type[report_type];
+}
+
+/*
+  set_error_level
+	Changes the error level of this message type only
+*/
+task ReportClass::set_error_level(ReportType report_type, ErrorLevel new_error_level)
+{
+  report(RTYP_REPORT_MSG, "ReportClass: Setting error level for report type %s to %s", 
+	 report_info.report_type_to_str(report_type), report_info.error_level_to_str(new_error_level));
+
+  // If the type is "ALL_REPORTS", set everything. 
+  // Otherwise, just set the desired type.
+  if (report_type == RTYP_ALL_REPORTS)
+    {
+      ReportType type;
+      for (type = __RTYP_FIRST_TYPE; type <= __RTYP_LAST_TYPE; type++)
+	{
+	  error_level_per_type[type] = new_error_level;
+	}
+    }
+  else
+    {
+      error_level_per_type[report_type] = new_error_level;
+    }
+}
+
+/*
+  get_error_level
+	Returns this message type's error level
+*/
+
+function ErrorLevel ReportClass::get_error_level(ReportType report_type)
+{
+  get_error_level = error_level_per_type[report_type];
+}
+
+/*
+  set_table_mode
+ */
+task ReportClass::set_table_mode(integer table_mode)
+{
+  /*
+  if (!table_mode)
+    report(RTYP_DEBUG_1, "ReportClass: Disabling table mode.");
+  else 
+    report(RTYP_DEBUG_1, "ReportClass: Enabling table mode."); 
+  */
+
+  this.table_mode = table_mode;
+}
+
+/*
+  get_table_mode
+ */
+function integer ReportClass::get_table_mode()
+{
+  get_table_mode = this.table_mode;
+}
+
+/*
+ * will_this_print
+ *
+ *	Returns 1 if report_type's print_level is above the global print threshold,
+ *	and 0 if it is not.
+ *
+ */
+function bit ReportClass::will_this_print(ReportType report_type)
+{
+  will_this_print = (print_level_per_type[report_type] >= this.global_print_threshold);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Accessors for Report PLI class variables
+function integer ReportClass::get_total_error_count()
+{
+  integer ec;
+  semaphore_get(WAIT, pli_semaphore, 1);
+  ReportPLI_get_global_error_count(ec);
+  semaphore_put(pli_semaphore, 1);
+  get_total_error_count = ec;
+}
+
+function integer ReportClass::get_total_warning_count()
+{
+  integer wc;
+  semaphore_get(WAIT, pli_semaphore, 1);
+  ReportPLI_get_global_warning_count(wc);
+  semaphore_put(pli_semaphore, 1);
+  get_total_warning_count = wc;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Accessors for Report PLI instance variables
+//
+task ReportClass::set_verilog_print_level(string regexp, ReportType report_type, PrintLevel print_level)
+{
+  integer int_type = report_type;
+  integer int_lvl = print_level;
+  semaphore_get(WAIT, pli_semaphore, 1);
+  ReportPLI_set_print_level(regexp, int_type, int_lvl);
+  semaphore_put(pli_semaphore, 1);
+}
+
+task ReportClass::set_verilog_error_level(string regexp, ReportType report_type, ErrorLevel error_level)
+{
+  integer int_type = report_type;
+  integer int_lvl = error_level;
+  semaphore_get(WAIT, pli_semaphore, 1);
+  ReportPLI_set_error_level(regexp, int_type, int_lvl);
+  semaphore_put(pli_semaphore, 1);
+}
+
+task ReportClass::set_verilog_table_mode(string regexp, ReportType report_type, integer table_mode)
+{
+  integer int_type = report_type;
+  semaphore_get(WAIT, pli_semaphore, 1);
+  ReportPLI_set_table_mode(regexp, int_type, table_mode);
+  semaphore_put(pli_semaphore, 1);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Protected methods
+
+/*
+ * parse_cmd_line_print_threshold
+ *
+ */
+task ReportClass::parse_cmd_line_print_threshold()
+{
+  // Get print thresholds specified on the command line.
+  bit [511:0] global_print_threshold_bits, vera_print_threshold_bits, verilog_print_threshold_bits;
+  PrintLevel global_print_threshold, vera_print_threshold, verilog_print_threshold;
+  
+  global_print_threshold_bits = get_plus_arg(STR, "report_global_print_threshold=");
+  vera_print_threshold_bits = get_plus_arg(STR, "report_vera_print_threshold=");
+  verilog_print_threshold_bits = get_plus_arg(STR, "report_verilog_print_threshold=");
+
+  if (!report_info.bit_string_to_print_level(global_print_threshold_bits, global_print_threshold)) 
+    {
+      // No global specified -- check for individual Verilog or Vera thresholds.	
+      // Set the Verilog threshold, if any...
+      if (report_info.bit_string_to_print_level(verilog_print_threshold_bits, verilog_print_threshold)) 
+	{
+	  integer int_pl = verilog_print_threshold;
+	  if (verilog_print_threshold != this.get_global_print_threshold())
+	    {
+	      
+//	      semaphore_get(WAIT, pli_semaphore, 1);
+	      ReportPLI_set_global_print_threshold(int_pl, REPORT_LOCKED_BY_CMD_LINE);
+//	      semaphore_put(pli_semaphore, 1);
+	    }
+	}
+      
+      // ...then set the Vera threshold, if any. 
+      if (report_info.bit_string_to_print_level(vera_print_threshold_bits, vera_print_threshold)) 
+	{
+	  if (vera_print_threshold != this.get_global_print_threshold())
+	    this.set_global_print_threshold(vera_print_threshold, REPORT_LOCKED_BY_VERA);   // HACK: leave Verilog threshold unchanged by specifying 'Vera' lock
+	}
+    }
+  else 
+    {
+      // "global" overrides both of the "vera" and "verilog" individual settings.
+      if (global_print_threshold != this.get_global_print_threshold())
+	this.set_global_print_threshold(global_print_threshold, REPORT_LOCKED_BY_CMD_LINE);
+    }
+}
+
+/*
+ * parse_cmd_line_print_mask
+ *
+ */
+task ReportClass::parse_cmd_line_print_mask()
+{
+  // Get the Vera print mask specified on the command line, if any.
+  // Pull out individual message types from it by using a regular expression.
+  bit [511:0] vera_print_mask_bits;
+  string vera_print_mask_str;
+
+  vera_print_mask_bits = get_plus_arg(STR, "report_vera_print_mask=");
+  vera_print_mask_str.bittostr(vera_print_mask_bits);
+
+  // Get each message type name and lock its print level to NONMASKABLE.
+  while (vera_print_mask_str.match("[a-zA-Z0-9_]+") > 0)
+    {      
+      ReportType type;
+      if (report_info.string_to_report_type(vera_print_mask_str.thismatch(), type))
+	{
+	  this.set_print_level(type, RPRT_NONMASKABLE, REPORT_LOCKED_BY_CMD_LINE);	  
+	}
+      else
+	{
+	  this.report(RTYP_REPORT_MSG, "Encountered bad report type %s in command line argument REPORT_VERA_PRINT_MASK", 
+		      vera_print_mask_str.thismatch());
+	}
+      vera_print_mask_str = vera_print_mask_str.postmatch();
+    }
+}
+
+//
+////////////////////////////////////////////////////////////////////////////////
+
+// task launch_death_spiral
+// 
+// Description:  This class launches the thread which will actually kill the
+//		 test on a fatal error.  The test is killed by an error()
+//		 call triggered DEATH_CYCLE_DELAY cycles after receiving
+//		 the 'deadly_event' signal.
+//
+
+task ReportClass::launch_death_spiral()
+{
+  fork
+    {
+      integer exit_on_error;
+
+      // Block until the deadly event happens.
+      // NOTE: Only need to do this once, since it will kill the test!
+      sync(ALL, deadly_event);
+
+      ReportPLI_get_exit_on_error(exit_on_error);     
+
+      if (exit_on_error)
+	{
+	  if (!in_death_spiral)
+	    {
+	      integer death_spiral_count = DEATH_CYCLE_DELAY;
+
+	      in_death_spiral = 1;
+	      printf("Report:(%0d) [VERA] Scheduling termination for cycle %0d\n", get_cycle(), get_cycle() + DEATH_CYCLE_DELAY);
+
+	      while(death_spiral_count--) {
+
+		printf("Report:(%0d) [VERA] In death spiral.  %0d cycles left till termination.\n",
+		       get_cycle(), death_spiral_count);
+
+		@(posedge CLOCK);
+	      }
+
+	      printf("Report:(%0d) [VERA] Calling error() for error which occurred on cycle %0d\n",
+		     get_cycle(), get_cycle() - DEATH_CYCLE_DELAY);
+	      error("");		// actually kill the test!
+
+	    }
+	  else
+	    {
+	      printf("Report:(%0d) [VERA] termination already scheduled\n");
+	    }
+	}
+    }
+  join none
+}      

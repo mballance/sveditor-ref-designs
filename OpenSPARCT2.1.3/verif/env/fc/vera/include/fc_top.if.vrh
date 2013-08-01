@@ -1,0 +1,294 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: fc_top.if.vrh
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#ifndef INC_FC_IF_VRH
+#define INC_FC_IF_VRH
+
+
+
+#include <vera_defines.vrh>
+#include <defines.vri>
+
+#define FC_IF_OUTPUT_SKEW  #0
+#define FC_IF_INPUT_SKEW   #-0
+#define FC_IF_OUTPUT_EDGE  NHOLD
+#define FC_IF_INPUT_EDGE   NSAMPLE
+#define FC_IF_BOTH_DIR     NSAMPLE NHOLD
+
+
+// interface names MUST be unique to ALL var names in ALL vera code
+// for NTB. These interface names are global names. Adding '_if'
+// is a good idea!
+
+// This line must be present -- it drives the entire Vera environment.
+// Ends up in the vshell as vera's SystemClock. Should be the FASTEST clock.
+// Is used when you do @(posedge CLOCK);
+// Each interface should still have it's own clock!
+hdl_node CLOCK "tb_top.SystemClock";
+
+interface random_rst_if {
+  input  	clk			CLOCK				hdl_node "tb_top.system_reset.Sysclk";
+//  output [63:0]	gOutOfBoot_4_reset	PHOLD	FC_IF_OUTPUT_SKEW 	hdl_node "tb_top.system_reset.gOutOfBoot";  
+  output	POR_from_UserEvent	NR0   	FC_IF_OUTPUT_SKEW       hdl_node "tb_top.system_reset.POR_from_UserEvent";
+  output	PB_RST_from_UserEvent	NR0   	FC_IF_OUTPUT_SKEW       hdl_node "tb_top.system_reset.PB_RST_from_UserEvent";
+}
+
+// misc probes
+interface probe_if {
+  input  [7:0]   sim_status       FC_IF_INPUT_EDGE FC_IF_INPUT_SKEW   hdl_node "tb_top.sim_status";  
+  input          rst_l            FC_IF_INPUT_EDGE FC_IF_INPUT_SKEW   hdl_node "tb_top.reset";
+  input  	 flush_reset_complete  	  FC_IF_INPUT_EDGE FC_IF_INPUT_SKEW   hdl_node "tb_top.flush_reset_complete";
+  input  [63:0]  th_check_enable  FC_IF_INPUT_EDGE FC_IF_INPUT_SKEW   hdl_node "tb_top.verif_args.th_check_enable";
+  input  clk                      CLOCK                   hdl_node "tb_top.cpu.l2clk";
+
+  input  pm    FC_IF_INPUT_EDGE FC_IF_INPUT_SKEW   hdl_node "tb_top.cpu.ncu_spc_pm";
+  input  ba01  FC_IF_INPUT_EDGE FC_IF_INPUT_SKEW   hdl_node "tb_top.cpu.ncu_spc_ba01";
+  input  ba23  FC_IF_INPUT_EDGE FC_IF_INPUT_SKEW   hdl_node "tb_top.cpu.ncu_spc_ba23";
+  input  ba45  FC_IF_INPUT_EDGE FC_IF_INPUT_SKEW   hdl_node "tb_top.cpu.ncu_spc_ba45";
+  input  ba67  FC_IF_INPUT_EDGE FC_IF_INPUT_SKEW   hdl_node "tb_top.cpu.ncu_spc_ba67";
+  input	 hashing FC_IF_INPUT_EDGE FC_IF_INPUT_SKEW hdl_node "tb_top.cpu.ncu_sii_l2_idx_hash_en";
+
+  output [63:0]	gOutOfBoot PHOLD	FC_IF_OUTPUT_SKEW 	hdl_node "tb_top.gOutOfBoot";
+    
+#ifdef TCU_GATE
+  input  [7:0] jtag_instr FC_IF_INPUT_EDGE FC_IF_INPUT_SKEW   hdl_node "{tb_top.cpu.tcu.jtag_ctl__instr_7_,tb_top.cpu.tcu.jtag_ctl__instr_6_,tb_top.cpu.tcu.jtag_ctl__instr_5_,tb_top.cpu.tcu.jtag_ctl__instr_4_,tb_top.cpu.tcu.jtag_ctl__instr_3_,tb_top.cpu.tcu.jtag_ctl__instr_2_,tb_top.cpu.tcu.jtag_ctl__instr_1_,tb_top.cpu.tcu.jtag_ctl__tcu_jtag_tap_ctl_instr_l}";
+  input  shift_dr_state   FC_IF_INPUT_EDGE FC_IF_INPUT_SKEW   hdl_node "tb_top.cpu.tcu.jtag_ctl__tcu_jtag_tap_ctl_N55";
+#else
+  input  [7:0] jtag_instr FC_IF_INPUT_EDGE FC_IF_INPUT_SKEW   hdl_node "tb_top.cpu.tcu.jtag_ctl.tcu_jtag_tap_ctl.instr";
+  input  shift_dr_state   FC_IF_INPUT_EDGE FC_IF_INPUT_SKEW   hdl_node "tb_top.cpu.tcu.jtag_ctl.tcu_jtag_tap_ctl.shift_dr_state";
+#endif 
+
+  input ccu_serdes_dtm FC_IF_INPUT_EDGE FC_IF_INPUT_SKEW   hdl_node "tb_top.cpu.ccu_serdes_dtm";
+  input start_dtm_at_ccu_serdes_dtm FC_IF_INPUT_EDGE FC_IF_INPUT_SKEW   hdl_node "tb_top.start_dtm_at_ccu_serdes_dtm";
+  input start_peu_dtm_training FC_IF_INPUT_EDGE FC_IF_INPUT_SKEW   hdl_node "tb_top.start_peu_dtm_training";
+
+  input rst_ncu_unpark_thread FC_IF_INPUT_EDGE FC_IF_INPUT_SKEW   hdl_node "tb_top.cpu.rst_ncu_unpark_thread";
+}
+
+interface period_if {
+  input  clk              CLOCK                   hdl_node "tb_top.SystemClock";
+  input [31:0] core_period FC_IF_INPUT_EDGE #-0   hdl_node "tb_top.core_period";
+  input        core_period_change FC_IF_INPUT_EDGE #-3   hdl_node "tb_top.core_period_change";
+}
+
+
+interface ncu_if {
+  // NCU probes for LDST_sync
+  input  clk                   CLOCK           hdl_node "tb_top.cpu.l2clk";
+  output [39:0]  b8_cpx_pa     NR0 FC_IF_OUTPUT_SKEW hdl_node "tb_top.b8_cpx_pa";
+  output [145:0] b8_cpx_pkt    NR0 FC_IF_OUTPUT_SKEW hdl_node "tb_top.b8_cpx_pkt";
+  output [2:0]   b8_cpx_cid    NR0 FC_IF_OUTPUT_SKEW hdl_node "tb_top.b8_cpx_cid";
+  output         b8_cpx_ctrue  NR0 FC_IF_OUTPUT_SKEW hdl_node "tb_top.b8_cpx_ctrue";
+  output         b8_cpx_swap   NR0 FC_IF_OUTPUT_SKEW hdl_node "tb_top.b8_cpx_swap";  
+}
+
+port ldStSync_port {
+  pa;
+  pkt;
+  cid;
+  ctrue;
+  swap;
+  clk;
+}
+
+#ifdef NOL2RTL
+interface l2_if {
+  // L2 probes for LDST_sync
+  input  clk                 CLOCK                   hdl_node "tb_top.cpu.l2clk";
+
+#ifndef RTL_NO_BNK01  
+  output [39:0]  b0_cpx_pa   NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b0_cpx_pa";
+  output [145:0] b0_cpx_pkt  NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b0_cpx_pkt";
+  output [39:0]  b1_cpx_pa   NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b1_cpx_pa";
+  output [145:0] b1_cpx_pkt  NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b1_cpx_pkt";
+  output [2:0]  b0_cpx_cid    NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b0_cpx_cid";
+  output        b0_cpx_ctrue  NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b0_cpx_ctrue";
+  output        b0_cpx_swap   NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b0_cpx_swap";  
+  output [2:0]  b1_cpx_cid    NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b1_cpx_cid";
+  output        b1_cpx_ctrue  NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b1_cpx_ctrue";
+  output        b1_cpx_swap   NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b1_cpx_swap";  
+#endif
+  
+#ifndef RTL_NO_BNK23
+  output [39:0]  b2_cpx_pa   NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b2_cpx_pa";
+  output [145:0] b2_cpx_pkt  NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b2_cpx_pkt";
+  output [39:0]  b3_cpx_pa   NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b3_cpx_pa";
+  output [145:0] b3_cpx_pkt  NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b3_cpx_pkt";
+  output [2:0]  b2_cpx_cid    NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b2_cpx_cid";
+  output        b2_cpx_ctrue  NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b2_cpx_ctrue";
+  output        b2_cpx_swap   NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b2_cpx_swap";  
+  output [2:0]  b3_cpx_cid    NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b3_cpx_cid";
+  output        b3_cpx_ctrue  NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b3_cpx_ctrue";
+  output        b3_cpx_swap   NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b3_cpx_swap";  
+#endif
+
+#ifndef RTL_NO_BNK45
+  output [39:0]  b4_cpx_pa   NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b4_cpx_pa";
+  output [145:0] b4_cpx_pkt  NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b4_cpx_pkt";
+  output [39:0]  b5_cpx_pa   NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b5_cpx_pa";
+  output [145:0] b5_cpx_pkt  NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b5_cpx_pkt";
+  output [2:0]  b4_cpx_cid    NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b4_cpx_cid";
+  output        b4_cpx_ctrue  NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b4_cpx_ctrue";
+  output        b4_cpx_swap   NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b4_cpx_swap";  
+  output [2:0]  b5_cpx_cid    NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b5_cpx_cid";
+  output        b5_cpx_ctrue  NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b5_cpx_ctrue";
+  output        b5_cpx_swap   NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b5_cpx_swap";  
+#endif
+
+#ifndef RTL_NO_BNK67
+  output [39:0]  b6_cpx_pa   NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b6_cpx_pa";
+  output [145:0] b6_cpx_pkt  NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b6_cpx_pkt";
+  output [39:0]  b7_cpx_pa   NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b7_cpx_pa";
+  output [145:0] b7_cpx_pkt  NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b7_cpx_pkt";
+  output [2:0]  b6_cpx_cid    NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b6_cpx_cid";
+  output        b6_cpx_ctrue  NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b6_cpx_ctrue";
+  output        b6_cpx_swap   NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b6_cpx_swap";  
+  output [2:0]  b7_cpx_cid    NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b7_cpx_cid";
+  output        b7_cpx_ctrue  NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b7_cpx_ctrue";
+  output        b7_cpx_swap   NR0         FC_IF_OUTPUT_SKEW hdl_node "tb_top.b7_cpx_swap";  
+#endif
+
+}
+
+#ifndef RTL_NO_BNK01
+bind ldStSync_port ldStSync_bind_b0 {
+  pa       l2_if.b0_cpx_pa;
+  pkt      l2_if.b0_cpx_pkt;
+  cid      l2_if.b0_cpx_cid;
+  ctrue    l2_if.b0_cpx_ctrue;
+  swap     l2_if.b0_cpx_swap;
+  clk      l2_if.clk;
+}
+bind ldStSync_port ldStSync_bind_b1 {
+  pa       l2_if.b1_cpx_pa;
+  pkt      l2_if.b1_cpx_pkt;
+  cid      l2_if.b1_cpx_cid;
+  ctrue    l2_if.b1_cpx_ctrue;
+  swap     l2_if.b1_cpx_swap;  
+  clk      l2_if.clk;
+}
+#endif
+
+#ifndef RTL_NO_BNK23
+bind ldStSync_port ldStSync_bind_b2 {
+  pa       l2_if.b2_cpx_pa;
+  pkt      l2_if.b2_cpx_pkt;
+  cid      l2_if.b2_cpx_cid;
+  ctrue    l2_if.b2_cpx_ctrue;
+  swap     l2_if.b2_cpx_swap;  
+  clk      l2_if.clk;
+}
+bind ldStSync_port ldStSync_bind_b3 {
+  pa       l2_if.b3_cpx_pa;
+  pkt      l2_if.b3_cpx_pkt;
+  cid      l2_if.b3_cpx_cid;
+  ctrue    l2_if.b3_cpx_ctrue;
+  swap     l2_if.b3_cpx_swap;  
+  clk      l2_if.clk;
+}
+#endif
+
+#ifndef RTL_NO_BNK45
+bind ldStSync_port ldStSync_bind_b4 {
+  pa       l2_if.b4_cpx_pa;
+  pkt      l2_if.b4_cpx_pkt;
+  cid      l2_if.b4_cpx_cid;
+  ctrue    l2_if.b4_cpx_ctrue;
+  swap     l2_if.b4_cpx_swap;  
+  clk      l2_if.clk;
+}
+bind ldStSync_port ldStSync_bind_b5 {
+  pa       l2_if.b5_cpx_pa;
+  pkt      l2_if.b5_cpx_pkt;
+  cid      l2_if.b5_cpx_cid;
+  ctrue    l2_if.b5_cpx_ctrue;
+  swap     l2_if.b5_cpx_swap;  
+  clk      l2_if.clk;
+}
+#endif
+
+#ifndef RTL_NO_BNK67
+bind ldStSync_port ldStSync_bind_b6 {
+  pa       l2_if.b6_cpx_pa;
+  pkt      l2_if.b6_cpx_pkt;
+  cid      l2_if.b6_cpx_cid;
+  ctrue    l2_if.b6_cpx_ctrue;
+  swap     l2_if.b6_cpx_swap;  
+  clk      l2_if.clk;
+}
+bind ldStSync_port ldStSync_bind_b7 {
+  pa       l2_if.b7_cpx_pa;
+  pkt      l2_if.b7_cpx_pkt;
+  cid      l2_if.b7_cpx_cid;
+  ctrue    l2_if.b7_cpx_ctrue;
+  swap     l2_if.b7_cpx_swap;  
+  clk      l2_if.clk;
+}
+#endif
+
+
+#endif
+
+
+bind ldStSync_port ldStSync_bind_b8 {
+  pa       ncu_if.b8_cpx_pa;
+  pkt      ncu_if.b8_cpx_pkt;
+  cid      ncu_if.b8_cpx_cid;
+  ctrue    ncu_if.b8_cpx_ctrue;
+  swap     ncu_if.b8_cpx_swap;  
+  clk      ncu_if.clk;
+}
+
+port probesPort {
+  th_check_enable;
+  rst_l;
+  pm;
+  ba01;
+  ba23;
+  ba45;
+  ba67;
+}
+
+bind probesPort probesBind {
+  th_check_enable probe_if.th_check_enable;
+  rst_l           probe_if.rst_l;
+  pm              probe_if.pm;
+  ba01            probe_if.ba01;
+  ba23            probe_if.ba23;
+  ba45            probe_if.ba45;
+  ba67            probe_if.ba67;
+}
+
+#endif
+

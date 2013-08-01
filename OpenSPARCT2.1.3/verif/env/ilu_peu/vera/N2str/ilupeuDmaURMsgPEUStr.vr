@@ -1,0 +1,210 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuDmaURMsgPEUStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class DmaURMsgPEUStr extends DmaURBasePEUStr {
+
+
+  // ******************************************************************
+  // The Test Environment objects need to execute the strategy.
+  // ******************************************************************
+  local PEUTestEnv              _env;
+  local integer                 _errQueue;
+
+  // For coverage's sake...
+  static integer                _ctr = 0;
+
+
+  // ******************************************************************
+  // TLP Fields - These fields will be randomized using the parameters
+  // in the following section, and obeying the constraints defined
+  // within this class.
+  // ******************************************************************
+  local         bit [1:0]       _format;
+  local         bit [4:0]       _type;
+  local         bit [2:0]       _tc;  
+  local         bit             _td;
+  local         bit             _ep;  
+  local         bit [1:0]       _attr;  
+  local         bit [9:0]       _len;
+  local         bit [15:0]      _req_id;
+  local         bit [7:0]       _tag;
+  local         bit [7:0]       _m_code;
+  local         bit [63:0]      _addr;
+  local         integer         _data;
+
+
+  // ******************************************************************
+  // Constructor
+  // ******************************************************************
+  public task new(PEUTestEnv a_env, (integer a_errQueue = 'bx));
+
+  
+  // ******************************************************************
+  // Execute the strategy.  
+  // ******************************************************************
+   public task Execute();  
+}
+
+
+
+//-------------------------------------------------------------------
+// Method Name: 
+// Description: 
+//-------------------------------------------------------------------
+task DmaURMsgPEUStr::new(PEUTestEnv a_env, (integer a_errQueue = 'bx)) { 
+
+  
+  super.new(a_env);
+  this._env = a_env;
+  this._errQueue = a_errQueue;
+}
+
+
+
+//-------------------------------------------------------------------
+// Method Name: 
+// Description: 
+//-------------------------------------------------------------------
+task DmaURMsgPEUStr::Execute() {
+
+
+  bit [PEC_PCI__HDR]            reqHdr;
+
+
+  this._format = PEC_PCI__FMT_NO_DATA_4DW;
+
+  this._type [4:3] = 2'b_10;
+  this._type [2:0] = urandom_range(3'b_111, 3'b_000);
+  
+  this._tc         = 3'b_000;
+  this._td         = urandom_range(1'b_1, 1'b_0);
+
+  randcase {
+    this._ep_req_prob_false : this._ep = 1'b_0;
+    this._ep_req_prob_true  : this._ep = 1'b_1;
+  }
+
+  this._attr       = 2'b_00;
+  this._len        = 10'b_00_0000_0000;
+  this._req_id     = urandom_range(16'h_FFFF, 16'h_0);
+  this._tag        = urandom_range(8'h_FF, 8'h_00);
+ 
+  _ctr = _ctr + 1;
+  case ( _ctr )
+    {
+    1:       this._m_code     = PEC_PCI__MSG_CODE_VENDOR_TYPE_0;
+    default: this._m_code     = urandom_range(8'h_FF, 8'h_00);
+    }
+  
+  while ((this._m_code === PEC_PCI__MSG_CODE_ASSERT_INTA) ||
+         (this._m_code === PEC_PCI__MSG_CODE_ASSERT_INTB) ||
+         (this._m_code === PEC_PCI__MSG_CODE_ASSERT_INTC) ||
+         (this._m_code === PEC_PCI__MSG_CODE_ASSERT_INTD) ||
+         (this._m_code === PEC_PCI__MSG_CODE_DEASSERT_INTA) ||
+         (this._m_code === PEC_PCI__MSG_CODE_DEASSERT_INTB) ||
+         (this._m_code === PEC_PCI__MSG_CODE_DEASSERT_INTC) ||
+         (this._m_code === PEC_PCI__MSG_CODE_DEASSERT_INTD) ||
+         (this._m_code === PEC_PCI__MSG_CODE_PM_PME) ||
+         (this._m_code === PEC_PCI__MSG_CODE_PM_TO_ACK) ||
+         (this._m_code === PEC_PCI__MSG_CODE_ERR_COR) ||
+         (this._m_code === PEC_PCI__MSG_CODE_ERR_NONFATAL) ||
+         (this._m_code === PEC_PCI__MSG_CODE_ERR_FATAL) ||
+         (this._m_code === PEC_PCI__MSG_CODE_ATTN) ||
+         (this._m_code === PEC_PCI__MSG_CODE_VENDOR_TYPE_1) 
+	 ) {
+    this._m_code   = urandom_range(8'h_FF, 8'h_00);
+    
+    //    randcase {
+    //      80 : this._m_code   = urandom_range(8'h_FF, 8'h_00);
+    //      20 : this._m_code   = PEC_PCI__MSG_CODE_VENDOR_TYPE_0;
+    //    }
+  }
+
+  //Denali Can't handle generating Messages with undefined types - review
+  this._m_code = PEC_PCI__MSG_CODE_VENDOR_TYPE_0;
+  printf("Message Code m_code = %x\n", this._m_code);
+
+  this._addr       = {urandom(), urandom()};
+  if( this._m_code == PEC_PCI__MSG_CODE_VENDOR_TYPE_0 ){
+     randcase{
+        1: this._type [2:0] = 3'b000;
+        1: this._type [2:0] = 3'b010;
+        1: this._type [2:0] = 3'b011;
+        1: this._type [2:0] = 3'b100;
+     }
+
+     //review - Denali troubles with vendor defined messages
+     this._addr = { this._type [2:0] == 3'b010 ? this._addr[63:48] : 16'h0,
+                    random()%2 ? _env.Scenario.denaliVendorDefinedVendorID2 :
+                                 _env.Scenario.denaliVendorDefinedVendorID1,
+                    32'h0};
+  }
+
+  this._data       = urandom_range(255, 0);
+  
+
+  reqHdr [PEC_PCI__HDR]         = {128{1'b_0}};  
+  reqHdr [PEC_PCI__FMT]         = this._format;
+  reqHdr [PEC_PCI__TYPE]        = this._type;
+  reqHdr [PEC_PCI__TC]          = this._tc;
+  reqHdr [PEC_PCI__TD]          = this._td;
+  reqHdr [PEC_PCI__EP]          = this._ep;
+  reqHdr [PEC_PCI__ATTR]        = this._attr;
+  reqHdr [PEC_PCI__LEN]         = this._len;
+  reqHdr [PEC_PCI__REQ_ID]      = this._req_id;
+  reqHdr [PEC_PCI__TLP_TAG]     = this._tag;
+  reqHdr [PEC_PCI__MSG_CODE]    = this._m_code;
+  reqHdr [PEC_PCI__ADDR]        = this._addr;
+
+  if ( super.f_abortErrTlp )
+    {
+    this._env.drivePCIE(reqHdr, this._data, *, *, *, 1);
+    this._env.waitIngressLatency(reqHdr);
+    }
+  else
+    {
+    this._env.reserveIngressCredits(reqHdr);
+    this._env.drivePCIE(reqHdr, this._data);
+    this._env.consumeIngressCredits(reqHdr);
+    this._env.expectILU(reqHdr, this._data);
+  
+    mailbox_put(this._errQueue, e_ERR_none);
+    mailbox_put(this._errQueue, 2);
+    mailbox_put(this._errQueue, e_ERR_ue_mfp);
+    mailbox_put(this._errQueue, 128'bx0);
+    mailbox_put(this._errQueue, e_ERR_ue_ur);
+    reqHdr[31:0] = 0;
+    mailbox_put(this._errQueue, reqHdr);
+    }
+}

@@ -1,0 +1,132 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ibtp_db.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class ibtp_db
+{
+   //===== Test generation (IPP interface) =====
+   bit 	      dest_port_type;	// 0: IBtP, 1: HRP
+   bit 	      src_port_type;	// 0: IPP,  1: HTP
+   bit [7:0]  qpn_or_mcix;	// QPN_bypass when use_mc_index = 0,
+				// mc_index when use_mc_index = 1.
+   bit [12:0] first_bkt_ptr;
+   bit [12:0] last_bkt_ptr;
+   bit [7:0]  bkt_cnt;
+   bit [11:0] vid;
+   bit        vid_compare;
+   bit        discard_pkt;
+   bit        big_pkt;
+   //===== First Control Word (not declared before) =====
+   bit [15:0] pkt_len;
+   bit [3:0]  tcp_chksum_fields; //{bad_crc,ip_chksum_ok,tcp_fullchksum,tcp_fullchksum_ok}
+   //===== Second Control Word (not declared before) =====
+   bit [1:0]  net_rcv_mode_bits;// 00:Bypass, 01:TCP_rsmbly, 10:TOE, 11: ENCAP
+   bit [7:0]  hdr_len;
+   bit        use_mc_index;	// 1: multicast	
+   bit [15:0] cb_index;		// CB_index
+   bit [31:0] tcp_seq_no;
+   bit [15:0] tcp_segment_len;
+   bit 	      push_bit; //= |pack_db[ip_token].flow.fl_state.tcp_flags;
+   bit        toe_wb_notif;	// Used in TOE mode (write back notif)
+   bit        cam_match;	
+   //===== Checker update (LLTx interface) =====
+   bit [12:0]   lltx_free_ptr[];//Free LLTx pointers received by IPP for each packet 
+				//[0]=first_bkt_ptr, [bkt_cnt-1]=last_bkt_ptr (for TCP page crossing)
+   //===== Checker update (SQM, PC interface) =====
+   //This may be used by downstream checkers.
+   bit [7:0]  qpn_local;	// Translated QPN to SQM
+   bit [4:0]  ibtp_opcode;
+   bit [15:0] data_len;		// rdma_len in TCP_rsmbly or TOE mode,
+				// pkt_len in Bypass mode		
+   bit [10:0] info_ram_ptr;
+   bit [63:0] rdma_vaddr;
+   bit [31:0] r_key;
+
+   //===== Extra =====
+   bit         no_pio_intr_chk; //Default - on the fly check, otherwise PIO access check
+   bit         err_chk;
+   bit [4:0]   err_type; 	//Following the bit order of interrupt status register
+				//5'd1-wqram_perr, 5'd2-iram_ecc_err, 5'd3-ififo_perr, 5'd4-bmc_err
+   bit	       reset_en;	//For reset check
+   integer rec_ipflow_time;
+   integer first_ipflow_time;
+
+   #ifndef VEGA_CHIP_LEVEL
+   bit [127:0] ipp_first_ctrl_word; //Double check data reading back from BMC
+   bit [127:0] ipp_second_ctrl_word;
+   #endif
+
+   task new()
+   {
+      dest_port_type = 1'b0;
+      src_port_type = 1'b0;
+      qpn_or_mcix = 8'b0;
+      first_bkt_ptr = 13'b0;
+      last_bkt_ptr = 13'b0;
+      bkt_cnt = 8'b0;
+      vid = 12'b0;
+      vid_compare = 1'b0;
+      discard_pkt = 1'b0;
+      big_pkt = 1'b0;
+      pkt_len = 16'b0;
+      tcp_chksum_fields = 4'b0;
+      net_rcv_mode_bits = 2'b00;
+      hdr_len = 8'b0;
+      use_mc_index = 1'b0;
+      cb_index = 16'b0;
+      toe_wb_notif = 1'b0;
+      tcp_seq_no = 32'b0;
+      tcp_segment_len = 16'b0;
+      push_bit = 1'b0;
+      cam_match = 1'b1;
+
+      qpn_local = 8'b0;
+      ibtp_opcode = 5'b0;
+      data_len = 16'b0;
+      info_ram_ptr = 11'b0;
+      rdma_vaddr = 64'b0;
+      r_key = 32'b0;
+
+      no_pio_intr_chk = 1'b1;
+      err_chk = 1'b0;
+      err_type = 5'b0;
+      reset_en = 1'b0;
+      rec_ipflow_time = 0;
+      first_ipflow_time = 0;
+
+      #ifndef VEGA_CHIP_LEVEL
+      ipp_first_ctrl_word = 128'b0;
+      ipp_second_ctrl_word = 128'b0;
+      #endif
+   }
+}

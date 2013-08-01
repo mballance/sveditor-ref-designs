@@ -1,0 +1,499 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ip_ingress_classes.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+#include "pcg_defines.vri"
+#include "pcg_types.vri"
+//#include "pcg_classes.vrh"
+#include "pack_db.vrh"
+//#include "pack_db_tasks.vrh"
+#include "flow_db.vrh"
+#include "flow_db_tasks.vrh"
+#include "pg_top_pp.vrh"
+//#include "pcg_lib.vrh"
+#include "pc_top_pp.vrh"
+
+// -----  CAM Key Database -----
+class Cpkt_info
+   {
+    flow_desc     flow;
+    integer       pkt_len;
+    integer       pkt_num;
+    integer       mac_prt;
+    bit [7:0]     protocol;
+    bit [4:0]     zcp_dma_chnl;
+    bit [2:0]     zcp_rdc_tbl_num;
+    bit [4:0]     zcp_rdc_tbl_offset;
+
+    bit           prog_class7_4_match;
+    bit           prog_class3_2_match;
+    bit           class_matched;
+    bit           asdata_disc;
+    integer       packet_class;
+    bit [383:0]   flow_key;
+
+    //@@@@@@@ Control FIFO Fields  @@@@@@@@@@@
+    //@@ B0 @@@
+    bit           maccheck;
+    //@@ B1 @@@
+    bit           tzfvld; 
+    bit [1:0]     tres;
+    bit           tcamhit;
+    bit           badip;
+    bit           noport;
+    bit           llcsnap;
+    bit           vlan;
+    //@@ B2 @@@
+    bit [4:0]     dma_num;
+    bit [4:0]     default_dma_num;  // {B2[2:0],B4[7:6]}
+    //@@ B3 @@@
+    bit [7:0]     tcamm_index; 
+    //@@ B4 @@@
+    bit [2:0]     hash_index;
+    bit           hzfvld;
+    bit           hash_exact_match;
+    bit           hash_hit;
+    //@@ B5 @@@ 
+    bit           tt_err;
+    bit           tt_succeed;
+    //@@ B6 @@@
+    bit [11:0]    zc_flow_id;   // {B6[3:0],B7[7:0]
+    bit           solicited_event_bit;
+    bit           drop_pkt;
+    bit           fflp_hw_err;
+    bit           mac_promiscuous;
+    //@@ B7 @@@
+//##### if tt_succeed = 0 #####
+    //@@ B8 & B9 @@@
+    bit [15:0]     hash_value2;
+    //@@ B10 & B11 & B12 @@@
+    bit [19:0]     hash_value1;
+    //@@ B13, B14, B15, B16, B17 @@@
+    bit [39:0]     user_data;
+//##### if tt_succeed = 1 #####
+    //@@ B8, B9 @@
+    bit [15:0]     tt_hdr_len;
+    //@@ B10, B11 @@@
+    bit [15:0]     tcp_payload_len;
+    //@@ B12, B13 @@@
+    bit [15:0]     HoQ;
+    //@@ B14, B15,B16 @@@
+    bit [23:0]     first_byte_offset;
+    //@@ B17 @@@
+    bit [4:0]      win_buf_offset;
+    bit [1:0]      dmaw_type_1;
+    bit            reach_buf_end;
+//#####
+    //@@ B18 @@@
+    bit [1:0]      L4_protocol;
+    bit [3:0]      pkt_id;
+    bit            ip_version;
+    //@@ B19 @@@
+    bit [4:0]      zc_rdc;
+    bit [1:0]      dmaw_type;
+    //@@ B20, B21 @@
+    bit [15:0]     L3_pkt_len;
+    //@@ B22 @@
+    bit [3:0]      tcp_hdr_len;
+    bit [3:0]      ipv4_hdr_len;
+    //@@ B23-B26 @@
+    bit [31:0]     tcp_seq_num;
+
+  
+    
+
+
+    
+
+   
+    
+
+    task new()
+        {
+         // flow = new();
+         pkt_len = 0;
+         pkt_num = 0;
+         mac_prt = 0;
+         protocol           = 8'h0;
+         zcp_dma_chnl       = 5'h0;
+         zcp_rdc_tbl_num    = 3'h0;
+         zcp_rdc_tbl_offset = 5'h0;
+         prog_class7_4_match = 1'b0;
+         prog_class3_2_match = 1'b0;
+         class_matched      = 1'b0;
+         asdata_disc        = 1'b0;
+         packet_class       = 0;
+         flow_key           = 384'h0;
+    //@@@@@@@ Control FIFO Fields  @@@@@@@@@@@
+    //@@ B0 @@@
+              maccheck = 0;
+    //@@ B1 @@@
+              tzfvld = 0; 
+    tres = 0;
+              tcamhit = 0;
+              badip = 0;
+              noport = 0;
+              llcsnap = 0;
+              vlan = 0;
+    //@@ B2 @@@
+    dma_num = 0;
+    default_dma_num = 0;  // {B2[2:0],B4[7:6]}
+    //@@ B3 @@@
+    tcamm_index = 0; 
+    //@@ B4 @@@
+    hash_index = 0;
+              hzfvld = 0;
+              hash_exact_match = 0;
+              hash_hit = 0;
+    //@@ B5 @@@ 
+              tt_err = 0;
+              tt_succeed = 0;
+    //@@ B6 @@@
+    zc_flow_id = 0;   // {B6[3:0],B7[7:0]}
+              solicited_event_bit = 0;
+              drop_pkt = 0;
+              fflp_hw_err = 0;
+              mac_promiscuous = 0;
+    //@@ B7 @@@
+//##### if tt_succeed = 0 #####
+    //@@ B8 & B9 @@@
+    hash_value2 = 0;
+    //@@ B10 & B11 & B12 @@@
+    hash_value1 = 0;
+    //@@ B13, B14, B15, B16, B17 @@@
+    user_data = 0;
+//##### if tt_succeed = 1 #####
+    //@@ B8, B9 @@
+    tt_hdr_len = 0;
+    //@@ B10, B11 @@@
+    tcp_payload_len = 0;
+    //@@ B12, B13 @@@
+    HoQ = 0;
+    //@@ B14, B15,B16 @@@
+    first_byte_offset = 0;
+    //@@ B17 @@@
+    win_buf_offset = 0;
+    dmaw_type_1 = 0;
+               reach_buf_end = 0;
+//#####
+    //@@ B18 @@@
+    L4_protocol = 0;
+    pkt_id = 0;
+               ip_version = 0;
+    //@@ B19 @@@
+    zc_rdc = 0;
+    dmaw_type = 0;
+    //@@ B20, B21 @@
+    L3_pkt_len = 0;
+    //@@ B22 @@
+    tcp_hdr_len = 0;
+    ipv4_hdr_len = 0;
+    //@@ B23-B26 @@
+      tcp_seq_num = 0;
+        }
+   }
+   
+class ip_cam_db {
+   
+    bit [4:0]  cls_code              = 5'hx;    // fflp class value
+    bit [4:0]  l2rdc_tbl_num         = 5'h0;  
+    bit        nop                   = 1'b0;    // Fragmented or none tcp/udp
+    bit [7:0]  protocol              = 8'h0;    // IPV4
+    bit [7:0]  next_header           = 8'h0;    // IPV6
+    bit [199:0] shadow_cam_key  [256];          // Shadow of tcam key   entries
+    bit [199:0] shadow_cam_lmask[256];          // Shadow of tcam lmask entries
+    bit [63:0]  shadow_adata    [256];          // Shadow of as_data    entries
+   
+    bit [63:0]  shadow_fflp_how_tcam_key_cls_C;
+    bit [63:0]  shadow_fflp_how_tcam_key_cls_D;
+    bit [63:0]  shadow_fflp_how_tcam_key_cls_E;
+    bit [63:0]  shadow_fflp_how_tcam_key_cls_F;
+
+    task new() 
+       {
+        integer i;
+
+        cls_code              = 5'hx;    // fflp class value
+        l2rdc_tbl_num         = 5'b0;    // from mac control wrd
+        nop                   = 1'b0;    // Fragmented or none tcp/udp
+        protocol              = 8'h0;    // IPV4
+        next_header           = 8'h0;    // IPV6
+
+        shadow_fflp_how_tcam_key_cls_C = 64'hx;
+        shadow_fflp_how_tcam_key_cls_D = 64'hx;
+        shadow_fflp_how_tcam_key_cls_E = 64'hx;
+        shadow_fflp_how_tcam_key_cls_F = 64'hx;
+
+        for (i=0;i<256;i++)
+           {
+            shadow_cam_key[i] = 200'h0;
+            shadow_cam_lmask[i] = 200'hff_ffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff;
+            shadow_adata  [i] = 64'h0;
+           }
+       }
+}
+
+// -----  ASDATA  Database -----
+class ip_asdata_db 
+   {
+    bit        syndrome             = 16'h0;
+    bit [11:0] zfid                 = 12'h0;
+    bit        v4_ecc_ck            = 1'b0;
+    bit        disc                 = 1'b0;
+    bit [1:0]  tres                 = 2'b00;
+    bit [2:0]  rdctbl               = 3'h0;
+    bit [4:0]  offset               = 5'h0;
+    bit        zfvld                = 2'b00;
+    bit        age                  = 1'b0;
+  
+    task new() 
+       {
+        syndrome             = 16'h0;
+        zfid                 = 12'h0;
+        v4_ecc_ck            = 1'b0;
+        disc                 = 1'b0;
+        tres                 = 2'b00;
+        rdctbl               = 3'h0;
+        offset               = 5'h0;
+        zfvld                = 1'b0;
+        age                  = 1'b0;
+       }
+   }
+
+// -----  MAC Control Word Database -----
+class ip_mac_db {
+    bit [2:0]  mac_port       = 3'b000;
+    bit [1:0]  mac_speed      = 2'b00;
+    bit [47:0] mac_da         = 48'h0;
+    bit [2:0]  mac_rdctblnum  = 3'h0;
+    bit        mac_mpr        = 1'b0;
+//  bit        ph_bit         = 1'b0;
+
+    task new() 
+       {
+        mac_port       = 3'b000;
+        mac_speed      = 2'b00;
+        mac_da         = 48'h00;
+        mac_rdctblnum  = 3'h0;
+        mac_mpr        = 1'b0;
+//      ph_bit         = 1'b0;
+       }
+}
+
+// -----  FCRAM Database -----------
+class ip_fcram_db {      
+
+    task new() 
+       {
+       }
+}
+// -----  LB VLAN Table Database for N2 ------
+class ip_vlan_db {
+    bit        parity1         = 1'b0;
+    bit        parity0         = 1'b0;
+    bit        vpr3            = 1'b0;
+    bit [2:0]  rdctblnum3      = 3'h0;
+    bit        vpr2            = 1'b0;
+    bit [2:0]  rdctblnum2      = 3'h0;
+    bit        vpr1            = 1'b0;
+    bit [2:0]  rdctblnum1      = 3'h0;
+    bit        vpr0            = 1'b0;
+    bit [2:0]  rdctblnum0      = 3'h0;
+
+    task new() 
+       {
+        parity1         = 1'b0;    
+        parity0         = 1'b0;    
+        vpr3            = 1'b0;
+        rdctblnum3      = 3'h0;
+        vpr2            = 1'b0;
+        rdctblnum2      = 3'h0;
+        vpr1            = 1'b0;
+        rdctblnum1      = 3'h0;
+        vpr0            = 1'b0;
+        rdctblnum0      = 3'h0;
+       }
+}
+
+
+/*
+// -----  general byte array -----
+class byte_array {
+    bit [7:0] val[];
+}
+*/
+
+// -----  Node Descriptor -----
+class node_desc_cl {
+    bit	[47:0]	l2_addr;	// L2 address for this station
+    bit	[15:0]	tci;		// Tag Control Information
+    bit	[31:0]	ip_addr;	// IPv4 address of this substation
+    bit	[128:0]	ipv6_addr;	// IPv6 address of this substation
+    bit [7:0]   tos =0;         // TOS v4/Frame Class v6
+    bit	[19:0]	src_port;	// Which ports may use this node as source
+    bit [31:0]  spi = 0;        // Security Parameter Index for AH /ESP
+    bit [7:0]   nxthdr = 06;
+    
+}
+
+// -----  TCP/UDP Ports Descriptor -----
+class tup_descr_cl {
+    bit	[15:0]	src_tcp_udp_port;	// Source TCP/UDP Port
+    bit	[15:0]	dst_tcp_udp_port;	// Destination TCP/UDP Port
+
+}
+
+// -----  Frame Descriptor -----
+class frame_desc_cl {
+    bit	[4:0]  frame_type = 0; // Frame Type (bit 3:  0=IPv4 Header 1=IPv6 Header) 
+                               //             bit 4:  0=Tunneling off     
+    bit	[1:0]  tunnel_type = 0;// selects between different tunneling combinations 
+                               //    00: IPv4/IPv4 (default)   
+                               //    01: IPv4/IPv6      
+                               //    10: IPv6/IPv4    
+                               //    11: IPv6/IPv6    
+    integer    frame_class;    // L3 IP class
+    integer    type;           // L3 IP class type (-1 = auto: length or type from class);
+    integer    tpid;           // L2 Tagged frames custopm TPID value (-1 =  use default)
+    integer    class_mask;     // Mask to be applied to class
+    integer    class_funct;    // Mask Operation (0-AND, 1-OR)
+    integer    data_type;      // Type of payload
+    integer    data_seed;      // Seed for random data
+    //integer    data_length;    // Length of payload (-1=make exactly 64 byte packets)
+    integer    header_length;  // Header Length of the Packet
+
+    task new() {
+        frame_type  = 0;
+        tunnel_type = 0;
+        frame_class = 0;
+        type = -1;
+        tpid = -1;
+        class_mask  = 0;
+        class_funct = 0;
+        data_type   = 0;
+        data_seed   = 0;
+        //data_length = 0;
+        header_length = 0;
+    }
+}
+
+
+// -----  TCP Tx Parameters -----
+class tmt_param_cl {
+   bit [31:0] adv_isn;
+   bit [31:0] last_seqno;
+   bit retr_timeout; //Initialize to zero          
+   bit [15:0] adv_window_size;//Initialize to zero
+
+   task new() {
+        retr_timeout = 0;
+        adv_window_size = 0;
+        last_seqno = 0;
+       }
+
+
+  }
+
+// -----  TCP Rx Parameters -----
+class rcv_param_cl {
+   bit [31:0] rcv_isn;//User Programs while Setting "SYN"
+   bit [31:0] last_ackno;
+   bit timeout; //Initialize to zero          
+   bit [15:0] rmt_window_size;//Initialize to zero
+
+   task new() {
+        timeout = 0;
+        rmt_window_size = 0;
+       }
+  }
+
+
+// -----  TCP State Parameters -----
+
+class tcp_state_cl {
+   bit [5:0] tcp_flags;
+   bit [3:0] tcp_st;//Initialise to zero now
+
+   task new() {
+        //tcp_flags = 6'b00_0010;//{(URG,ACK,PSH,RST,SYN,FIN}
+        tcp_st = 0;
+       }
+}
+
+// -----  TOP ip_db class                       -----
+class ip_db_cl {
+
+    frame_desc_cl     ip_frame; 
+    node_desc_cl      ip_src_node;
+    node_desc_cl      ip_dst_node;
+    tup_descr_cl      ip_tup;
+    rcv_param_cl      ip_rx_param;
+    tmt_param_cl      ip_tx_param;
+    tcp_state_cl      ip_fl_state;
+    integer           ip_flow_no;
+
+    ip_cam_db         ip_cam;
+    ip_mac_db         ip_mac;
+    ip_asdata_db      ip_asdata;
+    ip_fcram_db       ip_fcram;
+    ip_vlan_db        ip_vlan;
+
+    bit               prog_class7_4_matched;
+    bit               prog_class3_2_matched;
+    bit [4:0]         pkt_class;
+
+  task new() {
+
+//  ip_frame    = new; 
+//  ip_src_node = new;
+//  ip_dst_node = new;
+//  ip_tup      = new;
+//  ip_rx_param = new;
+//  ip_tx_param = new;
+//  ip_fl_state = new;
+
+//  ip_cam      = new;
+//  ip_mac      = new;
+//  ip_asdata   = new;
+//  ip_fcram    = new;
+//  ip_vlan     = new;
+
+    prog_class7_4_matched = 1'b0;
+    prog_class3_2_matched = 1'b0;
+    pkt_class          = 5'h0;
+   }
+}
+   
+

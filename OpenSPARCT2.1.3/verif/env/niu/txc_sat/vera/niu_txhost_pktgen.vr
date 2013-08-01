@@ -1,0 +1,704 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_txhost_pktgen.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "niu_mem.vrh"
+#include "dmc_memory_map.vri"
+#include "txc_memory_map.vri"
+// #include "tx_host_err_defines.vri"
+#include "niu_error_dfn.vri"
+
+#include "niu_dma.vrh"
+#include "pcg_token.vrh"
+#include "niu_txtoken.vrh"
+#include "niu_txcntrl_wd.vrh"
+#include "niu_tx_pktconfig.vrh"
+#include "niu_tx_descp.vrh"
+#include "cMesg.vrh"
+#include "pgIdgen.vrh"
+
+
+
+extern CSparseMem SparseMem;
+extern mbox_class mbox_id;
+extern Mesg     be_msg;
+
+extern niu_gen_pio gen_pio_drv;
+
+function  byte_array DMAChannel::generate_packets(TxPacketGenConfig PktGenConfig,CTxToken  TxToken ) {
+
+
+	byte_array packets;
+	integer mac_id;
+	integer d;
+  	integer token;
+	integer port_id;
+	integer i;
+	CpgToken pgToken;
+        integer LLC_HACK = 1;
+	bit [15:0] llc_length;
+	integer status;
+
+
+
+
+        if(PktGenConfig.error_info.hosterrors.dma_errors == NACK_PREF_ERROR) {
+          is_nack_pref_err = 1;
+          nack_pref_err_addr = TxToken.xlate_desc_addr;
+          nack_pref_err_pcaddr = TxToken.xlate_desc_addr - 64'h40;
+        }
+	
+	status = SetTxError.set_up_errors(PktGenConfig,TxToken);
+	if(status) do_not_check_packet = 1;
+
+	mac_id = PktGenConfig.mac_id ;
+	packets =  new();
+
+
+	printf(" Generating Packets for DMA id %d , data_length = %d \n",id,PktGenConfig.data_length);
+        if (get_plus_arg (CHECK, "RX_DROP_PKT_CHECK")) {
+         printf("RX_DROP_PKT_CHECK is specified. MAC-SA before replacing 0x%h\n", PktGenConfig.flow.src_node.l2_addr);
+         // modify src address for the drop checker 
+  	 // This is to be used only for loopback cases
+         PktGenConfig.flow.src_node.l2_addr = pgIdgen.getMacSA(PktGenConfig.loop_back_rxdma_num,mac_id);
+         printf("RX_DROP_PKT_CHECK is specified. MAC-SA after replacing 0x%h\n", PktGenConfig.flow.src_node.l2_addr);
+        } else
+         PktGenConfig.flow.src_node.l2_addr = pgIdgen.getMacSA(id,mac_id);
+
+	// Need some config info which indicates the type of packets to generate
+ 	pack_gen[mac_id + 8].pkt_gen( PktGenConfig.flow,PktGenConfig.data_length, 3, pgToken, O_WAIT_SEND_FAKE | O_FAKE_OUT );
+        printf(" data_len - %d \n",pgToken.pack_db.data_length);
+        printf(" header len - %d \n",pgToken.pack_db.header_len[0]);
+        token = pgToken.gId;
+
+  // Copy header to out_header in pack_db
+       pgToken.pack_db.out_header[mac_id ] = new;
+       pgToken.pack_db.out_header[mac_id ].use_header = 0;
+       pgToken.pack_db.out_header[mac_id ].header[0] = new;
+       pgToken.pack_db.out_header[mac_id ].header_len[0] = pgToken.pack_db.header_len[ pgToken.pack_db.use_hdr ];
+       
+
+
+       for( i = 0; i < pgToken.pack_db.out_header[mac_id ].header_len[0]; i++ )
+          pgToken.pack_db.out_header[mac_id].header[0].val[i] = 
+            pgToken.pack_db.header[ pgToken.pack_db.use_hdr ].val[i];
+
+// NEW PACKET
+#ifdef MAC_SAT
+#else
+        packets = new pgToken.buf;
+#endif
+	TxToken.pgToken  = new pgToken;
+	TxToken.pgToken.exp_err  = PktGenConfig.err_pkt;
+
+        if(PktGenConfig.ecc_2biterr_line1)
+	  TxToken.pgToken.do_not_check  = do_not_check_packet || PktGenConfig.err_pkt;
+        else 
+	  TxToken.pgToken.do_not_check  = do_not_check_packet;
+
+	TxToken.pgToken.tx_dma_id  = id;
+	printf("Err DEBUG ID - %d Flag - %d \n",TxToken.pgToken.gId,do_not_check_packet);
+	printf("Err DEBUG ID - %d Flag - %d \n",TxToken.pgToken.gId,TxToken.pgToken.do_not_check);
+
+        printf("gen_pkts : value of exp_err %0d\n",TxToken.pgToken.exp_err);
+
+
+
+
+       printf("################## BEFORE HOSTPKT DISPLAY\n");
+   
+       if (get_plus_arg(CHECK,"TX_VERBOSE")) {
+         pack_gen[mac_id + 8].display_buf(packets,PktGenConfig.data_length);
+       }
+
+
+	if(tx_port_num == -1) {
+	  printf("ERROR- TxPort Not Bound for DMA Channel Id -%d \n",id);
+	} else {
+	  port_id = tx_port_num;
+         // Only for MAC loop back 
+	  TxToken.loop_back_rxdma_num =  PktGenConfig.loop_back_rxdma_num;
+	  TxToken.loop_back_rx_lastpacket =  PktGenConfig.loop_back_rx_lastpacket;
+	  generate_tokens(port_id,token,TxToken);
+	}
+
+	generate_packets = packets;
+
+}
+
+
+
+task DMAChannel::gen_txpacket(integer ii,TxPacketGenConfig PktGenConfig) {
+
+/*
+
+	ip_packets = generate_packet(config);
+
+	noofdescs = check_how_many_descriptors_for_this_packet;
+	for(i=0;i<noofdescs;i++) {
+	get_address();
+	write_packet_into_memory;
+	create_descriptors;
+	add_descriptors(r);
+	}
+	generate_tokens;
+	
+*/
+
+
+	TxPacketControlWord control_word;
+	CTxdescriptor desc;
+        bit[43:0] address;
+	integer noofdescs;
+	bit [13:0] pkt_length;
+        integer rem_pkt_length;
+	integer i;
+	byte_array packets;
+	bit [127:0] w;
+	byte_array ip_packets;
+        integer pkt_ptr;
+        integer last_pkt_ptr;
+        integer buf_sz;
+	bit [3:0] num_ptr;
+	bit [95:0] debug_mac_hdr_bits;
+        bit [39:0] phy_addr;
+        bit [39:0] desc_phy_addr;
+        bit [39:0] desc_v_addr;
+        bit [39:0] mbox_phy_addr;
+
+        integer pad;
+        integer mac_id;
+
+	integer pkt_page_id;
+        integer pageid = -1; // default to give random page_id
+        integer chksum_enb;
+        bit [15:0] partial_chk_sum;
+        bit[43:0] st_addr_4ka;
+        bit[43:0] end_addr_4ka;
+        integer done = 0;
+        integer offset16B = 0;
+
+	CTxToken TxToken;
+	
+	TxToken = new(); // Uninitialized
+
+	TxToken.dma_num = id;
+	TxToken.port_num  = tx_port_num;
+
+        pad = PktGenConfig.pad;
+        mac_id = PktGenConfig.mac_id;
+	pkt_length = PktGenConfig.data_length  + PktGenConfig.flow.frame.l2_pad_length - 4;
+
+	TxToken.pkt_length  = pkt_length + 2*pad;
+
+        // get the buffsize from command line
+
+	if (get_plus_arg (CHECK,"TX_BUFFSZ"))
+	   buf_sz = get_plus_arg(NUM,"TX_BUFFSZ");
+	else
+           buf_sz = 128;
+
+        // plus arg for a particular page_id
+
+         if (get_plus_arg (CHECK,"PAGE_ID"))
+            pageid = get_plus_arg(NUM,"PAGE_ID");
+
+         if (get_plus_arg (CHECK,"CHKSUM_ENB"))
+            chksum_enb = get_plus_arg(NUM,"CHKSUM_ENB");
+         else 
+            chksum_enb = 0;
+
+         if(pageid == 0) 
+            pkt_page_id = page0_id;
+         else if(pageid == 1) 
+            pkt_page_id = page1_id;
+         else {
+            // randomize the pageid
+            pkt_page_id = random()%2 ? page1_id : page0_id;
+         }
+            
+
+        // based on the gather mode do the following
+
+       // hack untill clean up happens to code below
+
+	if((PktGenConfig.gConfig_mode!=0) ) {
+	  gen_txGatherPackets( PktGenConfig,pkt_page_id  );
+        }  else {
+        
+
+        if(gather_mode || PktGenConfig.g_mode) {
+		noofdescs = (pkt_length + 16)%buf_sz ? 
+                            (pkt_length +16)/buf_sz + 1 :
+		            (pkt_length + 16)/buf_sz;
+	} else  noofdescs = 1;
+
+	printf("Num of desc used %d\n",noofdescs);
+
+        num_ptr = noofdescs;
+        TxToken.NoofGathers = noofdescs;
+
+	for(i=0;i<noofdescs;i++) {
+
+           done = 0;
+
+           if (get_plus_arg (CHECK, "USE_RANDOM_ADDRESS")) {
+             if(i==0) {
+	         address = SparseMem.get_address(1,pkt_page_id,16);//10Blocks -- 10*block_size = 5120B 
+             } else {
+	         address = SparseMem.get_address(1,pkt_page_id,64);//10Blocks -- 10*block_size = 5120B 
+             }
+	        // address = address + 9'h1ff - address[8:0] + 1;
+	 // To make this address 64byte aligned
+	   } else {
+		address = 44'h0_03456000 + ii*2048 + id*32'h10_0000 + i*buf_sz;
+	   }
+         TxToken.xlate_gather_address[i] = SparseMem.xlate_addr( address[39:0], pkt_page_id );
+
+
+	if(i==0) {
+	 if( get_plus_arg (CHECK,"ENABLE_MAC_HDR_DEBUG") ) {
+	   debug_mac_hdr_bits = gen_debug_header( address, desc_ring.ring_current_addr, pkt_length /*MORE FIELDS TO BE ADDED*/  );
+	   printf(" DEBUG - MAC_ HEADER - %x \n",debug_mac_hdr_bits);
+
+  	   PktGenConfig.flow.src_node.l2_addr = debug_mac_hdr_bits[47:0];
+  	   PktGenConfig.flow.dst_node.l2_addr = debug_mac_hdr_bits[95:48];
+	  }
+
+            // get the descriptor virtual & phy address
+            desc_v_addr = desc_ring.ring_start_addr + desc_ring.ring_current_addr;
+            desc_phy_addr = SparseMem.xlate_addr(desc_v_addr,desc_ring.ring_page_id,0);
+         
+            // get ohy address of the mailbox addr
+            mbox_phy_addr = SparseMem.xlate_addr(mailbox_addr,desc_ring.ring_page_id,0);
+          
+          // code to induce pkt_part_err (this is translation erro for pkt_address)
+          // if(PktGenConfig.error_info.hosterrors.packet_errors == PKT_PART_ERROR) 
+          if(PktGenConfig.err_code == PKT_PART_ERROR) {
+             address =  address ^ 44'hfff_ffff_ffff;
+             do_not_check_packet = 1;
+             TxToken.pgToken.do_not_check  = do_not_check_packet;
+             printf("Inducing PKT_PART_ERR\n");
+          } 
+        
+          
+	  TxToken.packet_start_address = address;
+          TxToken.descriptor_address = desc_ring.ring_current_addr;
+ 	  TxToken.xlate_desc_addr = desc_phy_addr;
+ 	  TxToken.xlate_mb_addr = mbox_phy_addr;
+
+          if(noofdescs == 1)
+             TxToken.last_descriptor_address = desc_ring.ring_current_addr;
+
+          TxToken.print();
+
+	  ip_packets = generate_packets(PktGenConfig,TxToken);
+          
+            // Check if TCP pkt
+            if((PktGenConfig.flow.frame.frame_class == CL_TCP) || (PktGenConfig.flow.frame.frame_class == CL_TCP_IP_V6) || (PktGenConfig.flow.frame.frame_class == CL_UDP) || (PktGenConfig.flow.frame.frame_class == CL_UDP_IP_V6)) {
+               stuff_psu_hdr_chksum(ip_packets,PktGenConfig);
+           }
+
+          // display the pseudo hdr stuffed buffer
+
+          // pack_gen[mac_id + 8].display_buf(ip_packets,PktGenConfig.data_length);
+	}
+
+         if(i==0) {
+		if(gather_mode || PktGenConfig.g_mode) {
+
+		control_word = new(i);
+
+                if(PktGenConfig.set_wrong_ctlwd)
+		  w = 128'h0;
+		else
+                  w = control_word.format_ctrl_word(PktGenConfig);
+
+		control_word.set_control_word(w);
+
+		pkt_ptr = 0;
+		 if((pkt_length + 16) <= buf_sz) {
+                   if(PktGenConfig.mark_bit)
+		     create_descriptor(desc,pkt_length + 16 + 2*pad ,address,num_ptr,1,1,pkt_page_id);
+                   else
+		     create_descriptor(desc,pkt_length + 16 + 2*pad ,address,num_ptr,1,0,pkt_page_id);
+
+		TxToken.gather_pkt_length[i] = desc.tr_len;
+		WriteTxControlWord(address,control_word,pkt_page_id);
+		address = address + 16 + pad*2; // 128 bits of internal packet_header
+		WritePackets(ip_packets,address,pkt_length,pkt_ptr,last_pkt_ptr,pkt_page_id);
+		 } else {
+                   if(PktGenConfig.mark_bit)
+		     create_descriptor(desc,buf_sz,address,num_ptr,1,1,pkt_page_id);
+                   else
+		     create_descriptor(desc,buf_sz,address,num_ptr,1,0,pkt_page_id);
+		TxToken.gather_pkt_length[i] = desc.tr_len;
+		WriteTxControlWord(address,control_word,pkt_page_id);
+		address = address + 16 + pad*2; // 128 bits of internal packet_header
+		WritePackets(ip_packets,address,(buf_sz-16),pkt_ptr,last_pkt_ptr,pkt_page_id);
+		rem_pkt_length = (pkt_length +16) - buf_sz;
+              }
+		desc_ring.add_descriptor(desc);
+		pkt_ptr = last_pkt_ptr;
+		} else {
+		 control_word = new(i);
+		 pkt_ptr = 0;
+	         w = control_word.format_ctrl_word(PktGenConfig);
+		 control_word.set_control_word(w);
+                   if(PktGenConfig.mark_bit)
+		     create_descriptor(desc,pkt_length + 16 + 2*pad ,address,num_ptr,1,1,pkt_page_id);
+                   else
+		     create_descriptor(desc,pkt_length + 16 + 2*pad ,address,num_ptr,1,0,pkt_page_id);
+		TxToken.gather_pkt_length[i] = desc.tr_len;
+		 WriteTxControlWord(address,control_word,pkt_page_id);
+		 address = address + 16 + pad*2;
+		 WritePackets(ip_packets,address,pkt_length,pkt_ptr,last_pkt_ptr,pkt_page_id);
+		 desc_ring.add_descriptor(desc);
+		 pkt_ptr = last_pkt_ptr;
+		 rem_pkt_length = 0;
+              }
+          } else {
+		if(rem_pkt_length <= buf_sz) {
+		  create_descriptor(desc,rem_pkt_length,address,num_ptr,0,0,pkt_page_id);
+		  TxToken.gather_pkt_length[i] = desc.tr_len;
+		  WritePackets(ip_packets,address,rem_pkt_length,pkt_ptr,last_pkt_ptr,pkt_page_id);
+		  rem_pkt_length = rem_pkt_length - buf_sz;
+                  // update the last descriptor address of the pkt 
+ 	          TxToken.last_descriptor_address = desc_ring.ring_current_addr;
+                  printf("last_desc of token %d is %h\n",TxToken.id,TxToken.last_descriptor_address);
+		  desc_ring.add_descriptor(desc);
+		  PktGenConfig.g_mode = 0;
+		} else {
+		  create_descriptor(desc,buf_sz,address,num_ptr,0,0,pkt_page_id);
+		  TxToken.gather_pkt_length[i] = desc.tr_len;
+		  WritePackets(ip_packets,address,buf_sz,pkt_ptr,last_pkt_ptr,pkt_page_id);
+		  rem_pkt_length = rem_pkt_length - buf_sz;
+		  desc_ring.add_descriptor(desc);
+                }
+		// printf("Remainder_pkt_len %d\n",rem_pkt_length);
+		pkt_ptr=last_pkt_ptr;
+          }
+		printf("Remainder_pkt_len %d\n",rem_pkt_length);
+
+     }
+
+  }// else for hack code
+}
+
+// New code for gather packet generation
+
+task DMAChannel::gen_txGatherPackets(TxPacketGenConfig PktGenConfig, (integer pkt_page_id=0)) {
+
+
+
+	TxPacketControlWord control_word;
+	CTxdescriptor desc;
+        bit[43:0] address;
+	integer noofdescs;
+	bit [13:0] pkt_length;
+        integer rem_pkt_length;
+	integer i;
+	byte_array packets;
+	bit [127:0] w;
+	byte_array ip_packets;
+        integer pkt_ptr;
+        integer last_pkt_ptr;
+        integer buf_sz;
+	bit [3:0] num_ptr;
+        bit [3:0] offset;
+	bit [95:0] debug_mac_hdr_bits;
+        integer pad;
+        bit[43:0] st_addr_4ka;
+
+
+	CTxToken TxToken;
+	
+	TxToken = new(); // Uninitialized
+
+	TxToken.dma_num = id;
+	TxToken.port_num  = tx_port_num;
+
+        pad = PktGenConfig.pad;
+	pkt_length = PktGenConfig.data_length + PktGenConfig.flow.frame.l2_pad_length  - 4;
+
+	TxToken.pkt_length  = pkt_length + 2*pad;
+
+
+	if(PktGenConfig.gConfig_mode == -1) {
+	  PktGenConfig.SetGatherFields();
+	  PktGenConfig.printGatherFields();
+        }
+        noofdescs = PktGenConfig.gConfig_noOfDesc;
+
+	printf("DMAChannel::gen_txGatherPackets Num of desc to beused %d\n",noofdescs);
+
+	// ifset in random mode, populate gConfig_length and gConfig_alignment fields
+
+
+        num_ptr = noofdescs;
+        TxToken.NoofGathers = noofdescs;
+	for(i=0;i<noofdescs;i++) {
+
+           if (get_plus_arg (CHECK, "USE_RANDOM_ADDRESS")) {
+             if(i==0)
+	        address = SparseMem.get_address(1,pkt_page_id,PktGenConfig.gConfig_alignment[i]);//10Blocks -- 10*block_size = 5120B 
+             else {
+                   if(PktGenConfig.gConfig_specific_alignment) {
+		    st_addr_4ka = SparseMem.get_address(2,pkt_page_id,4096); 
+                    address = st_addr_4ka + PktGenConfig.gConfig_specific_line*16 +PktGenConfig.gConfig_alignment[i];
+                   } else {
+
+	            address = SparseMem.get_address(1,pkt_page_id,PktGenConfig.gConfig_alignment[i]);//10Blocks -- 10*block_size = 5120B 
+                    offset = address[3:0];
+                    be_msg.print(e_mesg_info,"niu_tx_descp","gather_waddr_offset","BYTE_ADDR_OFFSET %0h\n",offset);
+                   }
+                  }
+                    
+	        // address = address + 9'h1ff - address[8:0] + 1;
+	 // To make this address 64byte aligned
+	   }
+
+         TxToken.xlate_gather_address[i] = SparseMem.xlate_addr( address[39:0], pkt_page_id );
+
+
+	if(i==0) {
+	 if( get_plus_arg (CHECK,"ENABLE_MAC_HDR_DEBUG") ) {
+	   debug_mac_hdr_bits = gen_debug_header( address, desc_ring.ring_current_addr, pkt_length /*MORE FIELDS TO BE ADDED*/  );
+	   printf(" DEBUG - MAC_ HEADER - %x \n",debug_mac_hdr_bits);
+
+  	   PktGenConfig.flow.src_node.l2_addr = debug_mac_hdr_bits[47:0];
+  	   PktGenConfig.flow.dst_node.l2_addr = debug_mac_hdr_bits[95:48];
+	  }
+
+	  TxToken.packet_start_address = address;
+ 	  TxToken.descriptor_address = desc_ring.ring_current_addr;
+          TxToken.print();
+	  ip_packets = generate_packets(PktGenConfig,TxToken);
+ 
+          if(noofdescs == 1)
+             TxToken.last_descriptor_address = desc_ring.ring_current_addr;
+
+          
+            // Check if TCP pkt
+            if((PktGenConfig.flow.frame.frame_class == CL_TCP) || (PktGenConfig.flow.frame.frame_class == CL_TCP_IP_V6) || (PktGenConfig.flow.frame.frame_class == CL_UDP) || (PktGenConfig.flow.frame.frame_class == CL_UDP_IP_V6)) {
+		stuff_psu_hdr_chksum(ip_packets,PktGenConfig);
+	   }
+
+	}
+
+         if(i==0) {
+		pkt_ptr = 0;
+		control_word = new(i);
+	        w = control_word.format_ctrl_word(PktGenConfig);
+		control_word.set_control_word(w);
+                if(PktGenConfig.mark_bit)
+		   create_descriptor(desc,PktGenConfig.gConfig_length[i] + 16 + 2*pad,address,num_ptr,1,1,pkt_page_id);
+                else
+		   create_descriptor(desc,PktGenConfig.gConfig_length[i] + 16 + 2*pad,address,num_ptr,1,0,pkt_page_id);
+		TxToken.gather_pkt_length[i] = desc.tr_len;
+		WriteTxControlWord(address,control_word,pkt_page_id);
+		address = address + 16 + 2*pad; // 128 bits of internal packet_header
+		WritePackets(ip_packets,address,PktGenConfig.gConfig_length[i],pkt_ptr,last_pkt_ptr,pkt_page_id);
+		desc_ring.add_descriptor(desc);
+		pkt_ptr = last_pkt_ptr;
+		
+          } else {
+		  create_descriptor(desc,PktGenConfig.gConfig_length[i],address,num_ptr,0,0,pkt_page_id);
+		  TxToken.gather_pkt_length[i] = desc.tr_len;
+		  WritePackets(ip_packets,address,PktGenConfig.gConfig_length[i],pkt_ptr,last_pkt_ptr,pkt_page_id);
+ 	          TxToken.last_descriptor_address = desc_ring.ring_current_addr;
+                  printf("last_desc of token %d is %h\n",TxToken.id,TxToken.last_descriptor_address);
+		  desc_ring.add_descriptor(desc);
+		  PktGenConfig.g_mode = 0;
+		  pkt_ptr=last_pkt_ptr;
+          }
+
+     }
+
+}
+
+
+//-- task to calulate partial checksum with zeros in the stuff field
+
+function bit[15:0] DMAChannel:: partial_cksum(byte_array ip_packets, TxPacketGenConfig PktGenConfig, integer
+index) {
+
+  integer i,j;
+  bit [16:0] chksum_tmp = 16'h0;
+  integer len;
+  integer l4_start;
+  bit [15:0] tmp_pchksum;
+  integer fclass;
+
+  fclass = PktGenConfig.flow.frame.frame_class;
+
+  if((fclass == CL_TCP) || (fclass == CL_TCP_IP_V6)) 
+    l4_start = index - 16; // this is because index points to the chksum bytes
+  else if((fclass == CL_UDP) || (fclass == CL_UDP_IP_V6))
+    l4_start = index - 6; // this is because index points to the chksum bytes
+
+  len = PktGenConfig.data_length + PktGenConfig.flow.frame.l2_pad_length  - 4;
+
+  ip_packets.val[index] = 8'h0;
+  ip_packets.val[index+1] = 8'h0;
+
+  printf("partial_cksum : index %0d\n",index);
+  printf("partial_cksum : l4_start %0d\n",l4_start);
+  printf("partial_cksum : len %0d\n",len);
+
+	for(i = l4_start; i < len ; i=i+2)
+	{
+            if(i == len - 1) {
+               chksum_tmp = chksum_tmp + {ip_packets.val[i],8'h0};
+               chksum_tmp = chksum_tmp + chksum_tmp[16];
+               chksum_tmp[16] = 1'b0;
+            } else {
+	       chksum_tmp = chksum_tmp + {ip_packets.val[i],ip_packets.val[i+1]};
+	       chksum_tmp = chksum_tmp + chksum_tmp[16];
+	       chksum_tmp[16] = 1'b0;
+            }
+	}
+
+   tmp_pchksum = chksum_tmp[15:0];
+
+   partial_cksum = ~({tmp_pchksum[7:0],tmp_pchksum[15:8]});
+
+}
+ 
+
+
+//-- task to stuff psuedo header checksum
+
+task DMAChannel:: stuff_psu_hdr_chksum(byte_array ip_packets, TxPacketGenConfig PktGenConfig)
+{
+
+  integer hdr_len = PktGenConfig.flow.frame.header_length;
+  integer index;
+  integer index_base;
+  bit ipver;
+  bit [15:0] full_chksum;
+  bit [15:0] tmp;
+
+  bit [15:0] partial_chksum;
+  bit [15:0] psd_hdr_chksum;
+  bit [15:0] inv_psd_hdr_chksum;
+
+  ipver = PktGenConfig.flow.frame.frame_type[3];
+  index_base = get_index_base(PktGenConfig); 
+
+  if(ipver == 1'b0) {
+      index = index_base + (hdr_len - 5)*4;
+  } else {
+      index = index_base;
+  }
+
+  full_chksum = {ip_packets.val[index+1],ip_packets.val[index]};
+
+  printf("stuff : full_cksum : value of full_chksum %0h\n",full_chksum);
+
+  partial_chksum = partial_cksum(ip_packets,PktGenConfig,index);
+
+  printf("stuff : partial_cksum : value of partial_chksum %0h\n",partial_chksum);
+
+  if(full_chksum > partial_chksum) 
+    psd_hdr_chksum = full_chksum - partial_chksum;
+  else { 
+    tmp = full_chksum - 1;
+    psd_hdr_chksum = {1'b1,tmp} - partial_chksum;
+  } 
+  
+  
+  printf("stuff : partial_cksum : value of psd_hdr_chksum %0h\n",psd_hdr_chksum);
+
+  inv_psd_hdr_chksum = ~psd_hdr_chksum;
+
+  printf("stuff : partial_cksum : value of inv_psd_hdr_chksum %0h\n",inv_psd_hdr_chksum);
+
+  ip_packets.val[index] = inv_psd_hdr_chksum[7:0];
+  ip_packets.val[index+1] = inv_psd_hdr_chksum[15:8];
+
+}
+
+//--- function to calculate the index base value
+
+function integer  DMAChannel:: get_index_base(TxPacketGenConfig PktGenConfig)
+{
+   integer base;
+   integer fclass;
+   bit vlan;
+   bit llc;
+   bit ipver;
+
+   ipver = PktGenConfig.flow.frame.frame_type[3];
+   vlan = PktGenConfig.flow.frame.frame_type[2];
+   llc = PktGenConfig.flow.frame.frame_type[0];
+   fclass = PktGenConfig.flow.frame.frame_class;
+
+   if(ipver == 1'b0) {
+    if(fclass == CL_TCP) {
+	case({llc,vlan}) {
+           2'b00 : base = 50;
+           2'b01 : base = 54;
+           2'b10 : base = 58;
+           2'b11 : base = 62;
+        }
+    } else if(fclass == CL_UDP) {
+	case({llc,vlan}) {
+           2'b00 : base = 40;
+           2'b01 : base = 44;
+           2'b10 : base = 48;
+           2'b11 : base = 52;
+        }
+     }
+   } else {
+    if(fclass == CL_TCP_IP_V6) {
+	case({llc,vlan}) {
+           2'b00 : base = 70;
+           2'b01 : base = 74;
+           2'b10 : base = 78;
+           2'b11 : base = 82;
+        }
+    } else if(fclass == CL_UDP_IP_V6) {
+	case({llc,vlan}) {
+           2'b00 : base = 60;
+           2'b01 : base = 64;
+           2'b10 : base = 68;
+           2'b11 : base = 72;
+        }
+     }
+  }
+     
+    get_index_base = base;
+}

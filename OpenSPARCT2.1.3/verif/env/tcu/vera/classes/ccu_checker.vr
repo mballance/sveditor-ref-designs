@@ -1,0 +1,1087 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ccu_checker.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "std_display_class.vrh"
+#include "ucb_top.vri"
+#include "ccu_top.vri"
+#include "ccu_clk_packet.vrh"
+#include "ccu_clks_states.vrh"
+
+class CCU_checker {
+  //--public vars to control this checker---
+  integer is_chk_iosync_loc;   // 0: not check; otherwise, check
+  integer is_chk_io2xsync_loc; // 0: not check; otherwise, check
+  integer is_chk_drsync_loc;   // 0: not check; otherwise, check
+  integer is_chk_syssync_loc;  // 0: not check; otherwise, check
+
+  //---ports and classes--
+  local CCU_clk_port    clk_port;      // each signal is a Vera CLOCK
+  local CCU_mon_port    mon_port;      // Vera clock is cmp_pll_clk
+  local CCU_clks_internal_port ccu_clks_internal_port;
+  local UCB_port        ucb_port;      // UCB interface signals (iol2clk)
+  local StandardDisplay dbg;           // Standard display for printing
+  local CCU_clks_states ccu_states;    // keep track expected values
+
+  //---vars---
+  local string  name;           // name of this object
+  local string  dispScope;      // for standard display
+  local integer verbose;        // 0: disable verbose mode; otherwise, enable
+  local integer error_cnt;      // Error count. Init to 0. WARN: become negative if exeed max integer
+  local integer max_error_printed; // not print error msg if (error_cnt > max_error_printed)
+  local integer max_debug_printed; // not print debug msg if (debug_cnt > max_debug_printed)
+  local integer running;        // 1: checker is running, 0: not running
+  local CCU_clk_packet clk_pkt; // expected values for clock parameters
+
+  //---expected locations of IO and IO2X sync pulses---
+  local integer cmp_io_sync_loc, io_cmp_sync_loc, io2x_sync_loc; // 0: core and IO/IO2X clks are aligned
+  local integer cmp_sys_sync_loc, sys_cmp_sync_loc; // 0: cmp_pll_clk and ccu_rst_sys_clk are aligned
+  local integer dr_sync_loc[4];    // locations of dr sync at CCU boundary
+  local integer total_stage_flops; // total staging flops from CCU output to flop input
+
+  //---event vars to control checkers---
+  local event stop_checker_e;  // triggered by stop_checker() to terminate start_checker()
+  local event stop_checking_e; // triggered by stop_checking() to terminate start_public()
+
+  //---public tasks---
+  task new(string name="CCU_checker", StandardDisplay dbg, CCU_clks_states ccu_states, integer start_it=0);
+  task start_checker();  // start the ccu checker
+  task stop_checker();   // stop the ccu checker
+  task start_clk_stretch_checker(); // start clk stretch checker
+
+  //---local subroutines---
+  local task start_checking();  // start checking
+  local task stop_checking();   // stop checking
+  local task check_clk_toggle(string clk_name);
+  local task check_clk_freq_pw(string clk_name);
+  local task check_io_io2x_sync_cnt_pw(string sync_name);
+  local task check_io_io2x_sync_loc(string sync_name);
+  local task check_sys_sync_cnt_pw(string sync_name);
+  local task check_sys_sync_loc(string sync_name);
+  local task check_dr_sync_toggle();
+  local task check_dr_sync_pw();
+  local task check_dr_sync_loc();
+
+  //---local tasks for clk stretch checker---
+  local task clk_stretch_checker();
+  local function integer clk_stretch_chkr_1clk(string clkname, bit st_phase_hi, integer st_delay, integer max_pw_dev, integer max_cycs, integer st_start_cyc);
+
+  //---supporting subroutines---
+  local task print_error_msg(integer err_cnt, string error_msg);
+  local task print_debug_msg(integer debug_cnt, string debug_msg);
+  local function integer is_outside_min_max(integer min_val, integer value, integer max_val);
+  local task compute_expected_dr_sync_loc();
+  local task show_dr_sync_loc();
+
+  //---one-line tasks----
+  function integer abs(integer n) { abs = (n >= 0)? n : n * -1; } // compute absolute value
+}
+
+//################################################################
+//######### implementation of subroutines              ###########
+//################################################################
+
+task CCU_checker::new(string name="ccu_checker", StandardDisplay dbg, CCU_clks_states ccu_states, integer start_it=0) {
+  integer i;
+
+  //---from arg list---
+  this.name = name;
+  this.dbg = dbg;
+  this.ccu_states = ccu_states;
+
+  //---control vars---
+  if (get_plus_arg(CHECK, "ccuChkr_chkIoIo2xDrSyncLoc")) {
+    this.is_chk_iosync_loc   = 1;
+    this.is_chk_io2xsync_loc = 1;
+    this.is_chk_drsync_loc   = 1;
+  }
+  else {  //default is NOT checking sync locations at CCU
+    this.is_chk_iosync_loc   = 0;
+    this.is_chk_io2xsync_loc = 0;
+    this.is_chk_drsync_loc   = 0;
+  }
+  if (get_plus_arg(CHECK, "ccuChkr_notChkSysSyncLoc"))
+    this.is_chk_syssync_loc  = 0; 
+  else
+    this.is_chk_syssync_loc  = 1;  // default is checking locations of sys sync pulses
+
+  //---others---
+  this.clk_port  = ccu_clk_bind;
+  this.mon_port  = ccu_mon_bind;
+  this.ccu_clks_internal_port = ccu_clks_internal_bind;
+  this.ucb_port  = ccu_ucb_mon_bind;
+  this.dispScope = this.name;
+  this.verbose = (get_plus_arg(CHECK, "ccuChkr_verbose"))? 1 : 0;
+  this.error_cnt = 0;
+  this.max_error_printed = 20;
+  this.max_debug_printed = 20;
+  this.running = 0;
+  this.clk_pkt = null;  // illegal value
+  this.total_stage_flops = 8; // 5 flops in GCT, 2 flops in cluster hdr, 1 after cluster hdr
+  for (i = 0; i < 4; i++)
+    this.dr_sync_loc[i] = -1; // illegal value.
+
+  //---sync locations----
+  this.cmp_io_sync_loc  = 3; // 3rd posedge of cmp_pll_clk after core and io clks aligned
+  this.io_cmp_sync_loc  = 1; // 1st posedge of cmp_pll_clk after core and io clks aligned
+  this.io2x_sync_loc    = 1; // 1st posedge of cmp_pll_clk after core and io2x clks aligned
+  this.cmp_sys_sync_loc = 1; // 1st posedge of cmp_pll_clk after cmp_pll_clk and ccu_rst_sys_clk aligned
+  this.sys_cmp_sync_loc = 1; // 1st posedge of cmp_pll_clk after cmp_pll_clk and ccu_rst_sys_clk aligned
+
+  //----override if runtime options specified---
+  if (get_plus_arg(CHECK, "ccuChkr_cmpiosync_loc="))
+    this.cmp_io_sync_loc = get_plus_arg(NUM, "ccuChkr_cmpiosync_loc=");
+  if (get_plus_arg(CHECK, "ccuChkr_iocmpsync_loc="))
+    this.io_cmp_sync_loc = get_plus_arg(NUM, "ccuChkr_iocmpsync_loc=");
+  if (get_plus_arg(CHECK, "ccuChkr_io2xsync_loc="))
+    this.io2x_sync_loc = get_plus_arg(NUM, "ccuChkr_io2xsync_loc=");
+  if (get_plus_arg(CHECK, "ccuChkr_maxError="))
+    this.max_error_printed = get_plus_arg(NUM, "ccuChkr_maxError=");
+
+  //---start background threads ---
+  if (start_it)
+    start_checker();
+}
+
+//=====================================================================
+// WHAT: start CCU checker
+//=====================================================================
+task CCU_checker::start_checker() {
+  reg bit_value;
+
+  if (running)
+    return; // already running
+  dbg.dispmon(this.dispScope, MON_INFO, "starts ...");
+  this.running = 1; // checker is running
+  fork {
+    fork {
+      while (1) {
+        bit_value = clk_port.$rst_ccu_ async;
+        if (bit_value !== 1'b1)
+          @(posedge clk_port.$rst_ccu_); // PLL is stable, so start checking
+        delay(3);     // avoid race condition with ccu_states.get_clk_pkt()
+        this.clk_pkt = ccu_states.get_exp_clk_pkt();
+        compute_expected_dr_sync_loc();
+        ccu_states.show_clk_pkt(this.clk_pkt);
+        this.show_dr_sync_loc();
+        start_checking();
+        @(negedge clk_port.$rst_ccu_pll_); // Reset PLL, so stop checking
+        stop_checking();
+      }
+    } join none
+    sync(ALL, this.stop_checker_e); // stop() triggers this event
+    terminate;
+    dbg.dispmon(this.dispScope, MON_INFO, "stopped");
+    this.running = 0; // checker is not running
+  } join none
+}
+
+//=====================================================================
+// WHAT: stop CCU checker (ie. terminate start_checker())
+//=====================================================================
+task CCU_checker::stop_checker() {
+  if (this.running)
+    trigger(this.stop_checker_e);  // this event terminates start_checker()
+}
+
+//=============================================================
+// Start to check
+//=============================================================
+task CCU_checker::start_checking() {
+
+  dbg.dispmon(this.dispScope, MON_INFO, "start checking ...");
+  fork {
+    fork
+    //-----cmp/dr/io/io2x clocks: check toggle, freq, pw---
+    {
+      check_clk_toggle("cmp_clk");
+    }
+    {
+      check_clk_freq_pw("cmp_clk");
+    }
+    {
+      @(posedge clk_port.$ccu_rst_sync_stable);
+      check_clk_toggle("dr_clk");
+    }
+    {
+      @(posedge clk_port.$ccu_rst_sync_stable);
+      check_clk_freq_pw("dr_clk");
+    }
+    {
+      @(posedge clk_port.$ccu_rst_sync_stable);
+      check_clk_toggle("io_out");
+    }
+    {
+      @(posedge clk_port.$ccu_rst_sync_stable);
+      check_clk_freq_pw("io_out");
+    }
+    {
+      @(posedge clk_port.$ccu_rst_sync_stable);
+      check_clk_toggle("io2x_out");
+    }
+    {
+      @(posedge clk_port.$ccu_rst_sync_stable);
+      check_clk_freq_pw("io2x_out");
+    }
+    //------ check IO sync and IO2X sync pulses --------
+    {
+      @(posedge clk_port.$ccu_rst_sync_stable);
+      check_io_io2x_sync_cnt_pw("cmp_io_sync_en");
+    }
+    {
+      @(posedge clk_port.$ccu_rst_sync_stable);
+      check_io_io2x_sync_cnt_pw("io_cmp_sync_en");
+    }
+    {
+      @(posedge clk_port.$ccu_rst_sync_stable);
+      check_io_io2x_sync_cnt_pw("io2x_sync_en");
+    }
+    {
+      if (this.is_chk_iosync_loc) {
+        @(posedge clk_port.$ccu_rst_sync_stable);
+        check_io_io2x_sync_loc("cmp_io_sync_en");
+      }
+      else
+        dbg.dispmon(this.dispScope, MON_ALWAYS, "warning: not checking cmp_io_sync_en locations");
+    }
+    {
+      if (this.is_chk_iosync_loc) {
+        @(posedge clk_port.$ccu_rst_sync_stable);
+        check_io_io2x_sync_loc("io_cmp_sync_en");
+      }
+      else
+        dbg.dispmon(this.dispScope, MON_ALWAYS, "warning: not checking io_cmp_sync_en locations");
+    }
+    {
+      if (this.is_chk_io2xsync_loc) {
+        @(posedge clk_port.$ccu_rst_sync_stable);
+        check_io_io2x_sync_loc("io2x_sync_en");
+      }
+      else
+        dbg.dispmon(this.dispScope, MON_ALWAYS, "warning: not checking io2x_sync_en locations");
+    }
+    //---- check SYS sync pulses ----
+    {
+      @(posedge clk_port.$ccu_rst_sync_stable);
+      check_sys_sync_cnt_pw("cmp_sys_sync_en");
+    }
+    {
+      @(posedge clk_port.$ccu_rst_sync_stable);
+      check_sys_sync_cnt_pw("sys_cmp_sync_en");
+    }
+    {
+      if (this.is_chk_syssync_loc) {
+        @(posedge clk_port.$ccu_rst_sync_stable);
+        check_sys_sync_loc("cmp_sys_sync_en");
+      }
+      else
+        dbg.dispmon(this.dispScope, MON_ALWAYS, "warning: not checking cmp_sys_sync_en locations");
+    }
+    {
+      if (this.is_chk_syssync_loc) {
+        @(posedge clk_port.$ccu_rst_sync_stable);
+        check_sys_sync_loc("sys_cmp_sync_en");
+      }
+      else
+        dbg.dispmon(this.dispScope, MON_ALWAYS, "warning: not checking sys_cmp_sync_en locations");
+    }
+    //----- check DR sync pulses -----
+    {
+      @(posedge clk_port.$ccu_rst_sync_stable);
+      check_dr_sync_toggle();
+    }
+    {
+      @(posedge clk_port.$ccu_rst_sync_stable);
+      check_dr_sync_pw();
+    }
+    {
+      if (this.is_chk_drsync_loc) {
+        @(posedge clk_port.$ccu_rst_sync_stable);
+        check_dr_sync_loc();
+      }
+      else
+        dbg.dispmon(this.dispScope, MON_ALWAYS, "warning: not checking dr_sync_en locations");
+    }
+    join none
+    sync(ALL, this.stop_checking_e); // stop_checking() triggers this event
+    terminate;
+    dbg.dispmon(this.dispScope, MON_INFO, "checking stopped");
+  } join none
+}
+
+//=============================================================
+//
+//=============================================================
+task CCU_checker::stop_checking() {
+  trigger(this.stop_checking_e);  // this event terminates start_checking()
+}
+
+//=============================================================
+// WHAT: Check the specified clock for toggling.
+// ARGs: clk_name: "cmp_clk", "dr_clk", "io_out" or "io2x_out"
+//=============================================================
+task CCU_checker::check_clk_toggle(string clk_name) {
+  string golden_clk; // golden clock to use for checking other clock
+  integer num_golden_clks;
+  integer old_cyc, new_cyc, ncycs, exp_min_ncycs, exp_max_ncycs;
+  integer err_cnt = 0, debug_cnt=0;
+
+  case (clk_name) {
+    "cmp_clk": {
+       golden_clk = "sys_clk";
+       num_golden_clks = 1;
+       exp_min_ncycs = this.clk_pkt.cmp_mult - 1; // '-1' : account sys and cmp clk edges are PERFECTLY aligned
+       exp_max_ncycs = this.clk_pkt.cmp_mult + 1; // '+1' : account sys and cmp clk edges are PERFECTLY aligned
+       @(posedge clk_port.$sys_clk);
+       old_cyc = get_cycle(clk_port.$cmp_pll_clk);
+    }
+    "dr_clk": {
+       golden_clk = "sys_clk";
+       num_golden_clks = 2;
+       exp_min_ncycs = (this.clk_pkt.dr_mult  * 2) - 1; // '-1' : account sys and dr clk edges are PERFECTLY aligned
+       exp_max_ncycs = (this.clk_pkt.dr_mult  * 2) + 1; // '+1' : account sys and dr clk edges are PERFECTLY aligned
+       @(posedge clk_port.$sys_clk);                    // in DTM mode, dr-to-sys clk ratio is 1:1, so use 2 sys clk cycles
+       old_cyc = get_cycle(clk_port.$dr_pll_clk);
+    }
+    "io_out": {
+       golden_clk = "cmp_pll_clk";
+       num_golden_clks = this.clk_pkt.cmp2io_ratio;
+       exp_min_ncycs = 1;
+       exp_max_ncycs = 1;
+       @(posedge clk_port.$cmp_pll_clk);
+       old_cyc = get_cycle(clk_port.$ccu_io_out);
+    }
+    "io2x_out": {
+       golden_clk = "cmp_pll_clk";
+       num_golden_clks = this.clk_pkt.cmp2io2x_ratio;
+       exp_min_ncycs = 1;
+       exp_max_ncycs = 1;
+       @(posedge clk_port.$cmp_pll_clk);
+       old_cyc = get_cycle(clk_port.$ccu_io2x_out);
+    }
+    default: {
+      dbg.dispmon(this.dispScope, MON_ERR, psprintf("CCU_checker::check_clk_toggle(%s) <= bad arg", clk_name));
+      this.error_cnt++;
+      return; // ignore
+    }
+  }
+  while (1) {
+    case (clk_name) {
+      "cmp_clk": {
+         repeat (num_golden_clks) @(posedge clk_port.$sys_clk);
+         new_cyc = get_cycle(clk_port.$cmp_pll_clk);
+      }
+      "dr_clk": {
+         repeat (num_golden_clks) @(posedge clk_port.$sys_clk);
+         new_cyc = get_cycle(clk_port.$dr_pll_clk);
+      }
+      "io_out": {
+         repeat (num_golden_clks) @(posedge clk_port.$cmp_pll_clk);
+         new_cyc = get_cycle(clk_port.$ccu_io_out);
+      }
+      "io2x_out": {
+         repeat (num_golden_clks) @(posedge clk_port.$cmp_pll_clk);
+         new_cyc = get_cycle(clk_port.$ccu_io2x_out);
+      }
+    }
+    ncycs = new_cyc - old_cyc;
+    if (is_outside_min_max(exp_min_ncycs, ncycs, exp_max_ncycs))
+      print_error_msg(err_cnt++, psprintf("number %s pulses in %0d %s is %0d. Expect: %0d to %0d",
+        clk_name, num_golden_clks, golden_clk, ncycs, exp_min_ncycs, exp_max_ncycs));
+    else if (this.verbose)
+      print_debug_msg(debug_cnt++, psprintf("number %s pulses in %0d %s is %0d. Expect: %0d to %0d",
+        clk_name, num_golden_clks, golden_clk, ncycs, exp_min_ncycs, exp_max_ncycs));
+    old_cyc = new_cyc;
+  }
+}
+
+//=============================================================
+// WHAT: Check freq and pulse width of the specified clk
+// ARGs: clk_name: "cmp_clk", "dr_clk", "io_out" or "io2x_out"
+// ASSUMPTION: checking that the specified clk toggles has been done.
+//=============================================================
+task CCU_checker::check_clk_freq_pw(string clk_name) {
+  integer pw_dev; // deviation in clk pw
+  integer per, per_min, per_max;                // clk period
+  integer pw_hi, pw_lo, pw_nom, pw_min, pw_max; // pulse width
+  integer clk_posedge, clk_negedge;
+  integer nom_4_min, nom_4_max; // nominal for min and max to minimize Vera rounding effect
+  integer per_error_cnt=0, pw_error_cnt=0; // error in period or pulse width
+  integer debug_cnt = 0;
+
+  case (clk_name)  {
+    "cmp_clk": {
+       per_min = this.clk_pkt.cmp_clk_per_min;
+       per_max = this.clk_pkt.cmp_clk_per_max;
+       pw_dev  = this.clk_pkt.cmp_pw_dev;
+       @(posedge clk_port.$cmp_pll_clk);
+    }
+    "dr_clk": {
+       per_min = this.clk_pkt.dr_clk_per_min;
+       per_max = this.clk_pkt.dr_clk_per_max;
+       pw_dev  = this.clk_pkt.dr_pw_dev;
+       @(posedge clk_port.$dr_pll_clk);
+    }
+    "io_out": {
+       per_min = this.clk_pkt.io_out_per_min;
+       per_max = this.clk_pkt.io_out_per_max;
+       pw_dev  = this.clk_pkt.iox_pw_dev;
+       @(posedge clk_port.$ccu_io_out);
+    }
+    "io2x_out": {
+       per_min = this.clk_pkt.io2x_out_per_min;
+       per_max = this.clk_pkt.io2x_out_per_max;
+       pw_dev  = this.clk_pkt.iox_pw_dev;
+       @(posedge clk_port.$ccu_io2x_out);
+    }
+    default: {
+      dbg.dispmon(this.dispScope, MON_ERR, psprintf("CCU_checker::check_clk_freq_pw(%s) <= bad arg", clk_name));
+      this.error_cnt++;
+      return; // ignore
+    }
+  }
+  clk_posedge = get_time(LO);
+  while (1) {
+    case (clk_name)  {
+      "cmp_clk":  @(negedge clk_port.$cmp_pll_clk);
+      "dr_clk":   @(negedge clk_port.$dr_pll_clk);
+      "io_out":   @(negedge clk_port.$ccu_io_out);
+      "io2x_out": @(negedge clk_port.$ccu_io2x_out);
+    }
+    clk_negedge = get_time(LO);
+    pw_hi = clk_negedge - clk_posedge;
+    case (clk_name)  {
+      "cmp_clk":  @(posedge clk_port.$cmp_pll_clk);
+      "dr_clk":   @(posedge clk_port.$dr_pll_clk);
+      "io_out":   @(posedge clk_port.$ccu_io_out);
+      "io2x_out": @(posedge clk_port.$ccu_io2x_out);
+    }
+    clk_posedge = get_time(LO);
+    pw_lo = clk_posedge - clk_negedge;
+    per = pw_hi + pw_lo;
+    //---check---
+    if (is_outside_min_max(per_min, per, per_max))
+      print_error_msg(per_error_cnt++,  psprintf("%s period: %0d, expect: min=%0d, max=%0d", clk_name, per, per_min, per_max));
+    pw_nom = per / 2; // 50% duty cycle
+    nom_4_min = pw_nom - 1;  // rounding down to account vera integer division
+    nom_4_max = pw_nom + 1;  // rounding up to account vera integer division
+    pw_min = nom_4_min - (((per / 100) + 1) *  pw_dev); // +1: account vera integer division
+    pw_max = nom_4_max + (((per / 100) + 1) *  pw_dev); // +1: account vera integer division
+    if (is_outside_min_max(pw_min, pw_hi, pw_max) || is_outside_min_max(pw_min, pw_lo, pw_max))
+      print_error_msg(pw_error_cnt++, psprintf("%s pulse width: pw_hi=%0d, pw_lo=%0d, expect: min=%0d, max=%0d", 
+        clk_name, pw_hi, pw_lo, pw_min, pw_max));
+    else if (this.verbose)
+      print_debug_msg(debug_cnt++,  psprintf("%s per: %0d, expect: min=%0d, max=%0d. pw_hi=%0d, pw_lo=%0d. Expect: min=%0d, max=%0d",
+        clk_name, per, per_min, per_max, pw_hi, pw_lo, pw_min, pw_max));
+  }
+}
+
+//=============================================================
+// WHAT: check io_sync_en and io2x_sync_en
+//    -Sync pulse width is one cmp clk.
+//    -One sync pulse for each slow clock
+// ARGs: sync_name must be "cmp_io_sync_en", "io_cmp_sync_en" or "io2x_sync_en"
+//=============================================================
+task CCU_checker::check_io_io2x_sync_cnt_pw(string sync_name) {
+  integer cmp2slow_clk_ratio;  // cmp-to-slow clk ratio
+  integer num_cycs_sync_low;   // number of cmp clks when sync pulse is low
+  integer first_sync_timeout;  // timeout if not seen 1st sync
+  integer got_1st_sync=0;      // set to 1 when detect first sync pulse
+  integer err_lo_cnt=0, err_hi_cnt=0, debug_cnt=0; // error/debug counts of sync are low and high
+  bit sync_val;                // value of sync_en signal
+  integer i;
+
+  case (sync_name) {
+    "io2x_sync_en": cmp2slow_clk_ratio = this.clk_pkt.cmp2io2x_ratio;
+    "cmp_io_sync_en", "io_cmp_sync_en": cmp2slow_clk_ratio = this.clk_pkt.cmp2io_ratio;
+    default: {
+      dbg.dispmon(this.dispScope, MON_ERR, psprintf("CCU_checker::check_io_io2x_sync_cnt_pw(%s) <= bad arg", sync_name));
+      this.error_cnt++;
+      return; // ignore
+    }
+  }
+  num_cycs_sync_low = cmp2slow_clk_ratio - 1;
+  first_sync_timeout = cmp2slow_clk_ratio + 3; // sync pulse should be stable when ccu_rst_sync_stable asserted
+  //---ensure 1st sync pulse occurs within time limit---
+  fork {
+    repeat (first_sync_timeout) @(posedge clk_port.$cmp_pll_clk);
+    if (got_1st_sync == 0)
+      dbg.dispmon(this.dispScope, MON_ERR, psprintf("not seen first %s in %0d cmp_pll_clk cycles", sync_name, first_sync_timeout));
+  } join none
+  //---wait for 1st sync pulse---
+  case (sync_name) {
+    "cmp_io_sync_en": @(posedge mon_port.$ccu_cmp_io_sync_en); // WARN: mon_port, not clk_port.
+    "io_cmp_sync_en": @(posedge mon_port.$ccu_io_cmp_sync_en); // WARN: mon_port, not clk_port.
+    "io2x_sync_en":   @(posedge mon_port.$ccu_io2x_sync_en);   // WARN: mon_port, not clk_port.
+  }
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("first %s sync pulse used as ref data point", sync_name));
+  got_1st_sync = 1;
+  //---check sync pulse ---
+  while (1) {
+    for (i = 0; i < num_cycs_sync_low; i++) {
+      @(posedge mon_port.$cmp_pll_clk);  // WARN: mon_port
+      case (sync_name) {
+        "cmp_io_sync_en": sync_val = mon_port.$ccu_cmp_io_sync_en;
+        "io_cmp_sync_en": sync_val = mon_port.$ccu_io_cmp_sync_en;
+        "io2x_sync_en":   sync_val = mon_port.$ccu_io2x_sync_en;
+      }
+      if (sync_val !== 1'b0) 
+        print_error_msg(err_lo_cnt++, psprintf("%s should be low, but not", sync_name));
+    }
+    @(posedge mon_port.$cmp_pll_clk);  // WARN: mon_port
+    case (sync_name) {
+      "cmp_io_sync_en": sync_val = mon_port.$ccu_cmp_io_sync_en;
+      "io_cmp_sync_en": sync_val = mon_port.$ccu_io_cmp_sync_en;
+      "io2x_sync_en":   sync_val = mon_port.$ccu_io2x_sync_en;
+    }
+    if (sync_val !== 1'b1)
+      print_error_msg(err_hi_cnt++, psprintf("%s should be high, but not", sync_name));
+    else if (this.verbose)
+      print_debug_msg(debug_cnt++, psprintf("%s is %b. Expect: high", sync_name, sync_val));
+  }
+}
+
+//=============================================================
+// WHAT: check location of IO or IO2X sync pulse
+// ARGs: sync_name must be "cmp_io_sync_en", "io_cmp_sync_en" or "io2x_sync_en"
+// WARNING: since this checker, by default, does NOT check locations of io/io2x/dr
+//    sync pulses, so this task is NOT maintained and may be out of date.
+//=============================================================
+task CCU_checker::check_io_io2x_sync_loc(string sync_name) {
+  integer num_core_clks;
+  bit sync_val;
+
+  //--- sanity check: this task is NOT maintained ---
+  dbg.dispmon(this.dispScope, MON_ERR, "ccu_checker::check_io_io2x_sync_loc() is NOT maintained. Do NOT used it");
+
+  //---go to posedge of io_out or io2x_out---
+  case (sync_name) {
+    "cmp_io_sync_en": {
+       num_core_clks = cmp_io_sync_loc;
+       @(posedge  mon_port.$ccu_cmp_io_sync_en);
+       @(posedge clk_port.$ccu_io_out);
+    }
+    "io_cmp_sync_en": {
+       num_core_clks = io_cmp_sync_loc;
+       @(posedge  mon_port.$ccu_io_cmp_sync_en);
+       @(posedge clk_port.$ccu_io_out);
+    }
+    "io2x_sync_en": {
+       num_core_clks = io2x_sync_loc;
+       @(posedge  mon_port.$ccu_io2x_sync_en);
+       @(posedge clk_port.$ccu_io2x_out);
+    }
+    default: {
+      dbg.dispmon(this.dispScope, MON_ERR, psprintf("CCU_checker::check_io_io2x_sync_loc(sync_name=%s) <= bad arg", sync_name));
+      return; // ignore
+    }
+  }
+  //---find cmp clk edge where it's aligned with io/io2x_out clk---
+  @(negedge clk_port.$cmp_pll_clk);
+  repeat (num_core_clks) @(posedge clk_port.$cmp_pll_clk);
+  //---check sync pulse location only once---
+  case (sync_name) {
+    "cmp_io_sync_en": sync_val = mon_port.$ccu_cmp_io_sync_en; // WARN: mon_port, not clk_port.
+    "io_cmp_sync_en": sync_val = mon_port.$ccu_io_cmp_sync_en; // WARN: mon_port, not clk_port.
+    "io2x_sync_en":   sync_val = mon_port.$ccu_io2x_sync_en;   // WARN: mon_port, not clk_port.
+  }
+  if (sync_val !== 1'b1)
+    dbg.dispmon(this.dispScope, MON_ERR, psprintf("location of %s : expect high, but it is not", sync_name));
+}
+
+//=============================================================
+// WHAT: check cmp_sys_sync_en and sys_cmp_sync_en
+//    -Sync pulse width is one cmp clk.
+//    -One sync pulse for every ref_clk cycle
+// ARGs: sync_name must be "cmp_sys_sync_en" or "sys_cmp_sync_en"
+// NOTE: there is one sys sync pulse for every ref clk cycle. The number
+//    of cmp clk cycles in one ref clk cycles is equal to div2_effective.
+//=============================================================
+task CCU_checker::check_sys_sync_cnt_pw(string sync_name) {
+  integer div2_eff = this.clk_pkt.pll_ctl[CCU__PLL_CTL__PLL_DIV2__MSB : CCU__PLL_CTL__PLL_DIV2__POS] + 1;
+  integer first_sync_timeout;  // timeout (in sys clk cycs) if not seen 1st sync
+  integer got_1st_sync=0;      // set to 1 when detect first sync pulse
+  integer num_cycs_sync_low;   // number of cmp clks when sync pulse is low
+  integer err_lo_cnt=0, err_hi_cnt=0, debug_cnt=0; // error/debug counts of sync are low and high
+  bit sync_val;                // value of sync_en signal
+  integer i;
+
+  first_sync_timeout = 4 + 1;
+  num_cycs_sync_low = div2_eff - 1;
+  //---ensure 1st sync pulse occurs within time limit---
+  fork {
+    repeat (first_sync_timeout) @(posedge  clk_port.$sys_clk);
+    if (got_1st_sync == 0)
+      dbg.dispmon(this.dispScope, MON_ERR, psprintf("not seen first %s in %0d sys clk cycles", sync_name, first_sync_timeout));
+  } join none
+  //---wait for 1st sync pulse---
+  case (sync_name) {
+    "cmp_sys_sync_en":  @(posedge mon_port.$ccu_cmp_sys_sync_en);
+    "sys_cmp_sync_en":  @(posedge mon_port.$ccu_sys_cmp_sync_en);
+    default: {
+      dbg.dispmon(this.dispScope, MON_ERR, psprintf("CCU_checker::check_sys_sync_cnt_pw(%s) <= bad arg", sync_name));
+      this.error_cnt++;
+      return; // ignore
+    }
+  }
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("first %s sync pulse used as ref data point", sync_name));
+  got_1st_sync = 1;
+  //---check---
+  while (1) {
+    for (i = 0; i < num_cycs_sync_low; i++) {
+      @(posedge mon_port.$cmp_pll_clk);  // WARN: mon_port
+      case (sync_name) {
+        "cmp_sys_sync_en": sync_val = mon_port.$ccu_cmp_sys_sync_en;
+        "sys_cmp_sync_en": sync_val = mon_port.$ccu_sys_cmp_sync_en;
+      }
+      if (sync_val !== 1'b0) 
+        print_error_msg(err_lo_cnt++, psprintf("%s should be low, but not", sync_name));
+    }
+    @(posedge mon_port.$cmp_pll_clk);  // WARN: mon_port
+    case (sync_name) {
+      "cmp_sys_sync_en": sync_val = mon_port.$ccu_cmp_sys_sync_en;
+      "sys_cmp_sync_en": sync_val = mon_port.$ccu_sys_cmp_sync_en;
+    }
+    if (sync_val !== 1'b1)
+      print_error_msg(err_hi_cnt++, psprintf("%s should be high, but not", sync_name));
+    else if (this.verbose)
+      print_debug_msg(debug_cnt++, psprintf("%s is %b. Expect: high", sync_name, sync_val));
+  }
+}
+
+//=============================================================
+// WHAT: check location of sys sync sync pulses at ccu boundary and inside RST block.
+// ARGs: sync_name must be "cmp_sys_sync_en" or "sys_cmp_sync_en"
+// NOTE: locations of cmp_sys and sys_cmp sync pulses are at phase 0.
+//       RST flops them twice with l2clk, so they should be at phase 2
+//       inside RST block.
+//=============================================================
+task CCU_checker::check_sys_sync_loc(string sync_name) {
+  integer i, debug_cnt=0;
+  integer refclk_posedge, sync_is_high, cmp_clk_per;
+  integer max_clks_skew; // max skew allowed between ccu.ref_clk and ccu.cmp_pll_clk
+  bit rst_sync_val, rst_sync_nchecks; // for checking sys sync inside RST blk
+
+  @(posedge clk_port.$cmp_pll_clk);
+  cmp_clk_per = get_time(LO);
+  @(posedge clk_port.$cmp_pll_clk);
+  cmp_clk_per = get_time(LO) - cmp_clk_per;
+  max_clks_skew = cmp_clk_per / 8;
+
+  //--- check sys sync pulses inside the RST block ---
+  rst_sync_nchecks = 0;
+  fork {
+    while (1) {
+      case (sync_name) { 
+        "cmp_sys_sync_en": @(posedge mon_port.$ccu_cmp_sys_sync_en); // sys sync is high at CCU boundary
+        "sys_cmp_sync_en": @(posedge mon_port.$ccu_sys_cmp_sync_en); // sys sync is high at CCU boundary
+      }
+      @(negedge clk_port.$cmp_pll_clk); // avoid the skew between ccu.cmp_pll_clk and rst.l2clk
+      repeat (2) @(posedge ccu_clks_internal_port.$l2clk); // RST flops sys sync pulse twice
+      case (sync_name) {
+        "cmp_sys_sync_en": rst_sync_val = ccu_clks_internal_port.$rst_ccu_cmp_sys_sync_en3;
+        "sys_cmp_sync_en": rst_sync_val = ccu_clks_internal_port.$rst_ccu_sys_cmp_sync_en3;
+      }
+      if (rst_sync_val !== 1'b1)
+        dbg.dispmon(this.dispScope, MON_ERR, psprintf("check sys sync location: rst.rst_%s%s is %b, expect: high", sync_name, 3, rst_sync_val));
+      rst_sync_nchecks++;
+      if (rst_sync_nchecks > 5) break;
+    }
+  } join none
+  //---check sys sync location---
+  for (i = 0; i < 5; i++) {  // check few times is enough since check_sys_sync_cnt_pw() checks sync pulse spacing/count.
+    //---check ccu_cmp_sys_en or ccu_sys_cmp_sync_en---
+    fork {
+      @(posedge clk_port.$ref_clk);
+      refclk_posedge = get_time(LO);
+    }
+    {
+      case (sync_name) {
+        "cmp_sys_sync_en": @(posedge mon_port.$ccu_cmp_sys_sync_en);
+        "sys_cmp_sync_en": @(posedge mon_port.$ccu_sys_cmp_sync_en);
+      }
+      sync_is_high = get_time(LO);
+      if (this.verbose)
+        print_debug_msg(debug_cnt++, psprintf("check sys sync location: %s is high", sync_name));
+    } join
+    if (abs(refclk_posedge - sync_is_high) > max_clks_skew)
+      dbg.dispmon(this.dispScope, MON_ERR, psprintf("check sys sync location: ref_clk_posedge=%0d, %s high at %0d <= not correct location",
+        refclk_posedge, sync_name, sync_is_high));
+  }
+}
+
+//=============================================================
+// WHAT: check dr_sync_en toggling
+//=============================================================
+task CCU_checker::check_dr_sync_toggle() {
+  integer old_cyc, new_cyc, temp_cyc, sync_cnts;
+  integer err_cnt=0;
+
+  @(posedge clk_port.$dr_pll_clk);
+  old_cyc = get_cycle(clk_port.$ccu_dr_sync_en);
+  while (1) {
+    @(posedge clk_port.$dr_pll_clk);
+    temp_cyc = get_cycle(clk_port.$ccu_dr_sync_en);
+    @(negedge clk_port.$cmp_pll_clk); // account the case of dr_pll_clk and cmp_pll_clk are PERFECTLY aligned
+    new_cyc = get_cycle(clk_port.$ccu_dr_sync_en);
+    sync_cnts = new_cyc - old_cyc;
+    if ((sync_cnts < 1) || (sync_cnts > 2))
+      print_error_msg(err_cnt++, psprintf("number of dr_sync pulses in 1 DR clk cyc + 0.5 cmp clk cycle: %0d. Expect: 1 or 2", sync_cnts));
+    old_cyc = temp_cyc;
+  }
+}
+
+//=============================================================
+// WHAT: check pulse width of dr_sync_en
+//=============================================================
+task CCU_checker::check_dr_sync_pw() {
+  bit sync_val;
+  integer err_cnt=0;
+
+  while (1) {
+    @(posedge mon_port.$ccu_dr_sync_en);
+    @(posedge mon_port.$cmp_pll_clk);
+    sync_val = mon_port.$ccu_dr_sync_en;
+    if (sync_val !== 1'b0)
+      print_error_msg(err_cnt++, psprintf("dr_sync_en is high for more than 1 cmp_clk cycles"));
+  }
+}
+
+//=============================================================
+// WHAT: check locations of dr_sync_en at CCU boundary.
+//       This indirectly check DR sync pulse is one cmp clk.
+//=============================================================
+task CCU_checker::check_dr_sync_loc() {
+  integer div2_eff = this.clk_pkt.pll_ctl[CCU__PLL_CTL__PLL_DIV2__MSB : CCU__PLL_CTL__PLL_DIV2__POS] + 1;
+  integer phase_num; // phase number: 0, 1, .., div2_eff. 0 when clks are aligned
+  bit dr_sync_val, expected_dr_sync_val;
+  integer err_cnt=0, debug_cnt=0;
+
+  dbg.dispmon(this.dispScope, MON_ERR, "CCU_checker::check_dr_sync_loc() is NOT maintained. Do NOT used it");
+
+  //---find first phase---
+  @(posedge mon_port.$ccu_vco_aligned); // note: vco_aligned is generated 1 clk earlier
+  @(posedge clk_port.$cmp_pll_clk);     // this is real VCO aligned
+  phase_num = 0;                        // first clock phase
+  //--- checking DR sync location---
+  while (1) {
+    dr_sync_val = mon_port.$ccu_dr_sync_en;
+    if ((phase_num == this.dr_sync_loc[0]) || (phase_num == this.dr_sync_loc[1])
+       || (phase_num == this.dr_sync_loc[2]) || (phase_num == this.dr_sync_loc[3]))
+      expected_dr_sync_val = 1'b1;
+    else
+      expected_dr_sync_val = 1'b0;
+   if (dr_sync_val != expected_dr_sync_val)
+      print_error_msg(err_cnt++, psprintf("ccu_dr_sync_en=%b, expect: %b", dr_sync_val, expected_dr_sync_val));
+   if (this.verbose)
+      print_debug_msg(debug_cnt++, psprintf("ccu_dr_sync_en=%b, expect: %b", dr_sync_val, expected_dr_sync_val));
+    @(posedge clk_port.$cmp_pll_clk);     // this is real VCO aligned
+    phase_num++;
+    if (phase_num == div2_eff)
+      phase_num = 0;
+  }
+}
+
+//########################################################################
+//########################################################################
+//####### supporting subroutines                             #############
+//########################################################################
+//########################################################################
+
+//=============================================================
+// WHAT: print error message
+// NOTE:
+//   err_cnt is local error count of a particular error type.
+//   this.error_cnt is global error count of this vera class.
+//=============================================================
+task CCU_checker::print_error_msg(integer err_cnt, string error_msg) {
+  if (err_cnt <= this.max_error_printed)
+    dbg.dispmon(this.dispScope, MON_ERR, error_msg);
+  this.error_cnt++; // increment global error count
+}
+
+//=============================================================
+// WHAT: print messages for debug
+//=============================================================
+task CCU_checker::print_debug_msg(integer debug_cnt, string debug_msg) {
+  if (debug_cnt <= max_debug_printed)
+    dbg.dispmon(this.dispScope, MON_ALWAYS, debug_msg);
+}
+
+//=============================================================
+// Return 1 if value is outside min and max; otherwise, return 0.
+//=============================================================
+function integer CCU_checker::is_outside_min_max(integer min_val, integer value, integer max_val) {
+  is_outside_min_max =  ((value < min_val) || (value > max_val))? 1 : 0;
+}
+
+//=============================================================
+// WHAT: compute expected locations of DR sync at CCU boundary
+//=============================================================
+task CCU_checker::compute_expected_dr_sync_loc() {
+ integer div2_effective = this.clk_pkt.pll_ctl[CCU__PLL_CTL__PLL_DIV2__MSB : CCU__PLL_CTL__PLL_DIV2__POS] + 1;
+ integer i;
+  for (i = 0; i < 4; i++) {
+    this.dr_sync_loc[i] = this.clk_pkt.dr_sync_loc[i] - this.total_stage_flops; // back track from flop header
+    if (this.dr_sync_loc[i] < 0)  // cross ref_clk boundary to previous ref_clk cycle
+      this.dr_sync_loc[i] = this.dr_sync_loc[i] + div2_effective;
+  }
+}
+
+//=============================================================
+// WHAT: show expected DR sync locations at CCU boundary
+//=============================================================
+task CCU_checker::show_dr_sync_loc() {
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("Expected DR sync locations at CCU output: %0d, %0d, %0d and %0d",
+    this.dr_sync_loc[0], this.dr_sync_loc[1], this.dr_sync_loc[2], this.dr_sync_loc[3]));
+}
+
+//########################################################################
+//########################################################################
+//####### tasks for clk stretch monitor/checker              #############
+//########################################################################
+//########################################################################
+
+//=============================================================
+// WHAT: clock stretch checker: public/wrapper task
+// USAGE: diag should call this task before TCU initiates clk stretch (ie. assert tcu_ccu_clk_stretch)
+//=============================================================
+task CCU_checker::start_clk_stretch_checker() {
+  bit sig;
+  sig = mon_port.$tcu_ccu_clk_stretch async;
+  if (sig === 1'b1) {
+    dbg.dispmon(this.dispScope, MON_ERR, "tcu_ccu_clk_stretch is 1. Call start_clk_stretch_checker() too late. Exit task");
+    return;
+  }
+  fork
+    clk_stretch_checker();
+  join none
+}
+
+//=============================================================
+// WHAT: clock strech checker: main task
+//=============================================================
+task CCU_checker::clk_stretch_checker() {
+  bit [63:0] pll_ctl; // effective value of pll_ctl
+  bit st_phase_hi;
+  integer st_delay_cmp, st_delay_dr; // must be 40, 80, 120 or 160ps
+  integer max_cycs = 12;   // number of clk cycs to be checked/monitored
+  integer max_pw_dev = 10; // max deviation in pulse width. Assume clk ctrech diags only use nice pll_div, so no rounding error in clk per.
+  integer st_cmpclk_time, st_ioclk_time, st_io2xclk_time, st_drclk_time; // time when clk is stretched
+  integer cmp2iox_clk_skew_max = 2; // clk skew between cmp and io/io2x clk
+  integer cmp_st_cyc, dr_st_cyc; // cmp/dr cyc when tcu asserts tcu_ccu_clk_stretch
+
+  dbg.dispmon(this.dispScope, MON_INFO, "starts clk_stretch checker");
+  //--- wait for TCU initiates the clk stretch ---
+  @(posedge mon_port.$tcu_ccu_clk_stretch);
+  dbg.dispmon(this.dispScope, MON_INFO, "tcu asserts tcu_ccu_clk_stretch to initiate clk stretch");
+  cmp_st_cyc = get_cycle(this.clk_port.$cmp_pll_clk); // cmp cycle when TCU asserts clk stretch sig
+  dr_st_cyc  = get_cycle(this.clk_port.$dr_pll_clk);  // dr cycle when TCU asserts clk stretch sig
+  //--- compute expected values ---
+  pll_ctl = ccu_states.get_pll_ctl();
+  st_phase_hi = pll_ctl[CCU__PLL_CTL__ST_PHASE_HI__POS];
+  case (pll_ctl[CCU__PLL_CTL__ST_DELAY_CMP__MSB : CCU__PLL_CTL__ST_DELAY_CMP__POS]) {
+    2'b00: st_delay_cmp = 40;   // in ps
+    2'b01: st_delay_cmp = 80;
+    2'b10: st_delay_cmp = 120;
+    2'b11: st_delay_cmp = 160;
+  }
+  case (pll_ctl[CCU__PLL_CTL__ST_DELAY_DR__MSB : CCU__PLL_CTL__ST_DELAY_DR__POS]) {
+    2'b00: st_delay_dr = 40;   // in ps
+    2'b01: st_delay_dr = 80;
+    2'b10: st_delay_dr = 120;
+    2'b11: st_delay_dr = 160;
+  }
+  //--- check clk stretch for cmp/dr/io/io2x clk ---
+  fork
+    st_cmpclk_time  = this.clk_stretch_chkr_1clk("cmp_clk", st_phase_hi, st_delay_cmp, max_pw_dev, max_cycs, cmp_st_cyc);
+    st_ioclk_time   = this.clk_stretch_chkr_1clk("io_out", st_phase_hi, st_delay_cmp, max_pw_dev, max_cycs, cmp_st_cyc);
+    st_io2xclk_time = this.clk_stretch_chkr_1clk("io2x_out", st_phase_hi, st_delay_cmp, max_pw_dev, max_cycs,cmp_st_cyc);
+    st_drclk_time   = this.clk_stretch_chkr_1clk("dr_clk", st_phase_hi, st_delay_dr, max_pw_dev, max_cycs, dr_st_cyc);
+  join
+  //--- check cmp/io/io2x clks stretched in the same cycle ---
+//if ((abs(st_cmpclk_time - st_ioclk_time) > cmp2iox_clk_skew_max) || (abs(st_cmpclk_time - st_io2xclk_time) > cmp2iox_clk_skew_max))
+//  dbg.dispmon(this.dispScope, MON_ERR, psprintf("clk stretch at time: cmp_clk=%0d, io_out=%0d, io2x_out=%0d <= not at same cycle",
+//    st_cmpclk_time, st_ioclk_time, st_io2xclk_time));
+}
+
+//=============================================================
+// WHAT: clock strech checker: supporting task checking one clock
+// ARGS: clkname: "cmp_clk", "io_out", "io2x_out" or "dr_clk"
+//=============================================================
+function integer CCU_checker::clk_stretch_chkr_1clk(string clkname, bit st_phase_hi, integer st_delay, integer max_pw_dev, integer max_cycs, integer st_start_cyc) {
+  integer i, st_cnt=0, st_time=0;  // counting clk stretch, stretch time
+  integer pw_nom, pw_hi, pw_lo, pw_hi_min, pw_hi_max, pw_lo_min, pw_lo_max; // pw: pulse width
+  integer pw_hi_st_min, pw_hi_st_max, pw_lo_st_min, pw_lo_st_max;  // pulse width limits for clk stretch
+  integer p_edge, n_edge, prev_p_edge; // clk posedge and negedge
+  CCU_clk_packet temp_clk_pkt;
+  integer st_cyc; // stretch cycle
+  integer st_pipe_del; // stretch pipeline delay
+
+  //--- monitor clk stretch pipeline latency ----
+  fork {
+    wait_var(st_cnt);
+    if ((clkname == "cmp_clk") || (clkname == "dr_clk")) {
+      case (clkname) {
+        "cmp_clk": st_cyc = get_cycle(clk_port.$cmp_pll_clk);
+        "dr_clk":  st_cyc = get_cycle(clk_port.$dr_pll_clk);
+      }
+      st_pipe_del = st_cyc - st_start_cyc;
+      if ((st_pipe_del < 6) || (st_pipe_del > 8))
+        dbg.dispmon(this.dispScope, MON_ERR, psprintf("%s: clk stretch pipeline delay %0d (min: 6: max: 8)", clkname, st_pipe_del));
+      else 
+        dbg.dispmon(this.dispScope, MON_INFO, psprintf("%s: clk stretch pipeline delay %0d (min: 6: max: 8)", clkname, st_pipe_del));
+    }
+  } join none
+  //---compute expected pw ----
+  temp_clk_pkt = ccu_states.get_exp_clk_pkt(); // warn: need this since diag may not call this.start_checker(), so this.clk_pkt is NULL
+  case (clkname) {
+    "cmp_clk":  pw_nom = temp_clk_pkt.cmp_clk_per_nom / 2;
+    "io_out":   pw_nom = temp_clk_pkt.io_out_per_nom / 2;
+    "io2x_out": pw_nom = temp_clk_pkt.io2x_out_per_nom / 2;
+    "dr_clk":   pw_nom = temp_clk_pkt.dr_clk_per_nom / 2;
+  }
+  pw_hi_min = pw_nom - max_pw_dev;
+  pw_hi_max = pw_nom + max_pw_dev;
+  pw_lo_min = pw_nom - max_pw_dev;
+  pw_lo_max = pw_nom + max_pw_dev;
+  pw_hi_st_min = pw_nom + st_delay - max_pw_dev;
+  pw_hi_st_max = pw_nom + st_delay + max_pw_dev;
+  pw_lo_st_min = pw_nom + st_delay - max_pw_dev;
+  pw_lo_st_max = pw_nom + st_delay + max_pw_dev;
+  //---check ---
+  case (clkname) {
+    "cmp_clk":  @(posedge clk_port.$cmp_pll_clk);
+    "io_out":   @(posedge clk_port.$ccu_io_out);
+    "io2x_out": @(posedge clk_port.$ccu_io2x_out);
+    "dr_clk":   @(posedge clk_port.$dr_pll_clk);
+  }
+  p_edge = get_time(LO);
+  for (i = 0; i < max_cycs; i++) {
+    prev_p_edge = p_edge;    // save previous posedge
+    case (clkname) {
+      "cmp_clk":  @(negedge clk_port.$cmp_pll_clk);
+      "io_out":   @(negedge clk_port.$ccu_io_out);
+      "io2x_out": @(negedge clk_port.$ccu_io2x_out);
+      "dr_clk":   @(negedge clk_port.$dr_pll_clk);
+    }
+    n_edge = get_time(LO);
+    pw_hi = n_edge - p_edge;
+    case (clkname) {
+      "cmp_clk":  @(posedge clk_port.$cmp_pll_clk);
+      "io_out":   @(posedge clk_port.$ccu_io_out);
+      "io2x_out": @(posedge clk_port.$ccu_io2x_out);
+      "dr_clk":   @(posedge clk_port.$dr_pll_clk);
+    }
+    p_edge = get_time(LO);
+    pw_lo = p_edge - n_edge;
+    if ((clkname == "io_out") || (clkname == "io2x_out")) { // can happen either hi or low phase
+      if (pw_hi > pw_hi_max) { // assume this is clk stretch cycle
+        st_cnt++;
+        if (st_cnt == 1) {
+          st_time = prev_p_edge;
+          if (is_outside_min_max(pw_hi_st_min, pw_hi, pw_hi_st_max))
+            dbg.dispmon(this.dispScope, MON_ERR, psprintf("%s: pw_hi=%0d (stretched), expect: min=%0d, max=%0d", clkname, pw_hi, pw_hi_st_min, pw_hi_st_max));
+          else
+            dbg.dispmon(this.dispScope, MON_INFO, psprintf("%s: pw_hi=%0d (stretched), expect: min=%0d, max=%0d", clkname, pw_hi, pw_hi_st_min, pw_hi_st_max));
+        }
+        else
+          dbg.dispmon(this.dispScope, MON_ERR, psprintf("%s: pw_hi=%0d exceeds pw_hi_max=%0d, but clk stretch already happened at %0d", clkname, pw_hi, pw_hi_max, st_time));
+      }
+      else {  // assume this is not clk stretch cycle
+        if (is_outside_min_max(pw_hi_min, pw_hi, pw_hi_max))
+          dbg.dispmon(this.dispScope, MON_ERR, psprintf("%s: pw_hi=%0d, expect: min=%0d, max=%0d", clkname, pw_hi, pw_hi_min, pw_hi_max));
+      }
+      if (pw_lo > pw_lo_max) { // assume this is clk stretch cycle
+        st_cnt++;
+        if (st_cnt == 1) {
+          st_time = prev_p_edge;
+          if (is_outside_min_max(pw_lo_st_min, pw_lo, pw_lo_st_max))
+            dbg.dispmon(this.dispScope, MON_ERR, psprintf("%s: pw_lo=%0d (stretched), expect: min=%0d, max=%0d", clkname, pw_lo, pw_lo_st_min, pw_lo_st_max));
+          else
+            dbg.dispmon(this.dispScope, MON_INFO, psprintf("%s: pw_lo=%0d (stretched), expect: min=%0d, max=%0d", clkname, pw_lo, pw_lo_st_min, pw_lo_st_max));
+        }
+        else
+          dbg.dispmon(this.dispScope, MON_ERR, psprintf("%s: pw_lo=%0d exceeds pw_lo_max=%0d, but clk stretch already happened at %0d", clkname, pw_lo, pw_lo_max, st_time));
+      }
+      else { // assume this is not clk stretch cycle
+        if (is_outside_min_max(pw_lo_min, pw_lo, pw_lo_max))
+          dbg.dispmon(this.dispScope, MON_ERR, psprintf("%s: pw_lo=%0d, expect: min=%0d, max=%0d", clkname, pw_lo, pw_lo_min, pw_lo_max));
+      }
+    }
+    else {  // cmp or dr clk
+      if (st_phase_hi) {
+        if (is_outside_min_max(pw_lo_min, pw_lo, pw_lo_max))  // stretch high phase, so pw_lo must not change
+          dbg.dispmon(this.dispScope, MON_ERR, psprintf("%s: pw_lo=%0d, expect: min=%0d, max=%0d", clkname, pw_lo, pw_lo_min, pw_lo_max));
+        if (pw_hi > pw_hi_max) { // assume this is clk stretch cycle
+          st_cnt++;
+          if (st_cnt == 1) {
+            st_time = prev_p_edge;
+            if (is_outside_min_max(pw_hi_st_min, pw_hi, pw_hi_st_max))
+              dbg.dispmon(this.dispScope, MON_ERR, psprintf("%s: pw_hi=%0d (stretched), expect: min=%0d, max=%0d", clkname, pw_hi, pw_hi_st_min, pw_hi_st_max));
+            else
+              dbg.dispmon(this.dispScope, MON_INFO, psprintf("%s: pw_hi=%0d (stretched), expect: min=%0d, max=%0d", clkname, pw_hi, pw_hi_st_min, pw_hi_st_max));
+          }
+          else
+            dbg.dispmon(this.dispScope, MON_ERR, psprintf("%s: pw_hi=%0d exceeds pw_hi_max=%0d, but clk stretch already happened at %0d", clkname, pw_hi, pw_hi_max, st_time));
+        }
+        else  // assume this is not clk stretch cycle
+          if (is_outside_min_max(pw_hi_min, pw_hi, pw_hi_max))
+            dbg.dispmon(this.dispScope, MON_ERR, psprintf("%s: pw_hi=%0d, expect: min=%0d, max=%0d", clkname, pw_hi, pw_hi_min, pw_hi_max));
+      }
+      else {
+        if (is_outside_min_max(pw_hi_min, pw_hi, pw_hi_max))  // stretch low phase, so pw_hi must not change
+          dbg.dispmon(this.dispScope, MON_ERR, psprintf("%s: pw_hi=%0d, expect: min=%0d, max=%0d", clkname, pw_hi, pw_hi_min, pw_hi_max));
+        if (pw_lo > pw_lo_max) { // assume this is clk stretch cycle
+          st_cnt++;
+          if (st_cnt == 1) {
+            st_time = prev_p_edge;
+            if (is_outside_min_max(pw_lo_st_min, pw_lo, pw_lo_st_max))
+              dbg.dispmon(this.dispScope, MON_ERR, psprintf("%s: pw_lo=%0d (stretched), expect: min=%0d, max=%0d", clkname, pw_lo, pw_lo_st_min, pw_lo_st_max));
+            else
+              dbg.dispmon(this.dispScope, MON_INFO, psprintf("%s: pw_lo=%0d (stretched), expect: min=%0d, max=%0d", clkname, pw_lo, pw_lo_st_min, pw_lo_st_max));
+          }
+          else
+            dbg.dispmon(this.dispScope, MON_ERR, psprintf("%s: pw_lo=%0d exceeds pw_lo_max=%0d, but clk stretch already happened at %0d", clkname, pw_lo, pw_lo_max, st_time));
+        }
+        else  // assume this is not clk stretch cycle
+          if (is_outside_min_max(pw_lo_min, pw_lo, pw_lo_max))
+            dbg.dispmon(this.dispScope, MON_ERR, psprintf("%s: pw_lo=%0d, expect: min=%0d, max=%0d", clkname, pw_lo, pw_lo_min, pw_lo_max));
+      } // end of else
+    } // end of else
+  }  // end of for()
+  if (st_cnt <= 0)
+    dbg.dispmon(this.dispScope, MON_ERR, psprintf("%s: clk stretch not happens in %0d cycles after tcu asserts clk_stretch", clkname, max_cycs));
+  clk_stretch_chkr_1clk = st_time;  // return value
+}

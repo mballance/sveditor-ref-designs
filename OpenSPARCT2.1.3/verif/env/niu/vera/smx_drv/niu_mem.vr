@@ -1,0 +1,739 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_mem.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+
+#ifdef N2_IOS
+  #include "ios_l2_stub.vrh"
+  #include "top_defines.vrh"
+#else
+ #ifdef N2_FC
+ #else
+  #include "niu_mem_tasks.vri"
+ #endif
+#endif
+
+#define NEPT_EEPROM_BASE_START 64'hF5000000
+#define NEPT_EEPROM_BASE_END 64'hF8FFFFFF
+
+#ifdef N2_FC
+extern hdl_task write_sys_mem (
+                                bit [63:0] addr,
+                                bit [63:0] data,
+                                bit [7:0] be
+                        );
+
+extern hdl_task read_sys_mem (
+                                bit [63:0] addr,
+                                var bit [63:0] rd_data
+                        );
+extern bit [63:0] FCMemoryAddress_A[4];
+extern bit [63:0] FCMemoryAddress_B[4];
+extern bit [63:0] FCMemoryAddress_C[4];
+extern event FCMemorySync_A[4];
+extern event FCMemorySync_B[4];
+extern event FCMemorySync_C[4];
+#endif
+
+#define TIME {get_time(HI), get_time(LO)}
+
+#ifdef IOS_ENV
+extern ios_l2_stub l2_stub[];
+extern StandardDisplay dbg;
+extern bit [63:0] IOSMemoryAddress[8];
+extern event IOSMemorySync[8];
+
+#endif
+
+
+#include "niu_cb_events.vri"
+
+#include "niu_cbclass.vrh"
+#include "niu_memcbmgr.vrh"
+
+extern "C" task SetExtMemBlockSize( integer block_size, integer mode_32b);
+extern "C" function bit[39:0] MallocBlock(integer no_of_blocks, integer page_id, integer alignment);
+extern "C" function bit[19:0] GetPageHandle();
+extern "C" function integer  SetPageMask(integer no_of_4Kpages, integer type , integer id);
+extern "C" function bit [31:0]  GetPageMask(integer id);
+extern "C" function bit [31:0]  GetPageValue(integer id);
+extern "C" function bit [31:0]  GetPageReloc(integer id);
+extern "C" task SetConfig( integer config, integer seed);
+extern "C" task MarkUsedLocations( bit[31:0] address_h, bit[31:0] address_l, integer no_of_blocks );
+extern "C" function bit[39:0] XlateAddr( bit[31:0] address_h, bit[31:0] address_l, integer page_id);
+extern "C" function integer  FreeAddr (bit[31:0]  addrh, bit[31:0]  addrl,  integer no_of_blocks, integer page_id);
+extern "C" function integer  ForcePageContexts(integer page_id, bit[31:0] mask , bit[31:0] value, bit[31:0] reloc );
+extern "C" function integer  DeletePageContext (integer id);
+extern "C" function integer CheckPageId( bit[31:0] address_h, bit[31:0] address_l);
+
+class AddressTrace {
+	bit [63:0] address;
+	bit [63:0] time;
+
+	task new( bit [63:0] t = 0) {
+	   time = t;
+	   
+	}
+}
+
+MakeVeraList (AddressTrace);
+
+class MemWriteTrace {
+	local VeraList_AddressTrace WriteTrace;
+	local bit [63:0] last_query_address_time;
+	
+	task new() {
+	  WriteTrace = new();
+	  last_query_address_time = 0;
+	}
+	task add( AddressTrace Trace) {
+	   WriteTrace.push_back(Trace);
+    	   printf(" Adding Time - %d Address - %x \n",Trace.time, Trace.address);
+	}
+	function integer get_currsize() {
+	  get_currsize = WriteTrace.size();
+	}
+	function bit [63:0] query_time () {
+          query_time = last_query_address_time;
+        }
+	function integer query(bit [63:0] address, (bit flush = 0) ) {
+	  VeraListIterator_AddressTrace item,next_item;
+	  AddressTrace	Entry; 
+	  bit match;
+
+	  match = 0;
+	  if(WriteTrace.empty()) query = 0;
+          else {
+	        printf( " Current Size - %d \n",WriteTrace.size());
+	  	item = WriteTrace.start();
+	  	while( !match & item.neq(WriteTrace.finish())) {
+	   	 Entry = item.data(); 
+	   	 if(Entry.address == address ) {
+	    	  match = 1;
+	          
+	          last_query_address_time = Entry.time;
+	          if(flush) {
+	            next_item = WriteTrace.erase(item);
+	          }
+	   	 } else { 
+		    match = 0;
+	            last_query_address_time = 0;
+		  }
+	          if(!flush) 
+	           item.next();
+	
+	        }
+	 }
+	 if(flush) {
+	   if(match==0) query = -1;
+	   else query = 1;
+	 } else
+	   query = match;
+	
+	}
+
+	task flushEntry( bit [63:0] address ) {
+	bit flush;
+	  flush = 1;
+	  if(WriteTrace.empty() ) {
+	   printf(" TB ERROR Cannot delete address - %x \n",address);
+	  } else {
+	    if(query(address,flush)) {
+	      printf(" DEBUG - Done with flushing address - %x \n",address);
+	    } else {
+	      printf(" TB ERROR Cannot delete address - %x \n",address);	
+	    }
+	  }
+	}
+	  
+
+}
+
+class PageManager {
+
+// Class to manage pages per DMA channel
+// Function to generate unique page handle for all the DMAs ( 32 Tx, 32 Rx )
+// Function to generate page-relocation value based upon the no. of bytes required
+
+	function bit [19:0] get_page_handle() {
+	    printf(" Inside PM - get_page_handle \n");
+	    get_page_handle = GetPageHandle();
+	}
+	function bit[31:0] get_page_mask(integer no_of_4Kpages, integer type , integer id, var bit[31:0] mask, var bit[31:0] value, var bit [31:0] reloc ) {
+	   	get_page_mask =  SetPageMask(no_of_4Kpages, type , id);	
+	        if(get_page_mask == 1) {
+	          mask = GetPageMask(id);
+	          value = GetPageValue(id);
+	          reloc = GetPageReloc(id);
+	        } else {
+	          printf(" ERROR--- incorrect id %d specified for setting pagemasks \n",id);
+	          mask = 32'hx;
+		}
+
+	}
+	function integer force_page_contexts(integer page_id, bit[31:0] mask , bit[31:0] value, bit[31:0] reloc ) {
+	  integer status;
+	   status =ForcePageContexts(page_id,  mask ,  value,  reloc );
+        }
+	function integer delete_page_contexts(integer page_id) {
+          delete_page_contexts = DeletePageContext(page_id);
+        }
+
+	
+}
+class CSparseMem {
+
+	local MemWriteTrace WriteAddressTrace;
+	local PageManager PM;
+	local event write_sync;
+	local event read_sync;
+	local integer block_size;
+	local integer force_align;
+        local integer sem_id_get_addr = -1;
+        local integer sem_id_free_addr = -1;
+        local integer sem_id_xlate_addr = -1;
+ 
+        local bit [63:0] trace_address;
+        local event set_trace_collection;
+   	local event trace_collect_done;
+
+        local CcbManager CbMgr;
+        local integer no_of_8bytes_written;
+
+
+#ifdef IOS_ENV
+        task  IOSmarkMemoryLocation(bit [63:0] address,  ( integer enable_tracking  = 0 ));
+        task  IOSMemory(integer bank);
+#endif
+
+#ifdef N2_FC
+        task  FCmarkMemoryLocation_A(bit [63:0] address,  ( integer enable_tracking  = 0 ));
+        task  FCmarkMemoryLocation_B(bit [63:0] address,  ( integer enable_tracking  = 0 ));
+        task  FCmarkMemoryLocation_C(bit [63:0] address,  ( integer enable_tracking  = 0 ));
+        task  FCMemory_A(integer mcu_port_no);
+        task  FCMemory_B(integer mcu_port_no);
+        task  FCMemory_C(integer mcu_port_no);
+#endif
+
+
+	task WriteVMem(  bit [63:0] address, bit [63:0] data, bit [7:0] be,  (integer xlate = 0), (integer page_id = 0) , (integer corrupt_xlate = 0), ( integer enable_tracking  = 0 ) );
+	task WriteMem(  bit [63:0] address, bit [63:0] data, bit [7:0] be, ( integer enable_tracking  = 0 ));
+	task ReadMem( bit[63:0] address, var bit [63:0] data, bit[7:0] be);
+	task setused_address( bit[63:0] address, integer no_of_blocks);
+
+	function bit [39:0] get_address(integer no_of_blocks, (integer page_id = 0), (integer alignment = 1));
+        function bit [39:0] xlate_addr(bit[39:0] addr, integer page_id, (integer corrupt_xlation = 0) ) ;
+        function integer free_addr (bit[39:0] addr, integer no_of_blocks,(integer page_id = 0) );
+
+
+	task set_block_size(integer block_size, (integer mode_32b = 0));
+	function integer get_block_size() {
+	  get_block_size = block_size;
+	}
+        function integer getNoOf8BytesWritten() {
+	   getNoOf8BytesWritten = no_of_8bytes_written;
+        }
+
+	function bit[63:0] query_time() {
+   	 query_time = WriteAddressTrace.query_time();	
+	}
+	function integer query(bit [63:0] address) {
+	  query = WriteAddressTrace.query(address);
+	}
+	task flushEntry( bit [63:0] address ) {
+	  WriteAddressTrace.flushEntry(address);
+	}
+	function bit [19:0] get_page_handle() {
+	    get_page_handle = PM.get_page_handle();
+	}
+	function bit[31:0] get_page_mask(integer no_of_4Kpages, (integer type = 0), ( integer id = 0),var bit[31:0] mask, var bit[31:0] value, var bit [31:0] reloc ) {
+           get_page_mask    = PM.get_page_mask(no_of_4Kpages, type , id, mask,  value,  reloc )	;
+	}
+
+        function integer force_page_contexts(integer page_id, bit[31:0] mask , bit[31:0] value, bit[31:0] reloc ) {
+	  integer status;
+           status = PM.force_page_contexts(page_id,  mask ,  value,  reloc );
+        }
+        function integer delete_page_contexts ( integer page_id) {
+	  delete_page_contexts = PM.delete_page_contexts(page_id);
+        }
+	function integer check_page_id(bit[63:0] address) {
+	  check_page_id = CheckPageId({24'h0,address[39:32]}, address[31:0]);
+	}
+        
+	local task CollectMemWriteTrace();
+
+        task setCallBack (  CcbMem cb) {
+          CbMgr.setCallBack(cb);
+        }
+
+	task new((integer seed = 0) ) {
+	  integer malloc_block_size;
+ 	  integer no_of_blocks_for_eeprom;
+           no_of_8bytes_written = 0;
+	   trigger(ON,write_sync);
+	   trigger(ON,read_sync);
+    	   trigger(OFF, set_trace_collection);
+
+           sem_id_get_addr = alloc(SEMAPHORE, 0, 1, 1);
+           sem_id_free_addr = alloc(SEMAPHORE, 0, 1, 1);
+           sem_id_xlate_addr = alloc(SEMAPHORE, 0, 1, 1);
+
+	   WriteAddressTrace = new();
+           CbMgr = new("NIU_GENERIC_MEMORY");
+	   PM = new();
+	   if (get_plus_arg (CHECK, "malloc_block_size"))
+            malloc_block_size = get_plus_arg (NUM, "malloc_block_size");
+           else
+            malloc_block_size = 4096;
+	   if (get_plus_arg (CHECK, "NEPT_32bDMA_ADDR")) {
+	/*ignore the +arg if not neptune*/
+	     set_block_size(malloc_block_size,0);
+           } else 
+	     set_block_size(malloc_block_size);
+
+	   if (get_plus_arg (CHECK, "malloc_verbose")) {
+	     SetConfig(1,seed);
+	   } else {
+	     SetConfig(0,seed);
+ 	   }
+           if (get_plus_arg (CHECK,"FORCE_ADDR_ALIGNMENT")) {
+             force_align = get_plus_arg (NUM, "FORCE_ADDR_ALIGNMENT");
+             printf("WARNING: SparseMem::new - get_address byte alignment forced to %d \n",force_align);
+           }
+   #ifdef IOS_ENV
+		fork
+		 IOSMemory(0);
+		 IOSMemory(1);
+		 IOSMemory(2);
+		 IOSMemory(3);
+		 IOSMemory(4);
+		 IOSMemory(5);
+		 IOSMemory(6);
+		 IOSMemory(7);
+		join none
+	   #endif
+
+           #ifdef N2_FC
+                fork
+                 FCMemory_A(0);
+                 FCMemory_A(1);
+                 FCMemory_A(2);
+                 FCMemory_A(3);
+
+                 FCMemory_B(0);
+                 FCMemory_B(1);
+                 FCMemory_B(2);
+                 FCMemory_B(3);
+
+                 FCMemory_C(0);
+                 FCMemory_C(1);
+                 FCMemory_C(2);
+                 FCMemory_C(3);
+                join none
+           #endif
+
+	}
+
+}
+
+task CSparseMem::setused_address(bit [63:0] address,  integer no_of_blocks ) {
+	MarkUsedLocations( {24'h0,address[39:32]}, address[31:0], no_of_blocks );
+}
+
+#ifdef IOS_ENV
+task CSparseMem::IOSMemory(integer bank) {
+
+
+  while(1) {
+    //@(posedge CLOCK);
+    sync(ALL,IOSMemorySync[bank]);
+    trigger(OFF,IOSMemorySync[bank]);
+    printf ("%0d NIU_MEM: IOS mark memory location %x\n", get_time(LO), IOSMemoryAddress[bank]);
+    IOSmarkMemoryLocation(IOSMemoryAddress[bank],1);
+    trigger(IOSMemorySync[bank]);
+  }
+}
+
+task CSparseMem::IOSmarkMemoryLocation(bit [63:0] address,  ( integer enable_tracking  = 0 )) {
+
+  integer cb_status;
+// Fu: 4/27 take out the write sync for now, NIU does all back door write before 
+
+//  sync(ALL, write_sync);
+//  trigger(OFF, write_sync);	
+
+// if enable_tracking is set, the address for which the data has been written is stored into a class
+// and sent out as a mailbox 
+
+
+   if(enable_tracking) {
+     cb_status = CbMgr.checkCallBack(address);
+     no_of_8bytes_written = no_of_8bytes_written +1;
+   }
+//  trigger(ON,write_sync);	
+}
+
+#endif
+
+#ifdef N2_FC
+task CSparseMem::FCMemory_A(integer mcu_port_no) {
+
+  while(1) {
+    sync(ALL,FCMemorySync_A[mcu_port_no]);
+    trigger(OFF,FCMemorySync_A[mcu_port_no]);
+    printf ("%0d NIU_MEM: FC mark memory location %x\n", get_time(LO), FCMemoryAddress_A[mcu_port_no]);
+    FCmarkMemoryLocation_A(FCMemoryAddress_A[mcu_port_no],1);
+    trigger(FCMemorySync_A[mcu_port_no]);
+  }
+}
+
+task CSparseMem::FCmarkMemoryLocation_A(bit [63:0] address,  ( integer enable_tracking  = 0 )) {
+
+  integer cb_status;
+
+   if(enable_tracking) {
+     cb_status = CbMgr.checkCallBack(address);
+     no_of_8bytes_written = no_of_8bytes_written +1;
+   }
+}
+
+task CSparseMem::FCMemory_B(integer mcu_port_no) {
+
+  while(1) {
+    sync(ALL,FCMemorySync_B[mcu_port_no]);
+    trigger(OFF,FCMemorySync_B[mcu_port_no]);
+    printf ("%0d NIU_MEM: FC mark memory location %x\n", get_time(LO), FCMemoryAddress_B[mcu_port_no]);
+    FCmarkMemoryLocation_B(FCMemoryAddress_B[mcu_port_no],1);
+    trigger(FCMemorySync_B[mcu_port_no]);
+  }
+}
+
+task CSparseMem::FCmarkMemoryLocation_B(bit [63:0] address,  ( integer enable_tracking  = 0 )) {
+
+  integer cb_status;
+
+   if(enable_tracking) {
+     cb_status = CbMgr.checkCallBack(address);
+     no_of_8bytes_written = no_of_8bytes_written +1;
+   }
+}
+
+task CSparseMem::FCMemory_C(integer mcu_port_no) {
+
+  while(1) {
+    sync(ALL,FCMemorySync_C[mcu_port_no]);
+    trigger(OFF,FCMemorySync_C[mcu_port_no]);
+    printf ("%0d NIU_MEM: FC mark memory location %x\n", get_time(LO), FCMemoryAddress_C[mcu_port_no]);
+    FCmarkMemoryLocation_C(FCMemoryAddress_C[mcu_port_no],1);
+    trigger(FCMemorySync_C[mcu_port_no]);
+  }
+}
+
+task CSparseMem::FCmarkMemoryLocation_C(bit [63:0] address,  ( integer enable_tracking  = 0 )) {
+
+  integer cb_status;
+
+   if(enable_tracking) {
+     cb_status = CbMgr.checkCallBack(address);
+     no_of_8bytes_written = no_of_8bytes_written +1;
+   }
+}
+
+#endif
+
+task CSparseMem::set_block_size(integer b, (integer mode_32b = 0 ) ) {
+	block_size = b;
+	SetExtMemBlockSize(b, mode_32b);
+}
+
+function integer CSparseMem::free_addr (bit[39:0] addr, integer no_of_blocks,(integer page_id = 0)) {
+ semaphore_get(WAIT, sem_id_free_addr, 1);
+ free_addr = FreeAddr({24'h0,addr[39:32]},addr[31:0],no_of_blocks,page_id);
+ semaphore_put(sem_id_free_addr, 1);
+}
+
+function bit [39:0] CSparseMem::get_address(integer no_of_blocks, (integer page_id =  0) , (integer alignment = 1) ) {
+   bit [39:0] address;
+   integer align;
+   // printf(" Page id - %d \n",page_id);
+
+   semaphore_get(WAIT, sem_id_get_addr, 1);
+
+   if (get_plus_arg (CHECK,"FORCE_ADDR_ALIGNMENT")) {
+     align = get_plus_arg (NUM, "FORCE_ADDR_ALIGNMENT");
+   }
+   else align = alignment;
+   address = MallocBlock(no_of_blocks,page_id,align);
+   // printf(" Address Allocated - %x \n",address);
+   get_address = address;
+   semaphore_put(sem_id_get_addr, 1);
+
+
+}
+
+function bit [39:0] CSparseMem::xlate_addr(bit[39:0] addr, integer page_id, (integer corrupt_xlation = 0) ) {
+ semaphore_get(WAIT, sem_id_xlate_addr, 1);
+
+  xlate_addr = XlateAddr({24'h0,addr[39:32]},addr[31:0], page_id);
+  if(xlate_addr === 40'hzzzzzzzzzz) {
+    error("CSparseMem::xlate_addr Testbench ERROR \n");
+  }
+  semaphore_put(sem_id_xlate_addr, 1);
+
+}
+
+task CSparseMem::WriteVMem(  bit [63:0] address, bit [63:0] data, bit [7:0] be,  (integer xlate = 0), (integer page_id = 0) , (integer corrupt_xlate = 0) ,( integer enable_tracking  = 0 ) ) {
+
+bit[63:0] xlateaddr;
+// printf("CSparseMem::WriteVMem xlate - %d page_id - %d \n",xlate,page_id);
+if(xlate) {
+  xlateaddr = address;
+  xlateaddr[39:0] = xlate_addr(address[39:0] , page_id,corrupt_xlate); 
+} else {
+   xlateaddr = address;
+}
+WriteMem(  xlateaddr, data, be , enable_tracking );
+
+}
+task CSparseMem::CollectMemWriteTrace () {
+
+  integer address_collected ;
+  AddressTrace Trace;
+  address_collected = 0;
+ fork 
+ {
+  while(1) {
+    sync(ALL,set_trace_collection);
+    trigger(OFF, set_trace_collection);
+    Trace = new();
+    Trace.time = TIME;
+    Trace.address = trace_address;
+    WriteAddressTrace.add(Trace);
+    address_collected++;
+    trigger (ON, trace_collect_done);
+  }
+ } 
+ {
+   while(1) {
+	@(posedge CLOCK);
+	if(address_collected >0) {
+	 printf(" Current Trace Size - %d  time - %d\n",WriteAddressTrace.get_currsize(),TIME);
+	}
+        address_collected = 0;
+   }
+ } join none
+
+}
+
+task CSparseMem::WriteMem(  bit [63:0] address, bit [63:0] data, bit [7:0] be , (integer enable_tracking  = 0 ) ) {
+
+ integer cb_status;
+
+#ifdef IOS_ENV
+
+  bit [511:0] rd_data_tmp;
+  bit [511:0] wri_data;
+  bit [63:0]  int_data;
+  string myname;
+  myname = {myname, ".WriteMem"};
+#endif
+
+
+  sync(ALL,write_sync);
+  trigger(OFF,write_sync);	
+
+// if enable_tracking is set, the address for which the data has been written is stored into a class
+// and sent out as a mailbox 
+
+/*
+  // - old code
+   if(enable_tracking) {
+     trigger (ON,set_trace_collection);
+     trace_address = address;
+     sync(ALL,trace_collect_done);
+     trigger (OFF, trace_collect_done);
+   }
+
+*/
+
+   if(enable_tracking) {
+     cb_status = CbMgr.checkCallBack(address);
+     no_of_8bytes_written = no_of_8bytes_written +1;
+   }
+
+ // $SysWrite_Data(Hostmode,addr_h,addr_l, data[31:0], be[3:0]);
+#ifdef IOS_ENV
+
+	if (address[39] === 1'b1)
+	{
+	   dbg.dispmon(myname, MON_WARN, psprintf("L2-Write : Address = %0h PA bit39 is set!", address));
+	}
+
+        printf ("NIU_MEM write: address=%x, be=%x date=%x\n", address, be, data);
+ 
+
+           case (address[8:6]) {
+              3'd0: rd_data_tmp = l2_stub[0].l2_mem[address[39:9]];
+              3'd1: rd_data_tmp = l2_stub[1].l2_mem[address[39:9]];
+              3'd2: rd_data_tmp = l2_stub[2].l2_mem[address[39:9]];
+              3'd3: rd_data_tmp = l2_stub[3].l2_mem[address[39:9]];
+              3'd4: rd_data_tmp = l2_stub[4].l2_mem[address[39:9]];
+              3'd5: rd_data_tmp = l2_stub[5].l2_mem[address[39:9]];
+              3'd6: rd_data_tmp = l2_stub[6].l2_mem[address[39:9]];
+              3'd7: rd_data_tmp = l2_stub[7].l2_mem[address[39:9]];
+            }
+
+            int_data = (data & { {8{be[7]}}, {8{be[6]}}, {8{be[5]}}, {8{be[4]}}, {8{be[3]}}, {8{be[2]}}, {8{be[1]}}, {8{be[0]}} });
+  // Fu: handle 4 bytes aligned address, only write to upper 32 bits
+	    if (address[2] === 1'b1)
+	    {
+            	case (address[5:3]) {
+              	3'd6: wri_data = {rd_data_tmp[511:64], int_data[31:0], rd_data_tmp[31:0]};
+              	3'd7: wri_data = {rd_data_tmp[511:128], int_data[31:0], rd_data_tmp[95:0]};
+              	3'd4: wri_data = {rd_data_tmp[511:192], int_data[31:0], rd_data_tmp[159:0]};
+              	3'd5: wri_data = {rd_data_tmp[511:256], int_data[31:0], rd_data_tmp[223:0]};
+              	3'd2: wri_data = {rd_data_tmp[511:320], int_data[31:0], rd_data_tmp[287:0]};
+              	3'd3: wri_data = {rd_data_tmp[511:384], int_data[31:0], rd_data_tmp[351:0]};
+              	3'd0: wri_data = {rd_data_tmp[511:448], int_data[31:0], rd_data_tmp[415:0]};
+              	3'd1: wri_data = {int_data[31:0], rd_data_tmp[479:0]};
+            	}
+	    }
+	    else
+            case (address[5:3]) {
+              3'd6: wri_data = {rd_data_tmp[511:64], int_data};
+              3'd7: wri_data = {rd_data_tmp[511:128], int_data, rd_data_tmp[63:0]};
+              3'd4: wri_data = {rd_data_tmp[511:192], int_data, rd_data_tmp[127:0]};
+              3'd5: wri_data = {rd_data_tmp[511:256], int_data, rd_data_tmp[191:0]};
+              3'd2: wri_data = {rd_data_tmp[511:320], int_data, rd_data_tmp[255:0]};
+              3'd3: wri_data = {rd_data_tmp[511:384], int_data, rd_data_tmp[319:0]};
+              3'd0: wri_data = {rd_data_tmp[511:448], int_data, rd_data_tmp[383:0]};
+              3'd1: wri_data = {int_data, rd_data_tmp[447:0]};
+            }
+
+            case (address[8:6]) {
+              3'd0: l2_stub[0].l2_mem[address[39:9]] = wri_data[511:0];
+              3'd1: l2_stub[1].l2_mem[address[39:9]] = wri_data[511:0];
+              3'd2: l2_stub[2].l2_mem[address[39:9]] = wri_data[511:0];
+              3'd3: l2_stub[3].l2_mem[address[39:9]] = wri_data[511:0];
+              3'd4: l2_stub[4].l2_mem[address[39:9]] = wri_data[511:0];
+              3'd5: l2_stub[5].l2_mem[address[39:9]] = wri_data[511:0];
+              3'd6: l2_stub[6].l2_mem[address[39:9]] = wri_data[511:0];
+              3'd7: l2_stub[7].l2_mem[address[39:9]] = wri_data[511:0];
+            }
+
+ 	dbg.dispmon(myname, MON_NORMAL, psprintf("L2-Write : Address = %0h, Data[511:0] = %0h\n", address, wri_data));
+
+#else
+
+   #ifdef N2_FC
+      write_sys_mem(address[63:0], data[63:0], ~be ); // write DoubleWord
+   #else
+      write_sys_mem(1, address[63:0], data[63:0], ~be ); // write DoubleWord
+   #endif
+
+#endif
+  trigger(ON,write_sync);	
+	
+}
+
+task CSparseMem::ReadMem(  bit [63:0] address, var bit [63:0] data, bit [7:0] be ) {
+
+  bit [63:0] rdata;
+
+
+#ifdef IOS_ENV
+  bit [511:0] rd_data_tmp;
+  bit [63:0] tdata;
+  string myname;
+  myname = {myname, ".ReadMem"};
+#endif
+
+  sync(ALL,read_sync);
+  trigger(OFF,read_sync);	
+
+#ifdef IOS_ENV
+           case (address[8:6]) {
+              3'd0: rd_data_tmp = l2_stub[0].l2_mem[address[39:9]];
+              3'd1: rd_data_tmp = l2_stub[1].l2_mem[address[39:9]];
+              3'd2: rd_data_tmp = l2_stub[2].l2_mem[address[39:9]];
+              3'd3: rd_data_tmp = l2_stub[3].l2_mem[address[39:9]];
+              3'd4: rd_data_tmp = l2_stub[4].l2_mem[address[39:9]];
+              3'd5: rd_data_tmp = l2_stub[5].l2_mem[address[39:9]];
+              3'd6: rd_data_tmp = l2_stub[6].l2_mem[address[39:9]];
+              3'd7: rd_data_tmp = l2_stub[7].l2_mem[address[39:9]];
+            }
+
+           case (address[5:3]) {
+              3'd7: tdata[63:0] = rd_data_tmp[63:0];
+              3'd6: tdata[63:0] = rd_data_tmp[127:64];
+              3'd5: tdata[63:0] = rd_data_tmp[191:128];
+              3'd4: tdata[63:0] = rd_data_tmp[255:192];
+              3'd3: tdata[63:0] = rd_data_tmp[319:256];
+              3'd2: tdata[63:0] = rd_data_tmp[383:320];
+              3'd1: tdata[63:0] = rd_data_tmp[447:384];
+              3'd0: tdata[63:0] = rd_data_tmp[511:448];
+            }
+
+	   // Fu: 5/6/05 swap for endian
+	   rdata = {tdata[7:0], tdata[15:8],tdata[23:16],tdata[31:24],tdata[39:32],tdata[47:40],tdata[55:48],tdata[63:56]};
+
+	   dbg.dispmon(myname, MON_NORMAL, psprintf("L2-Read : Address = %0h, Data[63:0] = %0h", address, rdata));
+
+#else
+
+   #ifdef N2_FC
+        read_sys_mem(address[63:0], rdata); // read DoubleWord
+   #else
+  	read_sys_mem(1, address[63:0], rdata); // read DoubleWord
+   #endif
+
+
+#endif
+  data = rdata;
+  trigger(ON,read_sync);	
+	
+}
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,493 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ccu_clks_states.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "std_display_class.vrh"
+#include "ucb_defines.vri"
+#include "ucb___packet.vrh"
+#include "ccu_defines.vri"
+#include "ucb_top.vri"
+#include "ccu_top.vri"
+#include "ucb_monitor.vrh"
+#include "ccu_clk_packet.vrh"
+
+class CCU_clks_states {
+  //---ports and classes--
+  local UCB_port ccu_ucb_port;        // CCU-NCU interface
+  local CCU_clk_port ccu_clk_port;    // port for all CCU clk signals
+  local CCU_mon_port ccu_mon_port;
+  local UCB_monitor ccu_ucb_monitor;  // monitor UCB bus
+  local StandardDisplay dbg;          // Standard display for printing
+
+  //---CCU CSRs---
+  local bit [63:0] pll_ctl;
+  local bit [63:0] rng_ctl;
+  local bit [63:0] rng_data;
+  local bit [63:0] pll_ctl_staging; // staging reg
+  //---pll inputs----
+  local integer sys_clk_per;  // sys clk per sampled at CCU input
+
+  //---vars: limits/deviations---
+  local integer cmp_per_dev;    // deviation in cmp clk per in % from nominal
+  local integer cmp_pw_dev;     // deviation in cmp clk pulse width in % from nominal
+  local integer dr_per_dev;     
+  local integer dr_pw_dev;
+  local integer iox_per_dev, iox_pw_dev; // deviation of IO and io2X clk period and duty cycle (in %)
+  local integer dtm_dr_iox_pw_dev; // dtm-mode: dr and iox pulse width deviation
+
+  //---vars: control---
+  local string name;            // name of this object
+  local string dispScope;       // for standard display
+  local integer error_cnt;      // Error count. Init to 0. WARN: become negative if exeed max integer
+  local integer max_error_printed;  // not print error msg if (errors > max_error_printed)
+  local integer running;            // 0: not running; otherwise, running
+  local event stop_e;          // triggered by stop_it() to terminate start()
+  local integer is_fc_bench;   // 0: not FC_bench; otherwise, it's FC bench
+  local integer pllbypass_mode;// 0: not pll bypass mode; otherwise, it's pll bypass
+  local bit [5:0] pllbypass_virtual_div2; // imaginary values of div2 that produce same effect as non-bypass mode
+  local bit [6:0] pllbypass_virtual_div4; // imaginary values of div4 that produce same effect as non-bypass mode
+
+  //---public tasks---
+  task new(string name="CCU_clks_states", StandardDisplay dbg, integer start_it=0);
+  task start();
+  task stop_it();
+  function CCU_clk_packet get_exp_clk_pkt();
+  task show_clk_pkt(CCU_clk_packet pkt);
+  task put_per_pw_dev(integer cmp_per_dev, integer cmp_pw_dev,
+         integer iox_per_dev, integer iox_pw_dev,
+         integer dr_per_dev, integer dr_pw_dev);
+
+  //---public one-line subroutines---
+  function integer get_error_cnt() { get_error_cnt = (error_cnt >= 0)? error_cnt : 1; }
+  task ignore_ccu_ucb_error() { this.ccu_ucb_monitor.ignore_err = 1; }
+  task put_pllbypass_mode(integer value) { this.pllbypass_mode = (value == 0)? 0 : 1; }
+  task put_pllbypass_virtual_div(bit [5:0] div2, bit [6:0] div4) { this.pllbypass_virtual_div2 = div2; this.pllbypass_virtual_div4 = div4; }
+  function bit [63:0] get_pll_ctl() { get_pll_ctl = this.pll_ctl; }
+
+  //---local subroutines---
+  local task mon_update_ccu_csrs();
+  local function integer get_sys_clk_per(integer wait_cycs=0);
+  local function CCU_clk_packet get_expClkPkt_func_mode();
+  local function CCU_clk_packet get_expClkPkt_dtm_mode();
+}
+
+//################################################################
+//######### implementation of subroutines              ###########
+//################################################################
+
+task CCU_clks_states::new(string name="CCU_clks_states", StandardDisplay dbg, integer start_it=0) {
+  //---from arg list---
+  this.dbg = dbg;
+  this.name = name;
+
+  //---ports and classes---
+  this.ccu_ucb_port = ccu_ucb_mon_bind;
+  this.ccu_clk_port  = ccu_clk_bind;
+  this.ccu_mon_port = ccu_mon_bind;
+  this.ccu_ucb_monitor = new("ccu_ucb_mon", dbg, ccu_ucb_port, 4, 8'h83); // 4: ucb bus data width
+
+  //---others---
+  this.pll_ctl = CCU__PLL_CTL__INIT_VALUE;
+  this.rng_ctl = 0;    // review: may need to change
+  this.rng_data = 0;   // review: may need to change
+  this.pll_ctl_staging = this.pll_ctl;
+
+  //--- testing limits for clk period and duty cycle----
+  //--- WARNING: per CCU designer, these limits should be as follows:
+  this.cmp_per_dev = 7;    // in % (ie. nominal +/- per_dev in percent)
+  this.cmp_pw_dev  = 7;    // in % (ie. 50% +/- (pw_dev% of clk per))
+  this.iox_per_dev = 7;
+  this.iox_pw_dev  = 7;
+  this.dr_per_dev  = 7;
+  this.dr_pw_dev   = 10;       // in % (ie. 50% +/- (pw_dev% of clk per))
+  this.dtm_dr_iox_pw_dev = 10; // in % (ie. 50% +/- (pw_dev% of clk per))
+
+  //----the rest -----
+  this.dispScope = this.name;
+  this.error_cnt = 0;
+  this.max_error_printed = 20;
+  this.running = 0;
+#ifdef FC_BENCH
+  this.is_fc_bench = 1;
+  dbg.dispmon(name, MON_ALWAYS, "FC testbench");
+#else
+  this.is_fc_bench = 0;
+  dbg.dispmon(name, MON_ALWAYS, "SAT-level testbench");
+#endif
+  this.pllbypass_mode = 0;
+  this.pllbypass_virtual_div2 = 6'h7;
+  this.pllbypass_virtual_div4 = 7'h8;
+
+  //---process plus_arg to override default values---
+  if (get_plus_arg(CHECK, "cmp_per_dev="))
+     this.cmp_per_dev = get_plus_arg(NUM, "cmp_per_dev=");
+  if (get_plus_arg(CHECK, "cmp_pw_dev="))
+     this.cmp_pw_dev = get_plus_arg(NUM, "cmp_pw_dev=");
+  if (get_plus_arg(CHECK, "iox_per_dev="))
+     this.iox_per_dev = get_plus_arg(NUM, "iox_per_dev=");
+  if (get_plus_arg(CHECK, "iox_pw_dev="))
+     this.iox_pw_dev = get_plus_arg(NUM, "iox_pw_dev=");
+  if (get_plus_arg(CHECK, "dr_per_dev="))
+     this.dr_per_dev = get_plus_arg(NUM, "dr_per_dev=");
+  if (get_plus_arg(CHECK, "dr_pw_dev="))
+     this.dr_pw_dev = get_plus_arg(NUM, "dr_pw_dev=");
+
+  //---start background threads ---
+  if (start_it)
+    start();
+  fork {  // always do this
+    this.sys_clk_per = this.get_sys_clk_per(3);
+  } join none
+}
+
+//=============================================================
+// WHAT: start this object
+//=============================================================
+task CCU_clks_states::start() {
+  if (running)
+    return;
+  dbg.dispmon(this.dispScope, MON_INFO, "starts ...");
+  this.running = 1;
+  ccu_ucb_monitor.start(); // run in back ground
+  fork {
+    fork {
+       mon_update_ccu_csrs();
+    } join none
+    sync(ALL, this.stop_e); // stop_it() triggers this event
+    terminate;
+    dbg.dispmon(this.dispScope, MON_INFO, psprintf("%s stopped", this.name));
+    this.running = 0;
+  } join none
+}
+
+//=============================================================
+// WHAT: stop this object
+//=============================================================
+task CCU_clks_states::stop_it() {
+  if (this.running) {
+    dbg.dispmon(this.dispScope, MON_INFO, psprintf("stopping %s ...", this.name));
+    trigger(this.stop_e);  // this event terminates start()
+  }
+}
+
+//=============================================================
+// WHAT: monitor CCU's UCB bus and update CSRs when NCU writes to them.
+//       When RST does WMR reset, copy staging CSRs to real CSR
+//=============================================================
+task CCU_clks_states::mon_update_ccu_csrs() {
+  UCB___packet ucb_pkt;
+
+  //---Update CSRs when NCU writes to them---
+  fork {
+    while (1) {
+      sync(ALL, ccu_ucb_monitor.req_end);      // wait NCU completes a req
+      ucb_pkt = ccu_ucb_monitor.get_req_pkt(); // get write req pkt
+      if (ucb_pkt.pkt_type == UCB_PKT_WRITE_REQ) {
+        case (ucb_pkt.addr) {
+          CCU__PLL_CTL  : this.pll_ctl_staging = ucb_pkt.payload; // update staging CSR only
+          CCU__RNG_CTL  : this.rng_ctl  = ucb_pkt.payload;
+          CCU__RNG_DATA : this.rng_data = ucb_pkt.payload;
+          // ignore if other addrs
+        }
+      }
+    }
+  } join none
+
+  //---copy staging CSRs into real CSRs when PLL is reseted--
+  fork {
+    while (1) {
+      @(posedge ccu_clk_port.$rst_ccu_pll_); // PLL got reset
+      if (this.is_fc_bench) {  // FC bench forces values onto these signals
+        this.pll_ctl[CCU__PLL_CTL__PLL_DIV1__MSB : CCU__PLL_CTL__PLL_DIV1__POS] = ccu_mon_port.$pll_div1_at_csrblk async;
+        this.pll_ctl[CCU__PLL_CTL__PLL_DIV2__MSB : CCU__PLL_CTL__PLL_DIV2__POS] = ccu_mon_port.$pll_div2_at_csrblk async;
+        this.pll_ctl[CCU__PLL_CTL__PLL_DIV3__MSB : CCU__PLL_CTL__PLL_DIV3__POS] = ccu_mon_port.$pll_div3_at_csrblk async;
+        this.pll_ctl[CCU__PLL_CTL__PLL_DIV4__MSB : CCU__PLL_CTL__PLL_DIV4__POS] = ccu_mon_port.$pll_div4_at_csrblk async;
+        this.pll_ctl[CCU__PLL_CTL__SERDES_DTM1__POS] = ccu_mon_port.$serdes_dtm1_at_csrblk async;
+        this.pll_ctl[CCU__PLL_CTL__SERDES_DTM2__POS] = ccu_mon_port.$serdes_dtm2_at_csrblk async;
+      }
+      else { // TCU SAT which programs CCU's CSR via UCB bus
+        this.pll_ctl = this.pll_ctl_staging; // copy staging CSR into real CSR
+        if (this.pllbypass_mode) {
+          this.pll_ctl[CCU__PLL_CTL__PLL_DIV2__MSB : CCU__PLL_CTL__PLL_DIV2__POS] = this.pllbypass_virtual_div2;
+          this.pll_ctl[CCU__PLL_CTL__PLL_DIV4__MSB : CCU__PLL_CTL__PLL_DIV4__POS] = this.pllbypass_virtual_div4;
+        }
+      }
+    }
+  } join none
+}
+
+//=============================================================
+// WHAT: get sys clk period by sampling CCU input
+// ARGs:
+//   wait_cycs: number of sys clk cycles need to wait before sampling
+
+//=============================================================
+function integer CCU_clks_states::get_sys_clk_per(integer wait_cycs=0) {
+  integer old_posedge;
+  if (wait_cycs > 0)
+    repeat (wait_cycs) @(posedge ccu_clk_port.$sys_clk);
+  @(posedge ccu_clk_port.$sys_clk);
+  old_posedge = get_time(LO);
+  @(posedge ccu_clk_port.$sys_clk);
+  get_sys_clk_per = get_time(LO) - old_posedge;
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("sys clk period at CCU input is %0d ticks", get_sys_clk_per));
+}
+
+//=============================================================
+// WHAT: compute expected values for clk pkt
+//=============================================================
+function CCU_clk_packet CCU_clks_states::get_exp_clk_pkt() {
+  string mode = "func";  // default is functional/mission mode
+
+  if (this.pll_ctl[CCU__PLL_CTL__SERDES_DTM1__POS] == 1'b1
+     || this.pll_ctl[CCU__PLL_CTL__SERDES_DTM2__POS] == 1'b1)
+    mode = "dtm";
+
+  case (mode) {
+    "dtm" :   get_exp_clk_pkt = get_expClkPkt_dtm_mode();
+    default : get_exp_clk_pkt = get_expClkPkt_func_mode();
+  }
+}
+
+//=============================================================
+// WHAT: compute expected values for clk pkt in functional/normal/mission mode
+//=============================================================
+function CCU_clk_packet CCU_clks_states::get_expClkPkt_func_mode() {
+  CCU_clk_packet clk_pkt = new(); // create a separate copy
+  bit [CCU__PLL_CTL__PLL_DIV1__SIZE-1:0] div1 = this.pll_ctl[CCU__PLL_CTL__PLL_DIV1__MSB : CCU__PLL_CTL__PLL_DIV1__POS];  // encoded values
+  bit [CCU__PLL_CTL__PLL_DIV2__SIZE-1:0] div2 = this.pll_ctl[CCU__PLL_CTL__PLL_DIV2__MSB : CCU__PLL_CTL__PLL_DIV2__POS];
+  bit [CCU__PLL_CTL__PLL_DIV3__SIZE-1:0] div3 = this.pll_ctl[CCU__PLL_CTL__PLL_DIV3__MSB : CCU__PLL_CTL__PLL_DIV3__POS];
+  bit [CCU__PLL_CTL__PLL_DIV4__SIZE-1:0] div4 = this.pll_ctl[CCU__PLL_CTL__PLL_DIV4__MSB : CCU__PLL_CTL__PLL_DIV4__POS];
+  integer d1_eff, d2_eff, d3_eff;   // effective values (ie. 2 means divided by 2, etc.)
+  integer d4_int, d4_frac;     // d4_int: integral part. d4_frac: fractional part (0 means 0.0 and 1 means 0.5)
+  integer nom_4_min, nom_4_max; // nominal value for calculating min and max by rounding down or up
+
+  //--- compute effective values of clk dividers---
+  d1_eff = div1 + 1;  // warn: bit to integer conversion
+  d2_eff = div2 + 1;
+  d3_eff = div3 + 1;
+  d4_int = div4[CCU__PLL_CTL__PLL_DIV4__SIZE-1:1]; // integral part
+  d4_frac = div4[0]; // fractional part. 0 means 0.0 and 1 means 0.5
+
+  //---compute expected clk pkt----
+  clk_pkt.mode = CCU_FUNC_MODE;
+  clk_pkt.pll_ctl = this.pll_ctl;
+  clk_pkt.sys_clk_per = this.sys_clk_per; 
+  clk_pkt.cmp2io_ratio = 4;
+  clk_pkt.cmp2io2x_ratio = 2;
+  clk_pkt.cmp_mult = d2_eff / d1_eff;
+  clk_pkt.cmp_mult_frac = (d2_eff % d1_eff)? 1'b1 : 1'b0;
+  // note: dr_mult and dr_mult_frac are computed in DR section down below
+  clk_pkt.cmp_per_dev = this.cmp_per_dev;
+  clk_pkt.cmp_pw_dev = this.cmp_pw_dev;
+  clk_pkt.dr_per_dev = this.dr_per_dev;
+  clk_pkt.dr_pw_dev = this.dr_pw_dev;
+  clk_pkt.iox_per_dev = this.iox_per_dev;
+  clk_pkt.iox_pw_dev = this.iox_pw_dev;
+
+  //---compute expected clk pkt: period/pulse_with/effective_multipler for cmp/io/io2x clk------
+  clk_pkt.cmp_clk_per_nom = (this.sys_clk_per * d1_eff) / d2_eff;
+  nom_4_min = clk_pkt.cmp_clk_per_nom - 1;  // rounding down
+  nom_4_max = clk_pkt.cmp_clk_per_nom + 1;  // rounding up
+  clk_pkt.cmp_clk_per_min = nom_4_min - (((nom_4_max / 100) + 1) * this.cmp_per_dev); // rounding down
+  clk_pkt.cmp_clk_per_max = nom_4_max + (((nom_4_max / 100) + 1) * this.cmp_per_dev); // rounding up
+
+  clk_pkt.io_out_per_nom = (this.sys_clk_per * d1_eff * 4) / d2_eff;
+  nom_4_min = clk_pkt.io_out_per_nom - 1; // rounding down
+  nom_4_max = clk_pkt.io_out_per_nom + 1; // rounding up
+  clk_pkt.io_out_per_min = nom_4_min - (((nom_4_max / 100) + 1) * this.iox_per_dev); // rouding down
+  clk_pkt.io_out_per_max = nom_4_max + (((nom_4_max / 100) + 1) * this.iox_per_dev); // rouding up
+
+  clk_pkt.io2x_out_per_nom = (this.sys_clk_per * d1_eff * 2) / d2_eff;
+  nom_4_min = clk_pkt.io2x_out_per_nom - 1; // rounding down
+  nom_4_max = clk_pkt.io2x_out_per_nom + 1; // rounding up
+  clk_pkt.io2x_out_per_min = nom_4_min - (((nom_4_max / 100) + 1) * this.iox_per_dev); // rouding down
+  clk_pkt.io2x_out_per_max = nom_4_max + (((nom_4_max / 100) + 1) * this.iox_per_dev); // rouding up
+
+  //---compute expected clk pkt: period/pulse_with/effective_multipler for dr clk------
+  if ((div1 == 1) && (div3 == 1) && ((div2 + CCU__PLL_CTL__PLL_DIV2__SIZE'h1) == div4)) { // ie. div4 is 1/2 of div2
+    clk_pkt.dr_mult = 2;
+    clk_pkt.dr_mult_frac = 1'b0;
+    clk_pkt.dr_clk_per_nom = this.sys_clk_per / 2; // DR clk freq is twice sys clk freq
+    nom_4_min = clk_pkt.dr_clk_per_nom - 1;  // rounding down
+    nom_4_max = clk_pkt.dr_clk_per_nom + 1;  // rounding up
+    clk_pkt.dr_clk_per_min = nom_4_min - (((nom_4_max / 100) + 1) * this.dr_per_dev); // rounding down
+    clk_pkt.dr_clk_per_max = nom_4_max + (((nom_4_max / 100) + 1) * this.dr_per_dev); // rounding up
+    //---compute dr sync locations at the cluster outputs ---
+    case (d2_eff) {
+       8: { clk_pkt.dr_sync_loc[0] = 1; clk_pkt.dr_sync_loc[1] = 3; clk_pkt.dr_sync_loc[2] = 5;  clk_pkt.dr_sync_loc[3] = 7;  }
+       9: { clk_pkt.dr_sync_loc[0] = 1; clk_pkt.dr_sync_loc[1] = 3; clk_pkt.dr_sync_loc[2] = 6;  clk_pkt.dr_sync_loc[3] = 8;  }
+      10: { clk_pkt.dr_sync_loc[0] = 1; clk_pkt.dr_sync_loc[1] = 4; clk_pkt.dr_sync_loc[2] = 6;  clk_pkt.dr_sync_loc[3] = 9;  }
+      11: { clk_pkt.dr_sync_loc[0] = 1; clk_pkt.dr_sync_loc[1] = 4; clk_pkt.dr_sync_loc[2] = 7;  clk_pkt.dr_sync_loc[3] = 10; }
+      12: { clk_pkt.dr_sync_loc[0] = 1; clk_pkt.dr_sync_loc[1] = 4; clk_pkt.dr_sync_loc[2] = 7;  clk_pkt.dr_sync_loc[3] = 10; }
+      13: { clk_pkt.dr_sync_loc[0] = 2; clk_pkt.dr_sync_loc[1] = 5; clk_pkt.dr_sync_loc[2] = 8;  clk_pkt.dr_sync_loc[3] = 11; }
+      14: { clk_pkt.dr_sync_loc[0] = 2; clk_pkt.dr_sync_loc[1] = 5; clk_pkt.dr_sync_loc[2] = 9;  clk_pkt.dr_sync_loc[3] = 12; }
+      15: { clk_pkt.dr_sync_loc[0] = 2; clk_pkt.dr_sync_loc[1] = 6; clk_pkt.dr_sync_loc[2] = 9;  clk_pkt.dr_sync_loc[3] = 13; }
+      16: { clk_pkt.dr_sync_loc[0] = 2; clk_pkt.dr_sync_loc[1] = 6; clk_pkt.dr_sync_loc[2] = 10; clk_pkt.dr_sync_loc[3] = 14; }
+      17: { clk_pkt.dr_sync_loc[0] = 2; clk_pkt.dr_sync_loc[1] = 6; clk_pkt.dr_sync_loc[2] = 11; clk_pkt.dr_sync_loc[3] = 15; }
+      18: { clk_pkt.dr_sync_loc[0] = 2; clk_pkt.dr_sync_loc[1] = 7; clk_pkt.dr_sync_loc[2] = 11; clk_pkt.dr_sync_loc[3] = 16; }
+      19: { clk_pkt.dr_sync_loc[0] = 2; clk_pkt.dr_sync_loc[1] = 7; clk_pkt.dr_sync_loc[2] = 12; clk_pkt.dr_sync_loc[3] = 17; }
+      20: { clk_pkt.dr_sync_loc[0] = 2; clk_pkt.dr_sync_loc[1] = 7; clk_pkt.dr_sync_loc[2] = 12; clk_pkt.dr_sync_loc[3] = 17; }
+      21: { clk_pkt.dr_sync_loc[0] = 3; clk_pkt.dr_sync_loc[1] = 8; clk_pkt.dr_sync_loc[2] = 13; clk_pkt.dr_sync_loc[3] = 18; }
+      default:
+        dbg.dispmon(this.dispScope, MON_ERR, psprintf("div2_eff=%0d <= no spec for dr_sync locations", d2_eff));
+    }
+  }
+  else {
+    dbg.dispmon(this.dispScope, MON_ERR, psprintf("PLL_CTL: d1_eff=%0d, d2_eff=%0d, d3_eff=%0d, d4=0x%h <= illegal combinations\n",
+      d1_eff, d2_eff, d3_eff, div4));
+  }
+  get_expClkPkt_func_mode = clk_pkt; // return value
+}
+
+//=============================================================
+// WHAT: compute expected values for clk pkt in dtm mode
+// review: need to revise this task to better handling rounding effect of Vera integer division
+//=============================================================
+function CCU_clk_packet CCU_clks_states::get_expClkPkt_dtm_mode() {
+  CCU_clk_packet clk_pkt = new(); // create a separate copy
+  integer nom_4_min, nom_4_max; // nominal value for calculating min and max by rounding down or up
+
+  if (! ((this.pll_ctl[CCU__PLL_CTL__PLL_DIV1__MSB : CCU__PLL_CTL__PLL_DIV1__POS] == 6'h0)
+        && (this.pll_ctl[CCU__PLL_CTL__PLL_DIV3__MSB : CCU__PLL_CTL__PLL_DIV3__POS] == 6'h1)
+        && ((this.pll_ctl[CCU__PLL_CTL__PLL_DIV2__MSB : CCU__PLL_CTL__PLL_DIV2__POS] == 6'h7)
+         || (this.pll_ctl[CCU__PLL_CTL__PLL_DIV2__MSB : CCU__PLL_CTL__PLL_DIV2__POS] == 6'ha)
+         || (this.pll_ctl[CCU__PLL_CTL__PLL_DIV2__MSB : CCU__PLL_CTL__PLL_DIV2__POS] == 6'he)))) {
+    dbg.dispmon(this.dispScope, MON_ERR, psprintf("pll_ctl=0x%h <= values of div1, div2, div3 are illegal for dtm mode", this.pll_ctl));
+    get_expClkPkt_dtm_mode = clk_pkt; // just satisfy function return requirement
+    return;
+  }
+
+  //---compute clk pkt---
+  clk_pkt.mode = CCU_DTM_MODE;
+  clk_pkt.pll_ctl = this.pll_ctl;
+  clk_pkt.sys_clk_per = this.sys_clk_per; 
+  clk_pkt.cmp2io_ratio =   this.pll_ctl[CCU__PLL_CTL__PLL_DIV2__MSB : CCU__PLL_CTL__PLL_DIV2__POS] + 1;
+  clk_pkt.cmp2io2x_ratio = this.pll_ctl[CCU__PLL_CTL__PLL_DIV2__MSB : CCU__PLL_CTL__PLL_DIV2__POS] + 1;
+  clk_pkt.cmp_mult = this.pll_ctl[CCU__PLL_CTL__PLL_DIV2__MSB : CCU__PLL_CTL__PLL_DIV2__POS] + 1;
+  clk_pkt.cmp_mult_frac = 0;
+  clk_pkt.dr_mult = 1;
+  clk_pkt.dr_mult_frac = 1'b0;
+  clk_pkt.cmp_per_dev = this.cmp_per_dev;
+  clk_pkt.cmp_pw_dev = this.cmp_pw_dev;
+  clk_pkt.dr_per_dev = this.dr_per_dev;
+  clk_pkt.dr_pw_dev = this.dtm_dr_iox_pw_dev;
+  clk_pkt.iox_per_dev = this.iox_per_dev;
+  clk_pkt.iox_pw_dev = this.dtm_dr_iox_pw_dev;
+
+  clk_pkt.cmp_clk_per_nom = this.sys_clk_per / clk_pkt.cmp_mult;
+  nom_4_min = clk_pkt.cmp_clk_per_nom - 1; // rounding down
+  nom_4_max = clk_pkt.cmp_clk_per_nom + 1; // rounding up
+  clk_pkt.cmp_clk_per_min = nom_4_min - (((nom_4_max / 100) + 1) * this.cmp_per_dev); // rounding down
+  clk_pkt.cmp_clk_per_max = nom_4_max + (((nom_4_max / 100) + 1) * this.cmp_per_dev); // rounding up
+
+  clk_pkt.dr_clk_per_nom = this.sys_clk_per;
+  clk_pkt.dr_clk_per_min = clk_pkt.dr_clk_per_nom - (((clk_pkt.dr_clk_per_nom / 100) + 1) * this.dr_per_dev); // rounding down
+  clk_pkt.dr_clk_per_max = clk_pkt.dr_clk_per_nom + (((clk_pkt.dr_clk_per_nom / 100) + 1) * this.dr_per_dev); // rounding up
+
+  clk_pkt.io_out_per_nom = this.sys_clk_per;
+  clk_pkt.io_out_per_min = clk_pkt.io_out_per_nom - (((clk_pkt.io_out_per_nom / 100) + 1) * this.cmp_per_dev); // rounding down
+  clk_pkt.io_out_per_max = clk_pkt.io_out_per_nom + (((clk_pkt.io_out_per_nom / 100) + 1) * this.cmp_per_dev); // rounding up
+
+  clk_pkt.io2x_out_per_nom = this.sys_clk_per;
+  clk_pkt.io2x_out_per_min = clk_pkt.io2x_out_per_nom - (((clk_pkt.io2x_out_per_nom / 100) + 1) * this.cmp_per_dev); // rounding down
+  clk_pkt.io2x_out_per_max = clk_pkt.io2x_out_per_nom + (((clk_pkt.io2x_out_per_nom / 100) + 1) * this.cmp_per_dev); // rounding up
+
+  case (clk_pkt.cmp_mult) {
+    8:  { clk_pkt.dr_sync_loc[0] = 0; clk_pkt.dr_sync_loc[1] = 0; clk_pkt.dr_sync_loc[2] = 0;  clk_pkt.dr_sync_loc[3] = 0;  } // review: not done
+    11: { clk_pkt.dr_sync_loc[0] = 0; clk_pkt.dr_sync_loc[1] = 0; clk_pkt.dr_sync_loc[2] = 0;  clk_pkt.dr_sync_loc[3] = 0;  } // review: not done
+    15: { clk_pkt.dr_sync_loc[0] = 0; clk_pkt.dr_sync_loc[1] = 0; clk_pkt.dr_sync_loc[2] = 0;  clk_pkt.dr_sync_loc[3] = 0;  } // review: not done
+    default:
+      dbg.dispmon(this.dispScope, MON_ERR, psprintf("get_expClkPkt_dtm_mode(): div2=0x%h <= bad value", 
+        this.pll_ctl[CCU__PLL_CTL__PLL_DIV2__MSB : CCU__PLL_CTL__PLL_DIV2__POS]));
+  }
+  get_expClkPkt_dtm_mode = clk_pkt;
+}
+
+//=============================================================
+// WHAT: print out clk pkt for info.
+// NOTE: it's ugly to put here, but we don't want 'class CCU_clk_packet'
+//       requiring a StandardDisplay handle.
+//=============================================================
+task CCU_clks_states::show_clk_pkt(CCU_clk_packet pkt) {
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("----- info of %s -----", pkt.name));
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("- operational mode: %s", pkt.get_mode_name()));
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("- sys_clk per: %0d ticks", pkt.sys_clk_per));
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("- PLL_CTL=0x%h",  pkt.pll_ctl));
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("- PLL_CTL: div1=0x%h, div2=0x%h, div3=0x%h, div4=0x%h, serdes_dtm1=%b, serdes_dtm2=%b, change=%b",
+    pkt.pll_ctl[CCU__PLL_CTL__PLL_DIV1__MSB : CCU__PLL_CTL__PLL_DIV1__POS],
+    pkt.pll_ctl[CCU__PLL_CTL__PLL_DIV2__MSB : CCU__PLL_CTL__PLL_DIV2__POS],
+    pkt.pll_ctl[CCU__PLL_CTL__PLL_DIV3__MSB : CCU__PLL_CTL__PLL_DIV3__POS],
+    pkt.pll_ctl[CCU__PLL_CTL__PLL_DIV4__MSB : CCU__PLL_CTL__PLL_DIV4__POS],
+    pkt.pll_ctl[CCU__PLL_CTL__SERDES_DTM1__POS],
+    pkt.pll_ctl[CCU__PLL_CTL__SERDES_DTM2__POS],
+    pkt.pll_ctl[CCU__PLL_CTL__CHANGE__POS]));
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("- cmp-to-sys clk ratio : %0d.%0d", pkt.cmp_mult, (pkt.cmp_mult_frac)? 5 : 0));
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("- dr-to-sys clk ratio: dr_mult:  %0d", pkt.dr_mult));
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("- cmp-to-IO clk ratio:   %0d", pkt.cmp2io_ratio));
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("- cmp-to-IO2X clk ratio: %0d", pkt.cmp2io2x_ratio));
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("- cmp clk period deviation limit: %0d %%", pkt.cmp_per_dev));
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("- cmp clk pw deviation limit: %0d %%", pkt.cmp_pw_dev));
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("- iox clk period deviation limit: %0d %%", pkt.iox_per_dev));
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("- iox clk pw deviation limit: %0d %%", pkt.iox_pw_dev));
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("- dr clk period deviation limit: %0d %%", pkt.dr_per_dev));
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("- dr clk pw deviation limit: %0d %%", pkt.dr_pw_dev));
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("- cmp clk period:  nom=%0d, min=%0d, max=%0d", pkt.cmp_clk_per_nom, pkt.cmp_clk_per_min, pkt.cmp_clk_per_max));
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("- dr clk period:   nom=%0d, min=%0d, max=%0d", pkt.dr_clk_per_nom, pkt.dr_clk_per_min, pkt.dr_clk_per_max));
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("- io clk period:   nom=%0d, min=%0d, max=%0d", pkt.io_out_per_nom, pkt.io_out_per_min, pkt.io_out_per_max));
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("- io2x clk period: nom=%0d, min=%0d, max=%0d", pkt.io2x_out_per_nom, pkt.io2x_out_per_min, pkt.io2x_out_per_max));
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("- DR sync locations at cluster header outputs: %0d, %0d, %0d and %0d",
+    pkt.dr_sync_loc[0],  pkt.dr_sync_loc[1],  pkt.dr_sync_loc[2],  pkt.dr_sync_loc[3]));
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("- pllbypass mode: %0d, pllbypass_virtual_div2=0x%h, pllbypass_virtual_div4=0x%h",
+    pllbypass_mode, pllbypass_virtual_div2, pllbypass_virtual_div4));
+  dbg.dispmon(this.dispScope, MON_INFO, "\n");
+}
+
+//################################################################
+//### subroutines to put/get local vars
+//################################################################
+task CCU_clks_states::put_per_pw_dev(integer cmp_per_dev, integer cmp_pw_dev,
+         integer iox_per_dev, integer iox_pw_dev,
+         integer dr_per_dev, integer dr_pw_dev) {
+  this.cmp_per_dev = cmp_per_dev;
+  this.cmp_pw_dev = cmp_pw_dev;
+  this.iox_per_dev = iox_per_dev;
+  this.iox_pw_dev = iox_pw_dev;
+  this.dr_per_dev = dr_per_dev;
+  this.dr_pw_dev = dr_pw_dev;
+}
+
+
+
+

@@ -1,0 +1,358 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: control_fifo_chkr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+#include "control_fifo_mon.vri"
+#include "mbox_class.vrh"
+#include "ip_ingress_classes.vrh"
+
+extern mbox_class       mbox_id;
+
+class control_fifo_chkr{
+
+  integer my_port;
+
+  local bit        randomize_req_drv = 1'b1;  // Enabled by default ?
+  local bit [15:0] start_delay       = 16'h0; // Default is NO delay
+  bit check_2B_cntl_hdr_only;
+
+  Mesg 		be_msg_cntl_fifo;
+
+  task new(integer iport);
+
+  task check_cntl_port (dmc_zcp_drv_port port_bind, integer port_num);
+
+}
+
+task control_fifo_chkr::new( integer iport ){
+
+  static bit[7:0] ports_used = 0;
+
+   if (get_plus_arg(CHECK, "EN_2B_CTRL_FIFO_CHK_ONLY"))
+     check_2B_cntl_hdr_only = 1;
+   else
+     check_2B_cntl_hdr_only = 0;
+
+    be_msg_cntl_fifo = new;
+
+    if(iport > 3 ) {
+        error("ERROR: FAKE DMC_RXC I/F module: Port %0d is invalid.\n", iport);
+        return;
+    }
+
+    // Check if port already in use
+    if(ports_used[iport] == 1) {
+       error("\nERROR: FAKE DMC_RXC I/F module is already attached to port %0d"
+            ,iport);
+       my_port = -1;
+       terminate;
+    }
+    else  my_port = iport;
+
+    
+     fork
+     case (my_port) {
+                      
+                 0: begin
+                       check_cntl_port (dmc_zcp_drv0, 0);
+                    end	
+                 1: begin
+                       check_cntl_port (dmc_zcp_drv1, 1);
+                    end
+                 }                 
+
+     join none
+}
+
+
+task control_fifo_chkr::check_cntl_port(dmc_zcp_drv_port port_bind, integer port_num){
+
+integer		num_of_cycle = 0;
+Cpkt_info	fflp_ctrl_pkt;
+bit [129:0] 	control_fifo_data_1, control_fifo_data_2;
+integer		rtl_pkt_id;
+ 
+  // allocate the mailboxes from which to snoop the fflp_model pkt,
+  // to compare it with the RTL packet
+    mbox_id.cntl_chkr_mbox[port_num] = alloc(MAILBOX, 0, 1);   
+    rtl_pkt_id = 0;
+
+    while (1) {
+        @(posedge port_bind.$clk);
+
+	if ((port_bind.$control_fifo_ack == 1'b1) && (num_of_cycle == 0)) {
+        control_fifo_data_1 = port_bind.$control_fifo_data[129:0];
+        printf("%0d: First Cycle Control fifo = %h\n", {get_time(HI), get_time(LO)}, control_fifo_data_1);
+        
+  	// get the control fifo model object from FFLP to compare with the RTL snoop
+	mailbox_get(WAIT, mbox_id.cntl_chkr_mbox[port_num], fflp_ctrl_pkt);
+	num_of_cycle = num_of_cycle + 1;
+	}
+	else {
+        if (port_bind.$control_fifo_ack == 1'b1) {
+        control_fifo_data_2 = port_bind.$control_fifo_data[129:0];
+        printf("%0d: Second Cycle Control fifo Data = %h\n",
+                {get_time(HI), get_time(LO)}, control_fifo_data_2[129:0]);
+	printf("CNTL_FIFO_CHKR: ---------------------------------------------------\n");
+	printf("CNTL_FIFO_CHKR:   Control FIFO Checker   RTL_PKT_ID = %d           \n", rtl_pkt_id);
+	printf("CNTL_FIFO_CHKR: ---------------------------------------------------\n");
+	printf("CNTL_FIFO_CHKR: 		  RTL		MODEL              \n");
+	printf("CNTL_FIFO_CHKR: ---------------------------------------------------\n");
+	// Second Cycle
+	if (!check_2B_cntl_hdr_only) {
+	if (control_fifo_data_2[71:40]!==fflp_ctrl_pkt.tcp_seq_num)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "TCP-sequence    = %0h\t\t%0h\n", control_fifo_data_2[71:40], fflp_ctrl_pkt.tcp_seq_num);
+	else
+	printf("CNTL_FIFO_CHKR: TCP-sequence	= %0h\t\t%0h\n", control_fifo_data_2[71:40], fflp_ctrl_pkt.tcp_seq_num);
+        if (control_fifo_data_2[75:72]!==fflp_ctrl_pkt.tcp_hdr_len)
+        be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "TCP-hdr-len     = %0h\t\t%0h\n", control_fifo_data_2[75:72], fflp_ctrl_pkt.tcp_hdr_len);
+	else
+	printf("CNTL_FIFO_CHKR: TCP-hdr-len	= %0h\t\t%0h\n", control_fifo_data_2[75:72], fflp_ctrl_pkt.tcp_hdr_len);
+        if (control_fifo_data_2[75:72]!==fflp_ctrl_pkt.tcp_hdr_len)
+        be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "Ipv4-hdr-len    = %0h\t\t%0h\n", control_fifo_data_2[79:76], fflp_ctrl_pkt.ipv4_hdr_len);
+        else
+	printf("CNTL_FIFO_CHKR: Ipv4-hdr-len	= %0h\t\t%0h\n", control_fifo_data_2[79:76], fflp_ctrl_pkt.ipv4_hdr_len);
+        if (control_fifo_data_2[75:72]!==fflp_ctrl_pkt.tcp_hdr_len)
+        be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "L3-pkt-len      = %0h\t\t%0h\n", control_fifo_data_2[95:80], fflp_ctrl_pkt.L3_pkt_len);
+        else
+	printf("CNTL_FIFO_CHKR: L3-pkt-len	= %0h\t\t%0h\n", control_fifo_data_2[95:80], fflp_ctrl_pkt.L3_pkt_len);
+
+        if (control_fifo_data_2[75:72]!==fflp_ctrl_pkt.tcp_hdr_len)
+        be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "zc-RDC          = %0h\t\t%0h\n", control_fifo_data_2[100:96], fflp_ctrl_pkt.zc_rdc);
+        else
+	printf("CNTL_FIFO_CHKR: zc-RDC		= %0h\t\t%0h\n", control_fifo_data_2[100:96], fflp_ctrl_pkt.zc_rdc);
+
+
+        if (control_fifo_data_2[102:101]!==fflp_ctrl_pkt.dmaw_type)
+        be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "DMAW-type	= %0h\t\t%0h\n", control_fifo_data_2[102:101], fflp_ctrl_pkt.dmaw_type);
+	else
+	printf("CNTL_FIFO_CHKR: DMAW-type	= %0h\t\t%0h\n", control_fifo_data_2[102:101], fflp_ctrl_pkt.dmaw_type);
+
+        if (control_fifo_data_2[105:104]!==fflp_ctrl_pkt.L4_protocol)
+        be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "ULP-type	= %0h\t\t%0h\n", control_fifo_data_2[105:104], fflp_ctrl_pkt.L4_protocol);
+        else
+	printf("CNTL_FIFO_CHKR: ULP-type	= %0h\t\t%0h\n", control_fifo_data_2[105:104], fflp_ctrl_pkt.L4_protocol);
+
+        if (control_fifo_data_2[109:106]!==fflp_ctrl_pkt.pkt_id)
+        be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "Pkt-ID		= %0h\t\t%0h\n", control_fifo_data_2[109:106], fflp_ctrl_pkt.pkt_id);
+	else
+	printf("CNTL_FIFO_CHKR: Pkt-ID		= %0h\t\t%0h\n", control_fifo_data_2[109:106], fflp_ctrl_pkt.pkt_id);
+
+        if (control_fifo_data_2[110]!==fflp_ctrl_pkt.ip_version)
+        be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "IP-ver		= %0h\t\t%0h\n", control_fifo_data_2[110], fflp_ctrl_pkt.ip_version);
+	printf("CNTL_FIFO_CHKR: IP-ver		= %0h\t\t%0h\n", control_fifo_data_2[110], fflp_ctrl_pkt.ip_version);
+
+        if (fflp_ctrl_pkt.tt_succeed) { // If tt_succeed==1, ZCP related info takes these fields
+	//printf("CNTL_FIFO_CHKR: Control fifo checker detected tt_succeed=1 (ZCP-intensive) from the FFLP model packet\n");
+	if (control_fifo_data_1[63:48]!==fflp_ctrl_pkt.tt_hdr_len)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "tt_hdr_len     	= %0h\t\t%0h\n", control_fifo_data_1[63:48], fflp_ctrl_pkt.tt_hdr_len);
+	else
+        printf("CNTL_FIFO_CHKR: tt_hdr_len     	= %0h\t\t%0h\n", control_fifo_data_1[63:48], fflp_ctrl_pkt.tt_hdr_len);
+	if (control_fifo_data_1[47:32]!==fflp_ctrl_pkt.tcp_payload_len)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "TCP_Payload_Len = %0h\t\t%0h\n", control_fifo_data_1[47:32], fflp_ctrl_pkt.tcp_payload_len);
+	else
+        printf("CNTL_FIFO_CHKR: TCP_Payload_Len = %0h\t\t%0h\n", control_fifo_data_1[47:32], fflp_ctrl_pkt.tcp_payload_len);
+
+	if (control_fifo_data_1[31:16]!==fflp_ctrl_pkt.HoQ)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "HoQ 		= %0h\t\t%0h\n", control_fifo_data_1[31:16], fflp_ctrl_pkt.HoQ);
+	else
+        printf("CNTL_FIFO_CHKR: HoQ 		= %0h\t\t%0h\n", control_fifo_data_1[31:16], fflp_ctrl_pkt.HoQ);
+
+	if ({control_fifo_data_1[15:0],control_fifo_data_2[127:120]}!==fflp_ctrl_pkt.first_byte_offset)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "FirstByteOffset = %0h\t\t%0h\n", {control_fifo_data_1[15:0],control_fifo_data_2[127:120]},
+						 fflp_ctrl_pkt.first_byte_offset);
+	else
+        printf("CNTL_FIFO_CHKR: FirstByteOffset = %0h\t\t%0h\n", {control_fifo_data_1[15:0],control_fifo_data_2[127:120]}, 
+						 fflp_ctrl_pkt.first_byte_offset);
+
+	if (control_fifo_data_2[119] !== fflp_ctrl_pkt.reach_buf_end)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "reach_buf_end 	= %0h\t\t%0h\n", control_fifo_data_2[119], fflp_ctrl_pkt.reach_buf_end);
+	else
+        printf("CNTL_FIFO_CHKR: reach_buf_end 	= %0h\t\t%0h\n", control_fifo_data_2[119], fflp_ctrl_pkt.reach_buf_end);
+
+	if (control_fifo_data_2[118:117]!==fflp_ctrl_pkt.dmaw_type_1)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "dmaw_type_1 	= %0h\t\t%0h\n", control_fifo_data_2[118:117], fflp_ctrl_pkt.dmaw_type_1);
+	else
+        printf("CNTL_FIFO_CHKR: dmaw_type_1 	= %0h\t\t%0h\n", control_fifo_data_2[118:117], fflp_ctrl_pkt.dmaw_type_1);
+
+	if (control_fifo_data_2[116:112]!==fflp_ctrl_pkt.win_buf_offset)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "win_buf_offset 	= %0h\t\t%0h\n", control_fifo_data_2[116:112], fflp_ctrl_pkt.win_buf_offset);
+	else
+        printf("CNTL_FIFO_CHKR: win_buf_offset 	= %0h\t\t%0h\n", control_fifo_data_2[116:112], fflp_ctrl_pkt.win_buf_offset);
+	}
+	else {
+	//printf("CNTL_FIFO_CHKR: Control fifo checker detected tt_succeed=0 (non-ZCP-intensive) from the FFLP model packet\n");
+	if ({control_fifo_data_1[23:0],control_fifo_data_2[127:112]}!==fflp_ctrl_pkt.user_data)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "Usr_Data[39:0]	= %0h\t\t%0h\n", {control_fifo_data_1[23:0],control_fifo_data_2[127:112]},
+				  fflp_ctrl_pkt.user_data);
+	else
+        printf("CNTL_FIFO_CHKR: Usr_Data[39:0]	= %0h\t\t%0h\n", {control_fifo_data_1[23:0],control_fifo_data_2[127:112]},
+						 fflp_ctrl_pkt.user_data);
+
+	if (control_fifo_data_1[43:24]!==fflp_ctrl_pkt.hash_value1)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "Hash_Val1      	= %0h\t\t%0h\n", control_fifo_data_1[43:24], fflp_ctrl_pkt.hash_value1);
+	else
+        printf("CNTL_FIFO_CHKR: Hash_Val1      	= %0h\t\t%0h\n", control_fifo_data_1[43:24], fflp_ctrl_pkt.hash_value1);
+
+	if (control_fifo_data_1[63:48]!==fflp_ctrl_pkt.hash_value2)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "Hash_Val2      	= %0h\t\t%0h\n", control_fifo_data_1[63:48], fflp_ctrl_pkt.hash_value2);
+	else
+        printf("CNTL_FIFO_CHKR: Hash_Val2      	= %0h\t\t%0h\n", control_fifo_data_1[63:48], fflp_ctrl_pkt.hash_value2);
+	}
+
+	// First Cycle
+	if (control_fifo_data_1[75:64] !==fflp_ctrl_pkt.zc_flow_id)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "Zflowid    	= %0h\t\t%0h\n", control_fifo_data_1[75:64], fflp_ctrl_pkt.zc_flow_id);
+	else
+        printf("CNTL_FIFO_CHKR: Zflowid    	= %0h\t\t%0h\n", control_fifo_data_1[75:64], fflp_ctrl_pkt.zc_flow_id);
+
+	if (control_fifo_data_1[76]!==fflp_ctrl_pkt.solicited_event_bit)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "SE-bit     	= %0h\t\t%0h\n", control_fifo_data_1[76], fflp_ctrl_pkt.solicited_event_bit);
+	else
+        printf("CNTL_FIFO_CHKR: SE-bit     	= %0h\t\t%0h\n", control_fifo_data_1[76], fflp_ctrl_pkt.solicited_event_bit);
+
+	if (control_fifo_data_1[77]!==fflp_ctrl_pkt.asdata_disc)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "Drop-pkt     	= %0h\t\t%0h\n", control_fifo_data_1[77], fflp_ctrl_pkt.asdata_disc);
+	else
+        printf("CNTL_FIFO_CHKR: Drop-pkt     	= %0h\t\t%0h\n", control_fifo_data_1[77], fflp_ctrl_pkt.asdata_disc);
+
+	if (control_fifo_data_1[78]!==fflp_ctrl_pkt.fflp_hw_err)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "FFLP-hw-err   	= %0h\t\t%0h\n", control_fifo_data_1[78], fflp_ctrl_pkt.fflp_hw_err);
+	else
+        printf("CNTL_FIFO_CHKR: FFLP-hw-err   	= %0h\t\t%0h\n", control_fifo_data_1[78], fflp_ctrl_pkt.fflp_hw_err);
+
+	if (control_fifo_data_1[79]!==fflp_ctrl_pkt.mac_promiscuous)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "MAC-promiscuous	= %0h\t\t%0h\n", control_fifo_data_1[79], fflp_ctrl_pkt.mac_promiscuous);
+	else
+        printf("CNTL_FIFO_CHKR: MAC-promiscuous	= %0h\t\t%0h\n", control_fifo_data_1[79], fflp_ctrl_pkt.mac_promiscuous);
+
+	if (control_fifo_data_1[86]!==fflp_ctrl_pkt.tt_err)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "tt-err     	= %0h\t\t%0h\n", control_fifo_data_1[86], fflp_ctrl_pkt.tt_err);
+	else
+        printf("CNTL_FIFO_CHKR: tt-err     	= %0h\t\t%0h\n", control_fifo_data_1[86], fflp_ctrl_pkt.tt_err);
+
+	if (control_fifo_data_1[87]!==fflp_ctrl_pkt.tt_succeed)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "tt-succeed    	= %0h\t\t%0h\n", control_fifo_data_1[87], fflp_ctrl_pkt.tt_succeed);
+	else
+        printf("CNTL_FIFO_CHKR: tt-succeed    	= %0h\t\t%0h\n", control_fifo_data_1[87], fflp_ctrl_pkt.tt_succeed);
+
+	if (control_fifo_data_1[90:88]!==fflp_ctrl_pkt.hash_index)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "Hash-sub-index	= %0h\t\t%0h\n", control_fifo_data_1[90:88], fflp_ctrl_pkt.hash_index);
+	else
+	printf("CNTL_FIFO_CHKR: Hash-sub-index	= %0h\t\t%0h\n", control_fifo_data_1[90:88], fflp_ctrl_pkt.hash_index);
+
+	if (control_fifo_data_1[91]!==fflp_ctrl_pkt.hzfvld)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "HZFVLD		= %0h\t\t%0h\n", control_fifo_data_1[91], fflp_ctrl_pkt.hzfvld);
+	else
+	printf("CNTL_FIFO_CHKR: HZFVLD		= %0h\t\t%0h\n", control_fifo_data_1[91], fflp_ctrl_pkt.hzfvld);
+
+	if (control_fifo_data_1[92]!==fflp_ctrl_pkt.hash_exact_match)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "Exact		= %0h\t\t%0h\n", control_fifo_data_1[92], fflp_ctrl_pkt.hash_exact_match);
+	else
+	printf("CNTL_FIFO_CHKR: Exact		= %0h\t\t%0h\n", control_fifo_data_1[92], fflp_ctrl_pkt.hash_exact_match);
+
+	if (control_fifo_data_1[93]!==fflp_ctrl_pkt.hash_hit)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "Hash-hit	= %0h\t\t%0h\n", control_fifo_data_1[93], fflp_ctrl_pkt.hash_hit);
+	else
+	printf("CNTL_FIFO_CHKR: Hash-hit	= %0h\t\t%0h\n", control_fifo_data_1[93], fflp_ctrl_pkt.hash_hit);
+
+	if (control_fifo_data_1[103:96]!==fflp_ctrl_pkt.tcamm_index)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "TCAM-M-index	= %0h\t\t%0h\n", control_fifo_data_1[103:96], fflp_ctrl_pkt.tcamm_index);
+	else
+	printf("CNTL_FIFO_CHKR: TCAM-M-index	= %0h\t\t%0h\n", control_fifo_data_1[103:96], fflp_ctrl_pkt.tcamm_index);
+
+	if ({control_fifo_data_1[106:104],control_fifo_data_1[95:94]}!==fflp_ctrl_pkt.default_dma_num)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "Table-RDC	= %0h\t\t%0h\n", {control_fifo_data_1[106:104],control_fifo_data_1[95:94]}, 
+						 fflp_ctrl_pkt.default_dma_num);
+	else
+	printf("CNTL_FIFO_CHKR: Table-RDC	= %0h\t\t%0h\n", {control_fifo_data_1[106:104],control_fifo_data_1[95:94]}, 
+						 fflp_ctrl_pkt.default_dma_num);
+
+	if (control_fifo_data_1[111:107]!==fflp_ctrl_pkt.dma_num)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "Default-RDC	= %0h\t\t%0h\n", control_fifo_data_1[111:107], fflp_ctrl_pkt.dma_num);
+	else
+	printf("CNTL_FIFO_CHKR: Default-RDC	= %0h\t\t%0h\n", control_fifo_data_1[111:107], fflp_ctrl_pkt.dma_num);
+	} // skipping above if asked to check only 2 bytes
+
+	if (control_fifo_data_1[112]!==fflp_ctrl_pkt.tzfvld)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "TZFVLD		= %0h\t\t%0h\n", control_fifo_data_1[112], fflp_ctrl_pkt.tzfvld);
+	else
+	printf("CNTL_FIFO_CHKR: TZFVLD		= %0h\t\t%0h\n", control_fifo_data_1[112], fflp_ctrl_pkt.tzfvld);
+	if (control_fifo_data_1[114:113]!==fflp_ctrl_pkt.tres)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "TRES		= %0h\t\t%0h\n", control_fifo_data_1[114:113], fflp_ctrl_pkt.tres);	
+	else
+	printf("CNTL_FIFO_CHKR: TRES		= %0h\t\t%0h\n", control_fifo_data_1[114:113], fflp_ctrl_pkt.tres);	
+	if (control_fifo_data_1[115]!==fflp_ctrl_pkt.tcamhit)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "TCAM-Hit	= %0h\t\t%0h\n", control_fifo_data_1[115], fflp_ctrl_pkt.tcamhit);
+	else
+	printf("CNTL_FIFO_CHKR: TCAM-Hit	= %0h\t\t%0h\n", control_fifo_data_1[115], fflp_ctrl_pkt.tcamhit);
+	if (control_fifo_data_1[116]!==fflp_ctrl_pkt.badip)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "Bad-IP		= %0h\t\t%0h\n", control_fifo_data_1[116], fflp_ctrl_pkt.badip);
+	else
+	printf("CNTL_FIFO_CHKR: Bad-IP		= %0h\t\t%0h\n", control_fifo_data_1[116], fflp_ctrl_pkt.badip);
+	if (control_fifo_data_1[117]!==fflp_ctrl_pkt.noport)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "No-port		= %0h\t\t%0h\n", control_fifo_data_1[117], fflp_ctrl_pkt.noport);
+	else
+	printf("CNTL_FIFO_CHKR: No-port		= %0h\t\t%0h\n", control_fifo_data_1[117], fflp_ctrl_pkt.noport);
+	if (control_fifo_data_1[118]!==fflp_ctrl_pkt.llcsnap)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "LLC-SNAP	= %0h\t\t%0h\n", control_fifo_data_1[118], fflp_ctrl_pkt.llcsnap);
+	else
+	printf("CNTL_FIFO_CHKR: LLC-SNAP	= %0h\t\t%0h\n", control_fifo_data_1[118], fflp_ctrl_pkt.llcsnap);
+	if (control_fifo_data_1[119]!==fflp_ctrl_pkt.vlan)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "VLAN		= %0h\t\t%0h\n", control_fifo_data_1[119], fflp_ctrl_pkt.vlan);
+	else
+	printf("CNTL_FIFO_CHKR: VLAN		= %0h\t\t%0h\n", control_fifo_data_1[119], fflp_ctrl_pkt.vlan);
+	if (control_fifo_data_1[124:120]!==fflp_ctrl_pkt.packet_class)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "CLASS		= %0h\t\t%0h\n", control_fifo_data_1[124:120], fflp_ctrl_pkt.packet_class);
+	else
+	printf("CNTL_FIFO_CHKR: CLASS		= %0h\t\t%0h\n", control_fifo_data_1[124:120], fflp_ctrl_pkt.packet_class);
+	if (control_fifo_data_1[125]!==fflp_ctrl_pkt.maccheck)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "MAC-check	= %0h\t\t%0h\n", control_fifo_data_1[125], fflp_ctrl_pkt.maccheck);
+	else
+	printf("CNTL_FIFO_CHKR: MAC-check	= %0h\t\t%0h\n", control_fifo_data_1[125], fflp_ctrl_pkt.maccheck);
+	if (control_fifo_data_1[127:126]!==fflp_ctrl_pkt.mac_prt)
+	be_msg_cntl_fifo.print(e_mesg_error,"CNTL_FIFO_CHKR", "", "MAC-PORT	= %0h\t\t%0h\n", control_fifo_data_1[127:126], fflp_ctrl_pkt.mac_prt);
+	else
+	printf("CNTL_FIFO_CHKR: MAC-PORT	= %0h\t\t%0h\n", control_fifo_data_1[127:126], fflp_ctrl_pkt.mac_prt);
+	printf("CNTL_FIFO_CHKR: ---------------------------------------------------\n");
+	num_of_cycle = 0;
+	rtl_pkt_id ++;
+	}
+	}
+
+
+    }	// end of while
+
+}	// end of task check_cntl_port

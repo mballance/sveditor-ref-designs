@@ -1,0 +1,680 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: FNXPCIEXactorManager.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "XactorList.vrh"
+#include "XactorListWildCard.vrh"
+#include "XactorManager.vrh"
+
+class FNXPCIEXactorManager extends XactorManager {
+  // inherited members
+  //   integer ExpectFifo
+  //   integer DriveFifo
+  //   integer DriverSemaphore
+  //   XactorCtrl _XactorCtrl
+  //   XactorBasePacket SampledPkt
+  //   event NewTransaction
+  //   string XactorName
+  //   XactorClk ClkPort
+
+  // inherited virtual methods
+  //   task DumpExpects()
+  //   function bit ExpectPending(XactorBasePacket ExpectedPacket)
+  //   function bit Remove(XactorBasePacket ExpectedPacket)
+  //   function integer NumExpects();
+  //   task RemoveExpect(XactorBasePacket Packet, var bit Success)
+  //   task RemoveXExpect(XactorBasePacket Packet, var bit Success)
+  //   task RemoveRefExpect(XactorBasePacket Packet, var bit Success)
+  //   task RemoveRefXExpect(XactorBasePacket Packet, var bit Success)
+  //   task ExpectPkt(XactorBasePacket ExpectedPkt, integer Window, var bit [1:0] Status)
+  //   task SamplePkt(XactorBasePacket Pkt, integer Window)
+  //   task DisableManager()
+  //   task EnableManager()
+  //   task FlushDriveFifo()
+  //   task ResetManager()
+
+  // public members
+  integer RetryPktFifo;
+  integer DllpExpectFifo;
+  integer Bluntend_TX_fifo; 
+  integer DllpExpectDataStructSemaphore;
+  integer DllpXExpectDataStructSemaphore;
+
+  // private memebers
+  protected XactorList DllpExpectDataStruct;
+  protected XactorListWildCard DllpXExpectDataStruct; 
+
+  // Base Class and Method Names For QR Macros
+  local string ClassName  = "FNXPCIEXactorManager";
+  local string MethodName = null;
+
+  bit ExpectsOn;
+  bit UnexpectedTLPIsErr;
+  bit disablteTlpExpectTimeout = 0;
+
+  local event eNewTLPXaction;
+  local event eNewDLLPXaction;
+
+  // constructor
+  task new( XactorBaseBuilder Builder, 
+	    XactorClk _ClkPort );
+
+  // pubic methods
+  virtual task DrivePkt( XactorBasePacket DrivenPkt, 
+			 integer D );
+  virtual task ExpectPkt( XactorBasePacket ExpectedPkt,
+			  integer Window,
+			  var bit [1:0] Status );
+  virtual task SampleTlpPkt( XactorBasePacket Pkt, integer Window );
+  virtual task SampleDllpPkt( XactorBasePacket Pkt, integer Window );
+  virtual function bit Remove(XactorBasePacket ExpectedPacket);
+  virtual task DumpExpects();
+  virtual function integer NumExpects();
+  virtual function integer NumTlpExpects();
+  virtual function integer NumDllpExpects();
+  virtual function bit ExpectPending(XactorBasePacket ExpectedPacket);
+
+  // private methods
+  protected task ExpectConsumer();
+  protected task DllpExpectConsumer();
+  protected task RetryExpectIssuer();
+  protected task RemoveDllpExpect( XactorBasePacket Packet, 
+				   var bit Success );
+  protected task RemoveDllpXExpect( XactorBasePacket Packet, 
+				    var bit Success );
+  protected task RemoveDllpRefExpect( XactorBasePacket Packet, 
+				      var bit Success );
+  protected task RemoveDllpRefXExpect( XactorBasePacket Packet, 
+				       var bit Success );
+}
+
+task FNXPCIEXactorManager::new( XactorBaseBuilder Builder, 
+				XactorClk _ClkPort )
+{
+  string MethodName = "new";
+
+  super.new( Builder, 
+	     _ClkPort );
+
+  ExpectsOn = 1;
+  UnexpectedTLPIsErr = 1;
+
+  RetryPktFifo = alloc(MAILBOX, 0, 1);
+  if (RetryPktFifo == 0)
+    PCIEX_QR_ERR( "%s-> Failed to Allocate RetryPktFifo Mailbox.",
+		  XactorName );
+
+  DllpExpectFifo = alloc(MAILBOX, 0, 1);
+  if (DllpExpectFifo == 0)
+    PCIEX_QR_ERR( "%s-> Failed to Allocate DllpExpectFifo Mailbox.",
+		  XactorName );
+
+  Bluntend_TX_fifo = alloc(MAILBOX, 0, 1);
+  if (Bluntend_TX_fifo == 0)
+    PCIEX_QR_ERR( "%s-> Failed to Allocate Bluntend_TX_fifo Mailbox.",
+		  XactorName );
+
+
+  DllpExpectDataStruct  = new;
+  DllpXExpectDataStruct = new;
+
+  DllpExpectDataStructSemaphore = alloc(SEMAPHORE, 0, 1, 1);
+  if (DllpExpectDataStructSemaphore == 0)
+    PCIEX_QR_ERR( "%s %s-> Allocation of DllpExpectDataStructSemaphore Failed.",
+		  XactorName );
+  
+  DllpXExpectDataStructSemaphore = alloc(SEMAPHORE, 0, 1, 1);
+  if (DllpXExpectDataStructSemaphore == 0)
+    PCIEX_QR_ERR( "%s %s-> Allocation of DllpXExpectDataStructSemaphore Failed.",
+		  XactorName );
+  
+  fork {
+    DllpExpectConsumer();
+  } 
+  {
+    RetryExpectIssuer();
+  } join none
+}
+
+task FNXPCIEXactorManager::DllpExpectConsumer()
+{  
+  bit Success, SuccessWildcard;
+  string MethodName = "DllpExpectConsumer";
+  
+  // Main DLLP Expect Consumer loop
+  while (1) {
+
+    // Wait for another transaction coming from the Signal Interface
+    void = mailbox_get(WAIT, DllpExpectFifo, SampledPkt);
+    
+    // Check if sampled packet has undefined values
+    if (SampledPkt.PktUndef())
+      SampledPkt.PktDisplay( RTYP_XACTOR_FMWORK_SAMPLED_X_ERR, 
+			     psprintf("at time %d, %s %s -> X Values Detected in Xaction Driven by DUT", get_time(LO), PCIEX_QR_PREFIX, XactorName ));
+    
+    // Stop the DLLP Expect Consumer if the Transactor is Disabled
+    if (_XactorCtrl.GetDisableFlag())
+      sync(ANY, _XactorCtrl.GetEnableEvent());
+    
+    // Trigger the event for a new transaction
+    trigger(ONE_BLAST, NewTransaction);
+    trigger(ONE_BLAST, eNewDLLPXaction );
+    
+    Success = 1'b0;
+    SuccessWildcard = 1'b0;
+    fork {
+      RemoveDllpExpect(SampledPkt, Success);
+    }
+    { 
+      RemoveDllpXExpect(SampledPkt, SuccessWildcard);
+    } join all
+    
+    if (SuccessWildcard || Success)  
+      SampledPkt.PktDisplay( RTYP_FNX_PCIE_XTR_DEBUG_1, psprintf("%s %s -> Match Found, Pending Expect Removed", PCIEX_QR_PREFIX, XactorName ));
+    // else
+    // Unexpected DLLPs Are Allowed Hence Not Unexpected Transaction Error Is Thrown Here
+  } // while (1)
+}
+
+task FNXPCIEXactorManager::ExpectConsumer()
+{  
+  bit Success, SuccessWildcard;
+  string MethodName = "ExpectConsumer";
+  ReportType rptType;
+  
+  // Main TLP Expect Consumer loop
+  while (1) {
+
+    // Wait for another transaction coming from the Signal Interface
+    void = mailbox_get(WAIT, ExpectFifo, SampledPkt);
+      
+    // Check if sampled packet has undefined values
+    if (SampledPkt.PktUndef())
+      SampledPkt.PktDisplay( RTYP_XACTOR_FMWORK_SAMPLED_X_ERR, 
+			     psprintf("%s %s -> X Values Detected in Xaction Driven by DUT", PCIEX_QR_PREFIX, XactorName ));
+    
+    // Stop the Expect Consumer if the transactor was disabled
+    if (_XactorCtrl.GetDisableFlag())
+      sync(ANY, _XactorCtrl.GetEnableEvent());
+      
+    // Trigger the event for a new transaction
+    trigger(ONE_BLAST, NewTransaction);
+    trigger(ONE_BLAST, eNewTLPXaction );
+
+    if (ExpectsOn) {
+      
+      Success = 1'b0;
+      SuccessWildcard = 1'b0;
+      fork {
+	RemoveExpect(SampledPkt, Success);
+      }
+      {
+	RemoveXExpect(SampledPkt, SuccessWildcard);
+      }
+      join all
+      
+      if (SuccessWildcard || Success) {
+	
+	SampledPkt.PktDisplay( RTYP_DEBUG_1, psprintf("%s %s -> Match Found, Pending Expect Removed", PCIEX_QR_PREFIX, XactorName ));
+      }
+      else {
+	// Handle Unexpected TLP
+	if (UnexpectedTLPIsErr) {
+	  PCIEX_QR_I( "%s -> Unexpected Xaction Sampled, Dumping Expect Structure:", XactorName );
+	  DumpExpects();
+	  rptType = RTYP_XACTOR_FMWORK_UNEXPECTED_XACTION_ERR;
+	}
+	else
+	  rptType = RTYP_FNX_PCIE_XTR_INFO;
+	SampledPkt.PktDisplay( rptType, psprintf("%s %s -> Sampled Unexpected Xaction", PCIEX_QR_PREFIX, XactorName ));
+      }
+    }
+  } // while (1)
+}
+
+// This task will receive DrivenPkt and will wait D clock cycles before DrivenPkt is
+// scheduled for driving
+task FNXPCIEXactorManager::DrivePkt( XactorBasePacket DrivenPkt, 
+				     integer D)
+{
+  string MethodName = "DrivePkt";
+  FNXPCIEXactorPacket drivePkt;
+
+  cast_assign( drivePkt, DrivenPkt );
+  
+  // Wait D cycles before drivePkt is scheduled for driving
+  repeat (D) @(posedge ClkPort.$XClk);
+
+  // Wait if transactor was disabled
+  if (_XactorCtrl.GetDisableFlag() === 1'b1)
+    sync(ANY, _XactorCtrl.GetEnableEvent());
+
+  // Send drivePkt to the Signal Interface
+  mailbox_put(DriveFifo, drivePkt);
+
+  drivePkt.PktDisplay( RTYP_FNX_PCIE_XTR_DEBUG_3, psprintf("%s %s-> Drive Enqueued", PCIEX_QR_PREFIX, XactorName ) );
+  
+  // Wait until the packet is complete driven on serial links
+  drivePkt.SyncDriveEnd();
+  
+  drivePkt.PktDisplay( RTYP_FNX_PCIE_XTR_INFO, psprintf("at time %d, %s %s-> Xaction Driven", get_time(LO), PCIEX_QR_PREFIX, XactorName ) );
+}
+
+// Removes Packet from DllpExpectDataStruct if Present. Success is 1 if 
+// Packet is removed without problems and 0 otherwise
+task FNXPCIEXactorManager::RemoveDllpExpect( XactorBasePacket Packet,
+					     var bit Success )
+{
+  string MethodName = "RemoveDllpExpect";
+
+  semaphore_get(WAIT, DllpExpectDataStructSemaphore, 1);
+  if ((!(DllpExpectDataStruct.Empty())) && (!(Packet.PktUndef())))
+    DllpExpectDataStruct.Delete( Packet, Success );
+  else
+    Success = 1'b0;
+  semaphore_put(DllpExpectDataStructSemaphore, 1);
+  
+  if (Success)
+    Packet.PktDisplay( RTYP_FNX_PCIE_XTR_DEBUG_2, psprintf( "%s %s-> Sampled Xaction Match Found in DllpExpectDataStructure", 
+							    PCIEX_QR_PREFIX, XactorName ) );
+  else
+    Packet.PktDisplay( RTYP_FNX_PCIE_XTR_DEBUG_2, psprintf( "%s %s-> Sampled Xaction Has No Match in DllpExpectDataStructure",
+							    PCIEX_QR_PREFIX, XactorName ) );
+}
+
+// Same as RemoveDllpExpect, but it will remove Packet from the DllpXExpectDataStruct
+task FNXPCIEXactorManager::RemoveDllpXExpect( XactorBasePacket Packet, 
+					      var bit Success )
+{  
+  string MethodName = "RemoveDllpXExpect";
+
+  semaphore_get(WAIT, DllpXExpectDataStructSemaphore, 1);	
+  if (!(DllpXExpectDataStruct.Empty()))
+    DllpXExpectDataStruct.WildCardDelete1( Packet, Success );
+  else
+    Success = 1'b0;
+  semaphore_put(DllpXExpectDataStructSemaphore, 1);
+
+  if (Success)
+    Packet.PktDisplay( RTYP_FNX_PCIE_XTR_DEBUG_2, 
+		       psprintf( "%s %s-> Sampled Xaction Match Found in DllpXExpectDataStructure", 
+				 PCIEX_QR_PREFIX, XactorName ) );
+  else
+    Packet.PktDisplay( RTYP_FNX_PCIE_XTR_DEBUG_2, 
+		       psprintf( "%s %s-> Sampled Xaction Has No Match in DllpXExpectDataStructure",
+				 PCIEX_QR_PREFIX, XactorName ) );
+}
+
+// Removes Packet from DllpExpectDataStruct if Present. Success is 1 if 
+// Packet is removed without problems and 0 otherwise
+task FNXPCIEXactorManager::RemoveDllpRefExpect( XactorBasePacket Packet,
+						var bit Success )
+{
+  string MethodName = "RemoveDllpRefExpect";
+
+  semaphore_get(WAIT, DllpExpectDataStructSemaphore, 1);
+  if ((!(DllpExpectDataStruct.Empty())) && (!(Packet.PktUndef())))
+    DllpExpectDataStruct.RefDelete( Packet, Success );
+  else
+    Success = 1'b0;
+  semaphore_put(DllpExpectDataStructSemaphore, 1);
+  
+  if (Success)
+    Packet.PktDisplay( RTYP_FNX_PCIE_XTR_DEBUG_2,
+		       psprintf( "%s %s-> Removing Expect From DllpExpectDataStructure", 
+				 PCIEX_QR_PREFIX, XactorName ) );
+}
+
+// Same as RemoveDllpExpect, but it will remove Packet from the DllpXExpectDataStruct
+task FNXPCIEXactorManager::RemoveDllpRefXExpect( XactorBasePacket Packet, 
+						 var bit Success )
+{
+  string MethodName = "RemoveDllpRefXExpect";
+
+  semaphore_get(WAIT, DllpXExpectDataStructSemaphore, 1);	
+  if (!(DllpXExpectDataStruct.Empty()))
+    DllpXExpectDataStruct.WildCardDelete1( Packet, Success );
+  else
+    Success = 1'b0;
+  semaphore_put(DllpXExpectDataStructSemaphore, 1);
+
+  if (Success)
+    Packet.PktDisplay( RTYP_FNX_PCIE_XTR_DEBUG_2,
+		       psprintf( "%s %s-> Removing Expect From DllpXExpectDataStructure", 
+				 PCIEX_QR_PREFIX, XactorName ) );
+}
+
+task FNXPCIEXactorManager::ExpectPkt( XactorBasePacket ExpectedPkt,
+				      integer Window,
+				      var bit [1:0] Status ) 
+{
+  FNXPCIEXactorPacket fnxExpectedPkt;
+  bit SuccessWildcard = 1'b0;
+  bit Success = 1'b0;
+  event RemoveEvents[XACT_EXPECT_DATA_STRUCT_REMOVE_EVENTS];
+
+  cast_assign( fnxExpectedPkt, ExpectedPkt );
+  
+  Status = 2'b00;
+
+  ///////////////////////////////////////////////////////////
+  // Begin -> Handle TLP Expects
+  // 
+  if (fnxExpectedPkt.isTlp()) {
+    
+    if (fnxExpectedPkt.PktUndef()) {
+      semaphore_get(WAIT, _XactorCtrl.XExpectDataStructSemaphore, 1);
+      XExpectDataStruct.Insert(fnxExpectedPkt, RemoveEvents);
+      semaphore_put(_XactorCtrl.XExpectDataStructSemaphore, 1);
+    }
+    else {
+      semaphore_get(WAIT, _XactorCtrl.ExpectDataStructSemaphore, 1);
+      ExpectDataStruct.Insert(fnxExpectedPkt, RemoveEvents);
+      semaphore_put(_XactorCtrl.ExpectDataStructSemaphore, 1);
+    }
+  
+    // nasty race condition
+    repeat (2)
+      @(negedge ClkPort.$XClk);
+  
+    // Wait until the expect is satisfied or it times out.
+    while (!Status[1] && Window) {
+      if (_XactorCtrl.GetDisableFlag() === 1'b1)
+	sync(ANY, _XactorCtrl.GetEnableEvent());    
+      if (sync(CHECK, RemoveEvents[XACT_COMP_EXPECT_REMOVED_EVENT])) {
+	Status[1] = 1'b1;
+      }
+      
+      if( !disablteTlpExpectTimeout ){
+        Window--;
+      }
+      if (!Status[1])
+	@(negedge ClkPort.$XClk);
+    }
+    
+    if (Status[1] !== 1'b1) {
+      fork {
+	RemoveRefExpect(fnxExpectedPkt, Success);
+      }
+      {
+	RemoveRefXExpect(fnxExpectedPkt, SuccessWildcard);
+      } join all 	      
+      Status[0] = 1'b0; // Expect timedout and is removed by transactor
+    }
+    else {
+      if (sync(CHECK, RemoveEvents[XACT_COMP_EXPECT_REMOVED_BY_XACTOR_EVENT]))
+	Status[0] = 1'b0;
+      else if (sync(CHECK, RemoveEvents[XACT_COMP_EXPECT_REMOVED_BY_USER_EVENT]))
+	Status[0] = 1'b1;
+    }
+  }
+  // End -> Handle TLP Expects
+  ///////////////////////////////////////////////////////////
+
+  ///////////////////////////////////////////////////////////
+  // Begin -> Handle DLLP Expects
+  //
+  if (fnxExpectedPkt.isDllp()) {
+    
+    if (fnxExpectedPkt.PktUndef()) {
+      semaphore_get(WAIT, DllpXExpectDataStructSemaphore, 1);
+      DllpXExpectDataStruct.Insert(fnxExpectedPkt, RemoveEvents);
+      semaphore_put(DllpXExpectDataStructSemaphore, 1);
+    }
+    else {
+      semaphore_get(WAIT, DllpExpectDataStructSemaphore, 1);
+      ExpectDataStruct.Insert(fnxExpectedPkt, RemoveEvents);
+      semaphore_put(DllpExpectDataStructSemaphore, 1);
+    }
+  
+    // nasty race condition
+    repeat (2)
+      @(negedge ClkPort.$XClk);
+  
+    // Wait until the expect is satisfied or it times out.
+    while (!Status[1] && Window) {
+      if (_XactorCtrl.GetDisableFlag() === 1'b1)
+	sync(ANY, _XactorCtrl.GetEnableEvent());    
+      if (sync(CHECK, RemoveEvents[XACT_COMP_EXPECT_REMOVED_EVENT])) {
+	Status[1] = 1'b1;
+      }
+      
+      Window--;
+      if (!Status[1])
+	@(negedge ClkPort.$XClk);
+    }
+    
+    if (Status[1] !== 1'b1) {
+      fork {
+	RemoveDllpRefExpect(fnxExpectedPkt, Success);
+      }
+      {
+	RemoveDllpRefXExpect(fnxExpectedPkt, SuccessWildcard);
+      } join all 	      
+      Status[0] = 1'b0; // Expect timedout and is removed by transactor
+    }
+    else {
+      if (sync(CHECK, RemoveEvents[XACT_COMP_EXPECT_REMOVED_BY_XACTOR_EVENT]))
+	Status[0] = 1'b0;
+      else if (sync(CHECK, RemoveEvents[XACT_COMP_EXPECT_REMOVED_BY_USER_EVENT]))
+	Status[0] = 1'b1;
+    }
+  }
+  // End -> Handle DLLP Expects
+  ///////////////////////////////////////////////////////////
+}
+
+task FNXPCIEXactorManager::RetryExpectIssuer()
+{
+  FNXPCIEXactorPacket retryPkt;
+  bit [1:0] status;
+
+  while (1) {
+
+    // Wait For Retry Packet To Come From Signal Interface (Denali retry_buffer_exit Callback)
+    void = mailbox_get(WAIT, RetryPktFifo, retryPkt);
+
+    retryPkt.PktDisplay( RTYP_FNX_PCIE_XTR_INFO, psprintf( "%s %s-> Launching Expect (Replay)", PCIEX_QR_PREFIX, XactorName ) );
+
+    // Stop the Retry Expect Issuer if the Transactor is Disabled
+    if (_XactorCtrl.GetDisableFlag())
+      sync(ANY, _XactorCtrl.GetEnableEvent());
+
+    // [review jbanta 10/13/03] What should window for replay packet expects be?
+    // [review jbanta 10/13/03] Setting it to 1000 for now
+    // Block Until Retry Expect is Satisfied (No Need to Fork as Retries Should Happen in Order)
+    ExpectPkt( retryPkt, 1000, status );
+
+    if ( status === 2'b10 ) { // Expect removed by transactor
+      retryPkt.PktDisplay( RTYP_FNX_PCIE_XTR_INFO, psprintf("%s %s -> Expect Satisfied (Replay)", PCIEX_QR_PREFIX, XactorName ) );
+    }
+    else { // Expect removed by user
+      if ( status === 2'b11 )
+	retryPkt.PktDisplay( RTYP_XACTOR_FMWORK_EXPECT_REMOVED_BY_USER,
+			     psprintf("%s %s -> Expect Removed by User (Replay)", PCIEX_QR_PREFIX, XactorName ) );
+      else // Expect timeout
+	retryPkt.PktDisplay( RTYP_XACTOR_FMWORK_EXPECT_TIMEOUT_ERR,
+			     psprintf("%s %s -> Expect Expired (Replay)", PCIEX_QR_PREFIX, XactorName ) );
+    }
+  }
+}
+
+task FNXPCIEXactorManager::SampleTlpPkt( XactorBasePacket Pkt,
+					 integer Window )
+{
+  string MethodName = "SampleTlpPkt";
+  bit Success = 0;
+  
+  fork {
+    sync(ANY, eNewTLPXaction);
+    Pkt.PktCopy(SampledPkt);
+    Success = 1'b1;
+  }
+  {
+    while (Window && !Success) {
+      Window--;
+      @(negedge ClkPort.$XClk);
+    }
+    if (!Success)
+      PCIEX_QR_ERR( "%s-> Timeout. No TLP received from the DUT.", XactorName );      
+    else
+      Pkt.PktDisplay( RTYP_INFO, psprintf("%s %s -> Transaction Sampled", PCIEX_QR_PREFIX, XactorName ) );
+  }
+  join any
+}
+
+task FNXPCIEXactorManager::SampleDllpPkt( XactorBasePacket Pkt,
+					  integer Window )
+{
+  string MethodName = "SampleDllpPkt";
+  bit Success = 0;
+  
+  fork {
+    sync(ANY, eNewDLLPXaction);
+    Pkt.PktCopy(SampledPkt);
+    Success = 1'b1;
+  }
+  {
+    while (Window && !Success) {
+      Window--;
+      @(negedge ClkPort.$XClk);
+    }
+    if (!Success)
+      PCIEX_QR_ERR( "%s-> Timeout. No DLLP received from the DUT.", XactorName );      
+    else
+      Pkt.PktDisplay( RTYP_INFO, psprintf("%s %s -> Transaction Sampled", PCIEX_QR_PREFIX, XactorName ) );
+  }
+  join any
+}
+
+// Returns 1 if the expect with the value in ExpectedPacket is removed successfully and 0 otherwise
+function bit FNXPCIEXactorManager::Remove(XactorBasePacket ExpectedPacket)
+{    
+  FNXPCIEXactorPacket fnxExpectedPkt;
+  bit SuccessWildcard = 1'b0;
+  bit Success = 1'b0;
+
+  cast_assign( fnxExpectedPkt, ExpectedPacket );
+
+  if (fnxExpectedPkt.isTlp()) {
+    RemoveRefExpect(ExpectedPacket, Success);
+    RemoveRefXExpect(ExpectedPacket, SuccessWildcard);
+  }
+  
+  if (fnxExpectedPkt.isDllp()) {
+    RemoveDllpRefExpect(ExpectedPacket, Success);
+    RemoveDllpRefXExpect(ExpectedPacket, SuccessWildcard);
+  }
+    
+  Remove = Success | SuccessWildcard;
+}
+
+task FNXPCIEXactorManager::DumpExpects() {
+  string MethodName = "DumpExpects";
+  
+  // TLP Expects
+  semaphore_get(WAIT, _XactorCtrl.ExpectDataStructSemaphore, 1);
+  PCIEX_QR_I( "%s -> Dumping TLP Expect Structure:", XactorName );
+  ExpectDataStruct.PrintNodes();
+  semaphore_put(_XactorCtrl.ExpectDataStructSemaphore, 1);
+  
+  // TLP XExpects
+  semaphore_get(WAIT, _XactorCtrl.XExpectDataStructSemaphore, 1);
+  PCIEX_QR_I( "%s -> Dumping TLP Wilcard Expect Structure:", XactorName );
+  XExpectDataStruct.PrintNodes();
+  semaphore_put(_XactorCtrl.XExpectDataStructSemaphore, 1);
+
+  // DLLP Expects
+  semaphore_get(WAIT, DllpExpectDataStructSemaphore, 1);
+  PCIEX_QR_I( "%s -> Dumping DLLP Expect Structure:", XactorName );
+  DllpExpectDataStruct.PrintNodes();
+  semaphore_put(DllpExpectDataStructSemaphore, 1);
+  
+  // DLLP XExpects
+  semaphore_get(WAIT, DllpXExpectDataStructSemaphore, 1);
+  PCIEX_QR_I( "%s -> Dumping DLLP Wilcard Expect Structure:", XactorName );
+  DllpXExpectDataStruct.PrintNodes();
+  semaphore_put(DllpXExpectDataStructSemaphore, 1);
+}
+
+function integer FNXPCIEXactorManager::NumExpects()
+{
+  NumExpects = NumTlpExpects() + NumDllpExpects();
+}
+
+function integer FNXPCIEXactorManager::NumTlpExpects()
+{
+  // NOTE: TLP Expects Are Stored in ExpectDataStruct and XExpectDataStruct
+  //       Structures Present in Base XactorManger class, hence super.NumExpects
+  //       Returns Numberof TLP Expects Outstanding
+  NumTlpExpects = super.NumExpects();
+}
+
+function integer FNXPCIEXactorManager::NumDllpExpects()
+{
+  NumDllpExpects = 0;
+
+  // First count the expects pending in the DLLP expect data structure
+  semaphore_get(WAIT, DllpExpectDataStructSemaphore, 1);    
+  NumDllpExpects = DllpExpectDataStruct.CountNodes();
+  semaphore_put(DllpExpectDataStructSemaphore, 1);
+  
+  // Then add the expects pending in the DLLP wildcard expect data structure
+  semaphore_get(WAIT, DllpXExpectDataStructSemaphore, 1);
+  NumDllpExpects += DllpXExpectDataStruct.CountNodes();
+  semaphore_put(DllpXExpectDataStructSemaphore, 1);
+}
+
+function bit FNXPCIEXactorManager::ExpectPending(XactorBasePacket ExpectedPacket)
+{
+  bit dllpExpectPendingBit = 1'b0;
+  bit dllpXExpectPendingBit = 1'b0;
+  
+  // First check if the expect is pending in the main expect data structure
+  semaphore_get(WAIT, DllpExpectDataStructSemaphore, 1);
+  if ((!(DllpExpectDataStruct.Empty())) && (!ExpectedPacket.PktUndef()))
+    dllpExpectPendingBit = DllpExpectDataStruct.InStructure(ExpectedPacket);
+  semaphore_put(DllpExpectDataStructSemaphore, 1);
+
+  // Then check if the expect is in the expect data structure with "wildcards"
+  semaphore_get(WAIT, DllpXExpectDataStructSemaphore, 1);
+  if ((!(DllpXExpectDataStruct.Empty())) && (ExpectedPacket.PktUndef()))
+    dllpXExpectPendingBit = DllpXExpectDataStruct.InStructure(ExpectedPacket);
+  semaphore_put(DllpXExpectDataStructSemaphore, 1);
+  
+  // NOTE: TLP Expects Are Stored in ExpectDataStruct and XExpectDataStruct
+  //       Structures Present in Base XactorManger class, hence super.ExpectPending()
+  //       Checks For Packet Presence in TLP Data Structures
+  ExpectPending = super.ExpectPending(ExpectedPacket) | dllpExpectPendingBit | dllpXExpectPendingBit;
+}

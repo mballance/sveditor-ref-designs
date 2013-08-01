@@ -1,0 +1,615 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_rx_descp_sch.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "niu_mem.vrh"
+#include "niu_rxtoken.vrh"
+#include "niu_dmc_descr_ring.vrh"
+
+extern CSparseMem SparseMem;
+
+#define DESCR_DONE 1
+#define DESCR_NOT_DONE 0
+
+class CRxDescSch extends CRxdescriptor {
+
+  // This is the place holder for the descriptor before scheduling one
+  integer id;
+  bit [63:0]address;// Address of this descriptor
+  bit [63:0] virtaddress;// Address of this descriptor
+  integer valid;
+  integer blk_size;
+  integer buf_size;
+  integer bytes_allocated;
+  integer index;
+
+
+  task new( ( integer i =0)) {
+    id = 0;
+    valid = 0;
+    bytes_allocated = 0;
+    index = 0;
+  }
+
+  function bit[63:0] getAddress ( integer length, var bit[63:0] vaddr ) {
+    getAddress = address + bytes_allocated;
+    vaddr = virtaddress + bytes_allocated;
+    bytes_allocated = bytes_allocated + buf_size;
+    printf(" RDMC DEBUG - buf_size- %d bytes_allocated - %d Address - %x\n",buf_size,bytes_allocated,getAddress);
+    if(bytes_allocated >blk_size) {
+     printf(" ERROR Potential Programming error or Testbench ERROR -- \n");
+    }
+  }
+
+  function integer checkState () {
+    if(bytes_allocated == blk_size) {
+      checkState = DESCR_DONE;
+      printf(" RDMC DEBUG - DONE WITH THIS DESCRIPTOR \n");
+    } else { checkState = DESCR_NOT_DONE;
+    }
+  }
+}
+
+
+MakeVeraList(CRxDescSch) // list of descriptors
+
+class CRxDescrSchRing extends CDescrRing {
+
+    VeraList_CRxDescSch desc_ring;
+    integer index;
+    task new(integer i = 0) {
+	   id = i;
+	   index =0;
+           desc_ring = new();
+        }
+	function CRxDescSch front() {
+	  front = desc_ring.front();
+        }
+   	task pop_front(){
+      	  desc_ring.pop_front();
+   	}
+        task push_back( CRxDescSch desc ) {
+	  desc.index = index++;
+	  desc_ring.push_back(desc);
+	  //printf(" in CRxDescSch: Size - - %d \n",desc_ring.size());
+       }
+	function CRxDescSch back() { 
+	  back = desc_ring.back();
+	  printf(" in CRxDescSch: address - %x \n",back.blk_addr);
+        }
+	function integer get_ring_size() {
+            get_ring_size = desc_ring.size();
+	}
+
+// Something fishy here---
+        function integer isRingEmpty() {
+         if(get_ring_size()) isRingEmpty = 0;
+         else isRingEmpty = 1;
+       }
+}
+
+class CRxdescpScheduler {
+
+  integer valid;
+  integer id;
+  // Variables needed for carving logic to work
+  bit vld0,vld1,vld2;
+  integer blk_size;
+  integer bufsz0,bufsz1,bufsz2;
+
+  CRxDescrSchRing desc_ring;
+
+  CRxDescSch RxDescSchSMALL;
+  CRxDescSch RxDescSchMEDIUM;
+  CRxDescSch RxDescSchLARGE;
+  static bit [2:0]  RxDescState[32]; // indicates which ones are popped out and are valid
+  integer reclaim_index;
+  integer last_reclaim_index;
+
+  
+
+  task new(integer i) {
+   id = i;
+    vld0 = 0;
+    vld1 = 0;
+    vld2 = 0;
+    reclaim_index = 0;
+    last_reclaim_index = 0;
+    desc_ring = new();
+    RxDescState[i] = 0;
+    // printf(" CRxdescpScheduler- Newd\n");
+  }
+
+  task set_blk_size(bit [1:0] s) ;
+  task set_bufsz0(bit [1:0] s,integer v) ;
+  task set_bufsz1(bit [1:0] s,integer v) ;
+  task set_bufsz2(bit [1:0] s,integer v) ;
+  task print() {
+   printf("CRxdescpScheduler DMA-%d  - bufsz0 - %d bufz1 - %d bufz2 - %d vld0 - %d vld1 - %d vld2 - %d \n",id,bufsz0,bufsz1,bufsz2, vld0,vld1,vld2 );
+  }
+
+
+
+   function integer get_reclaim_index ( ) { get_reclaim_index = reclaim_index; }
+   task pushDescForSch( bit [31:0] address, (integer pkt_page_id = 0) ) ; 
+   local function integer getNextDesc( var CRxDescSch RxDescSch, var integer type);
+   local function integer popDescrs();
+   local task allocJumboPackets ( CRxToken RxToken, integer NoOfDescrNeeded );
+   local task SetIndexForReclaim();
+   function integer getAddress ( CRxToken RxToken );
+   local task setDescType( CRxDescSch RxDescSch, integer type) {
+     if(type == 2) {
+       RxDescSchLARGE = new RxDescSch;
+     } else if( type ==1) {
+       RxDescSchMEDIUM = new RxDescSch;
+     } else if( type ==0) {
+       RxDescSchSMALL = new RxDescSch;
+     } else {
+       printf(" ERROR in setDescType \n");
+     }
+     
+   }
+
+}
+task CRxdescpScheduler::set_blk_size(bit [1:0] s)  {
+   case(s) {
+    2'b00 :  blk_size = 4096;
+    2'b01 :  blk_size = 8192;
+    2'b10 :  blk_size = 16384;
+    2'b11 :  blk_size = 32768;
+ }
+}
+task CRxdescpScheduler::set_bufsz0(bit [1:0] s, integer v)  {
+   bufsz0 = 256 * ( 1<<s ) ;
+   vld0 = v;
+}
+task CRxdescpScheduler::set_bufsz1(bit [1:0] s, integer v)  {
+   bufsz1 = 1024 * ( 1<<s ) ;
+   vld1 = v;
+}
+task CRxdescpScheduler::set_bufsz2(bit [1:0] s, integer v)  {
+   bufsz2 = 2048 * (1<< s) ;
+   vld2 = v;
+}
+
+task CRxdescpScheduler::pushDescForSch( bit [31:0] address, (integer pkt_page_id = 0) ) {
+
+   CRxDescSch RxDescSch;
+   bit [39:0] xlate_address;
+   bit [31:0] xlate_address_page;
+   xlate_address = SparseMem.xlate_addr({address,12'h0},pkt_page_id);
+   xlate_address_page = xlate_address[39:12];
+   RxDescSch = new();
+   // printf(" Pushing descriptor for DMA%d Descriptor - orig  %x xlate - %x \n",id,address,xlate_address[39:12]);
+
+    case(blk_size) {
+	4096 :  RxDescSch.address = {20'h0,xlate_address_page[31:0],12'h0};
+	8192 :  RxDescSch.address = {20'h0,xlate_address_page[31:1],13'h0};
+	16384 :  RxDescSch.address = {20'h0,xlate_address_page[31:2],14'h0};
+	32768 :  RxDescSch.address = {20'h0,xlate_address_page[31:3],15'h0};
+   }
+
+    case(blk_size) {
+	4096 :  RxDescSch.virtaddress = {20'h0,address[31:0],12'h0};
+	8192 :  RxDescSch.virtaddress = {20'h0,address[31:1],13'h0};
+	16384 :  RxDescSch.virtaddress = {20'h0,address[31:2],14'h0};
+	32768 :  RxDescSch.virtaddress = {20'h0,address[31:3],15'h0};
+   }
+   // replace this with page handle
+
+   desc_ring.push_back(RxDescSch);
+
+}
+
+task CRxdescpScheduler::SetIndexForReclaim() {
+
+  // first check the state 
+  // for each of the pop'd descriptor get the index
+  // compute min of all of these and compare against the last accessed index
+  
+  integer index_small;
+  integer index_medium;
+  integer index_large;
+  integer index_min;
+  bit[2:0] State;
+  // start with a large value
+  index_small = 32'hffffff;
+  index_medium = 32'hffffff;
+  index_large = 32'hffffff;
+  
+  State = RxDescState[id];
+
+  index_small = (State[0])? RxDescSchSMALL.index: index_small;
+  index_medium = (State[1])? RxDescSchMEDIUM.index: index_medium;
+  index_large = (State[2])? RxDescSchLARGE.index: index_large;
+
+  // min value
+   index_min = (index_small<index_medium) ? index_small: index_medium;
+   index_min = (index_min<index_large) ? index_min : index_large;
+
+   reclaim_index = (last_reclaim_index > index_min ) ? index_min : last_reclaim_index;
+
+}
+
+
+
+function integer CRxdescpScheduler::getNextDesc( var CRxDescSch RxDescSch, var integer type) {
+
+  integer size;
+  bit [2:0] State;
+
+   size = desc_ring.get_ring_size();
+   printf(" CRxdescpScheduler::getNextDesc: DMA- %d ring size - %d  isRingEmpty - %d \n",id,size,desc_ring.isRingEmpty()); 
+   if(desc_ring.isRingEmpty() ) {
+     getNextDesc = -1; // Ring is empty - packet to be dropped
+     type = -1;
+     return;
+
+   } else {
+    RxDescSch = desc_ring.front();
+    printf(" CRxdescpScheduler::getNextDesc DMA- %d Address - %x  Index - %d\n", id,RxDescSch.address,RxDescSch.index);
+    getNextDesc = size;
+    desc_ring.pop_front();
+   }
+
+  // Mark this descriptor as either of S,M,L
+
+  // check various enables -
+  State = RxDescState[id];
+
+  if(vld2 & ~State[2] ) {
+    // Mark this as large
+    RxDescSch.buf_size = bufsz2;
+    RxDescSch.blk_size = blk_size;
+    RxDescSch.valid = 1;
+    State[2] = 1;
+    type = 2;
+  } else if(vld1 & ~State[1] ) {
+    RxDescSch.buf_size = bufsz1;
+    RxDescSch.blk_size = blk_size;
+    RxDescSch.valid = 1;
+    State[1] = 1;
+    type = 1;
+  } else if(vld0 & ~State[0] ) {
+    RxDescSch.buf_size = bufsz0;
+    RxDescSch.blk_size = blk_size;
+    RxDescSch.valid = 1;
+    State[0] = 1;
+    type = 0;
+  } else {
+    printf(" ERROR--- MOST Likely testbench ERROR -- FIX IT \n");
+    getNextDesc = -1;
+  }
+
+  RxDescState[id] = State;
+  printf(" CRxdescpScheduler::getNextDesc DMA- %d  State - %b\n",id,State);
+
+}
+
+function integer CRxdescpScheduler::popDescrs() {
+
+// This function always keeps various descriptors blocks available
+
+  integer done;
+  CRxDescSch RxDescSch;
+  integer status,type;
+  bit[2:0] State;
+  State = RxDescState[id];
+
+  if (vld2|vld1|vld0)
+    done = (State == {vld2,vld1,vld0});
+  else {
+    popDescrs = -1;
+    return;
+  }
+  printf( "CRxdescpScheduler::popDescrs DMA %d  State- %b Valid - %b\n",id,State,{vld2,vld1,vld0} );
+  while(!done) {
+  printf( "CRxdescpScheduler::popDescrs DMA %d State- %b  done - %d Valid - %b\n",id,State, done, {vld2,vld1,vld0});
+
+   status = getNextDesc(RxDescSch,type);
+    if(status == -1) {
+      popDescrs = -1; // None available
+      return;
+     }
+   setDescType( RxDescSch,type);
+   State = RxDescState[id];
+   if (vld2|vld1|vld0)
+    done = (State == {vld2,vld1,vld0});
+   else {
+    popDescrs = -1;
+    return;
+   }
+  printf( "CRxdescpScheduler::popDescrs DMA %d State- %b  done - %d  Valid - %b \n",id,State, done,{vld2,vld1,vld0} );
+  }
+  popDescrs = done;
+
+}
+
+
+task CRxdescpScheduler::allocJumboPackets ( CRxToken RxToken, integer NoOfDescrNeeded ) {
+
+ integer i;
+ CRxDescSch RxDescSch,RxDescSchUseForFirstBuf;
+ integer bytes_remaining; 
+ bit [63:0] packet_end_address;
+ bit [63:0] address;
+ bit [63:0] vaddr;
+
+ 
+ bytes_remaining = RxToken.pkt_length + RxToken.header_length;
+
+
+ for(i = 0; i < NoOfDescrNeeded; i ++ ) {
+   RxDescSch = desc_ring.front();
+   desc_ring.pop_front();
+   address = RxDescSch.getAddress( blk_size, vaddr );
+   RxToken.packet_start_address[i] = address;
+   RxToken.packet_virtaddress[i] = vaddr;
+   packet_end_address = (bytes_remaining>blk_size) ? (address + blk_size) : ( address + bytes_remaining);
+   if (bytes_remaining >8) 
+   packet_end_address = packet_end_address -8 ;
+   RxToken.bytesperchunk[i] = (bytes_remaining>blk_size) ? blk_size : bytes_remaining;
+   RxToken.packet_end_address[i] = {packet_end_address[63:3],3'h0}; 
+   printf("CRxdescpScheduler::allocJumboPackets: RDMC DEBUG DMA - %d  - SCHEDULER ALLOC ADDRESS  - %x FOR JUMBO Scatter# - %d, PktType Set to %d Bytes- %d \n",id,RxToken.packet_start_address[i],i,RxToken.pkt_type,RxToken.bytesperchunk[i]);
+ 
+   bytes_remaining = bytes_remaining - blk_size;
+ }
+ RxToken.NoOfScatter = NoOfDescrNeeded; 
+ printf("CRxdescpScheduler::allocJumboPackets: RDMC DEBUG DMA - %d  - SCHEDULER ALLOC ADDRESS  - %x FOR JUMB NoOfDescrNeeded # - %d, PktType Set to %d Bytes- %d \n",id,RxToken.packet_start_address[NoOfDescrNeeded -1],NoOfDescrNeeded,RxToken.pkt_type,RxToken.bytesperchunk[NoOfDescrNeeded -1]);
+
+
+}
+
+function integer CRxdescpScheduler::getAddress ( CRxToken RxToken ) {
+
+
+
+
+
+/*
+
+   1. Check if enough descriptors are available- else get more descriptors
+   2. Check the packet size and see which descriptor can be chosen ( among S, M, L )
+   3. Once the descriptor is choosen, look at the bytes allocated to see space is available 
+      else get more. Iterate untill this is done 
+
+
+
+*/
+
+ integer size;
+ integer length;
+ integer type;
+ integer descp_state;
+ integer status;
+ CRxDescSch RxDescSch;
+ bit [63:0] address,vaddr;
+ integer offset;
+ integer largest_available_pkt_buf;
+ integer jumbo_packet;
+ integer NoOfDescrNeeded;
+ integer i;
+ bit [2:0] State; 
+
+ integer done;
+
+ length = RxToken.pkt_length + RxToken.header_length;
+ printf("RDMC DEBUG In Dma id - %d CRxdescpScheduler::getAddress Length - %d \n", RxToken.dma_num,length);
+ printf( "RDMC DEBUG In Dma id - %d CRxdescpScheduler::getAddress  Current Descriptors poped out - %b \n",id,RxDescState[id]);
+  
+
+ done = 0;
+ status = popDescrs();
+ printf( "RDMC DEBUG  In Dma id - %d CRxdescpScheduler::getAddress Descriptors poped out  %b \n",id,RxDescState[id]);
+ if(status == -1) {
+   getAddress = -1; // None available -- packet to be dropped
+
+   if(!(vld0|vld1|vld2)) {
+     RxToken.pkt_type = VALID_DISABLED_DROP_RxPKT;
+     printf("RDMC  DEBUG - Packet to be dropped - All 3 buf_size_valids are disabled\n");
+   }
+   else {
+     RxToken.pkt_type = RNGFULL_DROP_RxPKT;
+     printf("RDMC  DEBUG - Packet to be dropped - Either Ring is FULL or EMPTY- \n");
+   }
+
+   done = 1;
+   return;
+ }
+
+ RxToken.pkt_type = GOOD_RxPKT;
+ RxToken.bufsz = 3; 
+
+ // determine if this packet is a jumbo packet
+
+
+ largest_available_pkt_buf =  vld2 ? bufsz2 : (
+                                     vld1 ? bufsz1: (
+                                     vld0 ? bufsz0: 0) );
+  
+
+ if(length > largest_available_pkt_buf ) {
+   jumbo_packet = 1;
+ } else jumbo_packet = 0;
+
+ // check  if this packet really qualifies as a jumbo packet ie 
+ // how many buffer will this occupy
+
+  if(!done & ( length > 3 * blk_size  )) {
+   // this packet needs to be dropped
+   // mark this packet bad and exit
+   RxToken.pkt_type = BUFFSIZE_EXCEEDED_DROP_RxPKT;
+   RxToken.jumbo_pkt = 1;
+   done = 1;
+   getAddress = 0; // None available
+   return;
+  } else {
+  // this is the section to see  how the descriptors are to be used
+  if(jumbo_packet) {
+    // Find out how many descriptors are needed for this length. It has to be <= 3
+    NoOfDescrNeeded = ( length/blk_size ) + ((length%blk_size) ? 1 :0);
+    if(NoOfDescrNeeded == 0) {
+     // should not happen --
+     printf(" TESTBENCH ERROR -- FIX IT\n");
+    }
+    // Check if at least these many descriptors are available in the ring
+    // if not drop the packet
+     if(desc_ring.get_ring_size() >= NoOfDescrNeeded) {
+       // Now split the packets and start writing into the memory 
+
+       // Keep poping the descriptor and allocating into the address untill 
+       // all the bytes are written
+      
+
+      allocJumboPackets( RxToken , NoOfDescrNeeded);
+
+       // for(i=0;i<RxToken.NoOfScatter;i++) {
+         // printf(" After allocJumboPackets- endaddress - %x i - %d\n",RxToken.packet_end_address[i],i);
+       // }
+      RxToken.pkt_type = GOOD_RxPKT;
+      RxToken.jumbo_pkt = 1;
+      getAddress = 1;
+      done = 1;
+      return;
+
+     } else {
+       // packet to be dropped !!!!
+       RxToken.pkt_type = BUFFSIZE_EXCEEDED_DROP_RxPKT;
+       RxToken.jumbo_pkt = 1;
+       getAddress = 0; // None available
+       done = 1;
+       return;
+     }
+  }
+
+}
+ // for(i=0;i<RxToken.NoOfScatter;i++) {
+         // printf(" in getaddress after allocJumboPackets- endaddress - %x i - %d\n",RxToken.packet_end_address[i],i);
+       // }
+  // Here the packet is not a jumbo packet and is within the limits of the pkt_buffer 
+  // scan through available descriptors and choose the address
+
+ if(!done) {
+
+ State = RxDescState[id];
+  // printf(" I am here== before small\n");
+  if ( (length <= bufsz0) & vld0) {
+   // check if small descriptor is available
+    if ( State[0] ) {
+      address = RxDescSchSMALL.getAddress(length,vaddr);
+      descp_state = RxDescSchSMALL.checkState(); // Is this descriptor done?
+      if(descp_state == DESCR_DONE) {
+        // keep the next descriptor ready
+        
+	 SetIndexForReclaim();
+	 RxDescSchSMALL = null;
+         State[0] = 0;
+         // status = popDescrs();
+         if(status == -1 ) {
+           printf("CRxdescpScheduler::getAddress:RDMC DEBUG DMA - %d - DONE With SMALL descriptors!! \n",id);
+         }
+       }
+      RxToken.bufsz = 0; 
+     } else {
+        // Drop this packet
+        RxToken.pkt_type = RNGFULL_DROP_RxPKT;
+      }
+ } else if ( (length <= bufsz1) & vld1) {
+   // check if Medium descriptor is available
+  // printf(" I am here== before medium\n");
+    if ( State[1] ) {
+      address = RxDescSchMEDIUM.getAddress(length,vaddr);
+      descp_state = RxDescSchMEDIUM.checkState(); // Is this descriptor done?
+      if(descp_state == DESCR_DONE) {
+        // keep the next descriptor ready
+        
+	 SetIndexForReclaim();
+	 RxDescSchMEDIUM = null;
+         State[1] = 0;
+         // status = popDescrs();
+         if(status != -1) {
+          printf("CRxdescpScheduler::getAddress:RDMC DEBUG DMA - %d - DONE With MEDIUM the descriptors!! \n",id);
+         }
+       }
+      RxToken.bufsz = 1; 
+     } else {
+       // Drop this packet
+        RxToken.pkt_type = RNGFULL_DROP_RxPKT;
+       }
+ } else if( (length <= bufsz2) & vld2) {
+   // check if small descriptor is available
+  // printf(" I am here== before large\n");
+    if ( State[2] ) {
+      address = RxDescSchLARGE.getAddress(length,vaddr);
+      descp_state = RxDescSchLARGE.checkState(); // Is this descriptor done?
+      if(descp_state == DESCR_DONE) {
+        // keep the next descriptor ready
+        
+	 SetIndexForReclaim();
+	 RxDescSchLARGE = null;
+         State[2] = 0;
+         // status = popDescrs();
+         if(status != -1) {
+          printf("CRxdescpScheduler::getAddress:RDMC  DEBUG DMA - %d - DONE With LARGE the descriptors!! \n");
+         }
+       }
+      RxToken.bufsz = 2; 
+     } else {
+        // Drop this packet
+        RxToken.pkt_type = RNGFULL_DROP_RxPKT;
+       }
+ } else {
+ // This is what none of the descriptors are available
+// Set packet to be dropped
+    getAddress = -1; // None available
+    done = 1;
+    RxToken.pkt_type = RNGFULL_DROP_RxPKT;
+ }
+
+ RxToken.packet_start_address[0] = address;
+ RxToken.packet_virtaddress[0] = vaddr;
+ address = address + length -8 ; // this needs to be 64 bit aligned for SIU Model's memory?
+ RxToken.packet_end_address[0] = {address[63:3],3'h0} ; 
+ printf("CRxdescpScheduler::getAddress DMA - %d  DEBUG in getaddress before exit- endaddress - %x \n",id,address);
+ RxToken.NoOfScatter = 1; 
+ RxToken.bytesperchunk[0] = length;
+ RxDescState[id] = State;
+}
+
+ // for(i=0;i<RxToken.NoOfScatter;i++) {
+         // printf(" in getaddress before exit- endaddress - %x i - %d\n",RxToken.packet_end_address[i],i);
+       // }
+
+}

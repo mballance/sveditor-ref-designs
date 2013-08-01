@@ -1,0 +1,224 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ccxPktMon.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <globals.vri>
+
+#include <ccxDevicesDefines.vri>
+#include <cmp.vri>
+#include <std_display_defines.vri>
+
+#include <std_display_class.vrh>
+#include <basePktClass.vrh>
+#include <cpxPktClass.vrh>
+#include <pcxPktClass.vrh>
+#include <baseParamsClass.vrh>
+#include <sparcParams.vrh>
+#include <ccxDevBaseBFM.vrh>
+
+#define CLASSNAME CCXpktMon
+
+class CCXpktMon {
+
+  local integer myPort;
+  local ccxPort portVarC; // CPX
+  local ccxPort portVarP; // PCX
+  
+  task new (integer portIn, ccxPort pcxPort, ccxPort cpxPort);
+  local task monitorMem();
+  local task monitorSpc();
+
+}
+
+
+task CLASSNAME::new(integer portIn, ccxPort pcxPort, ccxPort cpxPort) {
+  myPort = portIn;
+  portVarC = cpxPort;
+  portVarP = pcxPort;
+  if (myPort < 8) monitorSpc();
+  else monitorMem();
+}
+
+
+
+// mem side
+task CLASSNAME::monitorMem() {
+  integer i = 1;
+  reg [7:0] atm = 0;
+  reg [7:0] req = 0;
+
+  fork
+  {
+    // monitor l2 out going pkts
+    if (gParam.ccxPktPrint[PP_CPX] ||
+        gParam.ccxPktPrint[PP_MEM] ||
+        gParam.ccxPktPrintMask[myPort]) {
+
+      // monitor mem out going pkts
+      // need to detect req changing back to zero here.
+      while (1) {
+        
+        if (!portVarC.$req) {
+          @(portVarC.$req);
+          req = portVarC.$req;
+          if (myPort !== DEV_NCU && portVarC.$atmo) {
+            i = 2;
+            atm = portVarC.$atmo;
+          } else {
+            i = 1;
+            atm = 0;
+          }
+        }
+
+        repeat (i) {
+          // need to fork off to handle streaming/ back to back packets
+          // this is broken if ifill pkt 2 gets dropped (review?). assuming
+          // ifill 1 & 2 go back to back! May print dropped packets...
+          {
+            CpxPkt pktHndl = new(); // keep in repeat block
+            fork {
+              if (myPort !== DEV_NCU) pktHndl.atm_wire = portVarC.$atmo; //atm;
+              pktHndl.req_wire = portVarC.$req;
+              @(negedge portVarC.$clk);
+              pktHndl.loadPkt(portVarC.$datao, myPort);
+              pktHndl.print(myPort);
+            } join none
+          }
+          @(negedge portVarC.$clk);
+        }// rep i
+      } // while
+    } // if
+  } join none
+
+
+  fork
+  { // monitor incomming PCX pkts to l2
+
+    if (gParam.ccxPktPrint[PP_PCX] ||
+        gParam.ccxPktPrint[PP_MEM] ||
+        gParam.ccxPktPrint[PP_TRG] ||
+        gParam.ccxPktPrintMask[myPort]) {
+
+      // we can get back to back packets...
+      while (1) {
+
+        if (!portVarP.$rdy) {
+          @(portVarP.$rdy);
+        }
+
+        { // keep block
+          PcxPkt pktHndlP = new();
+          // need to fork to handle back to back reqs
+          // and delayed responses
+          fork {  
+            // if on L2 port, look at portVar.$atmi
+            if (myPort !== DEV_NCU) pktHndlP.atm_wire = portVarP.$atmi;
+            @(negedge portVarP.$clk);
+            pktHndlP.loadPkt(portVarP.$datai, myPort);
+            pktHndlP.print(myPort);
+          } join none
+        } // blk
+        @(negedge portVarP.$clk);        
+      } // while
+    } // if
+  } join none
+}
+
+
+// CPU side
+task CLASSNAME::monitorSpc() {
+  CpxPkt pktHndlC;
+  reg [9:0] atm,req;
+  integer i;
+
+  pktHndlC = new();
+
+  fork
+  {
+    // monitor SPC out going requests.
+    if (gParam.ccxPktPrint[PP_PCX] ||
+        gParam.ccxPktPrint[PP_SPC] ||
+        gParam.ccxPktPrintMask[myPort]) {
+      
+      // monitor SPC out going requests.
+      // need to detect req changing back to zero here.
+      while (1) {
+        
+        if (!portVarP.$req) {
+          @(portVarP.$req);
+          req = portVarP.$req;
+          if (portVarP.$atmo) {
+            i = 2;
+            atm = portVarP.$atmo;
+          } else {
+            i = 1;
+            atm = 0;
+          }
+        }
+
+        repeat (i) {
+          // need to fork off to handle streaming/ back to back packets
+          {
+            PcxPkt pktHndl = new(); // keep in block
+            fork {
+              pktHndl.atm_wire = atm;
+              pktHndl.req_wire = req;
+              @(negedge portVarP.$clk);
+              pktHndl.loadPkt(portVarP.$datao, myPort);
+              pktHndl.print(myPort);
+            } join none
+          }
+          @(negedge portVarP.$clk);
+        }// rep
+      } // while
+    } // if     
+  } join none
+
+  
+  fork
+  {
+    // monitor SPC incomming packets/responses
+    if (gParam.ccxPktPrint[PP_CPX] ||
+        gParam.ccxPktPrint[PP_SPC] ||
+        gParam.ccxPktPrint[PP_TRG] ||
+        gParam.ccxPktPrintMask[myPort]) {
+      
+      while (1) {
+        if (portVarC.$datai[145] == 0) @(posedge portVarC.$datai[145]);
+        pktHndlC.loadPkt(portVarC.$datai, myPort);
+        pktHndlC.print(myPort);
+        @(negedge portVarC.$clk);
+      }
+    }
+  } join none
+}

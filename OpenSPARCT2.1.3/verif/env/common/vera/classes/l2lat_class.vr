@@ -1,0 +1,66 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: l2lat_class.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <defines.vri>
+#include <std_display_defines.vri>
+#include <globals.vri>
+#include <std_display_class.vrh>
+
+#define  MON_L2LAT    24
+
+
+class L2LAT {
+    reg [31:0] reqid;       // request sequence number
+    reg [31:0] reqcycle;    // cycle count request was make
+    reg [15:0] core;        // 0..63 or tid
+    reg [39:0] pa;          // physical addr
+    reg [3:0] type;        // request type (IFILL, LD, ST)
+    reg [31:0] latency;     // memory latency
+    reg [31:0] respcycle;   // (reqcycle + latency)
+    reg [7:0] momrid;       // internal MOM id (ignored)
+
+    task new (string str) {
+        sscanf(str, "Request number %d: reqcyc=%d core=%h pa=%h type=%b lat=%d respcyc=%d momrid=%h",
+                reqid,reqcycle,core,pa,type,latency,respcycle,momrid);
+    }
+
+    task print_obj (string why) {
+
+      PR_DEBUG("l2lat", MON_L2LAT,
+        psprintf("%s - ReqID %d: reqcyc=%d core=%h pa=%h type=%h lat=%d respcyc=%d momrid=%h \n", 
+              why,reqid,reqcycle,core,pa,type,latency,respcycle,momrid));
+    }
+
+}  // END class

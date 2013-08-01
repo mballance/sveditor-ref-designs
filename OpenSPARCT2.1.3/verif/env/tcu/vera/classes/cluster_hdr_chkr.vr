@@ -1,0 +1,1028 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: cluster_hdr_chkr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "std_display_class.vrh"
+#include "ccu_top.vri"
+#include "cluster_hdr_top.vri"
+#include "ccu_clk_packet.vrh"
+#include "ccu_clks_states.vrh"
+
+class CLUSTER_hdr_chkr {
+  local string name;            // name of the cluster header
+  local string dispScope;       // standard display: display scope
+  local integer verbose;        // 0: disable verbose mode; otherwise, enable
+
+  //---ports and classes---
+  local CLKGEN_port      clkgen_port;      // port of this cluster header
+  local CLKGEN_port      clkgen_dr_port;   // DR cluster hdr for checking DR sync locations
+  local CLKGEN_port      clkgen_io_port;   // IO cluster hdr for checking IO sync locations
+  local CLKGEN_port      clkgen_io2x_port; // IO2X cluster hdr for checking IO2X sync locations
+  local CCU_clk_port     ccu_clk_port;
+  local StandardDisplay  dbg;              // Standard display for printing
+  local CCU_clks_states  ccu_states;       // keep track CCU states
+
+  //--- vars for start/stop checker/checking----
+  local integer running;        // 0: not running; otherwise, running
+  local event stop_checker_e;   // triggered by stop_checker() to terminate start_checker()
+  local event stop_checking_e;  // triggered by stop_checking() to terminate start_checking()
+  local event clkstop_e;        // triggered when tcu_clk_stop detected
+
+  //---vars for error reporting---
+  local integer error_cnt;          // Global error count. Init to 0. WARN: negative if exeed max integer
+  local integer max_error_printed;  // stop print out error if num errors exceed this value
+  local integer max_debug_printed;  // stop print out debug msg if debug cnt exceeds this value
+  local integer dr_sync_loc_err_cnt, dr_sync_loc_debug_cnt;
+
+  //---vars for cluster parameters---
+  local cluster_hdr_type_e hdr_type;  // cluster type
+  local CCU_clk_packet clk_pkt;       // clock-related paramters
+  local integer l2clk_per_nom, l2clk_per_min, l2clk_per_max; // l2clk period: nominal, min, max
+  local integer gclk_per_nom, gclk_per_min, gclk_per_max;    // gclk period: nominal, min, max
+  local integer pw_dev;                    // deviation of l2clk pulse width (in %)
+  local integer cmpslow_sync_is_io2x; // cmp_slow_sync_en is actually io2x_sync_en (MIO block does this)
+
+  //---vars for enable/disable checking sync pulses----
+  local integer chk_cmpslow_sync, chk_slowcmp_sync; // 0: not check; otherwise, check
+  local integer chk_dr_sync, chk_io2x_sync;         // 0: not check; otherwise, check
+  local integer chk_iosync_loc, chk_io2xsync_loc, chk_drsync_loc; // 0: not check; otherwise, check
+
+  //--public tasks---
+  task new(string name, StandardDisplay dbg,
+    CCU_clks_states ccu_states, cluster_hdr_type_e hdr_type,
+    CLKGEN_port clkgen_port, CLKGEN_port clkgen_dr_port,
+    CLKGEN_port clkgen_io_port, CLKGEN_port clkgen_io2x_port,
+    integer chk_cmpslow_sync,
+    integer chk_slowcmp_sync, integer chk_dr_sync, 
+    integer chk_io2x_sync,
+    integer cmpslow_sync_is_io2x=0, integer start_it=1);
+  task start_checker();
+  task stop_checker();
+
+  //--control tasks---
+  local task start_checking();
+  local task stop_checking();
+  local task check_l2clk_and_sync_pulses();
+
+  //---tasks do the checks---
+  local task check_gclk_toggle();
+  local task check_gclk_freq_dutycycle();
+
+  local task check_l2clk_toggle();
+  local task check_l2clk_freq_dutycyc();
+
+  local task check_iox_sync(string sync_name);
+
+  local task check_dr_sync();
+
+  local task check_cmp_io_sync_loc(integer nchecks=5);
+  local task check_io_cmp_sync_loc(integer nchecks=5);
+  local task check_io2x_sync_loc(integer nchecks=5);
+  local task check_dr_sync_loc(integer nchecks=20);
+  local task check_next_dr_sync_loc();
+
+  //---- supporting subroutines ----
+  local task compute_expected_params();
+  local task print_error_msg(integer err_cnt, string error_msg);
+  local task print_debug_msg(integer debug_cnt, string debug_msg);
+  local function integer is_outside_min_max(integer min_val, integer value, integer max_val);
+  local function integer compute_abs(integer n);
+  local task wait_1st_posedge(string sig_name, integer timeout_val);
+}
+
+//################################################################
+//######### implementation of subroutines              ###########
+//################################################################
+
+task CLUSTER_hdr_chkr::new(string name, StandardDisplay dbg,
+  CCU_clks_states ccu_states, cluster_hdr_type_e hdr_type,
+  CLKGEN_port clkgen_port, CLKGEN_port clkgen_dr_port,
+  CLKGEN_port clkgen_io_port, CLKGEN_port clkgen_io2x_port,
+  integer chk_cmpslow_sync,
+  integer chk_slowcmp_sync, integer chk_dr_sync, 
+  integer chk_io2x_sync,
+  integer cmpslow_sync_is_io2x=0, integer start_it=1) {
+
+  //---from arg list---
+  this.name = name;
+  this.dbg  = dbg;
+  this.ccu_states  = ccu_states;
+  this.hdr_type = hdr_type;
+  this.clkgen_port = clkgen_port;
+  this.clkgen_dr_port = clkgen_dr_port;
+  this.clkgen_io_port = clkgen_io_port;
+  this.clkgen_io2x_port = clkgen_io2x_port;
+  this.chk_cmpslow_sync = chk_cmpslow_sync;
+  this.chk_slowcmp_sync = chk_slowcmp_sync;
+  this.chk_dr_sync = chk_dr_sync;
+  this.chk_io2x_sync = chk_io2x_sync;
+  this.cmpslow_sync_is_io2x = cmpslow_sync_is_io2x;
+
+  //---the rest---
+  this.dispScope = this.name;
+  this.verbose = 0;            //default is disabling verbose mode
+  this.ccu_clk_port = ccu_clk_bind;
+  this.running = 0;
+  this.error_cnt = 0;
+  this.max_error_printed = 20;
+  this.max_debug_printed = 20;
+  this.dr_sync_loc_err_cnt = 0; // reset error counter
+  this.dr_sync_loc_debug_cnt = 0; // reset debug counter
+  this.clk_pkt = null;      // init to illegal value
+  this.l2clk_per_nom = -1;  // init to illegal value
+  this.l2clk_per_min = -1;  // init to illegal value
+  this.l2clk_per_max = -1;  // init to illegal value
+  this.gclk_per_nom  = -1;  // init to illegal value
+  this.gclk_per_min  = -1;  // init to illegal value
+  this.gclk_per_max  = -1;  // init to illegal value
+  this.pw_dev = -1;         // init to illegal value
+
+  //--checking sync pulse locations---
+  this.chk_iosync_loc   = 1;  // by default: checkin sync locations
+  this.chk_io2xsync_loc = 1;
+  this.chk_drsync_loc   = 1;
+
+  //---override if runtime options specified---
+  if (get_plus_arg(CHECK, "clstrHdrChkr_maxError=n"))
+    this.max_error_printed = get_plus_arg(NUM, "clstrHdrChkr_maxError=n");
+  if (get_plus_arg(CHECK, "clstrHdrChkr_noSyncLocChk")) {
+    this.chk_iosync_loc   = 0;
+    this.chk_io2xsync_loc = 0;
+    this.chk_drsync_loc   = 0;     
+  }
+  if (get_plus_arg(CHECK, "clstrHdrChkr_verbose"))
+    this.verbose = 1;
+
+  //---start background threads---
+  if (start_it)
+    this.start_checker();
+}
+
+//=============================================================
+// WHAT: start the checker
+//=============================================================
+task CLUSTER_hdr_chkr::start_checker() {
+  reg bit_value;
+
+  if (this.running)
+    return;    // it's already running
+  dbg.dispmon(this.dispScope, MON_INFO, "starts ...");
+  this.running = 1;
+  fork {
+    fork {
+      while (1) {
+        bit_value = ccu_clk_port.$ccu_rst_sync_stable;
+        if (bit_value !== 1'b1)
+          @(posedge ccu_clk_port.$ccu_rst_sync_stable); // Sync is stable, so start checking
+        delay(3);     // avoid race condition with ccu_states.get_clk_pkt()
+        this.clk_pkt = ccu_states.get_exp_clk_pkt();
+        compute_expected_params();
+        start_checking();
+        @(negedge ccu_clk_port.$rst_ccu_pll_); // reset PLL
+        stop_checking();
+      }
+    }
+    join none
+    sync(ALL, this.stop_checker_e); // stop_checker() triggers this event
+    terminate;
+    dbg.dispmon(this.dispScope, MON_INFO, "stopped");
+    this.running = 0; // checker is not running
+  } join none
+}
+
+//=============================================================
+// WHAT: stop the checker
+//=============================================================
+task CLUSTER_hdr_chkr::stop_checker() {
+  if (this.running)
+    trigger(this.stop_checker_e);  // this event terminates start_checker()
+}
+
+//=============================================================
+// Start to check
+//=============================================================
+task CLUSTER_hdr_chkr::start_checking() {
+  dbg.dispmon(this.dispScope, MON_INFO, "start checking ...");
+  fork {
+    fork
+    {
+      check_gclk_toggle();
+    }
+    {
+      check_gclk_freq_dutycycle();
+    }
+    {
+      check_l2clk_and_sync_pulses();
+    }
+    join none
+    sync(ALL, this.stop_checking_e); // stop_checking() triggers this event
+    terminate;
+    dbg.dispmon(this.dispScope, MON_INFO, "checking stopped");
+  } join none
+}
+
+//=============================================================
+// WHAT: stop checking by terminating start_checking()
+//=============================================================
+task CLUSTER_hdr_chkr::stop_checking() {
+  trigger(this.stop_checking_e);  // this event terminates start_checking()
+}
+
+//=============================================================
+// WHAT: control task for start/stop checking l2clk and sync pulses
+//=============================================================
+task CLUSTER_hdr_chkr::check_l2clk_and_sync_pulses() {
+  event stop_check_l2clk_sync;
+
+  while (1) {
+    //----not checking during clock stop or cluster_arst_l----
+    while (1) {
+      if ((clkgen_port.$tcu_clk_stop__gclk == 1'b0)
+        && (clkgen_port.$cluster_arst_l__gclk == 1'b1))
+      break;
+      @(posedge clkgen_port.$gclk);
+    }
+    //----check l2clk----
+    fork { check_l2clk_toggle(); } join none
+    fork { check_l2clk_freq_dutycyc(); } join none
+    //--- check sync pulse ---
+    if (this.chk_cmpslow_sync) {
+       fork { check_iox_sync("cmp_slow_sync_en"); } join none
+       if (this.chk_iosync_loc) {
+         if (this.cmpslow_sync_is_io2x)
+           fork { check_io2x_sync_loc(); } join none
+         else
+           fork { check_cmp_io_sync_loc(); } join none
+       }
+    }
+    if (this.chk_slowcmp_sync) {
+       fork { check_iox_sync("slow_cmp_sync_en"); } join none
+       if (this.chk_iosync_loc)
+         fork { check_io_cmp_sync_loc(); } join none
+    }
+    if (this.chk_io2x_sync) {
+       fork { check_iox_sync("io2x_sync_en"); } join none
+       if (this.chk_io2xsync_loc)
+         fork { check_io2x_sync_loc(); } join none
+    }
+    if (this.chk_dr_sync) {
+       fork { check_dr_sync(); } join none
+       if (this.chk_drsync_loc)
+         fork { check_dr_sync_loc(); } join none 
+    }
+    //--- stop checking when tcu_clk_stop or scan_en asserted---
+    fork {
+      @(posedge clkgen_port.$tcu_clk_stop__gclk or negedge clkgen_port.$cluster_arst_l__gclk);
+      trigger(stop_check_l2clk_sync);
+    } join none
+    sync(ALL, stop_check_l2clk_sync);
+    terminate;
+  }
+}
+
+//=============================================================
+// Compute expected values for this checker
+//=============================================================
+task CLUSTER_hdr_chkr::compute_expected_params() {
+
+  //---compute l2clk period---
+  case (this.hdr_type) {
+    CLUSTER_HDR_CMP, CLUSTER_HDR_CMP1 : {
+      this.l2clk_per_nom = clk_pkt.cmp_clk_per_nom; 
+      this.l2clk_per_min = clk_pkt.cmp_clk_per_min; 
+      this.l2clk_per_max = clk_pkt.cmp_clk_per_max;
+    }
+    CLUSTER_HDR_DR : {
+      this.l2clk_per_nom = clk_pkt.dr_clk_per_nom; 
+      this.l2clk_per_min = clk_pkt.dr_clk_per_min; 
+      this.l2clk_per_max = clk_pkt.dr_clk_per_max;
+    }
+    CLUSTER_HDR_IO : {
+      this.l2clk_per_nom = clk_pkt.io_out_per_nom; 
+      this.l2clk_per_min = clk_pkt.io_out_per_min; 
+      this.l2clk_per_max = clk_pkt.io_out_per_max;
+    }
+    CLUSTER_HDR_IO2X : {
+      this.l2clk_per_nom = clk_pkt.io2x_out_per_nom; 
+      this.l2clk_per_min = clk_pkt.io2x_out_per_min; 
+      this.l2clk_per_max = clk_pkt.io2x_out_per_max;
+    }
+    default:
+      dbg.dispmon(this.dispScope, MON_ERR, psprintf("%0d is illegal value for hdr type", hdr_type));
+  }
+  //---compute gclk period and pw_dev---
+  if (hdr_type == CLUSTER_HDR_DR) {
+    this.gclk_per_nom = clk_pkt.dr_clk_per_nom;
+    this.gclk_per_min = clk_pkt.dr_clk_per_min;
+    this.gclk_per_max = clk_pkt.dr_clk_per_max;
+    this.pw_dev = clk_pkt.dr_pw_dev;
+  }
+  else {  // cmp/io/io2x header
+    this.gclk_per_nom = clk_pkt.cmp_clk_per_nom;
+    this.gclk_per_min = clk_pkt.cmp_clk_per_min;
+    this.gclk_per_max = clk_pkt.cmp_clk_per_max;
+    this.pw_dev = clk_pkt.cmp_pw_dev;
+  }
+}
+
+//=============================================================
+// WHAT: check gclk is toggles in every 1.5 ccu.dr_pll_clk (for DR
+//    cluster hdr) or ccu.cmp_pll_clk (for other cluster hdrs)
+// ASSUMPTION: ccu.cmp_pll_clk and ccu.dr_pll_clk clocks toggle.
+// NOTE: ccu generates sync_stable from gclk, so gclk must toggle
+//=============================================================
+task CLUSTER_hdr_chkr::check_gclk_toggle() {
+  integer old_cyc, new_cyc, ncycs; //  gclk cycle counts
+  string ref_clk_name;
+  integer err_cnt=0, debug_cnt=0;  // error count
+
+  dbg.dispmon(this.dispScope, MON_INFO, "monitor: gclk toggles");
+  case (this.hdr_type) {
+    CLUSTER_HDR_DR: {
+      ref_clk_name = "ccu.dr_pll_clk";
+      @(posedge ccu_clk_port.$dr_pll_clk);
+    }
+    default: {
+      ref_clk_name = "ccu.cmp_pll_clk";
+      @(posedge ccu_clk_port.$cmp_pll_clk);
+    }
+  }
+  old_cyc = get_cycle(clkgen_port.$gclk);
+  while (1) {
+    case (this.hdr_type) {
+      CLUSTER_HDR_DR: repeat (3) @(ccu_clk_port.$dr_pll_clk);  // 1.5 clk cycles
+      default:        repeat (3) @(ccu_clk_port.$cmp_pll_clk); // 1.5 clk cycles
+    }
+    new_cyc = get_cycle(clkgen_port.$gclk);
+    ncycs = new_cyc - old_cyc;
+    if (is_outside_min_max(1, ncycs, 2))
+      print_error_msg(err_cnt++, psprintf("check_gclk_toggle: num gclk clks in 1.5 %s clk cycles: %0d. Expect: 1 or 2", ref_clk_name, ncycs));
+    old_cyc = new_cyc;
+  }
+}
+
+//=============================================================
+// WHAT: check gclk period and duty cycle.
+// NOTE: gclk should be stable when ccu_rst_sync_stable asserted.
+//=============================================================
+task CLUSTER_hdr_chkr::check_gclk_freq_dutycycle() {
+  integer per;                                  // gclk period
+  integer pw_hi, pw_lo, pw_min, pw_nom, pw_max; // gclk pulse width.
+  integer pos_edge, neg_edge;                   // clk posedge and negedge
+  integer per_err_cnt = 0, pw_err_cnt=0;        // error counts
+  integer debug_cnt=0;    // debug msg counts
+
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("monitor: gclk period (min=%0d, max=%0d) and duty cycle", this.gclk_per_min, this.gclk_per_max));
+  @(posedge clkgen_port.$gclk);
+  pos_edge = get_time(LO);
+  while (1) {
+    @(negedge clkgen_port.$gclk);
+    neg_edge = get_time(LO);
+    pw_hi = neg_edge - pos_edge;
+    @(posedge clkgen_port.$gclk);
+    pos_edge = get_time(LO);
+    pw_lo = pos_edge - neg_edge;
+    per = pw_hi + pw_lo;
+    pw_nom = per / 2;             // nominal is 50% duty cycle
+    pw_min = (pw_nom - 1) - (((this.gclk_per_nom / 100) + 1) * this.pw_dev);  // rounding down
+    pw_max = (pw_nom + 1) + (((this.gclk_per_nom / 100) + 1) * this.pw_dev);  // rounding up
+    if (is_outside_min_max(this.gclk_per_min, per, this.gclk_per_max))
+      print_error_msg(per_err_cnt++, psprintf("check_gclk_freq_pw: gclk: period=%0d, expect: min=%0d, max=%0d", per, this.gclk_per_min, this.gclk_per_max));
+    if (is_outside_min_max(pw_min, pw_lo, pw_max) || is_outside_min_max(pw_min, pw_hi, pw_max))
+      print_error_msg(pw_err_cnt++, psprintf("check_gclk_freq_pw: gclk: pw_hi=%0d, pw_lo=%0d. expect: pw_min=%0d, pw_max=%0d",
+        pw_hi, pw_lo, pw_min, pw_max));
+    if (this.verbose)
+      print_debug_msg(debug_cnt++, psprintf("check_gclk_freq_pw: gclk: per=%0d, pw_hi=%0d, pw_lo=%0d. expect: per_min=%0d, per_max=%0d, pw_min=%0d, pw_max=%0d",
+        per, pw_hi, pw_lo, this.gclk_per_min, this.gclk_per_max, pw_min, pw_max));
+  }
+}
+
+//=============================================================
+// WHAT: check l2clk toggles in each gclk (for cmp and dr headers),
+//   every clk_pkt.cmp2io_ratio gclk (for IO header) or every 
+//   clk_pkt.cmp2io2x_ratio gclk (for IO2X header)
+//=============================================================
+task CLUSTER_hdr_chkr::check_l2clk_toggle() {
+  integer gclk_ncycs;  // number of gclk cycles that l2clk toggles once
+  integer old_cyc, new_cyc, ncycs; // cycle count of l2clk
+  integer err_cnt=0, debug_cnt=0;
+
+  case (this.hdr_type) {  // note: +1 is needed in case clk edges are perfectly aligned.
+    CLUSTER_HDR_IO:   gclk_ncycs = clk_pkt.cmp2io_ratio + 1;   // gclk is cmp clk and l2clk is IO clk
+    CLUSTER_HDR_IO2X: gclk_ncycs = clk_pkt.cmp2io2x_ratio + 1; // gclk is cmp clk and l2clk is IO2X clk
+    default:          gclk_ncycs = 1 + 1; // gclk is cmp clk or dr clk
+  }
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("monitor: l2clk toggles at least once for every %0d gclk cycles", gclk_ncycs));
+
+  //---wait for first l2clk---
+  wait_1st_posedge("l2clk", 10 * gclk_ncycs); // timeout in gclk cycs
+
+  //--- checking ---
+  @(posedge clkgen_port.$gclk);
+  old_cyc = get_cycle(clkgen_port.$l2clk);
+  while (1) {
+    repeat (gclk_ncycs) @(posedge clkgen_port.$gclk);
+    new_cyc = get_cycle(clkgen_port.$l2clk);
+    ncycs = new_cyc - old_cyc;
+    if (is_outside_min_max(1, ncycs, 2))
+      print_error_msg(err_cnt++, psprintf("check_l2clk_toggle: num l2clk clk in %0d gclk: %0d. Expect: 1 or 2", gclk_ncycs, ncycs));
+    else if (this.verbose)
+      print_debug_msg(debug_cnt++, psprintf("check_l2clk_toggle: num l2clk clk in %0d gclk: %0d. Expect: 1 or 2", gclk_ncycs, ncycs));
+    old_cyc = new_cyc;
+  }
+}
+
+//=============================================================
+// WHAT: check freq and duty cycle of l2clk.
+//=============================================================
+task CLUSTER_hdr_chkr::check_l2clk_freq_dutycyc() {
+  integer clk_posedge, clk_negedge, period;     // l2clk
+  integer pw_hi, pw_lo, pw_nom, pw_min, pw_max; // pw: pulse width
+  integer per_err_cnt=0, pw_err_cnt=0; // error counts in period or pulse width
+  integer debug_cnt=0;
+
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("monitor: l2clk period (min=%0d, max=%0d) and duty cycle",  this.l2clk_per_min, this.l2clk_per_max));
+  @(posedge clkgen_port.$l2clk); // wait for first l2clk
+  clk_posedge = get_time(LO);
+  while (1) {
+    @(negedge clkgen_port.$l2clk);
+    clk_negedge = get_time(LO);
+    pw_hi = clk_negedge - clk_posedge;
+
+    @(posedge clkgen_port.$l2clk);
+    clk_posedge = get_time(LO);
+    pw_lo = clk_posedge - clk_negedge;
+    period = pw_hi + pw_lo;
+
+    pw_nom = period / 2;            // nominal is 50% duty cycle
+    pw_min = (pw_nom - 1) - (((this.l2clk_per_nom / 100) + 1) * this.pw_dev); // rounding down
+    pw_max = (pw_nom + 1) + (((this.l2clk_per_nom / 100) + 1) * this.pw_dev); // rounding down
+
+    if (is_outside_min_max(this.l2clk_per_min, period, this.l2clk_per_max))
+      print_error_msg(per_err_cnt++, psprintf("check_l2clk_freq_pw: l2clk: period=%0d, expected: min=%0d, max=%0d", period, this.l2clk_per_min, this.l2clk_per_max));
+    if (is_outside_min_max(pw_min, pw_hi, pw_max) || is_outside_min_max(pw_min, pw_lo, pw_max))
+      print_error_msg(pw_err_cnt++, psprintf("check_l2clk_freq_pw: l2clk duty cycle: pw_hi=%0d, pw_lo=%0d, expected: min=%0d, max=%0d (per=%0d)",
+        pw_hi, pw_lo, pw_min, pw_max, period));
+    if (this.verbose)
+      print_debug_msg(debug_cnt++, psprintf("check_l2clk_freq_pw: l2clk: per: %0d. Expect: min=%0d, max=%0d. pw_hi=%0d, pw_lo=%0d. Expect: min=%0d, max=%0d",
+        period, this.l2clk_per_min, this.l2clk_per_max, pw_hi, pw_lo,  pw_min, pw_max));
+  }
+}
+
+//=============================================================
+// WHAT: check IO and IO2x sync pulse
+//       -there is one sync pulse in each IO/IO2X clk cycle
+//       -sync pulse is one cmp clk
+//       -next sync pulse is separated from prev sync pulse by one IO/IO2X clk cycle.
+// ARGs: sync_name must be "cmp_slow_sync_en", "slow_cmp_sync_en" or "io2x_sync_en"
+// WARNING: this task does NOT check sync pulse locations
+//=============================================================
+task CLUSTER_hdr_chkr::check_iox_sync(string sync_name) {
+  integer cmp2slowclk_ratio;    // cmp-to-io or cmp-to-io2x clk ratio
+  integer ncycs_no_sync;        // number of l2clk cycs that sync is low
+  integer err_cnt = 0, debug_cnt = 0, i;
+  bit sync_val;
+  string special_note = ((sync_name == "cmp_slow_sync_en") && (this.cmpslow_sync_is_io2x))? "(actually is IO2X sync)" : "";
+
+  case (sync_name) {
+    "cmp_slow_sync_en": {
+       if (this.cmpslow_sync_is_io2x) cmp2slowclk_ratio = clk_pkt.cmp2io2x_ratio; // cmp_slow_sync_en is io2x sync
+       else cmp2slowclk_ratio = clk_pkt.cmp2io_ratio;
+    }
+    "slow_cmp_sync_en": cmp2slowclk_ratio = clk_pkt.cmp2io_ratio;
+    "io2x_sync_en":     cmp2slowclk_ratio = clk_pkt.cmp2io2x_ratio;
+    default: {
+      dbg.dispmon(this.dispScope, MON_ERR, psprintf("CLUSTER_hdr_chkr::check_iox_sync(sync_name=%s) <= bad arg", sync_name));
+      this.error_cnt++;
+      return; // ignore
+    }
+  }
+  ncycs_no_sync = cmp2slowclk_ratio - 1;
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("monitor: %s %s: 1 sync pulse in %0d l2clk cycs", sync_name, special_note, cmp2slowclk_ratio));
+
+  //--wait for first sync pulse---
+  wait_1st_posedge(sync_name, 10 * cmp2slowclk_ratio ); // timeout in gclks
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("check_iox_sync: first %s <= WARNING: not checking", sync_name));
+  wait_1st_posedge(sync_name, 2 * cmp2slowclk_ratio ); // timeout in gclks
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("check_iox_sync: this %s pulse is used as reference data point", sync_name));
+  //--check sync pulse----
+  while (1) {
+     for (i = 0; i < ncycs_no_sync; i++) {
+       @(posedge clkgen_port.$l2clk);
+       case (sync_name) {
+         "cmp_slow_sync_en": sync_val = clkgen_port.$cmp_slow_sync_en__l2clk;
+         "slow_cmp_sync_en": sync_val = clkgen_port.$slow_cmp_sync_en__l2clk;
+         "io2x_sync_en":     sync_val = clkgen_port.$io2x_sync_en__l2clk;  
+       }
+       if (sync_val !== 1'b0)
+         print_error_msg(err_cnt++, psprintf("check_iox_sync: %s %s is %b. Expect: low", sync_name, special_note, sync_val));
+     }
+     @(posedge clkgen_port.$l2clk);
+     case (sync_name) {
+       "cmp_slow_sync_en": sync_val = clkgen_port.$cmp_slow_sync_en__l2clk;
+       "slow_cmp_sync_en": sync_val = clkgen_port.$slow_cmp_sync_en__l2clk;
+       "io2x_sync_en":     sync_val = clkgen_port.$io2x_sync_en__l2clk;  
+     }
+     if (sync_val !== 1'b1)
+       print_error_msg(err_cnt++, psprintf("check_iox_sync: %s %s is %b. Expect: high", sync_name, special_note, sync_val));
+     else if (this.verbose)
+       print_debug_msg(debug_cnt++, psprintf("check_iox_sync: %s %s is %b. Expect: high", sync_name, special_note, sync_val));
+  }
+}
+
+//=============================================================
+// WHAT: check dr_sync_en 
+//   -DR sync pulse width is one cmp clk cycle
+//   -Number of DR sync pulses in 1.5 DR clk cycles is 1 or 2
+// WARN: this task does NOT check DR sync locations.
+//=============================================================
+task CLUSTER_hdr_chkr::check_dr_sync() {
+  integer err_cnt=0, debug_cnt=0;
+  integer old_sync_cnt, new_sync_cnt, temp_sync_cnt, num_sync; // counts of number of sync pulses
+  integer sync_cnt;
+
+  wait_1st_posedge("dr_sync_en", 30); // timeout after 30 gclks
+  @(posedge clkgen_port.$dr_sync_en__l2clk); // skip the 1st sync since sync_en can be during clk stop (ie. WMR)
+  dbg.dispmon(this.dispScope, MON_INFO, "check_dr_sync: first dr_sync_en used as reference data point");
+  //--- check dr_sync_en width is one cmp clk ---
+  fork {
+    while (1) {
+      @(posedge clkgen_port.$l2clk);
+      if (clkgen_port.$dr_sync_en__l2clk != 1'b0)
+        print_error_msg(err_cnt++, "check_dr_sync: dr_sync_en is high for more than one cmp cycle");
+      @(posedge clkgen_port.$dr_sync_en__l2clk);  // cmp posedge at which dr_sync is high
+    }
+  } join none
+  //--- increment counter for every dr_sync pulse---
+  sync_cnt = 1;  // first sync pulse counted
+  fork {
+    while (1) {
+      @(posedge clkgen_port.$dr_sync_en__l2clk);
+      sync_cnt++;
+    }
+  } join none
+  //--- check number of dr_sync pulses in 1 dr clk + 0.5 cmp clk---
+  @(posedge clkgen_dr_port.$l2clk);
+  old_sync_cnt = sync_cnt;
+  while (1) {
+    @(posedge clkgen_dr_port.$l2clk);
+    temp_sync_cnt = sync_cnt;
+    repeat (2) @(clkgen_port.$l2clk);  // repeat (1): not work for div2_eff is 9
+    new_sync_cnt = sync_cnt;
+    num_sync = new_sync_cnt - old_sync_cnt;
+    if (is_outside_min_max(1, num_sync, 2))
+      print_error_msg(err_cnt++, psprintf("check_dr_sync: number of dr_sync_en pulses in 1 DR clk + 1 cmp clk: %0d. Expect: 1 or 2", num_sync));
+    else if (this.verbose)
+      print_debug_msg(debug_cnt++, psprintf("check_dr_sync: number of dr_sync_en pulses in 1 DR clk + 1 cmp clk: %0d. Expect: 1 or 2", num_sync));
+    old_sync_cnt = temp_sync_cnt;
+  }
+}
+
+//############################################################################
+//############################################################################
+//####  tasks to check sync pulse locations               ####################
+//############################################################################
+//############################################################################
+
+//=============================================================
+// WHAT: check locations of cmp_io_sync_en 
+// WARNING: do NOT use this task for MIO cmp hdrs since cmp_slow_sync_en is IO2X sync.
+//    Use check_io2x_sync_loc() instead.
+//=============================================================
+task CLUSTER_hdr_chkr::check_cmp_io_sync_loc(integer nchecks=10) {
+  integer err_cnt=0, debug_cnt=0;
+  reg sync_value;
+  integer i;
+  integer sync_time=0, clk_edge, old_clk_edge=0, clk_mid;
+  integer sync_loc_dev; // deviation in sync pulse location
+
+  if (this.cmpslow_sync_is_io2x)  // call wrong task
+    check_io2x_sync_loc(nchecks); // do a favor here
+
+  //---wait for first IO sync, cmp clk and IO clk---
+  fork {
+    @(clkgen_port.$cmp_slow_sync_en__l2clk);  // wait for first IO sync pulse
+  }
+  {
+    @(posedge clkgen_port.$l2clk);           // wait for first cmp clk
+  }
+  {
+    @(posedge clkgen_io_port.$l2clk);        // wait for first IO l2clk
+  } join
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("checking sync pulse locations of cmp_slow_sync_en ..."));
+  //----check sync location for DTM mode -----
+  if (this.clk_pkt.mode == CCU_DTM_MODE) {
+    sync_loc_dev = this.clk_pkt.cmp_clk_per_nom;
+    fork {
+      while (1) {
+        @(posedge clkgen_port.$cmp_slow_sync_en__l2clk);
+        @(posedge clkgen_port.$l2clk);
+        sync_time = get_time(LO);  // at flop header
+      }
+    } join none
+    @(posedge clkgen_io_port.$l2clk);
+    old_clk_edge = get_time(LO);
+    for (i = 0; i < nchecks; i++) {
+      @(posedge clkgen_io_port.$l2clk);
+      clk_edge = get_time(LO);
+      clk_mid = (clk_edge + old_clk_edge) / 2;
+      if (compute_abs(sync_time - clk_mid) > sync_loc_dev)
+        print_error_msg(err_cnt++, psprintf("sync location check: middle of IO l2clk: %0d, cmp_slow sync pulse at flop input: %0d <= more than %0d", clk_mid, sync_time, sync_loc_dev));
+      else if (this.verbose)
+        print_debug_msg(debug_cnt++, psprintf("sync location check: middle of IO l2clk: %0d, cmp_slow sync pulse at flop input: %0d", clk_mid, sync_time));
+      old_clk_edge = clk_edge;
+    }
+  }
+  else {
+    //---check io sync locations---
+    for (i = 0; i < nchecks; i++) {
+      @(negedge clkgen_io_port.$l2clk);             // falling edge of iol2clk
+      repeat (2) @(negedge clkgen_port.$l2clk);     // skip 2 cmp clk falling edges
+      @(posedge clkgen_port.$l2clk);                // cmp clk rising edge
+      sync_value = clkgen_port.$cmp_slow_sync_en__l2clk;
+      if (sync_value !== 1'b1)
+        print_error_msg(err_cnt++, psprintf("sync location check: cmp_slow_sync_en is %b. Expect: high", sync_value));
+      else if (this.verbose)
+        print_debug_msg(debug_cnt++, psprintf("sync location check: cmp_slow_sync_en is %b. Expect: high", sync_value));
+    }
+  }
+}
+
+//=============================================================
+// WHAT: check locations of io_cmp_sync_en
+//=============================================================
+task CLUSTER_hdr_chkr::check_io_cmp_sync_loc(integer nchecks=10) {
+  integer err_cnt=0, debug_cnt=0;
+  reg sync_value;
+  integer i;
+  integer sync_time=0, clk_edge, old_clk_edge=0, clk_mid;
+  integer sync_loc_dev; // deviation in sync pulse location
+  integer sync_at_phase; // phase at which sync pulse is high
+
+  //---wait for first IO sync, cmp clk and IO clk---
+  fork {
+    @(clkgen_port.$slow_cmp_sync_en__l2clk);  // wait for first IO sync pulse
+  }
+  {
+    @(posedge clkgen_port.$l2clk);           // wait for first cmp clk
+  }
+  {
+    @(posedge clkgen_io_port.$l2clk);        // wait for first IO l2clk
+  } join
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("checking sync pulse locations of slow_cmp_sync_en ..."));
+  //----check sync location for DTM mode -----
+
+//if (this.clk_pkt.mode == CCU_DTM_MODE) { //!!!! WARNING: this is OLD when cmp_slow/slow_cmp sync are at same locations
+//  sync_loc_dev = this.clk_pkt.cmp_clk_per_nom;
+//  fork {
+//    while (1) {
+//      @(posedge clkgen_port.$slow_cmp_sync_en__l2clk);
+//      @(posedge clkgen_port.$l2clk);
+//      sync_time = get_time(LO);  // at flop header
+//    }
+//  } join none
+//  @(posedge clkgen_io_port.$l2clk);
+//  old_clk_edge = get_time(LO);
+//  for (i = 0; i < nchecks; i++) {
+//    @(posedge clkgen_io_port.$l2clk);
+//    clk_edge = get_time(LO);
+//    clk_mid = (clk_edge + old_clk_edge) / 2;
+//    if (compute_abs(sync_time - clk_mid) > sync_loc_dev) {
+//      print_error_msg(err_cnt++, psprintf("sync location check: middle of IO l2clk: %0d, slow_cmp sync pulse at flop input: %0d <= more than %0d",
+//                clk_mid, sync_time, sync_loc_dev));
+//    }
+//    old_clk_edge = clk_edge;
+//  }
+//}
+  if (this.clk_pkt.mode == CCU_DTM_MODE) {
+    sync_at_phase = this.clk_pkt.cmp2io_ratio - 2; // at flop input: sync is high 1 clk before next IO clk posedge
+    for (i = 0; i < nchecks; i++) {                // so, atclkgen output, sync is high 2 clks before next IO clk posedge
+      @(posedge clkgen_io_port.$l2clk);
+      @(negedge clkgen_port.$l2clk);
+      repeat (sync_at_phase) @(posedge clkgen_port.$l2clk);
+      sync_value = clkgen_port.$slow_cmp_sync_en__l2clk;
+      if (sync_value !== 1'b1)
+        print_error_msg(err_cnt++, psprintf("sync location check: slow_cmp sync pulse is %b, expect: high", sync_value));
+      else if (this.verbose)
+        print_debug_msg(debug_cnt++, psprintf("sync location check: slow_cmp sync pulse is %b, expect: high", sync_value));
+    }
+  }
+  else {
+    //---check io sync locations----
+    for (i = 0; i < nchecks; i++) {
+      @(posedge clkgen_io_port.$l2clk);
+      repeat (2) @(negedge clkgen_port.$l2clk); // skip 2 cmp clk falling edges
+      @(posedge clkgen_port.$l2clk);            // cmp clk rising edge
+      sync_value = clkgen_port.$slow_cmp_sync_en__l2clk;
+      if (sync_value !== 1'b1)
+        print_error_msg(err_cnt++, psprintf("sync location check: slow_cmp_sync_en is %b. Expect: high", sync_value));
+      else if (this.verbose)
+        print_debug_msg(debug_cnt++, psprintf("sync location check: slow_cmp_sync_en is %b. Expect: high", sync_value));
+    }
+  }
+}
+
+//=============================================================
+// WHAT: check locations of IO2X sync pulse
+// WARNING: cmp_slow_sync_en of MIO cmp clusters is IO2X sync en
+//=============================================================
+task CLUSTER_hdr_chkr::check_io2x_sync_loc(integer nchecks=10) {
+  integer err_cnt=0, debug_cnt=0;
+  reg sync_value;
+  integer i;
+  string special_note = (this.cmpslow_sync_is_io2x)? "(actually is IO2X sync)" : "";
+  string sync_name    = (this.cmpslow_sync_is_io2x)? "cmp_slow_sync_en" : "io2x_sync_en";
+  integer sync_time=0, clk_edge, old_clk_edge=0, clk_mid;
+  integer sync_loc_dev; // deviation in sync pulse location
+
+  //---wait for first IO2X sync, cmp clk and IO2X clk---
+  fork {
+    if (this.cmpslow_sync_is_io2x)
+      @(posedge clkgen_port.$cmp_slow_sync_en__l2clk);
+    else
+      @(posedge clkgen_port.$io2x_sync_en__l2clk);  // wait for first IO2X sync pulse
+  }
+  {
+    @(posedge clkgen_port.$l2clk);           // wait for first cmp clk
+  }
+  {
+    @(posedge clkgen_io2x_port.$l2clk);      // wait for first IO2X l2clk
+  } join
+  dbg.dispmon(this.dispScope, MON_INFO, psprintf("checking sync pulse locations of %s %s...", sync_name, special_note));
+  //----check sync location for DTM mode -----
+  if (this.clk_pkt.mode == CCU_DTM_MODE) {
+    sync_loc_dev = this.clk_pkt.cmp_clk_per_nom;
+    fork {
+      while (1) {
+        if (this.cmpslow_sync_is_io2x)
+          @(posedge clkgen_port.$cmp_slow_sync_en__l2clk);
+         else
+           @(posedge clkgen_port.$io2x_sync_en__l2clk);
+        @(posedge clkgen_port.$l2clk);
+        sync_time = get_time(LO);  // at flop header
+      }
+    } join none
+    @(posedge clkgen_io2x_port.$l2clk);
+    old_clk_edge = get_time(LO);
+    for (i = 0; i < nchecks; i++) {
+      @(posedge clkgen_io2x_port.$l2clk);
+      clk_edge = get_time(LO);
+      clk_mid = (clk_edge + old_clk_edge) / 2;
+      if (compute_abs(sync_time - clk_mid) > sync_loc_dev)
+        print_error_msg(err_cnt++, psprintf("sync location check: middle of IO2X l2clk: %0d, io2x sync pulse at flop input: %0d <= more than %0d", clk_mid, sync_time, sync_loc_dev));
+      else if (this.verbose)
+        print_debug_msg(debug_cnt++, psprintf("sync location check: middle of IO2X l2clk: %0d, io2x sync pulse at flop input: %0d", clk_mid, sync_time));
+      old_clk_edge = clk_edge;
+    }
+  }
+  else {
+    //--- check io2x_sync_en location---
+    for (i = 0; i < nchecks; i++) {
+      @(negedge clkgen_io2x_port.$l2clk);    // falling edge of io2x l2clk
+      @(negedge clkgen_port.$l2clk);         // falling edge of cmp clk
+      @(posedge clkgen_port.$l2clk);         // rising edge of cmp clk. Sync pulse should be high
+      if (this.cmpslow_sync_is_io2x)
+        sync_value = clkgen_port.$cmp_slow_sync_en__l2clk;
+      else
+        sync_value = clkgen_port.$io2x_sync_en__l2clk;
+      if (sync_value !== 1'b1)
+        print_error_msg(err_cnt++, psprintf("sync location check: %s %s is %b. Expect: high", sync_name, special_note, sync_value));
+      else if (this.verbose)
+        print_debug_msg(debug_cnt++, psprintf("sync location check: %s %s is %b. Expect: high", sync_name, special_note, sync_value));
+    }
+  }
+}
+
+//=============================================================
+// WHAT: check expected DR sync location at the flop input. DR sync
+//    is flopped once after clkgen output.
+// HOW: the expected location of dr sync pulse is the cmp clk posedge
+//    that is closet to the mid point of dr clk cycle (ie. delta). Since
+//    the dr and cmp clk edges can shift a little, so testbench needs to
+//    check the actual delta vs. (delta_min plus 1/3 of cmp clk cycle).
+//=============================================================
+task CLUSTER_hdr_chkr::check_dr_sync_loc(integer nchecks=20) {
+  integer i, err_cnt=0, debug_cnt=0;
+  integer sync_time=0, clk_edge, old_clk_edge=0, clk_mid;
+  integer sync_loc_dev; // deviation in sync pulse location
+
+  this.dr_sync_loc_err_cnt = 0;    // reset error counter
+  this.dr_sync_loc_debug_cnt = 0;  // reset debug counter
+  //---wait for first DR sync, cmp clk and DR clk---
+  fork {
+    @(posedge clkgen_port.$dr_sync_en__l2clk);  // wait for first dr sync pulse
+    dbg.dispmon(this.dispScope, MON_INFO, "first dr sync pulse");
+  }
+  {
+    @(posedge clkgen_port.$l2clk);              // wait for first cmp clk
+  }
+  {
+    @(posedge clkgen_dr_port.$l2clk);           // wait for first dr clk
+  } join
+  dbg.dispmon(this.dispScope, MON_INFO, "monitor: checking dr sync locations");
+  //----check sync location for DTM mode -----
+  if (this.clk_pkt.mode == CCU_DTM_MODE) {
+    sync_loc_dev = this.clk_pkt.cmp_clk_per_nom;
+    fork {
+      while (1) {
+        @(posedge clkgen_port.$dr_sync_en__l2clk);
+        @(posedge clkgen_port.$l2clk);
+        sync_time = get_time(LO);  // at flop header
+      }
+    } join none
+    @(posedge clkgen_dr_port.$l2clk);
+    old_clk_edge = get_time(LO);
+    for (i = 0; i < nchecks; i++) {
+      @(posedge clkgen_dr_port.$l2clk);
+      clk_edge = get_time(LO);
+      clk_mid = (clk_edge + old_clk_edge) / 2;
+      if (compute_abs(sync_time - clk_mid) > sync_loc_dev) {
+        print_error_msg(err_cnt++, psprintf("sync location check: middle of DR l2clk: %0d, dr sync pulse at flop input: %0d <= more than %0d", clk_mid, sync_time, sync_loc_dev));
+      }
+      else if (this.verbose)
+        print_debug_msg(debug_cnt++, psprintf("sync location check: middle of DR l2clk: %0d, dr sync pulse at flop input: %0d", clk_mid, sync_time));
+
+      old_clk_edge = clk_edge;
+    }
+  }
+  else {
+    //---check DR sync locations---
+    for (i = 0; i < nchecks; i++) {
+      @(posedge clkgen_port.$dr_sync_en__l2clk);  // dr sync is high at clkgen output
+      fork { check_next_dr_sync_loc(); } join none
+    }
+  }
+}
+
+//=============================================================
+// WHAT: check expected DR sync location at the flop input. DR sync
+//    is flopped once after clkgen output.
+// HOW: the expected location of dr sync pulse is the cmp clk posedge
+//    that is closet to the mid point of dr clk cycle (ie. delta). Since
+//    the dr and cmp clk edges can shift a little, so testbench needs to
+//    check the actual delta vs. (delta_min plus 1/3 of cmp clk cycle).
+//=============================================================
+task CLUSTER_hdr_chkr::check_next_dr_sync_loc() {
+  integer prev_dr_posedge, next_dr_posedge, at_end_dr_cyc=0, dr_clk_midpoint;
+  integer sync_at_clkgen, sync_at_flop; // sync pulse
+  integer cmp_edges[40], n = 0, i;  // high ratio is in DTM mode 15:1 ratio
+  integer delta, min_delta, actual_delta; // time difference between cmp edge and dr clk midpoint
+  integer clks_shift_limit;
+
+  // when this task is called, DR sync is high at clkgen output
+  at_end_dr_cyc = 0;
+  n = 0;
+  fork
+  { // find next sync pulse (at flop input)
+    @(posedge clkgen_port.$dr_sync_en__l2clk); // sync is high at clkgen output
+    sync_at_clkgen = get_time(LO);
+    @(posedge clkgen_port.$l2clk);     // sync is high at flop input
+    sync_at_flop = get_time(LO);
+  }
+  { // find next DR clk rising edges
+    @(negedge clkgen_port.$l2clk); // when dr_sync is at phase0 (ie. DR clk edge), avoid this dr clk edge
+    @(posedge clkgen_dr_port.$l2clk);
+    prev_dr_posedge = get_time(LO);
+    @(posedge clkgen_dr_port.$l2clk);
+    next_dr_posedge = get_time(LO);
+    at_end_dr_cyc = 1;
+  }
+  { // record timestamps of all cmp edges
+    while (1) {
+      @(posedge clkgen_port.$l2clk);
+      if (n >= 40) {
+        dbg.dispmon(this.dispScope, MON_ERR, psprintf("CLUSTER_hdrchkr::check_next_dr_sync_loc(n=%0d) <= programming error", n));
+        break;
+      }
+      cmp_edges[n] = get_time(LO);
+      n++;
+      if (at_end_dr_cyc) break;  // reach the end of DR clk cycle
+    }
+  } join
+  //---find cmp posedge that is nearest to the DR clk mid point
+  dr_clk_midpoint = (prev_dr_posedge + next_dr_posedge) / 2; // rounding error is 1 tick
+  min_delta =  compute_abs(cmp_edges[0] - dr_clk_midpoint);
+  for (i = 1; i < n ; i++) {
+    delta = compute_abs(cmp_edges[i] - dr_clk_midpoint);
+    if (delta < min_delta)  // closer to the mid point
+      min_delta = delta;
+  }
+  //---check location of DR sync pulse---
+  actual_delta = compute_abs(sync_at_flop - dr_clk_midpoint);
+  clks_shift_limit = this.clk_pkt.cmp_clk_per_nom / 3; // 1/3 of nominal value of cmp clk cycle
+  if (actual_delta > (min_delta + clks_shift_limit)) {
+    this.dr_sync_loc_err_cnt++;
+    if (this.dr_sync_loc_err_cnt <= this.max_error_printed)
+      dbg.dispmon(this.dispScope, MON_ERR, psprintf(
+        "sync location check: dr sync @flop=%0d. dr clk: edges=%0d and %0d, midpoint=%0d. delta2midpoint=%0d <= exceed min_delta=%0d + %0d", 
+         sync_at_flop, prev_dr_posedge, next_dr_posedge, dr_clk_midpoint, actual_delta, min_delta, clks_shift_limit));
+  }
+  else if (this.dr_sync_loc_debug_cnt <= this.max_error_printed) {
+    dbg.dispmon(this.dispScope, MON_INFO, psprintf(
+      "sync location check: dr sync @flop=%0d. dr clk: edges=%0d and %0d, midpoint=%0d, delta2midpoint=%0d, min_delta=%0d, tolerance=%0d", 
+        sync_at_flop, prev_dr_posedge, next_dr_posedge, dr_clk_midpoint, actual_delta, min_delta, clks_shift_limit));
+    this.dr_sync_loc_debug_cnt++;
+  }
+}   
+      
+//############################################################################
+//############################################################################
+//######### supporting subroutines   #########################################
+//############################################################################
+//############################################################################
+
+//=============================================================
+// WHAT: print error message
+// NOTE:
+//   err_cnt is local error count of a particular error type.
+//   this.error_cnt is global error count of this vera class.
+//=============================================================
+task CLUSTER_hdr_chkr::print_error_msg(integer err_cnt, string error_msg) {
+  if (err_cnt <= max_error_printed)
+    dbg.dispmon(this.dispScope, MON_ERR, error_msg);
+  this.error_cnt++; // increment global error count
+}
+
+//=============================================================
+// WHAT: print messages for debug
+//=============================================================
+task CLUSTER_hdr_chkr::print_debug_msg(integer debug_cnt, string debug_msg) {
+  if (debug_cnt <= max_debug_printed)
+    dbg.dispmon(this.dispScope, MON_ALWAYS, debug_msg);
+}
+
+//=============================================================
+// Return 1 if value is outside min and max; otherwise, return 0.
+//=============================================================
+function integer CLUSTER_hdr_chkr::is_outside_min_max(integer min_val, integer value, integer max_val) {
+  is_outside_min_max =  ((value < min_val) || (value > max_val))? 1 : 0;
+}
+
+//=============================================================
+// WHAT: compute absolute value
+//=============================================================
+function integer CLUSTER_hdr_chkr::compute_abs(integer n) {
+  compute_abs = (n >= 0)? n : n * -1;
+}
+
+//=============================================================
+// WHAT: timeout if not seen posedge of 'sig_name' in 'timeout_val' gclk cycles.
+// ARGs: sig_name must be "l2clk", "cmp_slow_sync_en", "slow_cmp_sync_en",
+//       "io2x_sync_en" or "dr_sync_en"
+//=============================================================
+task CLUSTER_hdr_chkr::wait_1st_posedge(string sig_name, integer timeout_val) {
+  integer got_1st_posedge=0;
+
+  if (timeout_val <= 0)
+    return;
+  fork {
+    repeat (timeout_val) @(posedge clkgen_port.$gclk);
+    if (got_1st_posedge == 0)
+      dbg.dispmon(this.dispScope, MON_ERR, psprintf("not seen %s posedge in %0d gclks", sig_name, timeout_val));
+  } join none
+  case (sig_name) {
+    "l2clk":            @(posedge clkgen_port.$l2clk);
+    "cmp_slow_sync_en": @(posedge clkgen_port.$cmp_slow_sync_en__l2clk);
+    "slow_cmp_sync_en": @(posedge clkgen_port.$slow_cmp_sync_en__l2clk);
+    "io2x_sync_en":     @(posedge clkgen_port.$io2x_sync_en__l2clk);  
+    "dr_sync_en":       @(posedge clkgen_port.$dr_sync_en__l2clk);  
+    default: {
+      dbg.dispmon(this.dispScope, MON_ERR, psprintf("wait_1st_posedge(sig_name=%s) <= bad arg", sig_name));
+      this.error_cnt++;
+    }
+  }
+  got_1st_posedge = 1;
+  terminate;
+}
+

@@ -1,0 +1,239 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: FNXPCIEXactorFCEngine.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "DenaliPCIE.vri"
+
+// FNXPCIEXactor library
+#include "FNXPCIEXactorDefines.vri"
+
+// report library
+#include "cReport.vrh"
+#include "FNXPCIEXactorReportMacros.vri"
+
+class FNXPCIEXactorFCEngine {  
+
+  // Base Class and Method Names For QR Macros
+  local string ClassName  = "FNXPCIEXactorFCEngine";
+  local string MethodName = null;
+
+  local ReportClass MyReport;
+  local string XactorName;
+  local FNXPCIEXactorSignalInterface SignalInterface;
+  local FNXPCIEXactorDenaliClkPort DenaliClkPort;
+  local FNXPCIEXactorUtilities Util;
+
+  protected bit FCTimerEnable[FNX_PCIE_XTR_NUM_FC_TYPES];
+  protected integer FCTimerMax[FNX_PCIE_XTR_NUM_FC_TYPES];
+  protected integer FCTimerVal[FNX_PCIE_XTR_NUM_FC_TYPES];
+  protected integer FCUpdateIncMin[FNX_PCIE_XTR_NUM_FC_TYPES];  
+  protected integer FCUpdateIncMax[FNX_PCIE_XTR_NUM_FC_TYPES];
+
+  // constructor
+  task new( ReportClass                  _Report,
+	    FNXPCIEXactorSignalInterface _SignalInterface,
+	    FNXPCIEXactorDenaliClkPort   _DenaliClkPort,
+	    FNXPCIEXactorUtilities       _Util,
+	    string                       _XactorName );
+
+  // public methods
+  task Reset();
+  task GenFCUpdates();
+  task EnableFCTimer( denaliPcieFcTypeT denFcType );
+  task DisableFCTimer( denaliPcieFcTypeT denFcType );
+  task SetFCTimerMax( denaliPcieFcTypeT denFcType, integer fcTimerMax );
+  task SetFCUpdateRange( denaliPcieFcTypeT denFcType, integer fcUpdateMin, integer fcUpdateMax );
+  task SetFCData( denaliPcieFcTypeT denFcType, denaliPcieFcIdT denFcId,
+		  bit [FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_WIDTH-1:0] fcData );
+  function bit[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_WIDTH-1:0] GetFCData( denaliPcieFcTypeT denFcType,
+									   denaliPcieFcIdT denFcId );
+}
+
+task FNXPCIEXactorFCEngine::new( ReportClass                  _Report,
+				 FNXPCIEXactorSignalInterface _SignalInterface,
+				 FNXPCIEXactorDenaliClkPort   _DenaliClkPort,
+				 FNXPCIEXactorUtilities       _Util,
+				 string                       _XactorName ) {
+  string MethodName = "new";
+  
+  MyReport        = _Report;
+  SignalInterface = _SignalInterface;
+  DenaliClkPort   = _DenaliClkPort;
+  Util            = _Util;
+  XactorName      = _XactorName;
+  Reset();
+  
+  // Start FC Update Engine
+  GenFCUpdates();
+}
+
+task FNXPCIEXactorFCEngine::Reset() {
+  string MethodName = "Reset";
+  integer i;
+  
+  for (i=0; i < FNX_PCIE_XTR_NUM_FC_TYPES; i++) {
+    FCTimerEnable[i] = 0;
+    FCTimerMax[i] = 100;
+    FCTimerVal[i] = 100;
+    FCUpdateIncMin[i] = 1;
+    FCUpdateIncMax[i] = 1;
+  }
+}
+
+task FNXPCIEXactorFCEngine::GenFCUpdates() {
+  string MethodName = "GenFCUpdates";
+  bit [FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_WIDTH-1:0] fcUpdateInc;
+  denaliPcieFcTypeT denFcType;
+  integer i;
+  
+  fork {
+    while (1) {
+      for (i=0; i < FNX_PCIE_XTR_NUM_FC_TYPES; i++) {
+	if (FCTimerEnable[i]) {
+	  FCTimerVal[i]--;
+	  if (FCTimerVal[i] === 0) {
+	    denFcType = Util.FCEncToDenaliType(i);
+	    fcUpdateInc = Util.RandUtil.Rand32( FCUpdateIncMin[i], FCUpdateIncMax[i] );
+	    SetFCData( denFcType, PCIE_FCID_RX_ALLOCATED,
+		       GetFCData( denFcType, PCIE_FCID_RX_ALLOCATED ) + fcUpdateInc );
+	    PCIEX_QR_I( "%s-> Set Inc=%h For Next %s Update",
+			XactorName, fcUpdateInc, denFcType );
+	  }
+	  if (FCTimerVal[i] < 0) {
+	    FCTimerVal[i] = FCTimerMax[i];
+	  }
+	}
+      }
+      @(posedge DenaliClkPort.$tx_clk); // Clock At Same Rate As Denali FC Timers (250 MHz PCIE, Not Raptor Clock)
+    }
+  } join none
+}
+
+task FNXPCIEXactorFCEngine::SetFCData( denaliPcieFcTypeT denFcType,
+				       denaliPcieFcIdT denFcId,
+				       bit [FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_WIDTH-1:0] fcData ) {
+  string MethodName = "SetFCData";
+  bit [FNX_PCIE_XTR_REG_DEN_WIDTH-1:0] fcRegVal;
+  integer idenFcType, iFcOp, iVc, iFcId;
+  
+  idenFcType = denFcType;
+  iFcOp = PCIE_FCCTRL_set;
+  iVc = PCIE_VCID_VC0; // FNX Only Implements VC 0
+  iFcId = denFcId;
+  fcRegVal = 0;
+  fcRegVal[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC]  = idenFcType;
+  fcRegVal[FNX_PCIE_XTR_REG_DEN_FC_CTRL_VC_SLC]       = iVc;
+  fcRegVal[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_CMD_SLC]   = iFcOp;
+  fcRegVal[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_ID_SLC]    = iFcId;
+  fcRegVal[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_SLC] = fcData;
+  SignalInterface.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, fcRegVal );
+}
+
+function bit[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_WIDTH-1:0] FNXPCIEXactorFCEngine::GetFCData( denaliPcieFcTypeT denFcType,
+												denaliPcieFcIdT denFcId ) {
+  string MethodName = "GetFCData";
+  bit [FNX_PCIE_XTR_REG_DEN_WIDTH-1:0] fcRegVal;
+  integer idenFcType, iFcOp, iVc, iFcId;
+  
+  idenFcType = denFcType;
+  iFcOp = PCIE_FCCTRL_get;
+  iVc = PCIE_VCID_VC0; // FNX Only Implements VC 0
+  iFcId = denFcId;
+  fcRegVal = 0;
+  fcRegVal[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_TYPE_SLC] = idenFcType;
+  fcRegVal[FNX_PCIE_XTR_REG_DEN_FC_CTRL_VC_SLC]      = iVc;
+  fcRegVal[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_CMD_SLC]  = iFcOp;
+  fcRegVal[FNX_PCIE_XTR_REG_DEN_FC_CTRL_FC_ID_SLC]   = iFcId;
+  SignalInterface.WriteDenaliReg( PCIE_REG_DEN_FC_CTRL, fcRegVal );
+  
+  fcRegVal = SignalInterface.ReadDenaliReg( PCIE_REG_DEN_FC_CTRL );
+  GetFCData = fcRegVal[FNX_PCIE_XTR_REG_DEN_FC_CTRL_DATA_VAL_SLC];
+}
+
+task FNXPCIEXactorFCEngine::EnableFCTimer( denaliPcieFcTypeT denFcType ) {
+  string MethodName = "EnableFCTimer";
+  integer i, idx;
+  
+  idx = Util.denaliFCTypeToInt(denFcType);
+  if (idx < 0) {
+    for (i=0; i < FNX_PCIE_XTR_NUM_FC_TYPES; i++) {
+      FCTimerEnable[i] = 1;
+    }
+  } else {
+    FCTimerEnable[idx] = 1;
+  }
+}
+
+task FNXPCIEXactorFCEngine::DisableFCTimer( denaliPcieFcTypeT denFcType ) {
+  string MethodName = "DisableFCTimer";
+  integer i, idx;
+  
+  idx = Util.denaliFCTypeToInt(denFcType);
+  if (idx < 0) {
+    for (i=0; i < FNX_PCIE_XTR_NUM_FC_TYPES; i++) {
+      FCTimerEnable[i] = 0;
+    }
+  } else {
+    FCTimerEnable[idx] = 0;
+  }
+}
+
+task FNXPCIEXactorFCEngine::SetFCTimerMax( denaliPcieFcTypeT denFcType, integer fcTimerMax ) {
+  string MethodName = "SetFCTimerMax";
+  integer i, idx;
+  
+  idx = Util.denaliFCTypeToInt(denFcType);
+  if (idx < 0) {
+    for (i=0; i < FNX_PCIE_XTR_NUM_FC_TYPES; i++) {
+      FCTimerMax[i] = fcTimerMax;
+    }
+  } else {
+    FCTimerMax[idx] = fcTimerMax;
+  }
+}
+
+task FNXPCIEXactorFCEngine::SetFCUpdateRange( denaliPcieFcTypeT denFcType, integer fcUpdateMin, integer fcUpdateMax ) {
+  string MethodName = "SetFCUpdateRange";
+  integer i, idx;
+  
+  idx = Util.denaliFCTypeToInt(denFcType);
+  if (idx < 0) {
+    for (i=0; i < FNX_PCIE_XTR_NUM_FC_TYPES; i++) {
+      FCUpdateIncMin[i] = fcUpdateMin;
+      FCUpdateIncMax[i] = fcUpdateMax;
+    }
+  } else {
+    FCUpdateIncMin[idx] = fcUpdateMin;
+    FCUpdateIncMax[idx] = fcUpdateMax;
+  }  
+}

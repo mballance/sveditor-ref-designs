@@ -1,0 +1,143 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: rdmc_mon_if.vri
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "neptune_defines.vri"
+
+#define RXC_CK_IN_TIMING PSAMPLE #-1
+#define RXC_CK_OUT_TIMING PHOLD #0
+#define RXC_CK_CLK_TIMING  CLOCK
+
+//*******************************************************************************
+//************ INTERFACE ********************************************************
+//*******************************************************************************
+
+interface rdmc_mon_if {
+#ifdef NIU_GATE
+input clk 		RXC_CK_CLK_TIMING verilog_node RDC_DUV_PATH.iol2clk";
+#else
+input clk 		RXC_CK_CLK_TIMING verilog_node RDC_DUV_PATH.niu_clk";
+#endif
+
+// Outputs from RDMC  to META 
+
+input[4:0] dma_num 	RXC_CK_IN_TIMING verilog_node RDC_DUV_PATH.rdmc_meta0_wr_req_dma_num";
+input[1:0] func_num 	RXC_CK_IN_TIMING verilog_node RDC_DUV_PATH.rdmc_meta0_wr_req_func_num";
+input[1:0] port_num 	RXC_CK_IN_TIMING verilog_node RDC_DUV_PATH.rdmc_meta0_wr_req_port_num";
+
+// Cmd Phase signals
+input         req 	RXC_CK_IN_TIMING verilog_node RDC_DUV_PATH.rdmc_meta0_wr_req";
+input[63:0]   req_address RXC_CK_IN_TIMING verilog_node RDC_DUV_PATH.rdmc_meta0_wr_req_address";
+input[7:0]    req_cmd   RXC_CK_IN_TIMING verilog_node RDC_DUV_PATH.rdmc_meta0_wr_req_cmd";
+input[13:0]   req_length RXC_CK_IN_TIMING verilog_node RDC_DUV_PATH.rdmc_meta0_wr_req_length";
+// Based on bits 88-101 of the ipp_dmc_data packet
+
+
+//  Input  from META to RDMC
+input        accept	RXC_CK_IN_TIMING verilog_node RDC_DUV_PATH.meta0_rdmc_wr_req_accept";
+
+//  Data Phase signals
+
+//  Input  from META to RDMC
+input        data_req   RXC_CK_IN_TIMING verilog_node RDC_DUV_PATH.meta0_rdmc_wr_data_req";
+
+// Outputs from RDMC  to META
+input[127:0]  data	RXC_CK_IN_TIMING verilog_node RDC_DUV_PATH.rdmc_meta0_wr_data";
+input         data_vld	RXC_CK_IN_TIMING verilog_node RDC_DUV_PATH.rdmc_meta0_wr_data_valid";
+input[15:0]   req_byteen RXC_CK_IN_TIMING verilog_node RDC_DUV_PATH.rdmc_meta0_wr_req_byteenable";
+input[3:0]    status	RXC_CK_IN_TIMING verilog_node RDC_DUV_PATH.rdmc_meta0_wr_status";
+input         xfr_comp	RXC_CK_IN_TIMING verilog_node RDC_DUV_PATH.rdmc_meta0_wr_transfer_comp";
+
+}
+
+//**************************************************************************************************
+//******** PORTS*************************************************************************************
+//**************************************************************************************************
+
+port rdmc_mon_port {
+ clk;
+ dma_num;
+ func_num;
+ port_num;
+
+// CMD phase signals
+ req;
+ req_address;
+ req_cmd;
+ req_length;
+
+//Data phase signals
+ data;
+ data_vld;
+ req_byteen;
+ status;
+ xfr_comp;
+
+//Input from the META to RDMC (handshake)
+ accept;
+ data_req;
+}
+
+//**************************************************************************************************
+//******** BIND*************************************************************************************
+//**************************************************************************************************
+
+bind rdmc_mon_port rdmc_mon_port_bind {
+ clk          rdmc_mon_if.clk;//Check for the name
+ //Output from the RDMC to META
+ dma_num      rdmc_mon_if.dma_num;
+ func_num     rdmc_mon_if.func_num;
+ port_num     rdmc_mon_if.port_num;
+
+// CMD phase signals
+ req          rdmc_mon_if.req;
+ req_address  rdmc_mon_if.req_address ;
+ req_cmd      rdmc_mon_if.req_cmd;
+ req_length   rdmc_mon_if.req_length;
+
+//Data phase signals
+ data         rdmc_mon_if.data;
+ data_vld     rdmc_mon_if.data_vld;
+ req_byteen   rdmc_mon_if.req_byteen;
+ status       rdmc_mon_if.status;
+ xfr_comp     rdmc_mon_if.xfr_comp;
+
+//Input from the META to RDMC
+ accept       rdmc_mon_if.accept;
+ data_req     rdmc_mon_if.data_req;
+}
+
+//****************************************************************************
+//****************************************************************************
+//****************************************************************************
+

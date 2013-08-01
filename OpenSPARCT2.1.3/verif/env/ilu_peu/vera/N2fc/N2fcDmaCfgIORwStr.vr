@@ -1,0 +1,131 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: N2fcDmaCfgIORwStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class N2fcDmaCfgIORwStr extends DmaURCfgIORdWrPEUStr {
+
+  local string          cmd;
+  local bit [63:0]      addr;
+  local bit [31:0]      length;
+  
+  public task new(PEUTestEnv a_env,
+                  string     a_cmd,
+                  bit [63:0] a_addr,
+                  bit [31:0] a_length);
+  
+  public task Execute();  
+
+}
+
+
+
+//-------------------------------------------------------------------
+// Method Name: 
+// Description: 
+//-------------------------------------------------------------------
+task N2fcDmaCfgIORwStr::new(PEUTestEnv a_env,
+                            string     a_cmd,
+                            bit [63:0] a_addr,
+                            bit [31:0] a_length)
+{  
+  super.new(a_env);
+
+  this._env      = a_env;  
+  this.cmd       = a_cmd;
+  this.addr      = a_addr;
+  this.length    = a_length;
+
+  SetPacketParams();
+
+  case (cmd) {
+    "DMA_CFG0": this._type_req = PEC_PCI__TYPE_CFG0;
+    "DMA_CFG1": this._type_req = PEC_PCI__TYPE_CFG1;
+    "DMA_IO"  : this._type_req = PEC_PCI__TYPE_IO;
+  }
+  if (this._type_req == PEC_PCI__TYPE_CFG0) this._addr_lsb[15:12] = 4'b_0000;
+  if (this._type_req == PEC_PCI__TYPE_CFG1) this._addr_lsb[15:12] = 4'b_0000;
+  reqHdr [PEC_PCI__TYPE]   = this._type_req;
+  reqHdr [PEC_PCI__ADDR32] = { this._addr_lsb[31:2], 2'b_00 };
+  
+  cplHdr [PEC_PCI__BCM]    = 0; 
+  this.Execute ();
+}
+
+task N2fcDmaCfgIORwStr::Execute ()
+{  
+  if( this._type_req === PEC_PCI__TYPE_IO ){
+    this._env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr(PCIE_TL_NONFATAL_TLP_MF_vlIOExpEp);
+  }else{
+    this._env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr(PCIE_TL_NONFATAL_TLP_MF_vlCfgTx);
+    this._env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr(PCIE_TL_NONFATAL_TLP_MF_vlCfg0);
+  }
+
+  if( (this._format_req === PEC_PCI__FMT_NO_DATA_3DW) && this._ep_req ){
+    this._env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr(PCIE_TL_NONFATAL_TLP_MF_vlPoison);
+  }
+
+  if ( super.f_abortErrTlp )
+  {
+    this._env.drivePCIE(reqHdr, this._data, *, *, *, 1 );
+    if( this._type_req === PEC_PCI__TYPE_IO ){
+      this._env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr(PCIE_TL_NONFATAL_TLP_MF_vlIOExpEp);
+    }else{
+      this._env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr(PCIE_TL_NONFATAL_TLP_MF_vlCfgTx);
+    }
+    //this._env.waitIngressLatency( reqHdr );
+  }else{
+    //this._env.reserveIngressCredits(reqHdr);
+    this._env.drivePCIE(reqHdr, this._data);
+    if( this._type_req === PEC_PCI__TYPE_IO ){
+      this._env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr(PCIE_TL_NONFATAL_TLP_MF_vlIOExpEp);
+    }else{
+      this._env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr(PCIE_TL_NONFATAL_TLP_MF_vlCfgTx);
+      this._env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr(PCIE_TL_NONFATAL_TLP_MF_vlCfg0);
+    }
+    //this._env.consumeIngressCredits(reqHdr);
+    //this._env.expectILU(reqHdr, this._data);
+
+    if ( this._errQueue != 0 )
+    {
+      //mailbox_put(this._errQueue, e_ERR_ue_ur);
+      //mailbox_put(this._errQueue, reqHdr);
+    }
+
+    //this._env.driveILU(cplHdr, 0, this._data);
+    this._env.expectPCIE(cplHdr, this._data);
+  }
+ 
+  //Free up the Tags
+  _env.freeDmaTag( this._tag );
+
+}

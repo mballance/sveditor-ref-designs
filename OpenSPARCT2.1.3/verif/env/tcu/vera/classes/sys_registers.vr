@@ -1,0 +1,130 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: sys_registers.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "std_display_class.vrh"
+#include "ccu_defines.vri"
+// #include "ccu_top.vri"
+#include "reg_top.vri"
+
+#include "tcu_tasks.vrh"
+
+class SystemRegs {
+  string         asiRegisterName;
+  bit [39:0]     asiAddr;
+  bit [63:0]     asiResetValue;
+  bit [63:0]     asiVeraValue;   // This will keep track of the vera expected value
+  bit [63:0]     asiWriteableMask;
+  bit [63:0]     asiCurrentValue;
+  SystemTap      dft;
+  reg__port      cregSignalBind;
+
+  string dispmonScope;
+  StandardDisplay dbg;
+  
+  task new( StandardDisplay dbgIn
+           , SystemTap dftIn
+           , string asiRegisterNameIn
+           , bit [39:0] asiAddrIn
+           , bit [63:0] asiResetValueIn
+           , bit [63:0] asiWriteableMaskIn
+           , reg__port cregSignalBindIn
+           ) {
+    dispmonScope = "reg";
+    dbg = dbgIn;
+    dft = dftIn;
+    dbg.dispmon(dispmonScope, MON_INFO, "$Id: sys_registers.vr,v 1.1.1.1 2007/02/13 22:21:44 drp Exp $");
+    
+    asiRegisterName  = asiRegisterNameIn;
+    asiAddr          = asiAddrIn;
+    asiResetValue    = asiResetValueIn;
+    asiVeraValue     = asiResetValueIn;
+    asiWriteableMask = asiWriteableMaskIn;
+    cregSignalBind   = cregSignalBindIn;
+  }
+
+
+  task ucbWrite(bit[63:0] writeValue) {
+    dft.tap_creg_addr(asiAddr);
+    dft.tap_creg_wdata(writeValue);
+    dft.tap_iob_write();
+    asiVeraValue     = writeValue;                // Update testbench value (since we overwrote it)
+  }
+
+  function bit[63:0] ucbRead() {
+    dft.tap_creg_addr(asiAddr);
+    ucbRead = dft.tap_creg_rdata();
+  }
+
+  task ucbCheckReadWrite() {
+    bit [63:0] asiWriteValue;
+    bit [63:0] asiExpectedValue;
+    
+    dbg.dispmon(dispmonScope, MON_INFO, psprintf("Checking R/W of ASI: %s", asiRegisterName)); 
+    asiWriteValue    = ~asiCurrentValue;
+    asiExpectedValue = (~(asiCurrentValue) & asiWriteableMask) | (~(asiWriteableMask) & asiCurrentValue);
+    ucbWrite(asiWriteValue);
+    void = ucbRead();	// To wait for the write to complete
+    //--------------- Check wires at register -----------------
+    asiCurrentValue  = cregSignalBind.$regBits;
+    printCheckRegister(asiExpectedValue, asiCurrentValue);
+    //--------------- Check UCB read return -------------------
+    asiCurrentValue  = ucbRead();
+    printCheckRegister(asiExpectedValue, asiCurrentValue);    
+  }
+
+  task checkReset() {
+    asiCurrentValue  = cregSignalBind.$regBits ;
+    printCheckRegister((asiWriteableMask & asiResetValue), asiCurrentValue);
+  }
+  
+  task printCheckRegister(bit[63:0] expectedValue, bit[63:0] actualValue) {
+    dbg.dispmon(dispmonScope, MON_INFO, psprintf("Checking ASI reset: %s...", asiRegisterName)); 
+    if ( expectedValue !== actualValue) {
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("ASI Expected: 64'b%b",expectedValue));
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("ASI Actual:   64'b%b",actualValue));
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("ERROR: Incorrect ASI register value: %s", asiRegisterName));
+      dbg.dispmon(dispmonScope, MON_ERR,  psprintf("ASI Error:    64'b%b",expectedValue ^ actualValue));
+    }
+  }
+
+  task printCurrentRegister() {
+    asiCurrentValue  = cregSignalBind.$regBits;
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("ASI REG '%s' Current Value: 0x%h", asiRegisterName, asiCurrentValue)); 
+  }
+
+}
+
+
+

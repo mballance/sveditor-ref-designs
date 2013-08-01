@@ -1,0 +1,103 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: siu_common.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+function reg[2:0] pbank_sel(reg[3:0] pbank, reg[2:0] bank_sel)
+{
+	reg [2:0] result = bank_sel;
+
+	case (pbank) {
+		4'b0001: result[2:1] = 2'b0; 
+		4'b0010: result[2:1] = 2'b01;
+		4'b0011: result[2] = 1'b0;
+		4'b0100: result[2:1] = 2'b10;
+		4'b0101: result[2:1] = {bank_sel[1], 1'b0};
+		4'b0110: result[2:1] = {bank_sel[1], ~bank_sel[1]};
+		4'b1000: result[2:1] = 2'b11;
+		4'b1001: result[2:1] = {bank_sel[1], bank_sel[1]};
+		4'b1010: result[1] = 1'b1;
+		4'b1100: result[2:1] = {1'b1, bank_sel[1]};
+		4'b1111: result = bank_sel;
+		default: 
+			printf ("ERROR! illegal partial bank selections!\n");
+	}
+
+	pbank_sel = result;
+}
+
+function reg[1:0] interleave_parity(reg[39:0] data, integer size)
+{
+	integer i;
+	reg oparity = 0;
+	reg eparity = 0;
+
+	size = (size > 40) ? 40 : size;
+
+	for (i=0; i<size; i=i+2) eparity ^= data[i];	
+	for (i=1; i<size; i=i+2) oparity ^= data[i];	
+				
+	interleave_parity = {~oparity, ~eparity};
+}
+
+function reg[5:0] gen_ctag_ecc(reg[15:0] data)
+{
+	bit [5:0] temp_ecc;
+
+        temp_ecc[0] =  data[0] ^ data[1] ^ data[3] ^ data[4] ^ data[6] ^ data[8] ^
+               data[10] ^ data[11] ^ data[13] ^ data[15];
+
+        temp_ecc[1] = data[0] ^ data[2] ^ data[3] ^ data[5] ^ data[6] ^ data[9] ^
+               data[10] ^ data[12] ^ data[13];
+
+        temp_ecc[2] = data[1] ^ data[2] ^ data[3] ^ data[7] ^ data[8] ^ data[9] ^
+               data[10] ^ data[14] ^ data[15];
+
+        temp_ecc[3] = data[4] ^ data[5] ^ data[6] ^ data[7] ^ data[8] ^ data[9] ^
+                data[10];
+
+        temp_ecc[4] = data[11] ^ data[12] ^ data[13] ^ data[14] ^ data[15];
+
+	//temp_ecc[5] = ~(temp_ecc[0] ^ temp_ecc[1] ^ temp_ecc[2] ^ temp_ecc[3] ^ temp_ecc[4]);
+	temp_ecc[5] = data[0] ^ data[1] ^ data[2] ^ data[3] ^ temp_ecc[0] ^ temp_ecc[1] ^ temp_ecc[2];
+        gen_ctag_ecc = temp_ecc;
+}
+
+function reg gen_beparity(reg[15:0] data)
+{
+   bit temp_beparity;
+   
+        temp_beparity =  data[0] ^ data[1] ^ data[2] ^ data[3] ^ data[4] ^ data[5] ^ data[6] ^ data[7] ^ data[8] ^ data[9] ^ data[10] ^ data[11] ^ data[12] ^ data[13] ^ data[14] ^ data[15];
+        gen_beparity = !(temp_beparity);
+}

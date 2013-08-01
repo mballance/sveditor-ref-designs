@@ -1,0 +1,186 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuIngressAckNakErr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class ilupeuIngressAckNakErr  extends PEUStrBase 
+  {
+  integer f_errQueue;				// A mailbox for bad pkt headers
+
+  integer nmbrAckNakErrsToInject = 10;	//Total number of packets that get error injected
+  //Set the percentage weight of each type of receiver error
+  integer DLLPAckLessthanAckedErrWeight = 10; 
+  integer DLLPNakLessthanAckedErrWeight = 10; 
+  integer DLLPAckmorethanTLPNxtSeqErrWeight = 10; 
+  integer DLLPNakmorethanTLPNxtSeqErrWeight = 10; 
+  denaliPcieEiTypeT DenaliErrortype; 
+  string DLLPtype; 
+
+  //Only allow 1 of these strategies to be active at a time
+  static integer AckNakErr_semaphore = alloc(SEMAPHORE, 0, 1, 1);
+
+  task new( PEUTestEnv a_env )
+    {
+    super.new( a_env );
+    f_errQueue = 0;
+    }
+
+  task SetErrQueue( integer a_queue )
+    {
+    f_errQueue = a_queue;
+    } /* end SetErrQueue */
+
+  task Execute()
+    {
+    integer nmbrErrs;
+    integer DLLPAckNakErrsInject_freq = 100;     // freq of clock cycles to inject this error
+    integer nmbrDLLPAckNakErrsInjected; 
+    integer SeqNum = 0 ;
+    integer seqnum_adjust = 2; 
+    string  value = ""; 
+    integer DLP_error_inject = 0; 
+ 
+
+    //Get the semaphore when its your turn
+    semaphore_get( WAIT, AckNakErr_semaphore, 1);
+
+
+    //Clear all the specific error trackers
+    nmbrDLLPAckNakErrsInjected = 0; 
+
+   // create random number to cause Ack/Nak DLLP type
+     DLLPAckNakErrsInject_freq   = (urandom() % 20) + 20;
+
+//      PCIEDllpTrans = new( Pod.FNXPCIEBldr );
+
+    //inject errors until all the errors are injected 
+     while (nmbrAckNakErrsToInject > nmbrDLLPAckNakErrsInjected) {
+
+       
+    // adjust sequence number by  2 to 4097  
+      // seqnum_adjust  = (urandom() % 50) + 2;  
+      seqnum_adjust  = (urandom() % 4095) + 2;  
+
+       //determine the type of errors inject based on the weight specified in the testcase 
+       randcase {
+          //  DLLPAckLessthanAckedErrWeight: {SeqNum = f_env.AckdSeqNum - 1; DLLPtype = "ack"; value = "less than"; }
+          //  DLLPNakLessthanAckedErrWeight   : {SeqNum = f_env.AckdSeqNum - 1; DLLPtype = "nak";  value = "less than"; }
+//            DLLPAckLessthanAckedErrWeight: {SeqNum = f_env.AckdSeqNum - seqnum_adjust; DLLPtype = "ack"; value = "less than"; }
+//            DLLPNakLessthanAckedErrWeight   : {SeqNum = f_env.AckdSeqNum - seqnum_adjust; DLLPtype = "nak";  value = "less than"; }
+//            DLLPAckmorethanTLPNxtSeqErrWeight: {
+//            //        SeqNum = f_env.Pod.FNXPCIEEnableTrans.ReadDenaliReg(PCIE_REG_DEN_NXT_TX_TLP_SEQ) + 1; 
+//                   SeqNum = f_env.Pod.FNXPCIEEnableTrans.ReadDenaliReg(PCIE_REG_DEN_NXT_TX_TLP_SEQ) + seqnum_adjust; 
+// 		  DLLPtype = "ack";  value = "more than"; } 
+//            DLLPNakmorethanTLPNxtSeqErrWeight: {
+//             //      SeqNum = f_env.Pod.FNXPCIEEnableTrans.ReadDenaliReg(PCIE_REG_DEN_NXT_TX_TLP_SEQ) + 1; 
+//                   SeqNum = f_env.Pod.FNXPCIEEnableTrans.ReadDenaliReg(PCIE_REG_DEN_NXT_TX_TLP_SEQ) + seqnum_adjust; 
+// 	          DLLPtype = "nak" ; value = "more than";} 
+
+           DLLPAckLessthanAckedErrWeight: {SeqNum = f_env.AckdSeqNum - seqnum_adjust; DLLPtype = "ack"; value = "less than"; DLP_error_inject = 1; f_env.Pod.denali_root_monitor_PCIEEnableTrans.tempSuppressDenaliErr(PCIE_DL_FATAL_PROTOCOL_ERROR);}
+           DLLPNakLessthanAckedErrWeight   : {SeqNum = f_env.AckdSeqNum - seqnum_adjust; DLLPtype = "nak";  value = "less than"; DLP_error_inject = 1; f_env.Pod.denali_root_monitor_PCIEEnableTrans.tempSuppressDenaliErr(PCIE_DL_FATAL_PROTOCOL_ERROR);}
+           DLLPAckmorethanTLPNxtSeqErrWeight: {
+           //        SeqNum = f_env.Pod.FNXPCIEEnableTrans.ReadDenaliReg(PCIE_REG_DEN_NXT_TX_TLP_SEQ) + 1; 
+                  SeqNum = f_env.Pod.FNXPCIEEnableTrans.ReadDenaliReg(PCIE_REG_DEN_NXT_TX_TLP_SEQ) + seqnum_adjust; 
+		  DLLPtype = "ack";  value = "more than"; DLP_error_inject = 1; f_env.Pod.denali_root_monitor_PCIEEnableTrans.tempSuppressDenaliErr(PCIE_DL_FATAL_PROTOCOL_ERROR);} 
+           DLLPNakmorethanTLPNxtSeqErrWeight: {
+            //      SeqNum = f_env.Pod.FNXPCIEEnableTrans.ReadDenaliReg(PCIE_REG_DEN_NXT_TX_TLP_SEQ) + 1; 
+                  SeqNum = f_env.Pod.FNXPCIEEnableTrans.ReadDenaliReg(PCIE_REG_DEN_NXT_TX_TLP_SEQ) + seqnum_adjust; 
+	          DLLPtype = "nak" ; value = "more than"; DLP_error_inject = 1;
+		  f_env.Pod.denali_root_monitor_PCIEEnableTrans.tempSuppressDenaliErr(PCIE_DL_FATAL_PROTOCOL_ERROR);	} 
+
+       }
+
+     f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_DL_FATAL_PROTOCOL_ERROR );
+
+     printf("AC: at time %0d, SeqNum to be sent = %d, DLLPtype = %0s, value = %s \n", get_time(LO), SeqNum, DLLPtype, value);  
+     // sending the ack or nak 
+     if (DLLPtype == "ack") {
+       f_env.sendAck(SeqNum); 
+     }
+     if (DLLPtype == "nak") {
+       f_env.sendNak(SeqNum); 
+     }
+
+      
+     nmbrDLLPAckNakErrsInjected += 1; 
+       printf("AC: IngressDLLAckNakErr injects error:  nmbrDLLPAckNakErrsInjected=%0d nmbrAckNakErrsToInject=%0d \n",nmbrDLLPAckNakErrsInjected, nmbrAckNakErrsToInject);
+
+     repeat (DLLPAckNakErrsInject_freq) @(posedge CLOCK); 
+    } 
+
+    
+
+    //Delay to allow the last error to propogate before checking
+    repeat( 100 ) @(posedge CLOCK);    
+
+    //Track possible errors based on the type of errors injected 
+    nmbrErrs = 0;         // number of error type that got set.  
+
+    printf("AC: nmbrErrs = %d \n", nmbrErrs); 
+
+    if (nmbrDLLPAckNakErrsInjected == 1) {
+     nmbrErrs += 1;         // only primary ce error got set.
+    }
+    else if (nmbrDLLPAckNakErrsInjected > 1) {
+     nmbrErrs += 2;         // both primary and secondary ce errors got set.
+    }
+
+    
+
+    if( f_errQueue != 0 ){
+
+       // note: bx = no header to check 
+       //       bx0 = error above is optional.  clear it if it's set
+        
+       mailbox_put( f_errQueue, e_ERR_none );
+       mailbox_put( f_errQueue, nmbrErrs );
+
+       mailbox_put( f_errQueue, e_ERR_ue_dlp );    //  e_ERR_ue_dlp =  DLLP protocol error 
+       mailbox_put( f_errQueue, 128'bx );
+       mailbox_put( f_errQueue, e_ERR_ue_dlp );    //  e_ERR_ue_dlp =  DLLP  protocol error
+       mailbox_put( f_errQueue, 128'bx );
+     
+    } // f_errQueue !=0 
+
+    // after the errors are injected, then do not suppress the error detection 
+    if( DLP_error_inject ){
+       f_env.Pod.denali_root_monitor_PCIEEnableTrans.unSuppressDenaliErr(PCIE_DL_FATAL_PROTOCOL_ERROR);
+       DLP_error_inject = 0; 
+    }
+
+
+    repeat( 10 ) @(posedge CLOCK);    
+    semaphore_put( AckNakErr_semaphore, 1 );
+
+    } /* end Execute */
+
+  } /* end IngressUnsupportDLLPErr */

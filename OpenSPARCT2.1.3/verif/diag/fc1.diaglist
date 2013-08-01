@@ -1,0 +1,1354 @@
+#ifndef SYSNAME
+#define SYSNAME fc1
+#define sys(x) fc1_ ## x
+#define FC
+#endif
+
+
+////////////////////////////////////////////////////////////////////////////////////////////
+//
+// added this group of tests for OpenSparc T2 (called fc_mini_T2)
+//
+////////////////////////////////////////////////////////////////////////////////////////////
+
+
+<sys(mini_T2) sys=fc1 -vcs_build_args=+define+FBDIMM_NUM_8+ >
+<runargs -sys=fc1 -fast_boot -tg_seed=1 -midas_args=-DPART_0_BASE=0x200000000 -midas_args=-DL2_REG_PROG>
+<runargs -sas -vcs_run_args=+show_delta -vcs_run_args=+NIU_STUB_TIME=600000 >
+
+// has 6 tests that should pass
+
+<fc_pm_mini name=fc_pm_mini>
+<runargs -vcs_run_args=+bank_set_mask=3 -vcs_run_args=+core_set_mask=01>
+memop_ccx_packets	memop_ccx_packets.s -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff
+</runargs>
+</fc_pm_mini>
+
+<fc_memop_mini name=fc_memop_mini>
+memop_all_atomics	memop_all_atomics.s -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff
+memop_l2_disable	memop_l2_disable.s -midas_args=-DCMP_THREAD_START=0x1 -finish_mask=1
+memop_ccx_packets	memop_ccx_packets.s -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff
+memop_word_byte_mask	memop_word_byte_mask.s -midas_args=-DCMP_THREAD_START=0x1 -finish_mask=1 -nofast_boot
+</fc_memop_mini>
+
+#ifndef FC_NO_PEU_T2
+<fc_peu_mini name=fc_peu_mini>
+   <runargs -sas -vcs_run_args=+PEU_TEST>
+      PCIeCFGRd              PCIeCFGRd.s
+  </runargs>
+</fc_peu_mini>
+#endif
+
+#ifndef FC_NO_NIU_T2
+<fc_niu_all>
+
+#ifdef NIU_SYSTEMC_T2
+<runargs -vcs_run_args=+BYPASS_TXDRR -vcs_run_args=+ENABLE_MAC_HDR_DEBUG>
+<runargs -vcs_run_args=+RXWRITE_TIMEOUT=12000 -midas_args=-DNIU_SYSTEMC_T2>
+#endif
+<FcNiu10GMac0Tx name=FcNiu10GMac0Tx>
+
+<runargs -sas -midas_args=-DCMP_THREAD_START=0x1 -vcs_run_args=+MAC_SPEED0=10000 -finish_mask=1 >
+<runargs -vcs_run_args=+MAC_SPEED1=10000 >
+<runargs -vcs_run_args=+GET_MAC_PORTS=0 >
+<runargs -vcs_run_args=+PCS_SERDES -vcs_run_args=+displaySysRdWr >
+<runargs -vcs_run_args=+ORIG_META -vcs_run_args=+TX_TEST > 
+<runargs -midas_args=-DTX_TEST -midas_args=-DMAC_SPEED0=10000 -midas_args=-DMAC_SPEED1=10000 -midas_args=-DPCS_SERDES >
+<runargs -vcs_run_args=+PEU_TEST -vcs_run_args=+ENABLE_PCIE_LINK_TRAINING  -midas_args=-DENABLE_PCIE_LINK_TRAINING >
+
+<runargs -midas_args=-DNIU_TX_DMA_NUM=1 -midas_args=-DNIU_TX_DMA_ACT_LIST=2 >
+FcNiuTx_DMA1       FcNiuBasicTx.s
+</runargs>
+
+
+</runargs>
+</runargs>
+</runargs>
+</runargs>
+</runargs>
+</runargs>
+</runargs>
+
+#ifdef NIU_SYSTEMC_T2
+</runargs>
+</runargs>
+#endif
+
+</FcNiu10GMac0Tx>
+</fc_niu_all>
+#endif
+
+// ****************************************************************************
+
+<fc_interrupt_mini name=fc_interrupt_mini>
+interrupt_SWVR_INTR_R           interrupt_SWVR_INTR_R.s
+</fc_interrupt_mini>
+ 
+
+</runargs>
+</runargs>
+
+
+</sys(mini_T2)>
+
+
+////////////////////////////////////////////////////////////////////////////////////////////
+//
+// added this group of tests for OpenSparc T2 (called fc_all_T2)
+//
+////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+<sys(all_T2) sys=fc1 -vcs_build_args=+define+FBDIMM_NUM_8+>
+<runargs -sys=fc1 -fast_boot -tg_seed=1 -midas_args=-DPART_0_BASE=0x200000000 -midas_args=-DL2_REG_PROG>
+<runargs -nosas -vcs_run_args=+show_delta -vcs_run_args=+NIU_STUB_TIME=600000 >
+
+// has 356 tests that should pass
+
+<memop name=memop>
+////////////////////////
+// Single thread diags
+///////////////////////
+<runargs -midas_args=-DCMP_THREAD_START=0x1 -finish_mask=1>
+<runargs -sas>
+
+memop_all_atomics	memop_all_atomics.s
+
+memop_all_mcu		memop_all_mcu.s
+
+memop_all_stores	memop_all_stores.s
+
+memop_byte_mask		memop_byte_mask.s
+
+memop_ccx_packets	memop_ccx_packets.s
+
+memop_halfword_byte_mask	memop_halfword_byte_mask.s
+
+memop_l2_disable	memop_l2_disable.s
+
+memop_word_byte_mask	memop_word_byte_mask.s
+
+memop_all_loads		memop_all_loads.s	-vcs_run_args=+l2warm=1
+
+</runargs>
+
+<runargs -nosas>
+
+
+memop_mcu_regs_ro	memop_mcu_regs_ro.s
+
+memop_mcu_regs_rw	memop_mcu_regs_rw.s
+
+memop_mcu_regs_other	memop_mcu_regs_other.s -vcs_run_args=+mcu_errmon_disable
+
+
+// Must use '-nosas' since follow me support is not there for SPU interrupts
+
+// memop_all_packet	memop_all_packet.s -midas_args=-allow_tsb_conflicts
+
+memop_all_l2_banks	memop_all_l2_banks.s
+
+memop_all_mcu_banks	memop_all_mcu_banks.s
+
+memop_l2_vuad_access	memop_l2_vuad_access.s
+
+memop_walk_one_addr	memop_walk_one_addr.s
+
+memop_l2_control_reg	memop_l2_control_reg.s
+
+</runargs>
+
+memop_mem_out_of_range	memop_mem_out_of_range.s -vcs_run_args=+l2esr_mon_off -vcs_run_args=+8_FBDIMMS
+
+memop_l2_size		memop_l2_size.s -midas_args=-allow_tsb_conflicts
+
+memop_all_byte_mask	memop_all_byte_mask.s
+
+memop_l2_err_en_reg	memop_l2_err_en_reg.s
+
+memop_l2_err_address_reg	memop_l2_err_address_reg.s
+
+memop_l2_err_status_reg	memop_l2_err_status_reg.s
+
+memop_l2_err_inject_reg	memop_l2_err_inject_reg.s
+
+memop_l2_notdata_err_addr_reg	memop_l2_notdata_err_addr_reg.s
+
+</runargs>
+
+/////////////////////////
+// Multiple thread diags
+////////////////////////
+
+<runargs -sas>
+
+memop_mt_l2_dep_store	memop_mt_l2_dep_store.s -nosas -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff
+
+memop_mt_l2_miss_buff	memop_mt_l2_miss_buff.s -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff
+
+memop_random_noatomic_multithrd	memop_random_noatomic_multithrd.s -vcs_run_args=+TB_RANDOM_XIR  -midas_args=-DPART_0_BASE=0x200000000 -midas_args=-DL2_REG_PROG -nofast_boot -vcs_run_args=+ios_0in_ras_chk_off
+
+
+memop_mt2_invalidate_l1	memop_mt2_invalidate_l1.s -midas_args=-DCMP_THREAD_START=0x3 -nosas -midas_args=-allow_tsb_conflicts -finish_mask=3 -midas_args=-DSYNC_THREADS 
+
+</runargs>
+
+
+<runargs -vcs_run_args=+0in_no_checksim_db -vcs_run_args=+0in_no_statistics >
+
+n2_8tload_weight_486046  n2_8tload_weight_486046.s -nosas -midas_args=-DCMP_THREAD_START=0xff -midas_args=-allow_tsb_conflicts -max_cycle=+3000000 -drm_freeram=4000 -drm_freeswap=2000 -tg_seed=1600189735 -finish_mask=ff
+
+</runargs>
+
+
+////////////////////////
+//  Long (over 20 hrs) memop diags
+////////////////////////
+
+<runargs -sas -midas_args=-DCMP_THREAD_START=0x1 -finish_mask=1>
+
+memop_l2_data_access	memop_l2_data_access.s -nosas
+
+memop_l2_tag_access	memop_l2_tag_access.s -nosas
+
+</runargs>
+
+</memop>
+
+// Diaglist for ported mem operation diags - THESE WOULDN'T RUN in fc_all
+
+<arch_diags name=arch_diags>
+<runargs -midas_args=-DCMP_THREAD_START=0x0f -sas -midas_args=-DSYNC_THREADS -finish_mask=f >
+
+<runargs -midas_args=-allow_tsb_conflicts -midas_args=-pal_diag_args=-thrd_count=4> 
+
+ldf_ld_fpdis    				ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldf_ld_fpdis"
+ldf_ld_misalgn 					ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldf_ld_misalgn"
+ldf_ld_dataacc 					ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldf_ld_dataacc"
+ldf_ld_fpdis_misalgn 				ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldf_ld_fpdis_misalgn"
+ldf_ld_fpdis_dataacc 				ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldf_ld_fpdis_dataacc"
+//Removed From FC 2005_10_10 ldf_ld_fpdis_misalgn_dataacc 			ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldf_ld_fpdis_misalgn_dataacc"
+ldf_ld_misalgn_dataacc				ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldf_ld_misalgn_dataacc"
+ldf_ld_fpdis_super 				ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldf_ld_fpdis_super"
+ldf_ld_misalgn_super 				ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldf_ld_misalgn_super"
+ldf_ld_fpdis_misalgn_super 			ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldf_ld_fpdis_misalgn_super"
+
+<runargs -nofast_boot>
+ldf_ld_fpdis_hyper 				ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldf_ld_fpdis_hyper"
+ldf_ld_misalgn_hyper 				ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldf_ld_misalgn_hyper"
+//ldf_ld_vawatch_hyper 				ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldf_ld_vawatch_hyper"  -rtl_timeout=100000
+ldf_ld_fpdis_misalgn_hyper 			ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldf_ld_fpdis_misalgn_hyper"
+ldf_ld_fpdis_vawatch_hyper 			ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldf_ld_fpdis_vawatch_hyper"
+</runargs>
+
+lddf_ldd_alldest 				ldf_alldest.pal  -midas_args=-pal_diag_args=-name="lddf_ldd_alldest"
+lddf_ldd_fpdis 					ldf_alldest.pal  -midas_args=-pal_diag_args=-name="lddf_ldd_fpdis"
+lddf_ldd_misalgn 				ldf_alldest.pal  -midas_args=-pal_diag_args=-name="lddf_ldd_misalgn"
+lddf_ldd_dataacc 				ldf_alldest.pal  -midas_args=-pal_diag_args=-name="lddf_ldd_dataacc"
+lddf_ldd_dmisalgn 				ldf_alldest.pal  -midas_args=-pal_diag_args=-name="lddf_ldd_dmisalgn"
+lddf_ldd_fpdis_misalgn 				ldf_alldest.pal  -midas_args=-pal_diag_args=-name="lddf_ldd_fpdis_misalgn"
+lddf_ldd_fpdis_dataacc 				ldf_alldest.pal  -midas_args=-pal_diag_args=-name="lddf_ldd_fpdis_dataacc"
+lddf_ldd_fpdis_dmisalgn 			ldf_alldest.pal  -midas_args=-pal_diag_args=-name="lddf_ldd_fpdis_dmisalgn"
+lddf_ldd_fpdis_dataacc_dmisalgn 		ldf_alldest.pal  -midas_args=-pal_diag_args=-name="lddf_ldd_fpdis_dataacc_dmisalgn"
+lddf_ldd_dataacc_dmisalgn			ldf_alldest.pal  -midas_args=-pal_diag_args=-name="lddf_ldd_dataacc_dmisalgn"
+lddf_ldd_fpdis_super 				ldf_alldest.pal  -midas_args=-pal_diag_args=-name="lddf_ldd_fpdis_super"
+lddf_ldd_misalgn_super 				ldf_alldest.pal  -midas_args=-pal_diag_args=-name="lddf_ldd_misalgn_super"
+lddf_ldd_dmisalgn_super 			ldf_alldest.pal  -midas_args=-pal_diag_args=-name="lddf_ldd_dmisalgn_super"
+lddf_ldd_fpdis_misalgn_super 			ldf_alldest.pal  -midas_args=-pal_diag_args=-name="lddf_ldd_fpdis_misalgn_super"
+lddf_ldd_fpdis_dmisalgn_super 			ldf_alldest.pal  -midas_args=-pal_diag_args=-name="lddf_ldd_fpdis_dmisalgn_super"
+
+</runargs>
+
+//////////////////////////////
+//  Long diags (over 8hrs), not to be run in daily
+//////////////////////////////
+
+<runargs -midas_args=-allow_tsb_conflicts -midas_args=-pal_diag_args=-thrd_count=4> 
+ldf_ld_alldest                                  ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldf_ld_alldest"
+ldf_ld_alldest_super                            ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldf_ld_alldest_super"
+</runargs>
+
+
+<runargs -midas_args=-allow_tsb_conflicts -midas_args=-pal_diag_args=-thrd_count=4> 
+
+ldaf_lda_fpdis                                       ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldaf_lda_fpdis"
+ldaf_lda_fpdis_dataacc                               ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldaf_lda_fpdis_dataacc"
+ldaf_lda_fpdis_super                                 ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldaf_lda_fpdis_super"
+ldaf_lda_misalgn_super                               ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldaf_lda_misalgn_super"
+
+
+<runargs -vcs_run_args=+l2warm=1> //Only one diag with cache warming
+ldaf_lda_fpdis_misalgn_super                         ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldaf_lda_fpdis_misalgn_super"
+</runargs>
+
+<runargs -nofast_boot>
+ldaf_lda_fpdis_hyper                                 ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldaf_lda_fpdis_hyper"
+ldaf_lda_misalgn_hyper                               ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldaf_lda_misalgn_hyper"
+// Removed from FC 2005_10_10 ldaf_lda_vawatch_hyper                               ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldaf_lda_vawatch_hyper" -rtl_timeout=100000
+</runargs>
+
+</runargs>
+
+//////////////////////////////
+//  Long diags (over 8hrs), not to be run in daily
+//////////////////////////////
+
+<runargs -midas_args=-allow_tsb_conflicts -midas_args=-pal_diag_args=-thrd_count=4> 
+
+<runargs -nofast_boot>
+ldaf_lda_fpdis_vawatch_hyper                         ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldaf_lda_fpdis_vawatch_hyper"
+ldaf_lda_fpdis_misalgn_hyper                         ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldaf_lda_fpdis_misalgn_hyper"
+</runargs>
+
+
+ldaf_lda_dataacc                                     ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldaf_lda_dataacc"
+ldaf_lda_fpdis_vawatch                               ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldaf_lda_fpdis_vawatch"
+ldaf_lda_alldest 					ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldaf_lda_alldest"
+ldaf_lda_alldest_super 					ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldaf_lda_alldest_super"
+ldaf_lda_misalgn                                     ldf_alldest.pal  -midas_args=-pal_diag_args=-name="ldaf_lda_misalgn"
+
+</runargs>
+
+</runargs>
+</arch_diags>
+
+<sys(cmp) name=sys(cmp)>
+
+
+////////////////////////////////////////////////////////////////////////////
+// CMT diags, 1 core
+
+<runargs -midas_args=-DCMP_THREAD_START=0x3 -finish_mask=3 -midas_args=-DTHREAD_COUNT=2>
+
+cmp_park_self           cmp_park_self.s -midas_args=-DSYNC_THREADS -midas_args=-allow_tsb_conflicts 
+
+</runargs>
+</sys(cmp)>
+
+
+<sys(interrupt) name=sys(interrupt)>
+
+////////////////////////////////////////////////////////////////////////////
+// Single-threaded interrupt diags
+<runargs -midas_args=-DCMP_THREAD_START=0x1 -finish_mask=1>
+
+interrupt_INT_VEC_DIS           interrupt_INT_VEC_DIS.s
+interrupt_INT_VEC_DIS_all2      interrupt_INT_VEC_DIS_all2.s
+interrupt_SWVR_INTR_R           interrupt_SWVR_INTR_R.s
+interrupt_SWVR_INTR_W           interrupt_SWVR_INTR_W.s
+interrupt_SWVR_INTR_W_all_vectors       interrupt_SWVR_INTR_W_all_vectors.s
+interrupt_INTR_REC_priority     interrupt_INTR_REC_priority.s
+interrupt_QUEUE_CPU_MONDO_trap  interrupt_QUEUE_CPU_MONDO_trap.s
+interrupt_QUEUE_DEV_MONDO_trap  interrupt_QUEUE_DEV_MONDO_trap.s
+// interrupt_SPU_interrupt         interrupt_SPU_interrupt.s
+interrupt_ncu_regs_rw           interrupt_ncu_regs_rw.s 
+interrupt_QUEUE_CPU_MONDO_mode  interrupt_QUEUE_CPU_MONDO_mode.s
+interrupt_QUEUE_DEV_MONDO_mode  interrupt_QUEUE_DEV_MONDO_mode.s
+interrupt_DMU_CORE_BLK_enable1  interrupt_DMU_CORE_BLK_enable1.s
+// interrupt_pci_regs              interrupt_pci_regs.s
+// interrupt_pci_pwr_msg           interrupt_pci_pwr_msg.s -vcs_run_args=+PEU_TEST
+
+</runargs>
+////////////////////////////////////////////////////////////////////////////
+// 2-threaded interrupt diags
+<runargs -midas_args=-DCMP_THREAD_START=0x3 -finish_mask=3 -midas_args=-DSYNC_THREADS >
+
+interrupt_SWVR_INTR_REC_mode    interrupt_SWVR_INTR_REC_mode.s
+interrupt_SWVR_INTR_R_mode      interrupt_SWVR_INTR_R_mode.s
+interrupt_SWVR_INTR_W_mode      interrupt_SWVR_INTR_W_mode.s
+
+</runargs>
+
+
+////////////////////////////////////////////////////////////////////////////
+// Miscellaneous interrupt diags
+// interrupt_dmu_cntrl_stall       interrupt_dmu_cntrl_stall.s -midas_args=-DCMP_THREAD_START=0xf -finish_mask=f -vcs_run_args=+PEU_TEST
+// interrupt_pci_spurious_INTX     interrupt_pci_spurious_INTX.s -vcs_run_args=+PEU_TEST -nosas
+
+interrupt_pci_spurious_err      interrupt_pci_spurious_err.s -nosas
+
+// interrupt_niu_regs_rw           interrupt_niu_regs_rw.s
+// interrupt_INT_MAN_vector        interrupt_INT_MAN_vector.s
+// interrupt_niu_device_id         interrupt_niu_device_id.s -nosas
+
+
+////////////////////////////////////////////////////////////////////////////
+// 8-threaded interrupt diags
+
+<runargs -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff >
+
+// interrupt_INT_MAN_thread        interrupt_INT_MAN_thread.s
+
+// <runargs -vcs_run_args=+PEU_TEST -nosas>
+// interrupt_dmu_intr_reloc        interrupt_dmu_intr_reloc.s -midas_args=-DTHREAD_COUNT=8 -midas_args=-DSKIP_EQ_CHECK 
+// interrupt_mix                   interrupt_mix.s
+// interrupt_pci_dup_intx          interrupt_pci_dup_intx.s
+// interrupt_pci_multiple_INTX     interrupt_pci_multiple_INTX.s
+// </runargs>
+
+
+</runargs>
+
+
+////////////////////////////////////////////////////////////////////////////
+// NIU interrupt diags
+
+// <runargs -vcs_run_args=+MAC_SPEED0=10000 -midas_args=-DMAC_SPEED0=10000 >
+// <runargs -vcs_run_args=+MAC_SPEED1=10000 -midas_args=-DMAC_SPEED1=10000 >
+// <runargs -vcs_run_args=+GET_MAC_PORTS=0 >
+// <runargs -vcs_run_args=+PCS_SERDES -midas_args=-DPCS_SERDES >
+// <runargs -vcs_run_args=+displaySysRdWr >
+// <runargs -vcs_run_args=+ORIG_META >
+
+// <runargs -vcs_run_args=+PEU_TEST -vcs_run_args=+ENABLE_PCIE_LINK_TRAINING -midas_args=-DENABLE_PCIE_LINK_TRAINING >
+
+// <runargs -vcs_run_args=+TX_TEST -midas_args=-DTX_TEST >
+
+// <runargs -vcs_run_args=+TX_INT_MARK=1 >
+// <runargs -midas_args=-DNIU_TX_DMA_NUM=0 -midas_args=-DNIU_TX_PKT_CNT=1 >
+// <runargs -midas_args=-DNIU_TX_DMA_ACT_LIST=1 >
+
+// <runargs -midas_args=-DCMP_THREAD_START=0x1 -finish_mask=1 >
+
+// interrupt_ether_send            interrupt_ether_send.s
+// interrupt_niu_sys_data          interrupt_niu_sys_data.s
+
+// </runargs>   // thread=0x1
+// </runargs>   // NIU_TX_DMA_ACT_LIST
+// </runargs>   // NIU_TX_DMA_NUM
+// </runargs>   // TX_INT_MARK
+
+// interrupt_niutx                 interrupt_niutx.s -vcs_run_args=+NIU_TX_MARK_LAST_PACKET_FOR_INTERRUPT -midas_args=-DCMP_THREAD_START=0x3 -finish_mask=3
+
+// </runargs>   // TX_TEST
+
+
+// <runargs -midas_args=-DRX_TEST -midas_args=-DMAC_ID=0 >
+// <runargs -midas_args=-DRXMAC_PKTCNT=0xa -vcs_run_args=+RXMAC_PKTCNT=20 -midas_args=-DSKIP_TRAPCHECK >
+
+// interrupt_niurx                 interrupt_niurx.s -midas_args=-DCMP_THREAD_START=0x3 -finish_mask=3
+
+// </runargs>   // RX_TEST
+// </runargs>   // RXMAC_PKTCNT
+
+// </runargs>   // PEU_TEST
+
+
+// <runargs -midas_args=-DMAC_RX_FRAME_INTR >
+
+//interrupt_MAC interrupt_MAC.s
+
+// </runargs>   // MAC_RX_FRAME_INTR
+
+// </runargs>   // ORIG_META
+// </runargs>   // displaySysRdWr
+// </runargs>   // PCS_SERDES
+// </runargs>   // GET_MAC_PORTS
+// </runargs>   // MAC_SPEED1
+// </runargs>   // MAC_SPEED0
+
+// interrupt_ether_receive interrupt_ether_receive.s -sas
+
+</sys(interrupt)>
+
+#ifndef FC_NO_NIU_T2
+#include "diaglists/fc/fc_niu.diaglist"
+#endif
+
+#ifndef FC_NO_PEU_T2
+<sys(peu_all) name=sys(peu_all)>
+   <runargs -sas -vcs_run_args=+PEU_TEST>
+//    NcuRegRw               NcuRegRw.s
+      // RegRdReset             RegRdReset.s
+//    Bug103049              Bug103049.s
+      PCIeWrPeuDiagCsr       PCIeWrPeuDiagCsr.s
+
+      PCIeCFGRd              PCIeCFGRd.s
+      PCIeCFGWr              PCIeCFGWr.s
+      PCIeCFG0Rw             PCIeCFG0Rw.s
+      PCIeIORw               PCIeIORw.s
+//      PCIeIORw_pll           PCIeIORw.s -vcs_run_args=+pll_bypass -vcs_run_args=+NO_CCU_CSR_SLAM -vcs_run_args=+POR_pulse_width=4
+      PCIeMemRd              PCIeMemRd.s
+      PCIeMemWr              PCIeMemWr.s
+
+      PCIeMem32Rd            PCIeMem32Rd.s
+      PCIeMem64Rd            PCIeMem64Rd.s
+      PCIeMem64Rd32          PCIeMem64Rd32.s  -nosas
+      PCIeMem64RdWr          PCIeMem64RdWr.s
+      PCIeMem32AllBMsk       PCIeMem32AllBMsk.s
+      PCIeMem64AllBMsk       PCIeMem64AllBMsk.s
+      PCIeMem32AllBMsk2      PCIeMem32AllBMsk2.s
+      PCIeMem64AllBMsk2      PCIeMem64AllBMsk2.s
+      PCIeIOAllBMsk          PCIeIOAllBMsk.s
+      PCIeCFG1AllBMsk        PCIeCFG1AllBMsk.s
+      PCIeBadPIOAccess	     PCIeBadPIOAccess.s -vcs_run_args=+ios_0in_ras_chk_off
+
+      PCIeDMARw              PCIeDMARw.s
+      PCIeIntx               PCIeIntx.s
+      PCIeMsi                PCIeMsi.s
+      PCIeRFE6298418         PCIeRFE6298418.s
+
+      PCIeDMAWrAdr32         PCIeDMAWrAdr32.s
+      PCIeDMAWrAdr64         PCIeDMAWrAdr64.s
+      PCIeDMARdAdr32         PCIeDMARdAdr32.s
+      PCIeDMARdAdr64         PCIeDMARdAdr64.s
+
+      PCIeDMARdPerf          PCIeDMARdPerf.s
+      PCIeDMAWrPerf          PCIeDMAWrPerf.s
+
+      PCIeDMARdAllCacheLineOffsets PCIeDMARdAllCacheLineOffsets.s -vcs_run_args=+bank_set_mask=f
+      PCIeDMAWrAllCacheLineOffsets PCIeDMAWrAllCacheLineOffsets.s -vcs_run_args=+bank_set_mask=f
+
+      PCIeIommu4U64kTr	    PCIeIommu4U64kTr.s
+      PCIeIommu4U8kTr       PCIeIommu4U8kTr.s
+      PCIeIommu4V64kTr	    PCIeIommu4V64kTr.s
+      PCIeIommu4V8kTr       PCIeIommu4V8kTr.s
+      PCIeIommu4V4mTr	    PCIeIommu4V4mTr.s
+      PCIeIommu4V256mTr     PCIeIommu4V256mTr.s -vcs_run_args=+4_FBDIMMS
+
+      PCIeIommu4UBypTrInv   PCIeIommu4UBypTrInv.s
+
+      PCIeIommu4VBadTr2     PCIeIommu4VBadTr2.s
+
+//      PCIeDrainState	    PCIeDrainState.s -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+no_verilog_finish -vcs_run_args=+no_dmu2peu_ibc_req_ack
+     // PCIePIOTimOut	    PCIePIOTimeout.s -vcs_run_args=+ios_0in_ras_chk_off
+      PCIePIOUc		    PCIePIOUc.s      -vcs_run_args=+ios_0in_ras_chk_off
+
+     <runargs -vcs_run_args=+ios_0in_ras_chk_off -midas_args=-DPCIE_USE_SSYS_RESET >
+//      PCIeEgrHPeDrainState PCIeEgrHPeDrainState.s 
+//      PCIeEgrDPeDrainState PCIeEgrDPeDrainState.s -vcs_run_args=+no_dmu2peu_edb_parity
+//      PCIeIgrHPeDrainState PCIeIgrHPeDrainState.s
+     </runargs>
+
+      PCIeDMAWrNonContigDWBE  PCIeDMAWrNonContigDWBE.s
+      PCIeDMA0LenRd	      PCIeDMA0LenRd.s
+      
+      PCIeDMARdMPS128Rcb      PCIeDMARdMPS128Rcb.s
+      PCIeDMARdMPS256Rcb      PCIeDMARdMPS256Rcb.s
+      PCIeDMARdMPS512Rcb      PCIeDMARdMPS512Rcb.s
+
+   // multi thread peu diags
+   <runargs -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff >
+      // PCIeFireDeadlockScn1    PCIeFireDeadlockScn1.s
+      PCIeFireDeadlockScn2pm1 PCIeFireDeadlockScn2.s -midas_args=-DPEU_PIO_MODE=1 -vcs_run_args=+th_timeout=250000
+      PCIeFireDeadlockScn2pm2 PCIeFireDeadlockScn2.s -midas_args=-DPEU_PIO_MODE=2 -vcs_run_args=+th_timeout=250000
+//      Bug107906	              Bug107906.s            -rtl_timeout=100000
+   </runargs>
+
+//      PCIeMem64AdrCov         PCIeMem64AdrCov.s -nosas
+//      PCIeDMARdLk             PCIeDMARdLk.s
+      PCIeReqId               PCIeReqId.s 
+      PCIeInterrupt	      PCIeInterrupt.s 
+   </runargs>
+
+</sys(peu_all)>
+#endif //FC_NO_PEU_T2
+
+<sys(pll) name=sys(pll)>
+<runargs -sas>
+
+<runargs -vcs_run_args=+bank_set_mask=3 -vcs_run_args=+core_set_mask=01>
+memop_all_atomics_pll   memop_all_atomics.s -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff -vcs_run_args=+pll_bypass -vcs_run_args=+NO_CCU_CSR_SLAM -vcs_run_args=+POR_pulse_width=4 -vcs_run_args=+gchkr_off
+
+</runargs>
+</runargs>
+
+</sys(pll)>
+
+<sys(tcu_no_tck) name=sys(tcu_no_tck)>
+<runargs  -midas_args=-DINC_SOC_ERR_TRAPS -midas_args=-DCREGS_L2_ERR_EN_REG_CEEN=0 -midas_args=-DCREGS_L2_ERR_EN_REG_NCEEN=0 -vcs_run_args=+ios_0in_ras_chk_off >
+      tcu_csr_regs_rw tcu_csr_regs_rw.s -nosas
+      tcu_regs_asi       tcu_regs_asi.s
+      tcu_regs_l2        tcu_regs_l2.s
+//      tcu_regs_peu       tcu_regs_peu.s
+      tcu_regs_soc       tcu_regs_soc.s
+      tcu_regs_bist      tcu_regs_bist.s -nosas
+</runargs>
+
+<runargs  -midas_args=-DINC_SOC_ERR_TRAPS -midas_args=-DCREGS_L2_ERR_EN_REG_CEEN=0 -midas_args=-DCREGS_L2_ERR_EN_REG_NCEEN=0 -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+MCU_REG_DEFAULT_VAL -vcs_run_args=+NO_MCU_CSR_SLAM>
+      tcu_regs_dram      tcu_regs_dram.s      -nofast_boot
+      tcu_regs_dram_2    tcu_regs_dram_2.s    -nofast_boot
+      tcu_regs_dram_piu  tcu_regs_dram_piu.s  -nofast_boot
+</runargs>
+
+</sys(tcu_no_tck)>
+
+<sys(dbg) name=sys(dbg)>
+<runargs -vcs_run_args=-DL2_7 -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+l2esr_mon_off -vcs_run_args=+l2cpx_errmon_off -max_cycle=+50000 -nosas -vcs_run_args=+mcu_fmon_disable -vcs_run_args=+mcu_errmon_disable -vcs_run_args=+DISABLE_L2_CHECKER -vcs_run_args=+BOOT_CODE_FINISH=13000000 -vcs_run_args=+TIMEOUT=10000 -vcs_run_args=+PEU_TEST>
+Debug_Event_Mcu_Ctl2     Debug_Event_Mcu2.s
+</runargs>
+
+<runargs -nosas -midas_args=-DINC_SOC_ERR_TRAPS -vcs_run_args=+l2esr_mon_off -vcs_run_args=+l2cpx_mon_off -vcs_run_args=+l2cpx_errmon_off -max_cycle=+100000 -midas_args=-DCREGS_L2_ERR_EN_REG_CEEN=0 -midas_args=-DCREGS_L2_ERR_EN_REG_NCEEN=0 -vcs_run_args=+ios_0in_ras_chk_off>
+Debug_Event_L2_PABank0  Debug_Event_L2PaBank.s -midas_args=-DMCU0
+Debug_Event_L2_PABank2  Debug_Event_L2PaBank.s -midas_args=-DMCU1
+Debug_Event_L2_PABank4  Debug_Event_L2PaBank.s -midas_args=-DMCU2
+Debug_Event_L2_PABank6  Debug_Event_L2PaBank.s -midas_args=-DMCU3
+Debug_Event_L2_PABank1  Debug_Event_L2PaBankOdd.s -midas_args=-DMCU0
+Debug_Event_L2_PABank3  Debug_Event_L2PaBankOdd.s -midas_args=-DMCU1
+Debug_Event_L2_PABank5  Debug_Event_L2PaBankOdd.s -midas_args=-DMCU2
+Debug_Event_L2_PABank7  Debug_Event_L2PaBankOdd.s -midas_args=-DMCU3
+</runargs>
+
+
+
+
+<runargs -nosas -midas_args=-DINC_SOC_ERR_TRAPS -vcs_run_args=+l2esr_mon_off -vcs_run_args=+l2cpx_mon_off -vcs_run_args=+l2cpx_errmon_off -max_cycle=+100000 -midas_args=-DCREGS_L2_ERR_EN_REG_CEEN=0 -midas_args=-DCREGS_L2_ERR_EN_REG_NCEEN=0 -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+DISABLE_L2_CHECKER>
+Debug_Event_Mcu_Ctl0     Debug_Event_Mcu.s   -midas_args=-DMCU0
+Debug_Event_Mcu_Ctl1     Debug_Event_Mcu.s   -midas_args=-DMCU1
+Debug_Event_Mcu_Ctl2     Debug_Event_Mcu.s   -midas_args=-DMCU2
+Debug_Event_Mcu_Ctl3     Debug_Event_Mcu.s   -midas_args=-DMCU3
+</runargs>
+
+<runargs  -nosas -midas_args=-DINC_SOC_ERR_TRAPS -vcs_run_args=+l2esr_mon_off -vcs_run_args=+l2cpx_mon_off -vcs_run_args=+l2cpx_errmon_off -max_cycle=+100000 -midas_args=-DCREGS_L2_ERR_EN_REG_CEEN=0 -midas_args=-DCREGS_L2_ERR_EN_REG_NCEEN=0 -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+DISABLE_L2_CHECKER>
+Debug_Event_L2Bank0     Debug_Event_L2.s  -midas_args=-DL2_0 -midas_args=-DMCU0
+Debug_Event_L2Bank2     Debug_Event_L2.s  -midas_args=-DL2_2 -midas_args=-DMCU1
+Debug_Event_L2Bank4     Debug_Event_L2.s  -midas_args=-DL2_4 -midas_args=-DMCU2
+Debug_Event_L2Bank6     Debug_Event_L2.s  -midas_args=-DL2_6 -midas_args=-DMCU3
+</runargs>
+
+
+<runargs  -nosas -midas_args=-DINC_SOC_ERR_TRAPS -vcs_run_args=+l2esr_mon_off -vcs_run_args=+l2cpx_mon_off -vcs_run_args=+l2cpx_errmon_off -max_cycle=+100000 -midas_args=-DCREGS_L2_ERR_EN_REG_CEEN=0 -midas_args=-DCREGS_L2_ERR_EN_REG_NCEEN=0 -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+DISABLE_L2_CHECKER>
+Debug_Event_L2Bank1     Debug_Event_L2Odd.s  -midas_args=-DMCU0
+Debug_Event_L2Bank3     Debug_Event_L2Odd.s  -midas_args=-DMCU1
+Debug_Event_L2Bank5     Debug_Event_L2Odd.s  -midas_args=-DMCU2
+Debug_Event_L2Bank7     Debug_Event_L2Odd.s  -midas_args=-DMCU3
+</runargs>
+
+
+
+
+// <runargs -vcs_run_args=+PEU_TEST -vcs_run_args=+DISABLE_L2_CHECKER -vcs_run_args=+mcu_errmon_disable -vcs_run_args=+mcu_fmon_disable -vcs_run_args=+l2cpx_errmon_off -max_cycle=+50000 -nosas -vcs_run_args=+l2esr_mon_off -midas_args=-DL2_0 -vcs_run_args=+ios_0in_ras_chk_off>
+// Debug_CoreSoc_Soc      Debug_CoreSoc_Soc.s
+// Debug_Tester_Soc       Debug_Tester_Soc.s
+// Debug_Event_L2pa       Debug_Event_L2_Pa.s
+// </runargs>
+
+// <runargs -vcs_run_args=+PEU_TEST -midas_args=-DERR_FIELD=NcuCtagUe -vcs_run_args=+ios_0in_ras_chk_off -midas_args=-DCMP_THREAD_START=0x3 -finish_mask=2>
+// Debug_Event_Soc          Debug_Event_Soc.s
+// </runargs>
+
+// <runargs -vcs_run_args=+0in_no_statistics -fast_boot -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+l2esr_mon_off -vcs_run_args=+l2cpx_errmon_off -nosas -vcs_run_args=+mcu_fmon_disable -vcs_run_args=+mcu_errmon_disable  -vcs_run_args=+DISABLE_L2_CHECKER -drm_type=rgrs -tg_seed=1 -sas -vcs_run_args=+PEU_TEST>
+// Debug_Pciex_Obs     Debug_Pciex_Mode.s
+// </runargs>
+
+<runargs -nosas -midas_args=-DINC_SOC_ERR_TRAPS -vcs_run_args=+l2esr_mon_off -vcs_run_args=+l2cpx_mon_off -vcs_run_args=+l2cpx_errmon_off -max_cycle=+100000 -midas_args=-DCREGS_L2_ERR_EN_REG_CEEN=0 -midas_args=-DCREGS_L2_ERR_EN_REG_NCEEN=0 -midas_args=-DMCU1 -vcs_run_args=+ios_0in_ras_chk_off>
+// Debug_Niu_Obs   Debug_Niu_Mode.s
+</runargs>
+
+// <runargs -midas_args=-DERR_FIELD=SiiNiuCtagCe -vcs_run_args=+ios_0in_ras_chk_off -midas_args=-DCMP_THREAD_START=0x1 -finish_mask=1 -vcs_run_args=+MAC_SPEED0=10000 -vcs_run_args=+MAC_SPEED1=10000 -vcs_run_args=+GET_MAC_PORTS=0 -vcs_run_args=+PCS_SERDES -vcs_run_args=+displaySysRdWr -vcs_run_args=+ORIG_META -vcs_run_args=+TX_TEST -midas_args=-DTX_TEST -midas_args=-DMAC_SPEED0=10000 -midas_args=-DMAC_SPEED1=10000 -midas_args=-DPCS_SERDES -vcs_run_args=+PEU_TEST -vcs_run_args=+ENABLE_PCIE_LINK_TRAINING -midas_args=-DENABLE_PCIE_LINK_TRAINING -nosas>
+// Debug_Quiscen_Mode       Debug_Quiscen_Mode.s
+// </runargs>
+
+// <runargs -midas_args=-DERR_FIELD=SiiNiuCtagCe -midas_args=-DCMP_THREAD_START=0x1 -finish_mask=1 -vcs_run_args=+MAC_SPEED0=10000 -vcs_run_args=+MAC_SPEED1=10000 -vcs_run_args=+GET_MAC_PORTS=0 -vcs_run_args=+PCS_SERDES -vcs_run_args=+displaySysRdWr -vcs_run_args=+ORIG_META -vcs_run_args=+TX_TEST -midas_args=-DTX_TEST -midas_args=-DMAC_SPEED0=10000 -midas_args=-DMAC_SPEED1=10000 -midas_args=-DPCS_SERDES -vcs_run_args=+PEU_TEST -vcs_run_args=+ENABLE_PCIE_LINK_TRAINING -midas_args=-DENABLE_PCIE_LINK_TRAINING  -vcs_run_args=+ios_0in_ras_chk_off -nosas> 
+// Debug_Repeatable_Mode   Debug_Niu_Repeatable.s
+// </runargs>
+
+// <runargs -nouse_cdms_iver -vcs_run_args=+0in_no_statistics -fast_boot -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+l2esr_mon_off -vcs_run_args=+l2cpx_errmon_off -nosas -vcs_run_args=+mcu_fmon_disable -vcs_run_args=+mcu_errmon_disable -vcs_run_args=+DISABLE_L2_CHECKER  -tg_seed=1  -sas -vcs_run_args=+PEU_TEST>
+// Debug_Dmu_Quiscen        Debug_Dmu_Quiscen.s
+// </runargs>
+
+// <runargs -midas_args=-DCMP_THREAD_START=0x1 -finish_mask=1 -vcs_run_args=+MAC_SPEED0=10000 -vcs_run_args=+MAC_SPEED1=10000  -vcs_run_args=+GET_MAC_PORTS=0 -vcs_run_args=+PCS_SERDES -vcs_run_args=+displaySysRdWr -vcs_run_args=+ORIG_META -vcs_run_args=+TX_TEST -midas_args=-DTX_TEST -midas_args=-DMAC_SPEED0=10000 -midas_args=-DMAC_SPEED1=10000 -midas_args=-DPCS_SERDES -vcs_run_args=+PEU_TEST -vcs_run_args=+ENABLE_PCIE_LINK_TRAINING -midas_args=-DENABLE_PCIE_LINK_TRAINING -midas_args=-DERR_FIELD=SiiDmuDParity -vcs_run_args=+DISABLE_L2_CHECKER -vcs_run_args=+ios_0in_ras_chk_off>
+// Debug_Event_Dmu         Debug_Event_Dmu.s
+// </runargs>
+
+</sys(dbg)>
+
+<runargs -vcs_run_args=+8_FBDIMMS -midas_args=-DPART_0_BASE=0x1000000000>
+
+<sys(ras)>
+
+// Applied for ALL Error diags
+// esr mon off
+// CEEN and NCEEN bit OFF
+<runargs  -vcs_run_args=+l2esr_mon_off  -vcs_run_args=+l2cpx_mon_off -vcs_run_args=+l2cpx_errmon_off -max_cycle=+100000 -midas_args=-DCREGS_L2_ERR_EN_REG_CEEN=0 -midas_args=-DCREGS_L2_ERR_EN_REG_NCEEN=0 -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+siu_mon_l2err>
+
+
+
+
+// L2 RAS DIAGS
+<sys(err_l2) name=sys(err_l2)>
+
+// Need -nosas because of L2$ diagnostic load
+// Use +L2_SCRUB_FREQ=1000 to speed simulation
+// Use +L2_SCRUB_IDX=50 to match the corrupted address
+n2_err_l2_LDSC_cecc_trap n2_err_l2_LDSC_cecc_trap.s -nosas -vcs_run_args=+L2_SCRUB_FREQ=1000 -vcs_run_args=+L2_SCRUB_IDX=50
+n2_err_l2_LDSU_uecc_trap n2_err_l2_LDSU_uecc_trap.s -nosas -vcs_run_args=+L2_SCRUB_FREQ=1000 -vcs_run_args=+L2_SCRUB_IDX=50
+
+// Only for following few l2 error diags 
+<runargs -nosas -midas_args=-DINC_SOC_ERR_TRAPS  -midas_args=-DL2_LDAC_err>
+
+n2_err_l2_LDAC_tid_01.s n2_err_l2_LDAC_all_tids.s  -midas_args=-DCMP_THREAD_START=0x03 -finish_mask=03
+n2_err_l2_LDAC_tid_02.s n2_err_l2_LDAC_all_tids.s   -midas_args=-DCMP_THREAD_START=0x05 -finish_mask=05
+n2_err_l2_LDAC_tid_03.s n2_err_l2_LDAC_all_tids.s  -midas_args=-DCMP_THREAD_START=0x09 -finish_mask=09
+n2_err_l2_LDAC_tid_04.s n2_err_l2_LDAC_all_tids.s   -midas_args=-DCMP_THREAD_START=0x11 -finish_mask=11
+n2_err_l2_LDAC_tid_05.s n2_err_l2_LDAC_all_tids.s   -midas_args=-DCMP_THREAD_START=0x21 -finish_mask=21
+n2_err_l2_LDAC_tid_06.s n2_err_l2_LDAC_all_tids.s  -midas_args=-DCMP_THREAD_START=0x41 -finish_mask=41
+n2_err_l2_LDAC_tid_07.s n2_err_l2_LDAC_all_tids.s   -midas_args=-DCMP_THREAD_START=0x81 -finish_mask=81
+</runargs>
+
+//Only for following L2 RAS diags
+<runargs -nosas -midas_args=-DINC_SOC_ERR_TRAPS  >
+
+n2_err_L2_LDWC_cecc_trap     n2_err_L2_LDWC_cecc_trap.s
+n2_err_L2_LDWC_cecc          n2_err_L2_LDWC_cecc.s 
+n2_err_L2_LVC_cecc_trap      n2_err_L2_LVC_cecc_trap.s 
+// n2_err_L2_LVC_trap_inj       n2_err_l2_trap_ErrInj.s   -midas_args=-DLVC -midas_args=-DL2_0 -vcs_run_args=+L2VD_CE_ERR_INJECT
+n2_err_L2_LVC_cecc           n2_err_L2_LVC_cecc.s
+n2_err_L2_LVC_cecc_Synd_check  n2_err_L2_LVC_cecc_SyndCheck.s
+n2_err_L2_LDWU_MEU_uecc      n2_err_L2_LDWU_uecc.s 
+n2_err_l2_LDAC_st_cecc_trap  n2_err_l2_LDAC_st_cecc_trap.s 
+n2_err_l2_LDAC_st_cecc       n2_err_l2_LDAC_st_cecc.s 
+n2_err_l2_LDAC_cecc_trap     n2_err_l2_LDAC_cecc_trap.s -midas_args=-DL2_LDAC_err
+// n2_err_l2_LDAC_trap_inj      n2_err_l2_trap_ErrInj.s    -midas_args=-DL2_LDAC_err -midas_args=-DLDAC -midas_args=-DL2_0 -vcs_run_args=+L2DA_ERR_ENABLE
+n2_err_l2_LDAC_cecc          n2_err_l2_LDAC_cecc.s 
+n2_err_l2_LDAU_trap          n2_err_l2_LDAU_uecc_trap.s 
+//n2_err_l2_LDAU_trap_inj      n2_err_l2_trap_ErrInj.s   -midas_args=-DLDAU -midas_args=-DL2_0  -vcs_run_args=+L2DA_INJECT_UE
+n2_err_l2_LDAU_trap_2thrds   n2_err_l2_LDAU_uecc_2thrds_trap.s  -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff 
+n2_err_l2_LDAU_uecc          n2_err_l2_LDAU_uecc.s
+n2_err_l2_LDAU_st_uecc_trap  n2_err_l2_LDAU_st_uecc_trap.s -midas_args=-DL2_DWS_err
+n2_err_l2_LDAU_st_uecc       n2_err_l2_LDAU_st_uecc.s
+n2_err_l2_LDWU_uecc          n2_err_l2_LDWU_uecc.s
+n2_err_l2_csrs               n2_err_l2_csrs.s
+n2_err_l2_LTC_cecc_trap      n2_err_l2_LTC_cecc_trap.s 
+n2_err_l2_LTC_cecc           n2_err_l2_LTC_cecc.s 
+n2_err_l2_LTC_4bnk_trap      n2_err_l2_LTC_4bnk_cecc_trap.s -vcs_run_args=+bank_set_mask=3
+n2_err_l2_LTC_L2off_trap     n2_err_l2_LTC_cecc_trap_L2off.s  -vcs_run_args=+gchkr_off 
+//n2_err_l2_LRU                n2_err_l2_LRU.s
+n2_err_l2_LDWU_uecc_trap     n2_err_l2_LDWU_uecc_trap.s -midas_args=-DL2_DWS_err
+
+
+// L2 Not Data diag, In Fc because MCU registers prog in FC
+n2_err_L2_NotData_NDSP              n2_err_L2_NotData.s  -midas_args=-DL2_NDSP_err
+n2_err_L2_NotData_NDSP_meu          n2_err_L2_NotData_NDSP_meu.s  
+n2_err_L2_NotData_NDSP_meu_trap0     n2_err_L2_NotData_NDSP_meu_trap.s  -midas_args=-DL2_NDSP_err -midas_args=-DL20
+n2_err_L2_NotData_NDSP_meu_trap1     n2_err_L2_NotData_NDSP_meu_trap.s  -midas_args=-DL2_NDSP_err -midas_args=-DL21
+n2_err_L2_NotData_NDSP_meu_trap2     n2_err_L2_NotData_NDSP_meu_trap.s  -midas_args=-DL2_NDSP_err -midas_args=-DL22
+n2_err_L2_NotData_NDSP_meu_trap3     n2_err_L2_NotData_NDSP_meu_trap.s  -midas_args=-DL2_NDSP_err -midas_args=-DL23
+n2_err_L2_NotData_NDSP_meu_trap4     n2_err_L2_NotData_NDSP_meu_trap.s  -midas_args=-DL2_NDSP_err -midas_args=-DL24
+n2_err_L2_NotData_NDSP_meu_trap5     n2_err_L2_NotData_NDSP_meu_trap.s  -midas_args=-DL2_NDSP_err -midas_args=-DL25
+n2_err_L2_NotData_NDSP_meu_trap6     n2_err_L2_NotData_NDSP_meu_trap.s  -midas_args=-DL2_NDSP_err -midas_args=-DL26
+n2_err_L2_NotData_NDSP_meu_trap7     n2_err_L2_NotData_NDSP_meu_trap.s  -midas_args=-DL2_NDSP_err -midas_args=-DL27
+
+// n2_err_L2_NotData_NDDM              n2_err_L2_NotData_NDDM.s  -midas_args=-DL2_NDSP_err -vcs_run_args=+PEU_TEST -vcs_run_args=+PEU_MEM_Chkr_off
+// n2_err_L2_NotData_NDDM_meu          n2_err_L2_NotData_NDDM_meu.s  -midas_args=-DL2_NDDM_err -vcs_run_args=+PEU_TEST -vcs_run_args=+PEU_MEM_Chkr_off
+// n2_err_L2_NotData_NDDM_meu_trap     n2_err_L2_NotData_NDDM_meu_trap.s  -midas_args=-DL2_NDDM_err -vcs_run_args=+PEU_TEST -vcs_run_args=+PEU_MEM_Chkr_off  -midas_args=-DL20
+
+// n2_err_l2_LDRC_cecc_trap   n2_err_l2_LDRC_cecc_trap.s -vcs_run_args=+PEU_TEST -vcs_run_args=+PEU_MEM_Chkr_off
+// n2_err_l2_LDRU_cecc_trap   n2_err_l2_LDRU_cecc_trap.s -vcs_run_args=+PEU_TEST -vcs_run_args=+PEU_MEM_Chkr_off
+</runargs>
+</sys(err_l2)>
+
+
+// ADVANCED  L2 RAS DIAGS
+<sys(err_l2_ADV) name=sys(err_l2_ADV)>
+
+<runargs -nosas -midas_args=-DINC_SOC_ERR_TRAPS >
+n2_err_dram_L2_Off_DAU_ld_mcu0         n2_err_dram_DAU_ld_trap_L2_Off.s -midas_args=-DMCU0
+n2_err_dram_L2_Off_DAU_ld_mcu1         n2_err_dram_DAU_ld_trap_L2_Off.s -midas_args=-DMCU1
+n2_err_dram_L2_Off_DAU_ld_mcu2         n2_err_dram_DAU_ld_trap_L2_Off.s -midas_args=-DMCU2
+n2_err_dram_L2_Off_DAU_ld_mcu3         n2_err_dram_DAU_ld_trap_L2_Off.s -midas_args=-DMCU3
+
+n2_err_dram_L2_Off_DAC_st          n2_err_dram_DAC_st_trap_L2_Off.s -midas_args=-DMCU0 
+n2_err_dram_L2_Off_DAU_st_mcu0          n2_err_dram_DAU_st_trap_L2_Off.s -midas_args=-DMCU0 -midas_args=-DL2_DWS_err
+//n2_err_dram_L2_Off_DAU_st_mcu1          n2_err_dram_DAU_st_trap_L2_Off.s -midas_args=-DMCU1 -midas_args=-DL2_DWS_err
+//n2_err_dram_L2_Off_DAU_st_mcu2          n2_err_dram_DAU_st_trap_L2_Off.s -midas_args=-DMCU2 -midas_args=-DL2_DWS_err
+//n2_err_dram_L2_Off_DAU_st_mcu3          n2_err_dram_DAU_st_trap_L2_Off.s -midas_args=-DMCU3 -midas_args=-DL2_DWS_err
+
+n2_err_dram_L2_Off_DAC_ld_mcu0         n2_err_dram_DAC_ld_trap_L2_Off.s -midas_args=-DMCU0 -midas_args=-DL2_LDAC_err
+n2_err_dram_L2_Off_DAC_ld_mcu1         n2_err_dram_DAC_ld_trap_L2_Off.s -midas_args=-DMCU1 -midas_args=-DL2_LDAC_err
+n2_err_dram_L2_Off_DAC_ld_mcu2         n2_err_dram_DAC_ld_trap_L2_Off.s -midas_args=-DMCU2 -midas_args=-DL2_LDAC_err
+n2_err_dram_L2_Off_DAC_ld_mcu3         n2_err_dram_DAC_ld_trap_L2_Off.s -midas_args=-DMCU3 -midas_args=-DL2_LDAC_err
+
+// n2_err_dram_L2_Off_DmaRd_ce_mcu0         n2_err_dram_DmaRd_ce_L2_Off.s -midas_args=-DMCU0 -vcs_run_args=+PEU_TEST -vcs_run_args=+PEU_MEM_Chkr_off
+
+// n2_err_dram_L2_Off_DmaRd_ue_mcu0         n2_err_dram_DmaRd_ue_L2_Off.s -midas_args=-DMCU0 -vcs_run_args=+PEU_TEST -vcs_run_args=+PEU_MEM_Chkr_off
+
+// n2_err_dram_L2_Off_DmaWr_ce_mcu0         n2_err_dram_DmaWr_ce_L2_Off.s -midas_args=-DMCU0 -vcs_run_args=+PEU_TEST -vcs_run_args=+PEU_MEM_Chkr_off
+
+// n2_err_dram_L2_Off_DmaWr_ue_mcu0         n2_err_dram_DmaWr_ue_L2_Off.s -midas_args=-DMCU0 -vcs_run_args=+PEU_TEST -vcs_run_args=+PEU_MEM_Chkr_off
+
+n2_err_L2_LVF_WrmRst_uecc n2_err_L2_LVF_uecc_WrmRst.s
+//n2_err_L2_FatalErr_WrmRst n2_err_L2_FatalErr_WrmRst.s
+
+</runargs>
+
+<runargs -nosas >
+n2_err_l2_LDAC_LDWC_noDAC n2_err_l2_LDAC_LDWC_noDAC.s
+
+</runargs>
+</sys(err_l2_ADV)>
+
+//End of L2 Advanced Diags
+
+
+// MCU Error diags; except FBD errors
+<sys(err_mcu) name=sys(err_mcu)>
+
+
+<runargs -midas_args=-DINC_SOC_ERR_TRAPS  -midas_args=-DINC_MCU_ERR_REG>
+
+//-nosas to be debugged and removed
+n2_err_mcu_csrs n2_err_mcu_csrs.s -vcs_run_args=+mcu_errmon_disable -nosas
+
+n2_err_dram_DAC_ld_mcu0         n2_err_dram_DAC_ld.s -midas_args=-DMCU0 -sas
+n2_err_dram_DAC_ld_mcu1         n2_err_dram_DAC_ld.s -midas_args=-DMCU1
+n2_err_dram_DAC_ld_mcu2         n2_err_dram_DAC_ld.s -midas_args=-DMCU2
+n2_err_dram_DAC_ld_mcu3         n2_err_dram_DAC_ld.s -midas_args=-DMCU3
+
+n2_err_dram_DAC_ld_trap_mcu0         n2_err_dram_DAC_ld_trap.s -midas_args=-DMCU0
+n2_err_dram_DAC_ld_trap_mcu1         n2_err_dram_DAC_ld_trap.s -midas_args=-DMCU1
+n2_err_dram_DAC_ld_trap_mcu2         n2_err_dram_DAC_ld_trap.s -midas_args=-DMCU2
+n2_err_dram_DAC_ld_trap_mcu3         n2_err_dram_DAC_ld_trap.s -midas_args=-DMCU3
+
+n2_err_dram_DAC_st_mcu0              n2_err_dram_DAC_st.s -midas_args=-DMCU0
+n2_err_dram_DAC_st_mcu1              n2_err_dram_DAC_st.s -midas_args=-DMCU1
+n2_err_dram_DAC_st_mcu2              n2_err_dram_DAC_st.s -midas_args=-DMCU2
+n2_err_dram_DAC_st_mcu3              n2_err_dram_DAC_st.s -midas_args=-DMCU3
+
+n2_err_dram_DAC_st_trap         n2_err_dram_DAC_st_trap.s
+
+n2_err_dram_DAU_st              n2_err_dram_DAU_st.s 
+n2_err_dram_DAU_st_trap         n2_err_dram_DAU_st_trap.s -midas_args=-DL2_DWS_err
+
+
+// advanced Directed Diags
+n2_err_dram_Mem_Poisn_L2Bank0     n2_err_dram_Mem_Poisn.s -midas_args=-DL2_0 -nosas
+n2_err_dram_Mem_Poisn_L2Bank1     n2_err_dram_Mem_Poisn.s -midas_args=-DL2_1 -nosas
+//n2_err_dram_DAU_2L2banks  n2_err_dram_DAU_2L2banks.s -midas_args=-DL2_DWS_err
+n2_err_all_4_mcu          n2_err_all_4_mcu.s
+
+
+</runargs>
+
+</sys(err_mcu)>
+
+// MCU Err Advanced Diags
+<sys(err_mcu_ADV) name=sys(err_mcu_ADV)>
+
+<runargs -vcs_run_args=+mcu_errmon_disable >
+
+n2_err_dram_dac_dau_fbr_mcu0  n2_err_dram_dac_dau_fbr.s -midas_args=-DMCU0 -midas_args=-DERR_FIELD=Mcu0Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x3 -midas_args=-DINJ_ERR_SRC=3 
+n2_err_dram_dac_dau_fbr_mcu1  n2_err_dram_dac_dau_fbr.s -midas_args=-DMCU1 -midas_args=-DERR_FIELD=Mcu1Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x3 -midas_args=-DINJ_ERR_SRC=3 
+n2_err_dram_dac_dau_fbr_mcu2  n2_err_dram_dac_dau_fbr.s -midas_args=-DMCU2 -midas_args=-DERR_FIELD=Mcu2Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x3 -midas_args=-DINJ_ERR_SRC=3 
+n2_err_dram_dac_dau_fbr_mcu3  n2_err_dram_dac_dau_fbr.s -midas_args=-DMCU3 -midas_args=-DERR_FIELD=Mcu3Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x3 -midas_args=-DINJ_ERR_SRC=3 
+n2_err_dram_dau_fbr_mcu0         n2_err_dram_dau_fbr.s  -midas_args=-DMCU0 -midas_args=-DERR_FIELD=Mcu0Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x3 -midas_args=-DINJ_ERR_SRC=3 
+n2_err_dram_dau_fbr_mcu1         n2_err_dram_dau_fbr.s  -midas_args=-DMCU1 -midas_args=-DERR_FIELD=Mcu1Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x3 -midas_args=-DINJ_ERR_SRC=3 
+n2_err_dram_dau_fbr_mcu2         n2_err_dram_dau_fbr.s  -midas_args=-DMCU2 -midas_args=-DERR_FIELD=Mcu2Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x3 -midas_args=-DINJ_ERR_SRC=3 
+n2_err_dram_dau_fbr_mcu3         n2_err_dram_dau_fbr.s  -midas_args=-DMCU3 -midas_args=-DERR_FIELD=Mcu3Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x3 -midas_args=-DINJ_ERR_SRC=3 
+n2_err_dram_afe_NoMemOp  n2_err_dram_afe_NoMemOp.s  -midas_args=-DMCU0 -midas_args=-DERR_FIELD=Mcu0Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x1 -midas_args=-DINJ_ERR_SRC=1
+n2_err_dram_sfe_NoMemOp  n2_err_dram_sfe_NoMemOp.s  -midas_args=-DMCU0 -midas_args=-DERR_FIELD=Mcu0Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x3 -midas_args=-DINJ_ERR_SRC=3
+
+n2_err_dram_dac_dau_fbr_fbu_mcu0  n2_err_dram_dac_dau_fbr_fbu.s  -midas_args=-DMCU0 -midas_args=-DERR_FIELD=Mcu0Fbu -midas_args=-DFBSYND=0x0 -midas_args=-DINJ_ERR_SRC=0
+n2_err_dram_dac_dau_fbr_fbu_mcu1  n2_err_dram_dac_dau_fbr_fbu.s  -midas_args=-DMCU1 -midas_args=-DERR_FIELD=Mcu1Fbu -midas_args=-DFBSYND=0x0 -midas_args=-DINJ_ERR_SRC=0
+n2_err_dram_dac_dau_fbr_fbu_mcu2  n2_err_dram_dac_dau_fbr_fbu.s  -midas_args=-DMCU2 -midas_args=-DERR_FIELD=Mcu2Fbu -midas_args=-DFBSYND=0x0 -midas_args=-DINJ_ERR_SRC=0
+n2_err_dram_dac_dau_fbr_fbu_mcu3  n2_err_dram_dac_dau_fbr_fbu.s  -midas_args=-DMCU3 -midas_args=-DERR_FIELD=Mcu3Fbu -midas_args=-DFBSYND=0x0 -midas_args=-DINJ_ERR_SRC=0
+
+//to be removed -nosas
+// n2_err_McuFbr_McuEcc_LDWC n2_err_McuFbr_McuEcc_LDWC.s -nosas
+
+</runargs>
+
+</sys(err_mcu_ADV)>
+
+
+
+// IOS Error diags
+ // runarg for all IOS diags
+<runargs  -vcs_run_args=+ios_0in_ras_chk_off >
+<sys(ios_mcu_err) name=sys(ios_mcu_err)>
+
+<runargs -vcs_run_args=+mcu_fmon_disable -vcs_run_args=+mcu_errmon_disable >
+
+//FBR
+n2_err_Mcu0Fbr_C         n2_err_mcu_int.s      -midas_args=-DMCU0 -midas_args=-DERR_FIELD=Mcu0Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x0 -midas_args=-DINJ_ERR_SRC=0
+n2_err_Mcu0Fbr_AFE       n2_err_mcu_int.s      -midas_args=-DMCU0 -midas_args=-DERR_FIELD=Mcu0Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x1 -midas_args=-DINJ_ERR_SRC=1 
+n2_err_Mcu0Fbr_AA        n2_err_mcu_int.s      -midas_args=-DMCU0 -midas_args=-DERR_FIELD=Mcu0Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x2 -midas_args=-DINJ_ERR_SRC=2 
+n2_err_Mcu0Fbr_SFPE      n2_err_mcu_int.s      -midas_args=-DMCU0 -midas_args=-DERR_FIELD=Mcu0Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x3 -midas_args=-DINJ_ERR_SRC=3 
+
+
+n2_err_Mcu0Fbr_C_trap    n2_err_mcu_ios_fbr_trap.s -midas_args=-DMCU0 -midas_args=-DERR_FIELD=Mcu0Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x0 -midas_args=-DINJ_ERR_SRC=0 
+n2_err_Mcu0Fbr_AFE_trap  n2_err_mcu_ios_fbr_trap.s -midas_args=-DMCU0 -midas_args=-DERR_FIELD=Mcu0Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x1 -midas_args=-DINJ_ERR_SRC=1
+n2_err_Mcu0Fbr_AA_trap   n2_err_mcu_ios_fbr_trap.s -midas_args=-DMCU0 -midas_args=-DERR_FIELD=Mcu0Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x2 -midas_args=-DINJ_ERR_SRC=2 
+n2_err_Mcu0Fbr_SFPE_trap n2_err_mcu_ios_fbr_trap.s -midas_args=-DMCU0 -midas_args=-DERR_FIELD=Mcu0Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x3 -midas_args=-DINJ_ERR_SRC=3 
+
+n2_err_Mcu1Fbr_C         n2_err_mcu_int.s      -midas_args=-DMCU1 -midas_args=-DERR_FIELD=Mcu1Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x0 -midas_args=-DINJ_ERR_SRC=0
+n2_err_Mcu1Fbr_trap      n2_err_mcu_ios_fbr_trap.s -midas_args=-DMCU1 -midas_args=-DERR_FIELD=Mcu1Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x0 -midas_args=-DINJ_ERR_SRC=0
+
+n2_err_Mcu2Fbr_C         n2_err_mcu_int.s      -midas_args=-DMCU2 -midas_args=-DERR_FIELD=Mcu2Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x0 -midas_args=-DINJ_ERR_SRC=0
+n2_err_Mcu2Fbr_trap      n2_err_mcu_ios_fbr_trap.s -midas_args=-DMCU2 -midas_args=-DERR_FIELD=Mcu2Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x0 -midas_args=-DINJ_ERR_SRC=0
+
+n2_err_Mcu3Fbr_C         n2_err_mcu_int.s      -midas_args=-DMCU3 -midas_args=-DERR_FIELD=Mcu3Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x0 -midas_args=-DINJ_ERR_SRC=0
+n2_err_Mcu3Fbr_trap      n2_err_mcu_ios_fbr_trap.s -midas_args=-DMCU3 -midas_args=-DERR_FIELD=Mcu3Fbr -midas_args=-DFBR -midas_args=-DFBSYND=0x0 -midas_args=-DINJ_ERR_SRC=0
+
+<runargs -vcs_run_args=+nb_crc_mon_disable >
+
+n2_err_Mcu0Fbu_C         n2_err_mcu_int_fbu.s      -midas_args=-DMCU0 -midas_args=-DERR_FIELD=Mcu0Fbu -midas_args=-DFBSYND=0x0 -midas_args=-DINJ_ERR_SRC=0
+
+n2_err_Mcu0Fbu_AFE       n2_err_mcu_int_fbu.s      -midas_args=-DMCU0 -midas_args=-DERR_FIELD=Mcu0Fbu -midas_args=-DFBSYND=0x1 -midas_args=-DINJ_ERR_SRC=1
+
+n2_err_Mcu0Fbu_AA        n2_err_mcu_int_fbu_AA.s      -midas_args=-DMCU0 -midas_args=-DERR_FIELD=Mcu0Fbu -midas_args=-DFBSYND=0x2 -midas_args=-DINJ_ERR_SRC=2
+
+n2_err_Mcu0Fbu_SFPE      n2_err_mcu_int_fbu.s      -midas_args=-DMCU0 -midas_args=-DERR_FIELD=Mcu0Fbu -midas_args=-DFBSYND=0x3 -midas_args=-DINJ_ERR_SRC=3
+</runargs>
+
+//ECC
+n2_err_Mcu0Ecc                   n2_err_mcu_int.s      -midas_args=-DMCU0 -midas_args=-DERR_FIELD=Mcu0Ecc -midas_args=-DECC
+n2_err_Mcu0Ecc_trap              n2_err_mcu_ios_ecc_trap.s -midas_args=-DMCU0 -midas_args=-DERR_FIELD=Mcu0Ecc -midas_args=-DECC
+
+n2_err_Mcu1Ecc           n2_err_mcu_int.s      -midas_args=-DMCU1 -midas_args=-DERR_FIELD=Mcu1Ecc -midas_args=-DECC
+n2_err_Mcu1Ecc_trap      n2_err_mcu_ios_ecc_trap.s -midas_args=-DMCU1 -midas_args=-DERR_FIELD=Mcu1Ecc -midas_args=-DECC
+
+n2_err_Mcu2Ecc           n2_err_mcu_int.s      -midas_args=-DMCU2 -midas_args=-DERR_FIELD=Mcu2Ecc -midas_args=-DECC
+n2_err_Mcu2Ecc_trap      n2_err_mcu_ios_ecc_trap.s -midas_args=-DMCU2 -midas_args=-DERR_FIELD=Mcu2Ecc -midas_args=-DECC
+
+n2_err_Mcu3Ecc           n2_err_mcu_int.s      -midas_args=-DMCU3 -midas_args=-DERR_FIELD=Mcu3Ecc -midas_args=-DECC
+n2_err_Mcu3Ecc_trap      n2_err_mcu_ios_ecc_trap.s -midas_args=-DMCU3 -midas_args=-DERR_FIELD=Mcu3Ecc -midas_args=-DECC    
+
+//FBR and ECC both
+
+</runargs>
+
+</sys(ios_mcu_err)>
+
+// IOS ncu error diags
+
+<sys(ios_ncu_err) name=sys(ios_ncu_err)>
+
+
+n2_err_ncu_csrs n2_err_ncu_csrs.s -nosas 
+n2_err_ncu_ejr_ce_10 n2_err_ncu_ejr_ce_10.s 
+n2_err_ncu_esr_3  n2_err_ncu_esr_3.s 
+
+n2_err_ncu_all_int n2_err_ncu_all_int.s
+
+// n2_err_NcuDmuCredit       n2_err_dmu_pio_wr.s -midas_args=-DERR_FIELD=NcuDmuCredit -vcs_run_args=+PEU_TEST 
+// n2_err_NcuDmuCredit_trap  n2_err_dmu_pio_wr_eie.s -midas_args=-DERR_FIELD=NcuDmuCredit -vcs_run_args=+PEU_TEST
+// n2_err_NcuDmuCredit_trap_nosas  n2_err_dmu_pio_wr_eie.s -midas_args=-DERR_FIELD=NcuDmuCredit -vcs_run_args=+PEU_TEST -nosas
+
+// n2_err_NcuCtagCe                n2_err_ncu_peu_piord.s          -vcs_run_args=+PEU_TEST -midas_args=-DERR_FIELD=NcuCtagCe     
+// n2_err_NcuPcxData               n2_err_ncu_peu_piord.s          -vcs_run_args=+PEU_TEST -midas_args=-DERR_FIELD=NcuPcxData    
+// n2_err_NcuDataParity            n2_err_ncu_peu_piord_trap.s     -vcs_run_args=+PEU_TEST -midas_args=-DERR_FIELD=NcuDataParity  -midas_args=-DTT=0x32
+// n2_err_NcuDmuUe                 n2_err_ncu_peu_piord_trap.s     -vcs_run_args=+PEU_TEST -midas_args=-DERR_FIELD=NcuDmuUe       -midas_args=-DTT=0x32
+// n2_err_NcuDataParity_eie        n2_err_ncu_peu_piord_trap.s     -vcs_run_args=+PEU_TEST -midas_args=-DERR_FIELD=NcuDataParity  -midas_args=-DTT=0x32 -midas_args=-DEIE
+// n2_err_NcuDmuUe_eie             n2_err_ncu_peu_piord_trap.s     -vcs_run_args=+PEU_TEST -midas_args=-DERR_FIELD=NcuDmuUe       -midas_args=-DTT=0x32 -midas_args=-DEIE
+
+
+// n2_err_NcuCtagUe        n2_err_ncu_peu_pio_rd_2th.s     -vcs_run_args=+PEU_TEST -midas_args=-DERR_FIELD=NcuCtagUe  -midas_args=-DCMP_THREAD_START=0x3 -finish_mask=2
+// temporarily taken out n2_err_NcuCpxUe        n2_err_ncu_peu_pio_rd_2th.s     -vcs_run_args=+PEU_TEST -midas_args=-DERR_FIELD=NcuCpxUe  -midas_args=-DCMP_THREAD_START=0x3 -finish_mask=2
+// temporarily taken out n2_err_NcuPcxUe        n2_err_ncu_peu_pio_rd_2th.s    -vcs_run_args=+PEU_TEST -midas_args=-DERR_FIELD=NcuPcxUe  -midas_args=-DCMP_THREAD_START=0x3 -finish_mask=2 
+
+// n2_err_NcuPcxUe         n2_err_NcuPcxUe.s -vcs_run_args=+PEU_TEST -midas_args=-DERR_FIELD=NcuPcxUe  -vcs_run_args=+ios_0in_ras_chk_off 
+
+//n2_err_NcuPcxData       n2_err_NcuPcxData.s  -vcs_run_args=+PEU_TEST -midas_args=-DERR_FIELD=NcuPcxData  -vcs_run_args=+ios_0in_ras_chk_off 
+
+// n2_err_NcuCtagUe_eie    n2_err_NcuCtagUe.s   -vcs_run_args=+PEU_TEST -midas_args=-DERR_FIELD=NcuCtagUe  -midas_args=-DCMP_THREAD_START=0x3 -finish_mask=2
+
+n2_err_ncu_NcuMondoTable n2_err_ncu_dmu_mondo.s  -midas_args=-DERR_FIELD=NcuMondoTable -midas_args=-DTT=0x32  
+n2_err_ncu_NcuMondoFifo  n2_err_ncu_dmu_mondo_2th.s  -midas_args=-DERR_FIELD=NcuMondoFifo  -midas_args=-DCMP_THREAD_START=0x3 -finish_mask=2  -midas_args=-DTT=0x32
+</sys(ios_ncu_err)>
+
+
+
+//SIU-NIU Error diags
+
+// <sys(ios_siuniu_err) name=sys(ios_siuniu_err)>
+
+//SIU-RX
+
+//<runargs  -midas_args=-DCMP_THREAD_START=0x1 -vcs_run_args=+MAC_SPEED0=10000 -finish_mask=1 >
+// <runargs -vcs_run_args=+MAC_SPEED1=10000 >
+// <runargs -vcs_run_args=+GET_MAC_PORTS=0 >
+// <runargs -vcs_run_args=+PCS_SERDES -vcs_run_args=+displaySysRdWr >
+// <runargs -vcs_run_args=+ORIG_META -midas_args=-DRX_TEST >
+// <runargs -midas_args=-DMAC_SPEED0=10000 -midas_args=-DMAC_SPEED1=10000 -midas_args=-DPCS_SERDES >
+// <runargs -midas_args=-DRXMAC_PKTCNT=0xa -vcs_run_args=+RXMAC_PKTCNT=10 >
+// <runargs -vcs_run_args=+no_verilog_finish >
+// <runargs -vcs_run_args=+PEU_TEST -vcs_run_args=+ENABLE_PCIE_LINK_TRAINING -midas_args=-DENABLE_PCIE_LINK_TRAINING >
+
+// n2_err_SiiNiuDParity            n2_err_siu_niu_rx.s            -midas_args=-DERR_FIELD=SiiNiuDParity
+// n2_err_SiiNiuDParity_trap       n2_err_siu_niu_rx_trap.s       -midas_args=-DERR_FIELD=SiiNiuDParity   -midas_args=-DTT=0x40
+//n2_err_SioCtagCe_rand           n2_err_rx_uev_rand_l2siocce.s  -midas_args=-DERR_FIELD=SioCtagCe
+
+// </runargs>
+// </runargs>
+// </runargs>
+// </runargs>
+// </runargs>
+// </runargs>
+// </runargs>
+// </runargs>
+// </runargs>
+
+
+// SIU-TX
+// <runargs  -midas_args=-DCMP_THREAD_START=0x1 -finish_mask=1 -vcs_run_args=+MAC_SPEED0=10000 >
+// <runargs -vcs_run_args=+MAC_SPEED1=10000 >
+// <runargs -vcs_run_args=+GET_MAC_PORTS=0 >
+// <runargs -vcs_run_args=+PCS_SERDES -vcs_run_args=+displaySysRdWr >
+// <runargs -vcs_run_args=+ORIG_META -vcs_run_args=+TX_TEST >
+// <runargs -midas_args=-DTX_TEST -midas_args=-DMAC_SPEED0=10000 -midas_args=-DMAC_SPEED1=10000 -midas_args=-DPCS_SERDES >
+// <runargs -vcs_run_args=+PEU_TEST -vcs_run_args=+ENABLE_PCIE_LINK_TRAINING -midas_args=-DENABLE_PCIE_LINK_TRAINING >
+
+// n2_err_SiiNiuCtagUe             n2_err_siu_niu_tx.s             -midas_args=-DERR_FIELD=SiiNiuCtagUe -vcs_run_args=+niusiu_bid_chk_off
+// n2_err_SiiNiuCtagUe_trap        n2_err_siu_niu_tx_trap.s        -midas_args=-DERR_FIELD=SiiNiuCtagUe    -midas_args=-DTT=0x40 -midas_args=-DUE -vcs_run_args=+niusiu_bid_chk_off
+
+// n2_err_SiiNiuCtagCe             n2_err_siu_niu_tx.s             -midas_args=-DERR_FIELD=SiiNiuCtagCe -midas_args=-DCE
+// n2_err_SiiNiuCtagCe_trap        n2_err_siu_niu_tx_trap.s        -midas_args=-DERR_FIELD=SiiNiuCtagCe    -midas_args=-DTT=0x63 -midas_args=-DCE
+
+// n2_err_SiiNiuCtagCe_force_SiiNiuCtagCe  n2_err_siu_niu_tx_uev.s   -midas_args=-DERR_FIELD=SiiNiuCtagCe
+
+//random error injection
+// n2_err_SiiNiuCtagCe_rand   n2_err_tx_uev_rand_niusiicce.s   -midas_args=-DERR_FIELD=SiiNiuCtagCe
+// n2_err_NiuCtagCe_rand      n2_err_tx_uev_rand_sioniucce.s   -midas_args=-DERR_FIELD=NiuCtagCe
+
+// n2_err_SiiNiuAParity            n2_err_siu_niu_tx.s             -midas_args=-DERR_FIELD=SiiNiuAParity
+// n2_err_SiiNiuAParity_trap       n2_err_siu_niu_tx_trap.s        -midas_args=-DERR_FIELD=SiiNiuAParity   -midas_args=-DTT=0x40 -midas_args=-DUE
+
+// n2_err_SioCtagUe                n2_err_siu_niu_tx.s             -midas_args=-DERR_FIELD=SioCtagUe -vcs_run_args=+niusiu_bid_chk_off
+// n2_err_SioCtagUe_trap           n2_err_siu_niu_tx_trap.s        -midas_args=-DERR_FIELD=SioCtagUe       -midas_args=-DTT=0x40 -midas_args=-DUE -vcs_run_args=+niusiu_bid_chk_off
+
+// n2_err_SioCtagCe                n2_err_siu_niu_tx.s             -midas_args=-DERR_FIELD=SioCtagCe -midas_args=-DCE
+// n2_err_SioCtagCe_trap           n2_err_siu_niu_tx_trap.s        -midas_args=-DERR_FIELD=SioCtagCe       -midas_args=-DTT=0x63 -midas_args=-DCE
+
+// n2_err_NiuCtagUe                n2_err_siu_niu_tx.s             -midas_args=-DERR_FIELD=NiuCtagUe -vcs_run_args=+sio_niu_ras_chk_off
+// n2_err_NiuCtagUe_trap           n2_err_siu_niu_tx_trap.s        -midas_args=-DERR_FIELD=SioCtagUe       -midas_args=-DTT=0x40 -midas_args=-DUE -vcs_run_args=+niusiu_bid_chk_off -vcs_run_args=+sio_niu_ras_chk_off
+
+// n2_err_NiuCtagCe                n2_err_siu_niu_tx.s             -midas_args=-DERR_FIELD=NiuCtagCe -midas_args=-DCE  -vcs_run_args=+sio_niu_ras_chk_off
+// n2_err_NiuCtagCe_trap           n2_err_siu_niu_tx_trap.s        -midas_args=-DERR_FIELD=NiuCtagCe  -midas_args=-DTT=0x63 -midas_args=-DCE -vcs_run_args=+sio_niu_ras_chk_off
+
+// n2_err_NiuDataParity            n2_err_siu_niu_tx.s             -midas_args=-DERR_FIELD=NiuDataParity  -vcs_run_args=+sio_niu_ras_chk_off
+// n2_err_NiuDataParity_trap       n2_err_siu_niu_tx_trap.s        -midas_args=-DERR_FIELD=NiuDataParity  -midas_args=-DTT=0x40 -midas_args=-DUE -vcs_run_args=+niusiu_bid_chk_off  -vcs_run_args=+sio_niu_ras_chk_off
+
+// </runargs>
+// </runargs>
+// </runargs>
+// </runargs>
+// </runargs>
+// </runargs>
+// </runargs>
+
+// </sys(ios_siuniu_err)>
+
+//SIU-DMU Error diags
+
+// <sys(ios_siudmu_err) name=sys(ios_siudmu_err)>
+
+// n2_err_SiiDmuCtagCe             n2_err_siu_dmu_wr.s     -midas_args=-DERR_FIELD=SiiDmuCtagCe -vcs_run_args=+PEU_TEST 
+// n2_err_SiiDmuCtagCe_trap        n2_err_siu_dmu_wr_trap.s        -midas_args=-DERR_FIELD=SiiDmuCtagCe -vcs_run_args=+PEU_TEST      -midas_args=-DTT=0x63 -vcs_run_args=+DISABLE_L2_CHECKER
+
+// n2_err_SiiDmuCtagUe             n2_err_siu_dmu_wr.s     -midas_args=-DERR_FIELD=SiiDmuCtagUe -vcs_run_args=+PEU_TEST -vcs_run_args=+DISABLE_L2_CHECKER 
+// n2_err_SiiDmuCtagUe_trap        n2_err_siu_dmu_wr_trap.s        -midas_args=-DERR_FIELD=SiiDmuCtagUe -vcs_run_args=+PEU_TEST      -midas_args=-DTT=0x40 -vcs_run_args=+DISABLE_L2_CHECKER
+
+// 01/03/05 with changed design no error with SiiDmuDparity with WRM
+// n2_err_SiiDmuDParity            n2_err_siu_dmu_wri.s    -midas_args=-DERR_FIELD=SiiDmuDParity -vcs_run_args=+PEU_TEST -vcs_run_args=+DISABLE_L2_CHECKER
+// n2_err_SiiDmuDParity_noerr      n2_err_siu_dmu_wrm.s    -midas_args=-DERR_FIELD=SiiDmuDParity -vcs_run_args=+PEU_TEST -vcs_run_args=+DISABLE_L2_CHECKER
+// n2_err_SiiDmuDParity_trap       n2_err_siu_dmu_wri_trap.s       -midas_args=-DERR_FIELD=SiiDmuDParity -vcs_run_args=+PEU_TEST     -midas_args=-DTT=0x40 -vcs_run_args=+DISABLE_L2_CHECKER
+
+// n2_err_SiiDmuAParity            n2_err_siu_dmu_wr.s     -midas_args=-DERR_FIELD=SiiDmuAParity -vcs_run_args=+PEU_TEST -vcs_run_args=+DISABLE_L2_CHECKER
+// n2_err_SiiDmuAParity_trap       n2_err_siu_dmu_wr_trap.s        -midas_args=-DERR_FIELD=SiiDmuAParity -vcs_run_args=+PEU_TEST     -midas_args=-DTT=0x40 -vcs_run_args=+DISABLE_L2_CHECKER
+
+// n2_err_SioCtagUe_dmu            n2_err_dmu_dma_rd.s     -midas_args=-DERR_FIELD=SioCtagUe     -vcs_run_args=+PEU_TEST  -vcs_run_args=+dmusiu_bid_chk_off 
+//n2_err_SioCtagUe_dmu_trap     n2_err_dmu_dma_rd_trap.s -midas_args=-DERR_FIELD=SioCtagUe     -vcs_run_args=+PEU_TEST    -midas_args=-DTT=0x40 
+
+// n2_err_SioCtagCe_dmu            n2_err_dmu_dma_rd.s             -midas_args=-DERR_FIELD=SioCtagCe     -vcs_run_args=+PEU_TEST 
+//n2_err_SioCtagCe_dmu_trap     n2_err_dmu_dma_rd_trap.s        -midas_args=-DERR_FIELD=SioCtagCe     -vcs_run_args=+PEU_TEST     -midas_args=-DTT=0x63 
+
+// </sys(ios_siudmu_err)>
+
+
+// <sys(ios_dmu_err) name=sys(ios_dmu_err) >
+// <runargs -vcs_run_args=+PEU_TEST >
+
+// n2_err_DmuCtagCe        n2_err_dmu_dma_rd.s       -midas_args=-DERR_FIELD=DmuCtagCe    -vcs_run_args=+sio_dmu_ras_chk_off
+// n2_err_DmuCtagCe_trap   n2_err_dmu_dma_rd_trap.s  -midas_args=-DERR_FIELD=DmuCtagCe  -midas_args=-DTT=0x63 -vcs_run_args=+sio_dmu_ras_chk_off
+
+// n2_err_DmuCtagUe           n2_err_dmu_dma_rd.s       -midas_args=-DERR_FIELD=DmuCtagUe   -vcs_run_args=+sio_dmu_ras_chk_off 
+// n2_err_DmuCtagUe_trap      n2_err_dmu_dma_rd_trap.s  -midas_args=-DERR_FIELD=DmuCtagUe -midas_args=-DTT=0x40  -vcs_run_args=+sio_dmu_ras_chk_off
+
+// n2_err_DmuDataParity       n2_err_dmu_dma_rd.s       -midas_args=-DERR_FIELD=DmuCtagUe     -vcs_run_args=+sio_dmu_ras_chk_off
+// n2_err_DmuDataParity_trap  n2_err_dmu_dma_rd_trap.s  -midas_args=-DERR_FIELD=DmuCtagUe -midas_args=-DTT=0x40  -vcs_run_args=+sio_dmu_ras_chk_off
+
+// 12/30/05; taken out as the error is changed for INT only now
+// n2_err_DmuNcuCredit        n2_err_piu_int_ejr.s        -midas_args=-DERR_FIELD=DmuNcuCredit     
+// n2_err_DmuNcuCredit_trap   n2_err_ncu_peu_piord_trap.s   -midas_args=-DERR_FIELD=DmuNcuCredit -midas_args=-DTT=0x40
+
+// n2_err_DmuSiiCredit             n2_err_siu_dmu_wr.s     -midas_args=-DERR_FIELD=DmuSiiCredit 
+//n2_err_DmuSiiCredit_trap 
+
+// </runargs>
+// </sys(ios_dmu_err)>
+
+// all IOS diags
+</runargs>
+
+//all diags
+</runargs>
+
+</sys(ras)>
+
+// Applied for ALL Error diags
+// esr mon off
+
+<runargs -vcs_run_args=+ios_0in_ras_chk_off  -vcs_run_args=+l2esr_mon_off -vcs_run_args=+l2cpx_errmon_off -max_cycle=+500000 -vcs_run_args=+mcu_fmon_disable -vcs_run_args=+mcu_errmon_disable >
+
+// <sys(ios-mss_adv_ras) name=sys(ios-mss_adv_ras)>
+
+
+// </sys(ios-mss_adv_ras)>
+
+
+// <sys(ios_adv_dmu_ras) name=sys(ios_adv_dmu_ras)>
+
+// Requires PEU
+
+// </sys(ios_adv_dmu_ras)>
+
+
+// <sys(ios_adv_niu_ras) name=sys(ios_adv_niu_ras)>
+
+// This suit requires PEU
+
+// </sys(ios_adv_niu_ras)>
+
+<sys(ios_adv_ncu_ras) name=sys(ios_adv_ncu_ras)>
+<runargs -vcs_run_args=+ios_0in_ras_chk_off >
+
+//NCU: using EJR
+// n2_err_adv_NcuCtagCe_ld_trap n2_err_adv_ncuctagce.s -midas_args=-DERR_FIELD=NcuCtagCe -vcs_run_args=+PEU_TEST
+// n2_err_adv_NcuCtagUe_ld_trap n2_err_adv_ncuctague.s -vcs_run_args=+PEU_TEST -midas_args=-DERR_FIELD=NcuCtagUe -midas_args=-DCMP_THREAD_START=0x3 -finish_mask=2
+
+n2_err_adv_NcuCtagUe_int    n2_err_adv_piu_int_ejr.s -midas_args=-DERR_FIELD=NcuCtagUe    -midas_args=-DTT=0x40 -vcs_run_args=+lsu_mon_off
+n2_err_adv_NcuCtagCe_int    n2_err_adv_piu_int_ejr.s -midas_args=-DERR_FIELD=NcuCtagCe    -midas_args=-DTT=0x63
+
+n2_err_adv_NcuDataParity_mondo n2_err_adv_piu_int_ejr_nomondo.s  -midas_args=-DERR_FIELD=NcuDataParity -vcs_run_args=+PEU_TEST
+// n2_err_adv_NcuDmuUe_st         n2_err_adv_NcuDmuUe_st.s -vcs_run_args=+PEU_TEST -midas_args=-DERR_FIELD=NcuDmuUe -nosas
+
+//NCU: using userevents
+// n2_err_adv_DMUSII_TOUT n2_err_adv_peu_piord_uev.s  -vcs_run_args=+PEU_TEST -midas_args=-DERR_TYPE=DMUSII_TOUT
+// n2_err_adv_DMUSII_IOAE n2_err_adv_peu_piord_uev.s  -vcs_run_args=+PEU_TEST -midas_args=-DERR_TYPE=DMUSII_IOAE
+// n2_err_adv_DMUSII_IOUE n2_err_adv_peu_piord_uev.s  -vcs_run_args=+PEU_TEST -midas_args=-DERR_TYPE=DMUSII_IOUE
+
+// n2_err_pio_DMUSIIDP_NcuDP_UEV n2_err_pio_DMUSIIDP_NcuDP.s -vcs_run_args=+PEU_TEST -midas_args=-DERR_FIELD=SiiDmuDParity -midas_args=-DERR_FIELD_DETECT=NcuDataParity -midas_args=-DUEV -nosas -vcs_run_args=+ios_ras_interrupt_chk_off
+// n2_err_pio_DMUSIIDP_NcuDP_EJR n2_err_pio_DMUSIIDP_NcuDP.s -vcs_run_args=+PEU_TEST -midas_args=-DERR_FIELD=SiiDmuDParity -midas_args=-DERR_FIELD_DETECT=NcuDataParity -midas_args=-DEJR -nosas
+
+
+//DMU
+n2_err_adv_DmuNcuCredit_int n2_err_adv_piu_int_ejr.s -midas_args=-DERR_FIELD=DmuNcuCredit -midas_args=-DTT=0x40
+
+</runargs>
+
+</sys(ios_adv_ncu_ras)>
+
+
+///////////////////////   Diags with follow up of Silicon Level Testing  ////////////////////////////
+
+<sys(mcu_si_ras) name=sys(mcu_si_ras)>
+n2_mcu_si_DSC  n2_mcu_si_DSC.s -vcs_run_args=+l2cpx_mon_off -midas_args=-DMCU0
+
+</sys(mcu_si_ras)>
+
+// for all diags
+
+</runargs>
+</runargs>
+
+
+<tso_diags name=tso_diags>
+
+tso_n1_bcopy        tso_n1_bcopy.s -finish_mask=1 -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta
+tso_n1_binit1       tso_n1_binit1.s -finish_mask=1 -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta
+tso_n1_binit2       tso_n1_binit2.s -finish_mask=1 -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta
+
+
+tso_n1_binit3       tso_n1_binit3.s -finish_mask=ff -midas_args=-DTHREAD_COUNT=8 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0xff
+tso_n1_cross_mod1   tso_n1_cross_mod1.s -finish_mask=3  -midas_args=-DTHREAD_COUNT=2 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x3 -nosas
+tso_n1_cross_mod101 tso_n1_cross_mod101.s -finish_mask=3  -midas_args=-DTHREAD_COUNT=2 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x3 -nosas
+tso_n1_cross_mod102 tso_n1_cross_mod102.s -finish_mask=3  -midas_args=-DTHREAD_COUNT=2 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x3 -nosas
+tso_n1_cross_mod103 tso_n1_cross_mod103.s -finish_mask=3  -midas_args=-DTHREAD_COUNT=2 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x3 -nosas
+tso_n1_cross_mod2   tso_n1_cross_mod2.s  -finish_mask=3  -midas_args=-DTHREAD_COUNT=2 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x3 -nosas
+tso_n1_cross_mod201 tso_n1_cross_mod201.s -finish_mask=3  -midas_args=-DTHREAD_COUNT=2 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x3 -nosas
+tso_n1_cross_mod203 tso_n1_cross_mod203.s -finish_mask=3  -midas_args=-DTHREAD_COUNT=2 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x3 -nosas
+tso_n1_cross_mod3   tso_n1_cross_mod3.s -finish_mask=3 -midas_args=-DTHREAD_COUNT=2 -vcs_run_args=+inst_check_off=1 -vcs_run_args=+show_delta  -midas_args=-DCMP_THREAD_START=0x3 -nosas
+tso_n1_cross_mod4   tso_n1_cross_mod4.s -finish_mask=1 -midas_args=-DTHREAD_COUNT=8 -vcs_run_args=+show_delta  -midas_args=-DCMP_THREAD_START=0xff
+tso_n1_cross_mod5   tso_n1_cross_mod5.s -finish_mask=3  -midas_args=-DTHREAD_COUNT=2 -vcs_run_args=+show_delta  -midas_args=-DCMP_THREAD_START=0x3 -nosas
+tso_n1_cross_mod6_bug6372 tso_n1_cross_mod6_bug6372.s -midas_args=-DTHREAD_COUNT=4 -finish_mask=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0xf
+tso_n1_dekker1 tso_n1_dekker1.s -finish_mask=3  -midas_args=-DTHREAD_COUNT=2 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x3  -nosas
+tso_n1_dekker2 tso_n1_dekker2.s -finish_mask=3  -midas_args=-DTHREAD_COUNT=2 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x3
+tso_n1_dekker10 tso_n1_dekker10.s -finish_mask=3   -midas_args=-DTHREAD_COUNT=2 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x3 -nosas
+tso_n1_dekker11 tso_n1_dekker11.s -finish_mask=3   -midas_args=-DTHREAD_COUNT=2 -vcs_run_args=+show_delta  -midas_args=-DCMP_THREAD_START=0x3 -nosas
+tso_n1_false_sharing1 tso_n1_false_sharing1.s -finish_mask=ff -midas_args=-DTHREAD_COUNT=8 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0xff -nosas
+tso_n1_false_sharing2 tso_n1_false_sharing2.s -finish_mask=ff -midas_args=-DTHREAD_COUNT=8 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0xff
+tso_n1_false_sharing_vershort tso_n1_false_sharing_vershort.s -finish_mask=ff -midas_args=-DTHREAD_COUNT=8 -vcs_run_args=+show_delta  -midas_args=-DCMP_THREAD_START=0xff
+tso_n1_indirection1 tso_n1_indirection1.s  -finish_mask=7  -midas_args=-DTHREAD_COUNT=3 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x7 -nosas
+tso_n1_indirection2 tso_n1_indirection2.s -finish_mask=7  -midas_args=-DTHREAD_COUNT=3 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x7 -nosas
+tso_n1_membar1 tso_n1_membar1.s -finish_mask=1  -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta
+tso_n1_mutex1  tso_n1_mutex1.s -finish_mask=ff -midas_args=-DTHREAD_COUNT=8 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0xff -nosas
+tso_n1_mutex2_ldstub tso_n1_mutex2_ldstub.s -finish_mask=ff -midas_args=-DTHREAD_COUNT=8 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0xff -nosas
+tso_n1_mutex3_cas tso_n1_mutex3_cas.s -finish_mask=ff -midas_args=-DTHREAD_COUNT=8 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0xff -nosas
+tso_n1_mutex4_casx tso_n1_mutex4_casx.s -finish_mask=ff -midas_args=-DTHREAD_COUNT=8 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0xff  -nosas
+tso_n1_mutex5_swap_casx tso_n1_mutex5_swap_casx.s -finish_mask=ff -midas_args=-DTHREAD_COUNT=8 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0xff  -nosas
+tso_n1_prod_cons1 tso_n1_prod_cons1.s -finish_mask=ff -midas_args=-DTHREAD_COUNT=8 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0xff -nosas
+tso_n1_prod_cons2 tso_n1_prod_cons2.s -finish_mask=ff -midas_args=-DTHREAD_COUNT=8 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0xff -nosas
+tso_n1_prod_cons_variation1_1 tso_n1_prod_cons_variation1_1.s -finish_mask=ff -midas_args=-DTHREAD_COUNT=8 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0xff -nosas
+tso_n1_prod_cons_variation2_1 tso_n1_prod_cons_variation2_1.s -finish_mask=ff -midas_args=-DTHREAD_COUNT=8 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0xff -nosas
+tso_n1_self_mod1 tso_n1_self_mod1.s -finish_mask=1  -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod2 tso_n1_self_mod2.s -finish_mask=1  -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod3 tso_n1_self_mod3.s -finish_mask=11 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x11
+tso_n1_self_mod5 tso_n1_self_mod5.s  -finish_mask=1 -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod6 tso_n1_self_mod6.s -finish_mask=1  -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod7 tso_n1_self_mod7.s -finish_mask=1  -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod8 tso_n1_self_mod8.s -finish_mask=1  -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod9 tso_n1_self_mod9.s -finish_mask=1  -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod10 tso_n1_self_mod10.s  -finish_mask=1 -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod11 tso_n1_self_mod11.s  -finish_mask=1 -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod101 tso_n1_self_mod101.s  -finish_mask=1 -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod102 tso_n1_self_mod102.s -finish_mask=1  -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod103 tso_n1_self_mod103.s  -finish_mask=11 -midas_args=-DTHREAD_COUNT=2 -midas_args=-DTHREAD_STRIDE=4 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x11 -nosas
+tso_n1_self_mod104 tso_n1_self_mod104.s -finish_mask=1 -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod105 tso_n1_self_mod105.s -finish_mask=1 -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+
+tso_n1_self_mod106 tso_n1_self_mod106.s -finish_mask=1 -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod107 tso_n1_self_mod107.s -finish_mask=1 -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod108 tso_n1_self_mod108.s -finish_mask=1 -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod109 tso_n1_self_mod109.s -finish_mask=1 -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod110 tso_n1_self_mod110.s -finish_mask=1 -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod111 tso_n1_self_mod111.s -finish_mask=1 -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod201 tso_n1_self_mod201.s -finish_mask=1 -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod202 tso_n1_self_mod202.s -finish_mask=1 -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod203 tso_n1_self_mod203.s -finish_mask=11 -midas_args=-DTHREAD_COUNT=2  -midas_args=-DTHREAD_STRIDE=4 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x11 -nosas
+tso_n1_self_mod206 tso_n1_self_mod206.s -finish_mask=1 -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_self_mod207 tso_n1_self_mod207.s -finish_mask=1 -midas_args=-DTHREAD_COUNT=1 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0x1
+tso_n1_starve0 tso_n1_starve0.s -finish_mask=1  -midas_args=-DTHREAD_COUNT=4 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0xf -vcs_run_args=+gchkr_off
+tso_n1_starve1 tso_n1_starve1.s -finish_mask=1  -midas_args=-DTHREAD_COUNT=4 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0xf -vcs_run_args=+gchkr_off
+
+
+
+tso_n1_prod_cons1_pio  tso_n1_prod_cons1_pio.s -finish_mask=ff -midas_args=-DTHREAD_COUNT=8 -midas_args=-DCMP_THREAD_START=0xff -sas
+tso_n1_prod_cons2_pio  tso_n1_prod_cons1_pio.s -finish_mask=ff -midas_args=-DTHREAD_COUNT=8 -midas_args=-DCMP_THREAD_START=0xff -sas
+tso_n1_dekker1_pio  tso_n1_dekker1_pio.s -finish_mask=3 -midas_args=-DTHREAD_COUNT=2 -midas_args=-DCMP_THREAD_START=0x3
+tso_n1_dekker2_pio  tso_n1_dekker2_pio.s -finish_mask=3 -midas_args=-DTHREAD_COUNT=2 -midas_args=-DCMP_THREAD_START=0x3
+tso_n1_dekker7      tso_n1_dekker7.pal -finish_mask=ff -midas_args=-pal_diag_args=8 -midas_args=-DTHREAD_COUNT=8 -midas_args=-DCMP_THREAD_START=0xff -sas
+tso_n1_dekker8      tso_n1_dekker8.pal -finish_mask=ff -midas_args=-pal_diag_args=8 -midas_args=-DTHREAD_COUNT=8 -midas_args=-DCMP_THREAD_START=0xff -sas
+tso_n1_dekker9      tso_n1_dekker9.pal -finish_mask=ff -midas_args=-pal_diag_args=8 -midas_args=-DTHREAD_COUNT=8 -midas_args=-DCMP_THREAD_START=0xff -sas
+tso_n1_peterson1    tso_n1_peterson1.pal -finish_mask=ff -midas_args=-pal_diag_args=8 -midas_args=-DTHREAD_COUNT=8 -midas_args=-DCMP_THREAD_START=0xff -sas
+tso_n1_peterson2    tso_n1_peterson2.pal -finish_mask=ff -midas_args=-pal_diag_args=8 -midas_args=-DTHREAD_COUNT=8 -midas_args=-DCMP_THREAD_START=0xff -sas
+tso_n1_peterson3    tso_n1_peterson3.pal -finish_mask=ff -midas_args=-pal_diag_args=8 -midas_args=-DTHREAD_COUNT=8 -midas_args=-DCMP_THREAD_START=0xff -sas
+
+
+#if (!defined CCM && !defined CMP)
+
+
+tso_n1_ld_starve1 tso_n1_ld_starve1.s  -finish_mask=1                 -midas_args=-DTHREAD_COUNT=4 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0xf -vcs_run_args=+gchkr_off
+tso_n1_ld_starve2 tso_n1_ld_starve2.s -finish_mask=1                 -midas_args=-DTHREAD_COUNT=4 -vcs_run_args=+show_delta -midas_args=-DCMP_THREAD_START=0xf -vcs_run_args=+gchkr_off
+
+#endif
+
+</tso_diags>
+
+<sys(ccu_clk_ratios) name=sys(ccu_clk_ratios)>
+
+ <fc_ccu_166>  // fc bench: default is 166mhz sys clk
+
+  <runargs -midas_args=-DCMP_THREAD_START=0x1 -finish_mask=1>   // single thread (ie. thread 0)
+  <runargs -midas_args=-DRESET_STAT_CHECK>                      // must specify this option when doing WMR reset
+  <runargs -nofast_boot -vcs_run_args=+NO_CCU_CSR_SLAM -midas_args=-DCCU_REG_PROG -midas_args=-DWARM_RESET_INIT>
+  <runargs -sas -midas_args=-DBOOTPROM_INIT>
+  <runargs -vcs_run_args=+SSI_CLK_4 -vcs_run_args=+show_delta>
+  <runargs -vcs_run_args=+mcu_errmon_disable -vcs_run_args=+mcu_fmon_disable -vcs_run_args=+l2esr_mon_off> 
+  <runargs -vcs_run_args=+ccu_checker>
+     memop_all_atomics_CMPDR_RATIO_2_00_sysclk166       memop_all_atomics.s -midas_args=-DCMPDR_RATIO_2_00
+     memop_all_atomics_CMPDR_RATIO_2_25_sysclk166       memop_all_atomics.s -midas_args=-DCMPDR_RATIO_2_25
+     memop_all_atomics_CMPDR_RATIO_2_50_sysclk166       memop_all_atomics.s -midas_args=-DCMPDR_RATIO_2_50
+     memop_all_atomics_CMPDR_RATIO_2_75_sysclk166       memop_all_atomics.s -midas_args=-DCMPDR_RATIO_2_75
+     memop_all_atomics_CMPDR_RATIO_3_00_sysclk166       memop_all_atomics.s -midas_args=-DCMPDR_RATIO_3_00
+     memop_all_atomics_CMPDR_RATIO_3_25_sysclk166       memop_all_atomics.s -midas_args=-DCMPDR_RATIO_3_25
+     memop_all_atomics_CMPDR_RATIO_3_50_sysclk166       memop_all_atomics.s -midas_args=-DCMPDR_RATIO_3_50
+     memop_all_atomics_CMPDR_RATIO_3_75_sysclk166       memop_all_atomics.s -midas_args=-DCMPDR_RATIO_3_75
+     memop_all_atomics_CMPDR_RATIO_4_00_sysclk166       memop_all_atomics.s -midas_args=-DCMPDR_RATIO_4_00
+     memop_all_atomics_CMPDR_RATIO_4_25_sysclk166       memop_all_atomics.s -midas_args=-DCMPDR_RATIO_4_25
+     memop_all_atomics_CMPDR_RATIO_4_50_sysclk166       memop_all_atomics.s -midas_args=-DCMPDR_RATIO_4_50
+  </runargs>
+  </runargs>
+  </runargs>
+  </runargs>
+  </runargs>
+  </runargs>
+  </runargs>
+
+</fc_ccu_166>
+</sys(ccu_clk_ratios)>
+
+<sys(mcu) name=sys(mcu)>
+
+
+#if (!defined FC)
+<runargs -sas -vcs_run -vcs_run_args=+8_FBDIMMS  -midas_args=-allow_tsb_conflicts -vcs_run_args=+thread=ff>
+#endif
+#if (defined FC)
+<runargs -sas -vcs_run -vcs_run_args=+8_FBDIMMS  -midas_args=-allow_tsb_conflicts -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff >
+#endif
+
+n2_mcu_0_all_bcopy_all_banks    n2_mcu_0_all_bcopy_all_banks.s
+</runargs>
+
+<runargs -vcs_run -sas  -vcs_run_args=+8_FBDIMMS >
+n2_mcu_0_all_fbdimm_rkhi_mcu0        n2_mcu_0_all_fbdimm_rkhi.s -midas_args=-DMCU0 -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff
+n2_mcu_0_all_fbdimm_rkhi_mcu1        n2_mcu_0_all_fbdimm_rkhi.s -midas_args=-DMCU1 -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff
+n2_mcu_0_all_fbdimm_rkhi_mcu2        n2_mcu_0_all_fbdimm_rkhi.s -midas_args=-DMCU2 -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff
+n2_mcu_0_all_fbdimm_rkhi_mcu3        n2_mcu_0_all_fbdimm_rkhi.s -midas_args=-DMCU3 -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff
+
+n2_mcu_0_all_fbdimm_rkhi_mcu0_L2off  n2_mcu_0_all_fbdimm_rkhi.s -midas_args=-DMCU0 -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff -midas_args=-DL2_OFF -vcs_run_args=+gchkr_off
+n2_mcu_0_all_fbdimm_rkhi_mcu1_L2off  n2_mcu_0_all_fbdimm_rkhi.s -midas_args=-DMCU1 -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff -midas_args=-DL2_OFF -vcs_run_args=+gchkr_off
+n2_mcu_0_all_fbdimm_rkhi_mcu2_L2off  n2_mcu_0_all_fbdimm_rkhi.s -midas_args=-DMCU2 -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff -midas_args=-DL2_OFF -vcs_run_args=+gchkr_off
+n2_mcu_0_all_fbdimm_rkhi_mcu3_L2off  n2_mcu_0_all_fbdimm_rkhi.s -midas_args=-DMCU3 -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff -midas_args=-DL2_OFF -vcs_run_args=+gchkr_off
+
+n2_all_mcu_all_l2_8th  n2_all_mcu_all_l2.s -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff
+n2_all_th_ldst_8th     n2_all_th_ldst.s    -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff
+
+</runargs>
+
+</sys(mcu)>
+
+<sys(cmp) name=sys(cmp)>
+
+<runargs -vcs_run >
+
+n2_cmp_CRW1S_2th              n2_ncu_cmp.s                    -finish_mask=3 -sas 
+n2_cmp_upk_pk_upk             n2_cmp_upk_pk_upk.s             -finish_mask=3 -sas 
+n2_cmp_upk_pk_upk_nosas       n2_cmp_upk_pk_upk.s             -finish_mask=3 -nosas  
+
+ncu_1core_wakup    ncu_1core_wakup.s   -finish_mask=0x2b -sas -midas_args=-DPART_0_BASE=0x200000000 
+ncu_ssi_rw         ncu_ssi_rw.s        -finish_mask=0x1 -nofast_boot -sas -midas_args=-DPART_0_BASE=0x200000000
+ncu_ssi_rw_b2b     ncu_ssi_rw_b2b.s    -finish_mask=0x1 -nofast_boot -sas -midas_args=-DPART_0_BASE=0x200000000
+
+</runargs>
+
+</sys(cmp)>
+
+<sys(fc_power_diag) name=sys(fc_power_diag)>
+
+<runargs -vcs_run_args=+l2esr_mon_off -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+l2cpx_errmon_off -vcs_run_args=+l2cpx_mon_off -vcs_run_args=+8_FBDIMMS -midas_args=-DBOOT_SLAVE_THREADS_FROM_MEMORY -midas_args=-DFAST_BOOT -sas >
+
+n2_noIo_noSpu_8threads_active n2_noIo_noSpu_64_thread_active.s -midas_args=-DCMP_THREAD_START=0xff -midas_args=-DSYNC_THREADS=0xff -midas_args=-Dloop_cnt=0xffffffffff -midas_args=-Dloop_cnt_2=0xffffffffff -midas_args=-Dloop_cnt_3=0xffffffffff -midas_args=-DN_SPU_TIMES=0xfffffff -midas_args=-Dloop_cnt_4=0xffffffffff -midas_args=-Dloop_cnt_4_th0=0xdfff -finish_mask=0000000000000080 -midas_args=-DNUM_LOOP_TH7=0x700 -midas_args=-DNUM_LOOP_TH7_C0=200
+</runargs>
+
+</sys(fc_power_diag)>
+
+
+</runargs>
+</runargs>
+</sys(all_T2)>
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifdef FC
+#undef FC
+#undef sys
+#undef SYSNAME
+#endif
+
+

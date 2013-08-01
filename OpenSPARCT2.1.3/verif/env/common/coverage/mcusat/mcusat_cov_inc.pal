@@ -1,0 +1,87 @@
+.##########################################################################
+.#
+.# File:        mcusat_cov_inc.pal
+.#
+.# Description:
+.# -----------
+.#      Common Pal header file that uses a map of the sys(tem) being
+.#      simulated and decides on:
+.#              number of cores
+.#              instance path for each core (for dram)
+.# $Id: mcusat_cov_inc.pal,v 1.6 2003/03/13 00:03:32 rp139827 Exp $
+.#
+.##########################################################################
+. $cores        = 1;            # default settings
+. $drc          = 4;            # default settings, # of channel 4 (02 & 13 are grouped)
+. $sys          = "DRAM";       # default system being simulated
+.# END_INIT
+. $THREADS_PER_CORE     = 4;    # a frequently used constant
+.
+. $prefix       = "mcusat";     # prefix for sample names and cov class
+. if ( $sys eq "CMP1" ) { $cores = 2; }
+. if ( $sys eq "DRAM" ) { $prefix = ""; }
+// sys = $sys, cores = $cores
+.
+// This is the dram monitor path where all signals are brought in
+//.     $DRAM_MON_PATH          = "cmp_top.cmp_dram.cmp_dram_mon.dram_mon0";
+.       $DRAM_MON_PATH          = "`TOP_MOD.mcusat_cov_mon";
+.       $MCU0_PATH              = "`TOP_MOD.cpu.mcu0";
+.       $MCU1_PATH              = "`TOP_MOD.cpu.mcu1";
+.       $MCU2_PATH              = "`TOP_MOD.cpu.mcu2";
+.       $MCU3_PATH              = "`TOP_MOD.cpu.mcu3";
+. for ( $i = 0; $i < $cores; $i++ ) {
+.       $CORE_STR[$i]           = $i;
+//.     $SPARC_COV_PATHS[$i]    = "cmp_top.iop.cmp.sparc${i}";
+.       $SPARC_COV_PATHS[$i]    = "`TOP_MOD_INST.cmp.sparc${i}";
+. }
+. for ( $i = 0; $i < $drc; $i++ ) {
+.       $DRC_STR[$i]            = $i;
+. }
+
+.###########################################################################
+.# toggle - use to generate toggle type coverage for a signal or field.
+.# just pass the number of bits in the variable. Use like this:
+.#
+.# sample variable_toggle_sample (variable[5:0]) {
+.# . &toggle(6); 
+.# }
+.#
+.##########################################################################
+.sub toggle {
+.  local($num_bits) = @_;
+.  
+.  for($i=$num_bits-1; $i >= 0; $i--) {                   
+.    printf ("  wildcard state s_bit_%02d_0 ( %d\'b", $i, $num_bits );
+.    for($j=$num_bits-1; $j >= 0; $j--) {                 
+.      if( $i == $j ) { print "0"; }                      
+.      else           { print "x"; }                      
+.    }                                                    
+.    print " );\n";                                       
+.    printf ("  wildcard state s_bit_%02d_1 ( %d\'b", $i, $num_bits );
+.    for($j=$num_bits-1; $j >= 0; $j--) {                 
+.      if( $i == $j ) { print "1"; }                      
+.      else           { print "x"; }                      
+.    }                                                    
+.    print " );\n";                                       
+.  }
+.}
+.
+.###########################################################################
+.# toggle2 - use to generate toggle type coverage for a signal or field.
+.# just pass the number of bits in the variable andn its name like this:
+.#
+.# sample variable_toggle_sample (variable[5:0]) {
+.# . &toggle2(6, "variable" ); 
+.# }
+.#
+.# &toggle uses wildcards which are said to hurt performance. This uses
+.# a different technique.
+.##########################################################################
+.#sub toggle2 {
+.#  local($num_bits,$variable) = @_;
+.#  
+.#  for($i=$num_bits-1; $i >= 0; $i--) {                   
+.#    printf("  state s_bit_%02d_0 ( %s[%d] == 1'b0 );\n", $i, $variable, $i );
+.#    printf("  state s_bit_%02d_1 ( %s[%d] == 1'b1 );\n", $i, $variable, $i );
+.#  }
+.#}

@@ -1,0 +1,183 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuIngressDLLPErr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class ilupeuIngressDLLPErr  extends PEUStrBase 
+  {
+  integer f_errQueue;				// A mailbox for bad pkt headers
+
+//  integer nmbrUnsupportDLLPErrsToInject = 10;	//Total number of packets that get error injected
+  integer nmbrDLLPErrsToInject = 10;	//Total number of packets that get error injected
+  //Set the percentage weight of each type of receiver error
+  integer DLLPErrUnsupportWeight = 0; 
+  integer DLLPErrBadCRCWeight = 0; 
+  denaliPcieEiTypeT DenaliErrortype; 
+
+  //Only allow 1 of these strategies to be active at a time
+//   static integer supportDLLPErr_semaphore = alloc(SEMAPHORE, 0, 1, 1);
+  static integer DLLPErr_semaphore = alloc(SEMAPHORE, 0, 1, 1);
+
+  task new( PEUTestEnv a_env )
+    {
+    super.new( a_env );
+    f_errQueue = 0;
+    }
+
+  task SetErrQueue( integer a_queue )
+    {
+    f_errQueue = a_queue;
+    } /* end SetErrQueue */
+
+  task Execute()
+    {
+    integer nmbrErrs;
+    integer UnsupportDLLPInject_freq = 100;     // freq of clock cycles to inject this error
+    integer BadCRCDLLPInject_freq = 100; 
+    integer nmbrDLLPErrsInjected = 0; 
+    integer nmbrUnsupportDLLPErrsInjected = 0; 
+    integer nmbrBadCRCDLLPErrsInjected = 0 ; 
+
+    //Get the semaphore when its your turn
+//     semaphore_get( WAIT, UnsupportDLLPErr_semaphore, 1);
+    semaphore_get( WAIT, DLLPErr_semaphore, 1);
+
+
+    //Clear all the specific error trackers
+    nmbrUnsupportDLLPErrsInjected = 0; 
+    nmbrBadCRCDLLPErrsInjected = 0; 
+    nmbrDLLPErrsInjected = 0; 
+
+   // create random number to cause unsupported and bad CRC DLLP type
+     UnsupportDLLPInject_freq   = (urandom() % 100) + 50;
+     BadCRCDLLPInject_freq   = (urandom() % 100) + 50;
+     printf("AC: ilupeuIngressDLLPErr.vr, nmbrDLLPErrsToInject = %d \n", nmbrDLLPErrsToInject);  
+
+    //inject errors until all the errors are injected 
+//      while (nmbrDLLPErrsToInject > nmbrBadCRCDLLPErrsInjected) {
+     while (nmbrDLLPErrsInjected < nmbrDLLPErrsToInject) {
+       //determine the type of errors inject based on the weight specified in the testcase 
+       randcase {
+           DLLPErrUnsupportWeight: {DenaliErrortype = PCIE_EI_RSRVD_TYPE;}
+           DLLPErrBadCRCWeight   : {DenaliErrortype = PCIE_EI_LCRC;}
+       }
+      printf("AC: ilupeuIngressDLLPErr.vr, DenaliErrortype = %s \n", DenaliErrortype);  
+
+      if( DenaliErrortype == PCIE_EI_RSRVD_TYPE) {
+       f_env.driveUnsupportDLLP();
+       nmbrUnsupportDLLPErrsInjected += 1; 
+       printf("AC: IngressUnsupportDLLPErr injects error:  nmbrDLLPErrsToInject=%0d nmbrUnsupportDLLPErrsInjected=%0d at time %d \n",nmbrDLLPErrsToInject, nmbrUnsupportDLLPErrsInjected, get_time(LO));
+       repeat (UnsupportDLLPInject_freq) @(posedge CLOCK);
+      } 
+      
+      if( DenaliErrortype == PCIE_EI_LCRC) {
+       f_env.driveBadCRCDLLP();
+       nmbrBadCRCDLLPErrsInjected += 1; 
+       printf("AC: IngressUnsupportDLLPErr injects error:  nmbrDLLPErrsToInject=%0d nmbrBadCRCDLLPErrsInjected=%0d at time %d \n",nmbrDLLPErrsToInject, nmbrBadCRCDLLPErrsInjected, get_time(LO));
+       repeat (BadCRCDLLPInject_freq) @(posedge CLOCK);
+      } 
+      
+     nmbrDLLPErrsInjected += 1; 
+       printf("AC: IngressUnsupportDLLPErr injects error:  nmbrDLLPErrsToInject=%0d nmbrDLLPErrsInjected=%0d \n",nmbrDLLPErrsToInject, nmbrDLLPErrsInjected);
+
+       repeat (100) @(posedge CLOCK);
+
+    } 
+
+    //Uelay to allow the last error to propogate before checking
+    repeat( 100 ) @(posedge CLOCK);    
+    printf("AC: after all errors are collected \n");
+
+    //Track possible errors based on the type of errors injected 
+     nmbrErrs = 0;         // number of error type that got set.  
+
+    if (nmbrUnsupportDLLPErrsInjected >= 1) {
+
+    // for unsupport DLLP type: CXLP unsupport error + primary / removed PRM 1.0 secondary link event interrupt 
+     nmbrErrs += 2;         // number of error type that got set.  1 for header , 1 for error 
+    } 
+    if (nmbrBadCRCDLLPErrsInjected == 1) {
+     nmbrErrs += 1;         // only primary ce error got set.  
+    }
+    else if (nmbrBadCRCDLLPErrsInjected > 1) {
+     nmbrErrs += 2;         // both primary and secondary ce errors got set.  
+    }
+
+    printf("AC: nmbrErrs = %d, nmbrUnsupportDLLPErrsInjected = %d, nmbrBadCRCDLLPErrsInjected = %d \n", nmbrErrs, nmbrUnsupportDLLPErrsInjected, nmbrBadCRCDLLPErrsInjected ); 
+    
+
+    if( f_errQueue != 0 ){
+
+       // note: bx = no header to check 
+       //       bx0 = error above is optional.  clear it if it's set
+        
+       mailbox_put( f_errQueue, e_ERR_none );
+       mailbox_put( f_errQueue, nmbrErrs );
+
+//        // DLLP with bad CRC: e_ERR_ce_bdp =  Bad DLLP (LPU) 
+//        mailbox_put( f_errQueue, e_ERR_ce_bdp );
+//        mailbox_put( f_errQueue, 128'bx );      // bx : not to check the header
+//        if (nmbrUnsupportDLLPErrsToInject > 1 ) { 
+//          mailbox_put( f_errQueue, e_ERR_ce_bdp );
+//          mailbox_put( f_errQueue, 128'bx );
+//        }
+
+      if(nmbrUnsupportDLLPErrsInjected >= 1) {
+       // Unsupported DLLP: e_ERR_dlpl_unsup_dllp, e_ERR_oe_lin(primary & secondary)  
+       mailbox_put( f_errQueue, e_ERR_dlpl_unsup_dllp );
+       mailbox_put( f_errQueue, 128'bx );      // bx : not to check the header
+       mailbox_put( f_errQueue, e_ERR_oe_lin );
+       mailbox_put( f_errQueue, 128'bx );
+//Removed PRM 1.0       mailbox_put( f_errQueue, e_ERR_oe_lin );
+//Removed PRM 1.0       mailbox_put( f_errQueue, 128'bx );
+      }
+      
+      if (nmbrBadCRCDLLPErrsInjected == 1) {
+          mailbox_put( f_errQueue, e_ERR_ce_bdp );    //  e_ERR_ce_bdp =  Bad DLLP 
+          mailbox_put( f_errQueue, 128'bx );
+      }
+      else if (nmbrBadCRCDLLPErrsInjected > 1) {
+          mailbox_put( f_errQueue, e_ERR_ce_bdp );    //  e_ERR_ce_bdp =  Bad DLLP 
+          mailbox_put( f_errQueue, 128'bx );
+          mailbox_put( f_errQueue, e_ERR_ce_bdp );    //  e_ERR_ce_bdp =  Bad DLLP 
+          mailbox_put( f_errQueue, 128'bx );
+      } 
+     
+    } // f_errQueue !=0 
+
+    repeat( 10 ) @(posedge CLOCK);    
+//     semaphore_put( UnsupportDLLPErr_semaphore, 1 );
+    semaphore_put( DLLPErr_semaphore, 1 );
+
+    } /* end Execute */
+
+  } /* end IngressUnsupportDLLPErr */

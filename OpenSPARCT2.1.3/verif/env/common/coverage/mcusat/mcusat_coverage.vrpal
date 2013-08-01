@@ -1,0 +1,2517 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: mcusat_coverage.vrpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#inc "mcusat_cov_inc.pal";
+
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "plusArgMacros.vri"
+#include "mcusat_cov_defines.vrh"
+#include "mcusat_cov.if.vrh"
+#include "mcusat_cov_ports_binds.vrh"
+
+// extern event dram_diag_done;
+
+
+class ${prefix}dram_coverage {
+  
+
+  event  mcu01_secc_evnt_trig;
+  event  mcu01_scb_secc_evnt_trig;
+  event  mcu01_mecc_evnt_trig;
+  event  mcu01_scb_mecc_evnt_trig;
+  event  mcu01_secc_error_evnt_trig;
+  event  mcu01_scb_secc_error_evnt_trig;
+  event  mcu01_mecc_error_evnt_trig;
+  event  mcu01_scb_mecc_error_evnt_trig;
+  event  mcu01_secc_scbs_error_evnt_trig;
+  event  mcu01_secc_mecc_error_evnt_trig;
+  event  mcu01_secc_scbm_error_evnt_trig;
+  event  mcu01_scb_mecc1_error_evnt_trig;
+  event  mcu01_scb_scbm_error_evnt_trig;
+  event  mcu01_mecc_scbm_error_evnt_trig;
+  event  mcu012_secc_error_evnt_trig;
+  event  mcu012_scb_secc_error_evnt_trig;
+  event  mcu0123_secc_error_evnt_trig;
+  event  mcu0123_scb_secc_error_evnt_trig;
+  event  mcu0123_all_error_evnt_trig;
+  event  mcu0_fbd_cmd_a_err_evnt_trig;
+  event  mcu0_fbd_cmd_b_err_evnt_trig;
+  event  mcu0_fbd_cmd_c_err_evnt_trig;
+
+  bit       mcu_secc0 ;
+  bit       mcu_secc1 ;
+  bit       mcu_scb_secc0 ;
+  bit       mcu_scb_secc1 ;
+  bit       mcu_mecc0 ;
+  bit       mcu_mecc1 ;
+  bit       mcu_scb_mecc0 ;
+  bit       mcu_scb_mecc1 ;
+  bit[1:0]  mcu_secc_both ;
+  bit[1:0]  mcu_mecc_both ;
+  bit[1:0]  mcu_scb_secc_both ;
+  bit[1:0]  mcu_scb_mecc_both ;
+  bit[3:0]  error_bits ;
+  bit[3:0]  error_bits_secc ;
+  bit[3:0]  error_bits_scb_secc ;
+  bit[3:0]  error_bits_mecc ;
+  bit[3:0]  error_bits_scb_mecc ;
+  bit[3:0]  error_bits_secc_3 ;
+  bit[3:0]  error_bits_scb_secc_3 ;
+  bit[3:0]  error_bits_secc_4 ;
+  bit[3:0]  error_bits_scb_secc_4 ;
+  bit[15:0] error_bits_all ;
+  bit[5:0]  a_cmd;
+
+
+  integer       i;
+  integer       start_counter = 0;
+  integer       start_counter_secc = 0;
+  integer       start_counter_scb_secc = 0;
+  integer       start_counter_mecc = 0;
+  integer       start_counter_scb_mecc = 0;
+  integer       start_counter_secc_3 = 0;
+  integer       start_counter_scb_secc_3 = 0;
+  integer       start_counter_secc_4 = 0;
+  integer       start_counter_scb_secc_4 = 0;
+  integer       start_counter_all = 0;
+  integer       start_counter_sscbsecc = 0;
+  integer       start_counter_smecc = 0;
+  integer       start_counter_sscbmecc = 0;
+  integer       start_counter_scbsmecc = 0;
+  integer       start_counter_scb2smecc = 0;
+  integer       start_counter_mscbmecc = 0;
+  integer       mcu0_data_vld_1_secc, mcu0_data_vld_2_secc, mcu0_data_vld_3_secc;
+  integer       mcu1_data_vld_1_secc, mcu1_data_vld_2_secc, mcu1_data_vld_3_secc;
+  integer       mcu2_data_vld_1_secc, mcu2_data_vld_2_secc, mcu2_data_vld_3_secc;
+  integer       mcu3_data_vld_1_secc, mcu3_data_vld_2_secc, mcu3_data_vld_3_secc;
+  integer       mcu0_data_vld_1_scb_secc, mcu0_data_vld_2_scb_secc, mcu0_data_vld_3_scb_secc;
+  integer       mcu1_data_vld_1_scb_secc, mcu1_data_vld_2_scb_secc, mcu1_data_vld_3_scb_secc;
+  integer       mcu2_data_vld_1_scb_secc, mcu2_data_vld_2_scb_secc, mcu2_data_vld_3_scb_secc;
+  integer       mcu3_data_vld_1_scb_secc, mcu3_data_vld_2_scb_secc, mcu3_data_vld_3_scb_secc;
+  integer       mcu0_data_vld_1_mecc, mcu0_data_vld_2_mecc, mcu0_data_vld_3_mecc;
+  integer       mcu1_data_vld_1_mecc, mcu1_data_vld_2_mecc, mcu1_data_vld_3_mecc;
+  integer       mcu2_data_vld_1_mecc, mcu2_data_vld_2_mecc, mcu2_data_vld_3_mecc;
+  integer       mcu3_data_vld_1_mecc, mcu3_data_vld_2_mecc, mcu3_data_vld_3_mecc;
+  integer       mcu0_data_vld_1_scb_mecc, mcu0_data_vld_2_scb_mecc, mcu0_data_vld_3_scb_mecc;
+  integer       mcu1_data_vld_1_scb_mecc, mcu1_data_vld_2_scb_mecc, mcu1_data_vld_3_scb_mecc;
+  integer       mcu2_data_vld_1_scb_mecc, mcu2_data_vld_2_scb_mecc, mcu2_data_vld_3_scb_mecc;
+  integer       mcu3_data_vld_1_scb_mecc, mcu3_data_vld_2_scb_mecc, mcu3_data_vld_3_scb_mecc;
+  integer       mcu0_data_vld_1_secc_3, mcu0_data_vld_2_secc_3, mcu0_data_vld_3_secc_3;
+  integer       mcu1_data_vld_1_secc_3, mcu1_data_vld_2_secc_3, mcu1_data_vld_3_secc_3;
+  integer       mcu2_data_vld_1_secc_3, mcu2_data_vld_2_secc_3, mcu2_data_vld_3_secc_3;
+  integer       mcu3_data_vld_1_secc_3, mcu3_data_vld_2_secc_3, mcu3_data_vld_3_secc_3;
+  integer       mcu0_data_vld_1_scb_secc_3, mcu0_data_vld_2_scb_secc_3, mcu0_data_vld_3_scb_secc_3;
+  integer       mcu1_data_vld_1_scb_secc_3, mcu1_data_vld_2_scb_secc_3, mcu1_data_vld_3_scb_secc_3;
+  integer       mcu2_data_vld_1_scb_secc_3, mcu2_data_vld_2_scb_secc_3, mcu2_data_vld_3_scb_secc_3;
+  integer       mcu3_data_vld_1_scb_secc_3, mcu3_data_vld_2_scb_secc_3, mcu3_data_vld_3_scb_secc_3;
+  integer       mcu0_data_vld_1_secc_4, mcu0_data_vld_2_secc_4, mcu0_data_vld_3_secc_4;
+  integer       mcu1_data_vld_1_secc_4, mcu1_data_vld_2_secc_4, mcu1_data_vld_3_secc_4;
+  integer       mcu2_data_vld_1_secc_4, mcu2_data_vld_2_secc_4, mcu2_data_vld_3_secc_4;
+  integer       mcu3_data_vld_1_secc_4, mcu3_data_vld_2_secc_4, mcu3_data_vld_3_secc_4;
+  integer       mcu0_data_vld_1_scb_secc_4, mcu0_data_vld_2_scb_secc_4, mcu0_data_vld_3_scb_secc_4;
+  integer       mcu1_data_vld_1_scb_secc_4, mcu1_data_vld_2_scb_secc_4, mcu1_data_vld_3_scb_secc_4;
+  integer       mcu2_data_vld_1_scb_secc_4, mcu2_data_vld_2_scb_secc_4, mcu2_data_vld_3_scb_secc_4;
+  integer       mcu3_data_vld_1_scb_secc_4, mcu3_data_vld_2_scb_secc_4, mcu3_data_vld_3_scb_secc_4;
+  integer       mcu0_data_vld_1_all, mcu0_data_vld_2_all, mcu0_data_vld_3_all;
+  integer       mcu1_data_vld_1_all, mcu1_data_vld_2_all, mcu1_data_vld_3_all;
+  integer       mcu2_data_vld_1_all, mcu2_data_vld_2_all, mcu2_data_vld_3_all;
+  integer       mcu3_data_vld_1_all, mcu3_data_vld_2_all, mcu3_data_vld_3_all;
+  integer       mcu0_data_vld_1_sscbsecc, mcu0_data_vld_2_sscbsecc, mcu0_data_vld_3_sscbsecc;
+  integer       mcu1_data_vld_1_sscbsecc, mcu1_data_vld_2_sscbsecc, mcu1_data_vld_3_sscbsecc;
+  integer       mcu2_data_vld_1_sscbsecc, mcu2_data_vld_2_sscbsecc, mcu2_data_vld_3_sscbsecc;
+  integer       mcu3_data_vld_1_sscbsecc, mcu3_data_vld_2_sscbsecc, mcu3_data_vld_3_sscbsecc;
+  integer       mcu0_data_vld_1_smecc, mcu0_data_vld_2_smecc, mcu0_data_vld_3_smecc;
+  integer       mcu1_data_vld_1_smecc, mcu1_data_vld_2_smecc, mcu1_data_vld_3_smecc;
+  integer       mcu2_data_vld_1_smecc, mcu2_data_vld_2_smecc, mcu2_data_vld_3_smecc;
+  integer       mcu3_data_vld_1_smecc, mcu3_data_vld_2_smecc, mcu3_data_vld_3_smecc;
+  integer       mcu0_data_vld_1_sscbmecc, mcu0_data_vld_2_sscbmecc, mcu0_data_vld_3_sscbmecc;
+  integer       mcu1_data_vld_1_sscbmecc, mcu1_data_vld_2_sscbmecc, mcu1_data_vld_3_sscbmecc;
+  integer       mcu2_data_vld_1_sscbmecc, mcu2_data_vld_2_sscbmecc, mcu2_data_vld_3_sscbmecc;
+  integer       mcu3_data_vld_1_sscbmecc, mcu3_data_vld_2_sscbmecc, mcu3_data_vld_3_sscbmecc;
+  integer       mcu0_data_vld_1_scbsmecc, mcu0_data_vld_2_scbsmecc, mcu0_data_vld_3_scbsmecc;
+  integer       mcu1_data_vld_1_scbsmecc, mcu1_data_vld_2_scbsmecc, mcu1_data_vld_3_scbsmecc;
+  integer       mcu2_data_vld_1_scbsmecc, mcu2_data_vld_2_scbsmecc, mcu2_data_vld_3_scbsmecc;
+  integer       mcu3_data_vld_1_scbsmecc, mcu3_data_vld_2_scbsmecc, mcu3_data_vld_3_scbsmecc;
+  integer       mcu0_data_vld_1_scb2smecc, mcu0_data_vld_2_scb2smecc, mcu0_data_vld_3_scb2smecc;
+  integer       mcu1_data_vld_1_scb2smecc, mcu1_data_vld_2_scb2smecc, mcu1_data_vld_3_scb2smecc;
+  integer       mcu2_data_vld_1_scb2smecc, mcu2_data_vld_2_scb2smecc, mcu2_data_vld_3_scb2smecc;
+  integer       mcu3_data_vld_1_scb2smecc, mcu3_data_vld_2_scb2smecc, mcu3_data_vld_3_scb2smecc;
+  integer       mcu0_data_vld_1_mscbmecc, mcu0_data_vld_2_mscbmecc, mcu0_data_vld_3_mscbmecc;
+  integer       mcu1_data_vld_1_mscbmecc, mcu1_data_vld_2_mscbmecc, mcu1_data_vld_3_mscbmecc;
+  integer       mcu2_data_vld_1_mscbmecc, mcu2_data_vld_2_mscbmecc, mcu2_data_vld_3_mscbmecc;
+  integer       mcu3_data_vld_1_mscbmecc, mcu3_data_vld_2_mscbmecc, mcu3_data_vld_3_mscbmecc;
+
+  integer       mcu0_mcu1_secc_scbs_counter = 0;
+  integer       mcu0_mcu1_secc_mecc_counter = 0;
+  integer       mcu0_mcu1_secc_scbm_counter = 0;
+  integer       mcu0_mcu1_scb_mecc1_counter = 0;
+  integer       mcu0_mcu1_scb_scbm_counter = 0;
+  integer       mcu0_mcu1_mecc_scbm_counter = 0;
+  integer       start_count = 0;
+  integer       error_count = 0;
+  integer       error_count_secc = 0;
+  integer       error_count_scb_secc = 0;
+  integer       error_count_mecc = 0;
+  integer       error_count_scb_mecc = 0;
+  integer       error_count_secc_3 = 0;
+  integer       error_count_scb_secc_3 = 0;
+  integer       error_count_secc_4 = 0;
+  integer       error_count_scb_secc_4 = 0;
+  integer       error_count_all = 0;
+
+  integer   mcu0_mcu1_secc_counter = 0;
+  integer   mcu0_mcu1_scb_secc_counter = 0;
+  integer   mcu0_mcu1_mecc_counter = 0;
+  integer   mcu0_mcu1_scb_mecc_counter = 0;
+  integer   mcu0_mcu1_mcu2_secc_counter = 0;
+  integer   mcu0_mcu1_mcu2_scb_secc_counter = 0;
+  integer   mcu0_mcu1_mcu2_mcu3_secc_counter = 0;
+  integer   mcu0_mcu1_mcu2_mcu3_scb_secc_counter = 0;
+  integer   mcu0_mcu1_mcu2_mcu3_all_counter = 0;
+
+
+  // ----------- start of coverage object 1 ----------------
+  // this coverage group samples on dram clock
+  coverage_group dram_coverage_group {
+
+    const_sample_reference	= 1;	// ref. to sample vars. is constant
+    sample_event	=  @(posedge dram_coverage_ifc_dram_clk.dram_gclk);
+    //cov_weight			= 0;	// default, unless diag_done is true,
+					// i.e. diag. passes
+#ifndef MCU_INTF_COV
+
+. foreach $c (0) {
+  sample ${prefix}mcu_que_fsm_sample_bind_Ch${c}.\$que_pos {
+  #include "mcusat_cntrlfsm_sample.vrh"
+  }
+  sample ${prefix}mcu_que_pick_wr_first_sample_bind_Ch${c}.\$wr_pick {
+  #include "mcusat_wr_q_full_starv_cntr_sample.vrh"
+   }
+  sample ${prefix}mcu_wr_data_rd_mem_sample_bind_Ch${c}_l2b0.\$en_n_addr {
+  #include "mcusat_wr_data_rd_mem_sample.vrh"
+  }
+  sample ${prefix}mcu_wr_data_rd_mem_sample_bind_Ch${c}_l2b1.\$en_n_addr {
+  #include "mcusat_wr_data_rd_mem_sample.vrh"
+  }
+
+
+//  #include "dram_ras_cas_pend_cnt_sample.vrh"
+//   }
+  sample ${prefix}mcu_ras_picked_sample_bind_Ch${c}.\$ras_picked{
+  #include "mcusat_ras_picked_sample.vrh"
+   }
+
+//  #include "dram_cas_picked_sample.vrh"
+//   }
+  sample ${prefix}mcu_rd_wr_hit_sample_bind_Ch${c}.\$rd_wr_hit{
+  #include "mcusat_rd_wr_hit_sample.vrh"
+   }
+  sample ${prefix}mcu_scb_req_same_bank_sample_bind_Ch${c}.\$scb_req{
+  #include "mcusat_scb_req_same_bank_sample.vrh"
+   }
+  sample ${prefix}mcu_refresh_all_clr_mon_state_sample_bind_Ch${c}.\$fsm_state {
+  #include "mcusat_refrsh_issued_all_cas_clr_sample.vrh"
+   }
+
+//  #include "mcusat_cas_que_sample.vrh"
+//   }
+  sample ${prefix}mcu_rd_wr_scrb_schmoo_sample_bind_Ch${c}_l2b0.\$rd_wr_scrb_vld {
+  #include "mcusat_rd_wr_schmoo_sample.vrh"
+   }
+  sample ${prefix}mcu_rd_wr_scrb_schmoo_sample_bind_Ch${c}_l2b1.\$rd_wr_scrb_vld {
+  #include "mcusat_rd_wr_schmoo_sample.vrh"
+   }
+
+
+//  #include "dram_reg_toggle_sample.vrh"
+//   }
+  sample ${prefix}mcu_perf_cntr_sample_bind_Ch${c}.\$perf {
+  #include "mcusat_perf_cntr_sample.vrh"
+   }
+  sample ${prefix}mcu_reg_ack_nack_sample_bind_Ch${c}.\$ack_nack {
+  #include "mcusat_reg_ack_nack_sample.vrh"
+   }
+/*mb156858, evaluation is commented out in dram_mon
+  sample ${prefix}dram_rank_stack_addr_param_rd_hi_sample_bind_Ch${c}_l2b0.\$addr_etc_info_rd_hi {
+  #include "mcusat_rank_stack_addr_param_rd_hi_sample.vrh"
+   }
+  sample ${prefix}dram_rank_stack_addr_param_wr_hi_sample_bind_Ch${c}_l2b0.\$addr_etc_info_wr_hi {
+  #include "mcusat_rank_stack_addr_param_wr_hi_sample.vrh"
+   }
+  sample ${prefix}dram_rank_stack_addr_param_rd_lo_sample_bind_Ch${c}_l2b0.\$addr_etc_info_rd_lo {
+  #include "mcusat_rank_stack_addr_param_rd_lo_sample.vrh"
+   }
+  sample ${prefix}dram_rank_stack_addr_param_wr_lo_sample_bind_Ch${c}_l2b0.\$addr_etc_info_wr_lo {
+  #include "mcusat_rank_stack_addr_param_wr_lo_sample.vrh"
+   }
+
+  sample ${prefix}dram_rank_stack_addr_param_rd_hi_sample_bind_Ch${c}_l2b1.\$addr_etc_info_rd_hi {
+  #include "mcusat_rank_stack_addr_param_rd_hi_sample.vrh"
+   }
+  sample ${prefix}dram_rank_stack_addr_param_wr_hi_sample_bind_Ch${c}_l2b1.\$addr_etc_info_wr_hi {
+  #include "mcusat_rank_stack_addr_param_wr_hi_sample.vrh"
+   }
+  sample ${prefix}dram_rank_stack_addr_param_rd_lo_sample_bind_Ch${c}_l2b1.\$addr_etc_info_rd_lo {
+  #include "mcusat_rank_stack_addr_param_rd_lo_sample.vrh"
+   }
+  sample ${prefix}dram_rank_stack_addr_param_wr_lo_sample_bind_Ch${c}_l2b1.\$addr_etc_info_wr_lo {
+  #include "mcusat_rank_stack_addr_param_wr_lo_sample.vrh"
+   }
+
+  sample ${prefix}dram_dp_pioson_l2_data_sample_bind_Ch${c}.\$dp_pioson_l2_data {
+  #include "mcusat_dp_pioson_l2_data_sample.vrh"
+   }
+*/
+
+//  #include "dram_line_cov.vrh"
+//   }
+. for ( $i = 0; $i < 8; $i++ ) {
+  sample ${prefix}mcu_rd_q_cntr${i}_sample_bind_Ch${c}_l2b0.\$cntr {
+  #include "mcusat_q_cntr_sample.vrh"
+   }
+  sample ${prefix}mcu_rd_q_cntr${i}_sample_bind_Ch${c}_l2b1.\$cntr {
+  #include "mcusat_q_cntr_sample.vrh"
+   }
+  sample ${prefix}mcu_wr_q_cntr${i}_sample_bind_Ch${c}_l2b0.\$cntr {
+  #include "mcusat_q_cntr_sample.vrh"
+   }
+  sample ${prefix}mcu_wr_q_cntr${i}_sample_bind_Ch${c}_l2b1.\$cntr {
+  #include "mcusat_q_cntr_sample.vrh"
+   }
+  sample ${prefix}mcu_rd_req_ack_${i}_sample_bind_Ch${c}_l2b0.\$cntr {
+  #include "mcusat_rd_req_ack_cntr_sample.vrh"
+   }
+  sample ${prefix}mcu_rd_req_ack_${i}_sample_bind_Ch${c}_l2b1.\$cntr {
+  #include "mcusat_rd_req_ack_cntr_sample.vrh"
+   }
+.}
+  sample ${prefix}mcu_wr_req_ack_sample_bind_Ch${c}_l2b0.\$cntr {
+  #include "mcusat_wr_req_ack_cntr_sample.vrh"
+   }
+  sample ${prefix}mcu_wr_req_ack_sample_bind_Ch${c}_l2b1.\$cntr {
+  #include "mcusat_wr_req_ack_cntr_sample.vrh"
+   }
+  sample ${prefix}mcu_raw_hazard_sample_bind_Ch${c}.\$hazard {
+  #include "mcusat_raw_hazard_sample.vrh"
+   }
+  sample ${prefix}mcu_refresh_sample_bind_Ch${c}.\$refresh {
+  #include "mcusat_refresh_sample.vrh"
+   }
+  sample ${prefix}mcu_single_channel_sample_bind_Ch${c}.\$single_ch {
+  #include "mcusat_single_channel_sample.vrh"
+   }
+  sample ${prefix}mcu_fbd_fast_reset_sample_bind_Ch${c}.\$fast_reset {
+  #include "mcusat_fbd_fast_reset_sample.vrh"
+   }
+  sample ${prefix}mcu_fbd_full_reset_sample_bind_Ch${c}.\$fast_reset {
+  #include "mcusat_fbd_full_reset_sample.vrh"
+   }
+  sample ${prefix}mcu_fbd_l0s_state_sample_bind_Ch${c}.\$l0sstate {
+  #include "mcusat_fbd_l0s_state_sample.vrh"
+   }
+  sample ${prefix}mcu_failover_sample_bind_Ch${c}.\$failover {
+  #include "mcusat_ch${c}_failover_sample.vrh"
+   }
+  sample ${prefix}mcu_fbd0_sb_failover_sample_bind_Ch${c}.\$failover {
+  #include "mcusat_sb_failover_sample.vrh"
+   }
+  sample ${prefix}mcu_fbd1_sb_failover_sample_bind_Ch${c}.\$failover {
+  #include "mcusat_sb_failover_sample.vrh"
+   }
+  sample ${prefix}mcu_fbd0_nb_failover_sample_bind_Ch${c}.\$failover {
+  #include "mcusat_nb_failover_sample.vrh"
+   }
+  sample ${prefix}mcu_fbd1_nb_failover_sample_bind_Ch${c}.\$failover {
+  #include "mcusat_nb_failover_sample.vrh"
+   }
+  sample ${prefix}mcu_wr_mem_poison_sample_bind_Ch${c}.\$poison {
+   state s_wr_8221 (1) if (({dram_coverage_ifc_dram_clk.dram_Ch${c}_wecc0,dram_coverage_ifc_dram_clk.dram_Ch${c}_wecc1,dram_coverage_ifc_dram_clk.dram_Ch${c}_wecc2,dram_coverage_ifc_dram_clk.dram_Ch${c}_wecc3} ^ dram_coverage_ifc_dram_clk.dram_Ch${c}_err_inj_ecc) == 16'h1228);
+   }
+/*mb156858, evaluation is commented out in dram_mon
+. for ( $ch = 0; $ch < 4; $ch++ ) {
+. for ( $i = 0; $i < 8; $i++ ) {
+  sample ${prefix}dram_cs${ch}_bank_req_cntr_${i}_sample_bind_Ch${c}.\$cntr {
+  #include "mcusat_cs_bank_req_cntr_sample.vrh"
+   }
+.}
+.}
+*/
+#endif
+
+  // MCU Internal-subset for FC
+  sample ${prefix}mcu_rd_que_status_sample_bind_Ch${c}_l2b0.\$rd_que_status {
+  #include "mcusat_rd_que_sample.vrh"
+  }
+  sample ${prefix}mcu_rd_que_status_sample_bind_Ch${c}_l2b1.\$rd_que_status {
+  #include "mcusat_rd_que_sample.vrh"
+  }
+
+  sample ${prefix}mcu_wr_que_status_sample_bind_Ch${c}_l2b0.\$wr_que_status {
+  #include "mcusat_wr_que_sample.vrh"
+  }
+  sample ${prefix}mcu_wr_que_status_sample_bind_Ch${c}_l2b1.\$wr_que_status {
+  #include "mcusat_wr_que_sample.vrh"
+  }
+
+  // added to FC following 3 for Mode 10/25/05
+  sample ${prefix}mcu_fbd_dimm_cmd_a_sample_bind_Ch${c}.\$frame {
+  #include "mcusat_fbd_dimm_sample.vrh"
+   }
+  sample ${prefix}mcu_fbd_dimm_cmd_b_sample_bind_Ch${c}.\$frame {
+  #include "mcusat_fbd_dimm_sample.vrh"
+   }
+  sample ${prefix}mcu_fbd_dimm_cmd_c_sample_bind_Ch${c}.\$frame {
+  #include "mcusat_fbd_dimm_sample.vrh"
+   }
+
+
+. } # for $c
+
+
+// #ifndef MCU_INTF_COV  - use auto refresh signal (drif_refresh_req_picked) 
+
+//   #include "mcusat_pt_refresh_blk_bank_sample.vrh"
+//    }
+
+//   #include "mcusat_pt_refresh_blk_bank_sample.vrh"
+//    }
+
+//   #include "mcusat_pt_refresh_blk_bank_sample.vrh"
+//    }
+
+//   #include "mcusat_pt_refresh_blk_bank_sample.vrh"
+//    }
+// #endif
+
+  } // coverage_group
+
+  // ----------- start of coverage object 2 ----------------
+  // this coverage group samples on core clock
+  coverage_group dram_coverage_group_l2 {
+
+    const_sample_reference	= 1;	// ref. to sample vars. is constant
+    sample_event	=  @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+    //cov_weight			= 0;	// default, unless diag_done is true,
+					// i.e. diag. passes
+
+    sample dram_coverage_ifc_core_clk.dram_Ch0_dbg1_crc21  {
+. &toggle( 1 );
+      cov_weight = 1;
+    }
+
+    sample dram_coverage_ifc_core_clk.dram_Ch0_dbg1_err_event {
+. &toggle( 1 );
+      cov_weight = 1;
+    }
+
+    sample dram_coverage_ifc_core_clk.mcu0_drif_refresh_req_picked  {
+. &toggle( 1 );
+      cov_weight = 1;
+    }
+
+    sample dram_coverage_ifc_core_clk.mcu1_drif_refresh_req_picked  {
+. &toggle( 1 );
+      cov_weight = 1;
+    }
+
+    sample dram_coverage_ifc_core_clk.mcu2_drif_refresh_req_picked  {
+. &toggle( 1 );
+      cov_weight = 1;
+    }
+
+    sample dram_coverage_ifc_core_clk.mcu3_drif_refresh_req_picked  {
+. &toggle( 1 );
+      cov_weight = 1;
+    }
+
+    sample dram_coverage_ifc_core_clk.l2t0_mcu_addr_38to7[31:2]  {
+. &toggle( 30 );
+      cov_weight = 1;
+    }
+
+    sample dram_coverage_ifc_core_clk.l2t1_mcu_addr_38to7[31:2]  {
+. &toggle( 30 );
+      cov_weight = 1;
+    }
+
+    sample dram_coverage_ifc_core_clk.l2t0_mcu_rd_req_id[2:0]  {
+      state s_1   (3'b000);
+      state s_2   (3'b001);
+      state s_3   (3'b010);
+      state s_4   (3'b011);
+      state s_5   (3'b100);
+      state s_6   (3'b101);
+      state s_7   (3'b110);
+      state s_8   (3'b111);
+    }
+
+    sample dram_coverage_ifc_core_clk.l2t1_mcu_rd_req_id[2:0]  {
+      state s_1   (3'b000);
+      state s_2   (3'b001);
+      state s_3   (3'b010);
+      state s_4   (3'b011);
+      state s_5   (3'b100);
+      state s_6   (3'b101);
+      state s_7   (3'b110);
+      state s_8   (3'b111);
+    }
+
+    sample dram_coverage_ifc_core_clk.mcu_l2t0_rd_req_id_r0[2:0]  {
+      state s_1   (3'b000);
+      state s_2   (3'b001);
+      state s_3   (3'b010);
+      state s_4   (3'b011);
+      state s_5   (3'b100);
+      state s_6   (3'b101);
+      state s_7   (3'b110);
+      state s_8   (3'b111);
+    }
+
+    sample dram_coverage_ifc_core_clk.mcu_l2t1_rd_req_id_r0[2:0]  {
+      state s_1   (3'b000);
+      state s_2   (3'b001);
+      state s_3   (3'b010);
+      state s_4   (3'b011);
+      state s_5   (3'b100);
+      state s_6   (3'b101);
+      state s_7   (3'b110);
+      state s_8   (3'b111);
+    }
+
+    sample l2_mcu_intf_rd_bank0_rd_bank1 (dram_coverage_ifc_core_clk.mcu_l2t0_rd_ack)
+        {
+                state s_RD_BANK0_RD_BANK1 (1) if (dram_coverage_ifc_core_clk.mcu_l2t0_rd_ack === 1 &&
+                                                  dram_coverage_ifc_core_clk.mcu_l2t1_rd_ack === 1);
+        }
+
+    sample l2_mcu_intf_rd_bank0_wr_bank1 (dram_coverage_ifc_core_clk.mcu_l2t0_rd_ack)
+        {
+                state s_RD_BANK0_WR_BANK1 (1) if (dram_coverage_ifc_core_clk.mcu_l2t0_rd_ack === 1 &&
+                                                  dram_coverage_ifc_core_clk.mcu_l2t1_wr_ack === 1);
+        }
+
+    sample l2_mcu_intf_wr_bank0_rd_bank1 (dram_coverage_ifc_core_clk.mcu_l2t0_wr_ack)
+        {
+                state s_WR_BANK0_RD_BANK1 (1) if (dram_coverage_ifc_core_clk.mcu_l2t0_wr_ack === 1 &&
+                                                  dram_coverage_ifc_core_clk.mcu_l2t1_rd_ack === 1);
+        }
+
+    sample l2_mcu_intf_wr_bank0_wr_bank1   (dram_coverage_ifc_core_clk.mcu_l2t0_wr_ack)
+        {
+                state s_WR_BANK0_WR_BANK1 (1) if (dram_coverage_ifc_core_clk.mcu_l2t0_wr_ack === 1 &&
+                                                  dram_coverage_ifc_core_clk.mcu_l2t1_wr_ack === 1);
+        }
+ 
+    sample l2_mcu_intf_rd_bank0_req_rd_bank1 (dram_coverage_ifc_core_clk.l2t0_mcu_rd_req)
+        {
+                state s_RD_BANK0_REQ_RD_BANK1 (1) if (dram_coverage_ifc_core_clk.l2t0_mcu_rd_req === 1 &&
+                                                  dram_coverage_ifc_core_clk.l2t1_mcu_rd_req === 1);
+        }
+
+    sample l2_mcu_intf_wr_bank0_req_wr_bank1 (dram_coverage_ifc_core_clk.l2t0_mcu_wr_req)
+        {
+                state s_WR_BANK0_REQ_WR_BANK1 (1) if (dram_coverage_ifc_core_clk.l2t0_mcu_wr_req === 1 &&
+                                                  dram_coverage_ifc_core_clk.l2t1_mcu_wr_req === 1);
+        }
+
+    sample l2_mcu_intf_rd_bank0_req_wr_bank1 (dram_coverage_ifc_core_clk.l2t0_mcu_rd_req)
+        {
+                state s_RD_BANK0_REQ_WR_BANK1 (1) if (dram_coverage_ifc_core_clk.l2t0_mcu_rd_req === 1 &&
+                                                  dram_coverage_ifc_core_clk.l2t1_mcu_wr_req === 1);
+        }
+
+    sample l2_mcu_intf_wr_bank0_req_rd_bank1 (dram_coverage_ifc_core_clk.l2t0_mcu_wr_req)
+        {
+                state s_WR_BANK0_REQ_RD_BANK1 (1) if (dram_coverage_ifc_core_clk.l2t0_mcu_wr_req === 1 &&
+                                                  dram_coverage_ifc_core_clk.l2t1_mcu_rd_req === 1);
+        }
+
+    sample l2_mcu_intf_bank0_data_bank1 (dram_coverage_ifc_core_clk.l2b0_mcu_data_vld_r5)
+        {
+                state s_BANK0_DATA_BANK1 (1) if (dram_coverage_ifc_core_clk.l2b0_mcu_data_vld_r5 === 1 &&
+                                                  dram_coverage_ifc_core_clk.l2b1_mcu_data_vld_r5 === 1);
+        }
+
+
+. foreach $c (0) {
+
+
+//  #include "mcusat_rd_wr_l2if_sample.vrh"
+//   }
+
+//  #include "dram_rd_wr_l2if_sample.vrh"
+//   }
+  sample ${prefix}l2_mcu_intf_wr_data_mem_sample_bind_Ch${c}_l2b0.\$en_n_addr {
+  #include "mcusat_wr_data_mem_sample.vrh"
+   }
+  sample ${prefix}l2_mcu_intf_wr_data_mem_sample_bind_Ch${c}_l2b1.\$en_n_addr {
+  #include "mcusat_wr_data_mem_sample.vrh"
+   }
+/*mb156858, evaluation is commented out in dram_mon
+  sample ${prefix}dram_l2if_data_ret_fifo_en_sample_bind_Ch${c}.\$fifo_en {
+  #include "mcusat_l2if_data_ret_fifo_sample.vrh"
+   }
+*/
+  sample ${prefix}l2_mcu_intf_rd_sync_schmoo_sample_bind_Ch${c}_l2b0.\$rd_sync {
+  #include "mcusat_rd_sync_schmoo_sample.vrh"
+   }
+  sample ${prefix}l2_mcu_intf_rd_sync_schmoo_sample_bind_Ch${c}_l2b1.\$rd_sync {
+  #include "mcusat_rd_sync_schmoo_sample.vrh"
+   }
+  sample ${prefix}l2_mcu_intf_wr_sync_schmoo_sample_bind_Ch${c}_l2b0.\$wr_sync {
+  #include "mcusat_wr_sync_schmoo_sample.vrh"
+   }
+  sample ${prefix}l2_mcu_intf_wr_sync_schmoo_sample_bind_Ch${c}_l2b1.\$wr_sync {
+  #include "mcusat_wr_sync_schmoo_sample.vrh"
+   }
+  sample ${prefix}l2_mcu_intf_err_sample_bind_Ch${c}_l2b0.\$secc_pa_mecc_scb_secc_mecc {
+  #include "mcusat_err_l2if_sample.vrh"
+   }
+  sample ${prefix}l2_mcu_intf_err_sample_bind_Ch${c}_l2b1.\$secc_pa_mecc_scb_secc_mecc {
+  #include "mcusat_err_l2if_sample.vrh"
+   }
+/*mb156858, evaluation is commented out in dram_mon
+  sample ${prefix}dram_rd_q_full_n_req_sample_bind_Ch${c}.\$fsm_state {
+  #include "mcusat_rd_q_full_n_req_sample.vrh"
+  }
+*/
+  sample ${prefix}l2_mcu_intf_wr_q_full_n_req_sample_bind_Ch${c}_l2b0.\$fsm_state {
+  #include "mcusat_wr_q_full_n_req_sample.vrh"
+   }
+  sample ${prefix}l2_mcu_intf_wr_q_full_n_req_sample_bind_Ch${c}_l2b1.\$fsm_state {
+  #include "mcusat_wr_q_full_n_req_sample.vrh"
+   }
+  sample ${prefix}l2_mcu_intf_mem_poison_sample_bind_Ch${c}.\$ecc {
+  #include "mcusat_mem_poison_sample.vrh"
+   }
+  sample ${prefix}mcu_err_sts_sample_bind_Ch${c}_l2b0.\$err_en_n_sts {
+  #include "mcusat_err_sts_sample.vrh"
+   }
+  sample ${prefix}mcu_err_sts_sample_bind_Ch${c}_l2b1.\$err_en_n_sts {
+  #include "mcusat_err_sts_sample.vrh"
+   }
+/*mb156858, evaluation is commented out in dram_mon
+  sample ${prefix}dram_err_intr_ucb_trig1_sample_bind_Ch${c}.\$err_intr_ucb_trig1 {
+  #include "mcusat_err_intr_ucb_trig1_sample.vrh"
+   }
+*/
+/*  move from internal to interface */
+  sample ${prefix}mcu_fbd_cmd_a_sample_bind_Ch${c}.\$cmd {
+  #include "mcusat_ch${c}_fbd_cmd_a_sample.vrh"
+   }
+  sample ${prefix}mcu_fbd_cmd_b_sample_bind_Ch${c}.\$cmd {
+  #include "mcusat_fbd_cmd_b_sample.vrh"
+   }
+  sample ${prefix}mcu_fbd_cmd_c_sample_bind_Ch${c}.\$cmd {
+  #include "mcusat_ch${c}_fbd_cmd_c_sample.vrh"
+   }
+  sample ${prefix}mcu_fbd_nb_ts0_sample_bind_Ch${c}.\$frame {
+  #include "mcusat_fbd_nb_frame_sample.vrh"
+   }
+  sample ${prefix}mcu_fbd_nb_stspar_sample_bind_Ch${c}.\$frame {
+  #include "mcusat_fbd_nb_frame1_sample.vrh"
+   }
+  sample ${prefix}mcu_fbd_nb_idle_sample_bind_Ch${c}.\$frame {
+  #include "mcusat_fbd_nb_frame_sample.vrh"
+   }
+  sample ${prefix}mcu_fbd_nb_alrt_sample_bind_Ch${c}.\$frame {
+  #include "mcusat_fbd_nb_frame_sample.vrh"
+   }
+  sample ${prefix}mcu_fbd_nb_alrt_assrt_sample_bind_Ch${c}.\$frame {
+  #include "mcusat_fbd_nb_frame1_sample.vrh"
+   }
+  sample ${prefix}mcu_fbd_nb_nbde_sample_bind_Ch${c}.\$frame {
+  #include "mcusat_fbd_nb_frame1_sample.vrh"
+   }
+  sample ${prefix}mcu_fbd_sb_frame_sample_bind_Ch${c}.\$frame {
+  #include "mcusat_ch${c}_fbd_sb_frame_sample.vrh"
+   }
+. } # for $c
+  } // coverage_group 2
+
+
+
+  // ----------- start of coverage object 3(jbus) ----------------
+  // this coverage group samples on jbus clock
+  coverage_group dram_coverage_group_jbus {
+
+    const_sample_reference	= 1;	// ref. to sample vars. is constant
+    sample_event	=  @(posedge dram_coverage_ifc_jbus_clk.jbus_gclk);
+    //cov_weight			= 0;	// default, unless diag_done is true,
+					// i.e. diag. passes
+
+. foreach $c (0) {
+    // moved dbg objs to jbus grp from dram_coverage grp -ncr(10/20/05)
+  sample ${prefix}mcu_dbg_err_sample_bind_Ch${c}.\$dbgerr {
+  #include "mcusat_dbg_err_sample.vrh"
+   }
+  sample ${prefix}mcu_dbg_rd_req_sample_bind_Ch${c}.\$dbgrd {
+  #include "mcusat_dbg_rd_req_sample.vrh"
+   }
+  sample ${prefix}mcu_dbg_wr_req_sample_bind_Ch${c}.\$dbgwr {
+  #include "mcusat_dbg_wr_req_sample.vrh"
+   }
+. }
+  sample ${prefix}mcu_ucb_req_pend_ack_int_busy_sample_bind_Ch0.\$ucb_etc {
+  #include "mcusat_ucb_req_pend_ack_int_busy_sample.vrh"
+   }
+  /*sample ${prefix}mcu_ucb_req_pend_ack_int_busy_sample_bind_Ch1.\$ucb_etc {
+  #include "mcusat_ucb_req_pend_ack_int_busy_sample.vrh"
+   }
+
+  sample ${prefix}mcu_ucb_req_pend_ack_int_busy_sample_bind_Ch2.\$ucb_etc {
+  #include "mcusat_ucb_req_pend_ack_int_busy_sample.vrh"
+   }
+  sample ${prefix}mcu_ucb_req_pend_ack_int_busy_sample_bind_Ch3.\$ucb_etc {
+  #include "mcusat_ucb_req_pend_ack_int_busy_sample.vrh"
+   }*/
+  sample ${prefix}mcu_ncu_intf_sample_bind_Ch0.\$intr {
+  #include "mcusat_mcu_ncu_intr_sample.vrh"
+   }
+/*  sample ${prefix}mcu_ncu_intf_sample_bind_Ch1.\$intr {
+  #include "mcusat_mcu_ncu_intr_sample.vrh"
+   }
+  sample ${prefix}mcu_ncu_intf_sample_bind_Ch2.\$intr {
+  #include "mcusat_mcu_ncu_intr_sample.vrh"
+   }
+  sample ${prefix}mcu_ncu_intf_sample_bind_Ch3.\$intr {
+  #include "mcusat_mcu_ncu_intr_sample.vrh"
+   }*/
+
+  } // coverage_group 3
+
+//  coverage_group mcu_l2t_error_l2t1_coverage_group
+//  {
+//    sample_event           = sync (ANY, mcu01_secc_evnt_trig );
+//    #include "mcu_fc_err_send_l2t0.vrh"
+
+//  } // mcu_l2t_error_l2t1_coverage_group
+
+  coverage_group mcu_l2t_error_l2t0_coverage_group
+  {
+    const_sample_reference	= 1;	// ref. to sample vars. is constant
+    sample_event           = sync (ANY, mcu01_secc_error_evnt_trig, mcu01_scb_secc_error_evnt_trig, mcu01_mecc_error_evnt_trig, mcu01_scb_mecc_error_evnt_trig, mcu01_secc_scbs_error_evnt_trig, mcu01_secc_mecc_error_evnt_trig, mcu01_secc_scbm_error_evnt_trig, mcu01_scb_mecc1_error_evnt_trig, mcu01_scb_scbm_error_evnt_trig, mcu01_mecc_scbm_error_evnt_trig, mcu012_scb_secc_error_evnt_trig, mcu012_secc_error_evnt_trig, mcu0123_secc_error_evnt_trig, mcu0123_scb_secc_error_evnt_trig, mcu0123_all_error_evnt_trig );
+    #include "mcu_fc_err_send_l2t0_window.vrh"
+
+  } // mcu_l2t_error_l2t0_coverage_group
+
+// `ifdef IDT_AMB
+//   coverage_group mcu_fbd_cmda_sb_err_coverage_group
+//   {
+//     sample_event            = sync (ANY, mcu0_fbd_cmd_a_err_evnt_trig); //, mcu0_fbd_cmd_b_err_evnt_trig, mcu0_fbd_cmd_c_err_evnt_trig);
+//     #include "mcusat_fbd_cmda_sb_err_sample.vrh"
+//   } //mcu_fbd_cmda_sb_err_coverage_group
+// `endif
+
+  task new();
+  task set_cov_cond_bits ();
+
+}
+
+/////////////////////////////////////////////////////////////////
+// Class creation 
+/////////////////////////////////////////////////////////////////
+
+task ${prefix}dram_coverage::new() {
+
+
+  bit coverage_on;
+  integer j;
+
+  if (get_plus_arg (CHECK, "dram_coverage") ||
+    get_plus_arg (CHECK, "coverage_on")) {
+    coverage_on = 1;
+  } else {
+    coverage_on = 0;
+  }
+
+  if (coverage_on) {
+
+    dram_coverage_group	= new();
+    dram_coverage_group_l2	= new();
+   
+    set_cov_cond_bits();
+
+    printf("\n\n        %d : Coverage turned on for DRAM objects\n\n", get_time(LO));
+
+    fork {
+      //@ (posedge dram_coverage_ifc_core_clk.cmp_diag_done); //change this to be based on all cores
+      //@ (posedge dram_diag_done); //change this to be based on all cores
+      //while (dram_diag_done == 0) { }  //change this to be based on all cores
+      //printf("\n\n        %d : Waiting on dram_diag_done \n\n", get_time(LO));
+#ifdef DRAM
+//       sync(ANY,dram_diag_done);
+#else
+//      @ (posedge dram_coverage_ifc_core_clk.cmp_diag_done); //change this to be based on all cores
+#endif
+      //printf("\n\n        %d : After dram_diag_done \n\n", get_time(LO));
+      dram_coverage_group.set_cov_weight(1);
+      dram_coverage_group_l2.set_cov_weight(1);
+      coverage_save_database(1);
+      printf("\n\n        %d : Coverage for DRAM objects generated\n\n", get_time(LO));
+    } join none
+  } // if coverage_on
+} 
+
+
+task ${prefix}dram_coverage:: set_cov_cond_bits ()
+{
+`ifdef IDT_AMB
+fork
+        {
+           while (1)
+           {
+                @(posedge dram_coverage_ifc_dram_clk.dram_gclk);
+                a_cmd = mcu_fbd_cmd_a_sample_bind_Ch0.\$cmd;
+                //printf("%d: %x CMD_A_1",get_time(LO), a_cmd);
+                //printf("%d: %x PS_IN",get_time(LO), dram_coverage_ifc_dram_clk.ps_in);
+                //printf("%d: %b SCLK",get_time(LO), dram_coverage_ifc_link_clk.sclk);
+                while (dram_coverage_ifc_dram_clk.ps_in == 0)//tb_top.crc_errinject_top.sb_crc_errinj0a_p_ps_in
+                {
+                  if (a_cmd == 5'b00000)
+                  {
+                    if (dram_coverage_ifc_dram_clk.ps_in !== dram_coverage_ifc_dram_clk.ps_out)
+                    {
+                      // printf("%d: Error trigger",get_time(LO));
+                      trigger (mcu0_fbd_cmd_a_err_evnt_trig);
+                    }
+                    //@(posedge dram_coverage_ifc_link_clk.sclk); //tb_top.mcu_fmon.sclk
+                    //a_cmd = mcu_fbd_cmd_a_sample_bind_Ch0.\$cmd;
+                  }
+                  @(posedge dram_coverage_ifc_link_clk.sclk); //tb_top.mcu_fmon.sclk
+                }
+                // printf("\n%d: %x CMD_A_2",get_time(LO), a_cmd);
+                // printf("\n%d: %x PS_IN",get_time(LO), dram_coverage_ifc_dram_clk.ps_in);
+                for (i=1; i<5; i++)
+                {
+                  if (dram_coverage_ifc_dram_clk.ps_in !== dram_coverage_ifc_dram_clk.ps_out)
+                    trigger (mcu0_fbd_cmd_a_err_evnt_trig);
+                  @(posedge dram_coverage_ifc_link_clk.sclk);
+                 }
+            }
+        } 
+join none
+`endif
+                  
+fork
+        {
+           while (1)
+           {
+                @(posedge l2_to_mcu0_ras_intf.clk);
+                  mcu_secc0 = dram_coverage_ifc_core_clk.mcu0_l2t0_secc_err_r3;
+                  mcu_secc1 = dram_coverage_ifc_core_clk.mcu1_l2t0_secc_err_r3;
+                  mcu_scb_secc0 = dram_coverage_ifc_core_clk.mcu0_l2t0_scb_secc_err;
+                  mcu_scb_secc1 = dram_coverage_ifc_core_clk.mcu1_l2t0_scb_secc_err;
+                  mcu_mecc0 = dram_coverage_ifc_core_clk.mcu0_l2t0_mecc_err_r3;
+                  mcu_mecc1 = dram_coverage_ifc_core_clk.mcu1_l2t0_mecc_err_r3;
+                  mcu_scb_mecc0 = dram_coverage_ifc_core_clk.mcu0_l2t0_scb_mecc_err;
+                  mcu_scb_mecc1 = dram_coverage_ifc_core_clk.mcu1_l2t0_scb_mecc_err;
+                  mcu_secc_both = {mcu_secc1,mcu_secc0};
+                  mcu_scb_secc_both = {mcu_scb_secc1,mcu_scb_secc0};
+                  mcu_mecc_both = {mcu_mecc1,mcu_mecc0};
+                  mcu_scb_mecc_both = {mcu_scb_mecc1,mcu_scb_mecc0};
+                  if ( dram_coverage_ifc_core_clk.mcu0_l2t0_data_vld_d3 === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_data_vld_d3 === 1'b1 )
+                  trigger (mcu01_secc_evnt_trig);
+           }
+        }
+join none
+
+fork
+        {
+          integer i ;
+           while (1)
+           {
+                @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                  mcu0_data_vld_3_secc = mcu0_data_vld_2_secc;
+                  mcu0_data_vld_2_secc = mcu0_data_vld_1_secc;
+                  mcu0_data_vld_1_secc = dram_coverage_ifc_core_clk.mcu0_l2t0_data_vld_r0;
+                  mcu1_data_vld_3_secc = mcu1_data_vld_2_secc;
+                  mcu1_data_vld_2_secc = mcu1_data_vld_1_secc;
+                  mcu1_data_vld_1_secc = dram_coverage_ifc_core_clk.mcu1_l2t0_data_vld_r0;
+                  mcu2_data_vld_3_secc = mcu2_data_vld_2_secc;
+                  mcu2_data_vld_2_secc = mcu2_data_vld_1_secc;
+                  mcu2_data_vld_1_secc = dram_coverage_ifc_core_clk.mcu2_l2t0_data_vld_r0;
+                  mcu3_data_vld_3_secc = mcu3_data_vld_2_secc;
+                  mcu3_data_vld_2_secc = mcu3_data_vld_1_secc;
+                  mcu3_data_vld_1_secc = dram_coverage_ifc_core_clk.mcu3_l2t0_data_vld_r0;
+                    {
+                     error_bits_secc[0] =  ( mcu0_data_vld_3_secc === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_secc_err_r3 === 1'b1 );
+                     error_bits_secc[1] =  ( mcu1_data_vld_3_secc === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_secc_err_r3 === 1'b1 );
+                     error_bits_secc[2] =  ( mcu2_data_vld_3_secc === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_secc_err_r3 === 1'b1 );
+                     error_bits_secc[3] =  ( mcu3_data_vld_3_secc === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_secc_err_r3 === 1'b1 );
+                   }
+                   for (i=0 ; i<4 ; i++)
+                     {
+                       if (error_bits_secc[i] == 1)
+                       error_count_secc = error_count_secc + 1 ;
+                     }
+
+                    if (error_bits_secc !==4'b0)
+                       start_counter_secc = 1;
+                       if (start_counter_secc) 
+                       mcu0_mcu1_secc_counter++ ;
+                     
+                    if (mcu0_mcu1_secc_counter <= 20)
+                     { 
+                       if (error_count_secc == 2)
+                        {
+                         trigger (mcu01_secc_error_evnt_trig );
+                         error_count_secc = 0 ;
+                         start_counter_secc = 0;
+                         @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                         mcu0_mcu1_secc_counter = 0 ;
+                        }
+                     }
+                    else 
+                      {
+                         error_count_secc = 0 ;
+                         start_counter_secc = 0;
+                         mcu0_mcu1_secc_counter = 0 ;
+                       }
+         }
+        }
+join none
+
+fork
+        {
+          integer i ;
+           while (1)
+           {    
+                @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                  mcu0_data_vld_3_scb_secc = mcu0_data_vld_2_scb_secc;
+                  mcu0_data_vld_2_scb_secc = mcu0_data_vld_1_scb_secc;
+                  mcu0_data_vld_1_scb_secc = dram_coverage_ifc_core_clk.mcu0_l2t0_data_vld_r0;
+                  mcu1_data_vld_3_scb_secc = mcu1_data_vld_2_scb_secc;
+                  mcu1_data_vld_2_scb_secc = mcu1_data_vld_1_scb_secc;
+                  mcu1_data_vld_1_scb_secc = dram_coverage_ifc_core_clk.mcu1_l2t0_data_vld_r0;
+                  mcu2_data_vld_3_scb_secc = mcu2_data_vld_2_scb_secc;
+                  mcu2_data_vld_2_scb_secc = mcu2_data_vld_1_scb_secc;
+                  mcu2_data_vld_1_scb_secc = dram_coverage_ifc_core_clk.mcu2_l2t0_data_vld_r0;
+                  mcu3_data_vld_3_scb_secc = mcu3_data_vld_2_scb_secc;
+                  mcu3_data_vld_2_scb_secc = mcu3_data_vld_1_scb_secc;
+                  mcu3_data_vld_1_scb_secc = dram_coverage_ifc_core_clk.mcu3_l2t0_data_vld_r0;
+
+                    {
+                     error_bits_scb_secc[0] =  ( mcu0_data_vld_3_scb_secc === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_scb_secc_err === 1'b1 );
+                     error_bits_scb_secc[1] =  ( mcu1_data_vld_3_scb_secc === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_scb_secc_err === 1'b1 );
+                     error_bits_scb_secc[2] =  ( mcu2_data_vld_3_scb_secc === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_scb_secc_err === 1'b1 );
+                     error_bits_scb_secc[3] =  ( mcu3_data_vld_3_scb_secc === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_scb_secc_err === 1'b1 );
+                   }
+                   for (i=0 ; i<4 ; i++)
+                     { 
+                       if (error_bits_scb_secc[i] == 1)
+                       error_count_scb_secc = error_count_scb_secc + 1 ;
+                     }
+
+                    if (error_bits_scb_secc !==4'b0)
+                       start_counter_scb_secc = 1;
+                       if (start_counter_scb_secc)
+                       mcu0_mcu1_scb_secc_counter++ ;
+                    
+                    if (mcu0_mcu1_scb_secc_counter <= 20)
+                     { 
+                       if (error_count_scb_secc == 2)
+                        {
+                         trigger (mcu01_scb_secc_error_evnt_trig );
+                         error_count_scb_secc = 0 ;
+                         start_counter_scb_secc = 0;
+                         @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                         mcu0_mcu1_scb_secc_counter = 0 ;
+                        }
+                     }
+                    else
+                      {
+                         error_count_scb_secc = 0 ;
+                         start_counter_scb_secc = 0;
+                         mcu0_mcu1_scb_secc_counter = 0 ;
+                       }
+
+         }
+        }
+join none
+
+fork    
+        { 
+          integer i ;
+           while (1)
+           {    
+                @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                  mcu0_data_vld_3_mecc = mcu0_data_vld_2_mecc;
+                  mcu0_data_vld_2_mecc = mcu0_data_vld_1_mecc;
+                  mcu0_data_vld_1_mecc = dram_coverage_ifc_core_clk.mcu0_l2t0_data_vld_r0;
+                  mcu1_data_vld_3_mecc = mcu1_data_vld_2_mecc;
+                  mcu1_data_vld_2_mecc = mcu1_data_vld_1_mecc;
+                  mcu1_data_vld_1_mecc = dram_coverage_ifc_core_clk.mcu1_l2t0_data_vld_r0;
+                  mcu2_data_vld_3_mecc = mcu2_data_vld_2_mecc;
+                  mcu2_data_vld_2_mecc = mcu2_data_vld_1_mecc;
+                  mcu2_data_vld_1_mecc = dram_coverage_ifc_core_clk.mcu2_l2t0_data_vld_r0;
+                  mcu3_data_vld_3_mecc = mcu3_data_vld_2_mecc;
+                  mcu3_data_vld_2_mecc = mcu3_data_vld_1_mecc;
+                  mcu3_data_vld_1_mecc = dram_coverage_ifc_core_clk.mcu3_l2t0_data_vld_r0;
+                    {
+                     error_bits_mecc[0] =  ( mcu0_data_vld_3_mecc === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_mecc_err_r3 === 1'b1 );
+                     error_bits_mecc[1] =  ( mcu1_data_vld_3_mecc === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_mecc_err_r3 === 1'b1 );
+                     error_bits_mecc[2] =  ( mcu2_data_vld_3_mecc === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_mecc_err_r3 === 1'b1 );
+                     error_bits_mecc[3] =  ( mcu3_data_vld_3_mecc === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_mecc_err_r3 === 1'b1 );
+                   }
+
+                   for (i=0 ; i<4 ; i++)
+                     {
+                       if (error_bits_mecc[i] == 1)
+                       error_count_mecc = error_count_mecc + 1 ;
+                     }
+
+                    if (error_bits_mecc !==4'b0)
+                       start_counter_mecc = 1;
+                       if (start_counter_mecc)
+                       mcu0_mcu1_mecc_counter++ ;
+
+                    if (mcu0_mcu1_mecc_counter <= 20)
+                     {
+                       if (error_count_mecc == 2)
+                        {
+                         trigger (mcu01_mecc_error_evnt_trig );
+                         error_count_mecc = 0 ;
+                         start_counter_mecc = 0;
+                         @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                         mcu0_mcu1_mecc_counter = 0 ;
+                        }
+                     }
+                    else
+                      {
+                         error_count_mecc = 0 ;
+                         start_counter_mecc = 0;
+                         mcu0_mcu1_mecc_counter = 0 ;
+                       }
+
+         }
+        }
+join none
+
+fork    
+        { 
+          integer i ;
+           while (1)
+           {    
+                @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                  mcu0_data_vld_3_scb_mecc = mcu0_data_vld_2_scb_mecc;
+                  mcu0_data_vld_2_scb_mecc = mcu0_data_vld_1_scb_mecc;
+                  mcu0_data_vld_1_scb_mecc = dram_coverage_ifc_core_clk.mcu0_l2t0_data_vld_r0;
+                  mcu1_data_vld_3_scb_mecc = mcu1_data_vld_2_scb_mecc;
+                  mcu1_data_vld_2_scb_mecc = mcu1_data_vld_1_scb_mecc;
+                  mcu1_data_vld_1_scb_mecc = dram_coverage_ifc_core_clk.mcu1_l2t0_data_vld_r0;
+                  mcu2_data_vld_3_scb_mecc = mcu2_data_vld_2_scb_mecc;
+                  mcu2_data_vld_2_scb_mecc = mcu2_data_vld_1_scb_mecc;
+                  mcu2_data_vld_1_scb_mecc = dram_coverage_ifc_core_clk.mcu2_l2t0_data_vld_r0;
+                  mcu3_data_vld_3_scb_mecc = mcu3_data_vld_2_scb_mecc;
+                  mcu3_data_vld_2_scb_mecc = mcu3_data_vld_1_scb_mecc;
+                  mcu3_data_vld_1_scb_mecc = dram_coverage_ifc_core_clk.mcu3_l2t0_data_vld_r0;
+
+                    {
+                     error_bits_scb_mecc[0] =  ( mcu0_data_vld_3_scb_mecc === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_scb_mecc_err === 1'b1 );
+                     error_bits_scb_mecc[1] =  ( mcu1_data_vld_3_scb_mecc === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_scb_mecc_err === 1'b1 );
+                     error_bits_scb_mecc[2] =  ( mcu2_data_vld_3_scb_mecc === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_scb_mecc_err === 1'b1 );
+                     error_bits_scb_mecc[3] =  ( mcu3_data_vld_3_scb_mecc === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_scb_mecc_err === 1'b1 );
+                   }
+                   for (i=0 ; i<4 ; i++)
+                     {
+                       if (error_bits_scb_mecc[i] == 1)
+                       error_count_scb_mecc = error_count_scb_mecc + 1 ;
+                     }
+
+                    if (error_bits_scb_mecc !==4'b0)
+                       start_counter_scb_mecc = 1;
+                       if (start_counter_scb_mecc)
+                       mcu0_mcu1_scb_mecc_counter++ ;
+
+                    if (mcu0_mcu1_scb_mecc_counter <= 20)
+                     {
+                       if (error_count_scb_mecc == 2)
+                        {
+                         trigger (mcu01_scb_mecc_error_evnt_trig );
+                         error_count_scb_mecc = 0 ;
+                         start_counter_scb_mecc = 0;
+                         @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                         mcu0_mcu1_scb_mecc_counter = 0 ;
+                        }
+                     }
+                    else
+                      {
+                         error_count_scb_mecc = 0 ;
+                         start_counter_scb_mecc = 0;
+                         mcu0_mcu1_scb_mecc_counter = 0 ;
+                       }
+                    
+         }
+        }
+join none
+
+fork
+        {
+           while (1)
+           {
+                @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                  mcu0_data_vld_3_sscbsecc = mcu0_data_vld_2_sscbsecc;
+                  mcu0_data_vld_2_sscbsecc = mcu0_data_vld_1_sscbsecc; 
+                  mcu0_data_vld_1_sscbsecc = dram_coverage_ifc_core_clk.mcu0_l2t0_data_vld_r0;
+                  mcu1_data_vld_3_sscbsecc = mcu1_data_vld_2_sscbsecc;
+                  mcu1_data_vld_2_sscbsecc = mcu1_data_vld_1_sscbsecc;
+                  mcu1_data_vld_1_sscbsecc = dram_coverage_ifc_core_clk.mcu1_l2t0_data_vld_r0;
+                  mcu2_data_vld_3_sscbsecc = mcu2_data_vld_2_sscbsecc;
+                  mcu2_data_vld_2_sscbsecc = mcu2_data_vld_1_sscbsecc;
+                  mcu2_data_vld_1_sscbsecc = dram_coverage_ifc_core_clk.mcu2_l2t0_data_vld_r0;
+                  mcu3_data_vld_3_sscbsecc = mcu3_data_vld_2_sscbsecc;
+                  mcu3_data_vld_2_sscbsecc = mcu3_data_vld_1_sscbsecc;
+                  mcu3_data_vld_1_sscbsecc = dram_coverage_ifc_core_clk.mcu3_l2t0_data_vld_r0;
+                  
+                  if ( (mcu0_data_vld_3_sscbsecc === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_secc_err_r3 === 1'b1) | (mcu1_data_vld_3_sscbsecc === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_secc_err_r3 === 1'b1) | (mcu2_data_vld_3_sscbsecc === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_secc_err_r3 === 1'b1) | (mcu3_data_vld_3_sscbsecc === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_secc_err_r3 === 1'b1) && (start_counter_sscbsecc == 0) )
+                   {
+                     start_counter_sscbsecc = 1;
+                     mcu0_mcu1_secc_scbs_counter = 0;
+                   }
+                  else if ( (mcu0_data_vld_3_sscbsecc === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_scb_secc_err === 1'b1) | (mcu1_data_vld_3_sscbsecc === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_scb_secc_err === 1'b1) | (mcu2_data_vld_3_sscbsecc === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_scb_secc_err === 1'b1) | (mcu3_data_vld_3_sscbsecc === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_scb_secc_err === 1'b1) && (start_counter_sscbsecc == 1) && (mcu0_mcu1_secc_scbs_counter <= 20) )
+                     {
+                         trigger (mcu01_secc_scbs_error_evnt_trig);
+                         start_counter_sscbsecc = 0;
+                         @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                         mcu0_mcu1_secc_scbs_counter = 0;
+                     }
+                  else if ( (mcu0_data_vld_3_sscbsecc === 1'b0 && dram_coverage_ifc_core_clk.mcu0_l2t0_secc_err_r3 === 1'b0) && (mcu1_data_vld_3_sscbsecc === 1'b0 && dram_coverage_ifc_core_clk.mcu1_l2t0_scb_secc_err === 1'b0) | (mcu2_data_vld_3_sscbsecc === 1'b0 && dram_coverage_ifc_core_clk.mcu2_l2t0_secc_err_r3 === 1'b0) | (mcu3_data_vld_3_sscbsecc === 1'b0 && dram_coverage_ifc_core_clk.mcu3_l2t0_secc_err_r3 === 1'b0) && (start_counter_sscbsecc == 1) && (mcu0_mcu1_secc_scbs_counter <= 20) )
+                     {
+                      mcu0_mcu1_secc_scbs_counter = mcu0_mcu1_secc_scbs_counter + 1;
+                     }
+                  else if (( start_counter_sscbsecc == 1) && (mcu0_mcu1_secc_scbs_counter >= 20))
+                     {
+                      start_counter_sscbsecc = 0;
+                      mcu0_mcu1_secc_scbs_counter = 0;
+                     }
+           }
+        }
+join none
+
+fork
+        {
+           while (1)
+           {
+                @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                  mcu0_data_vld_3_smecc = mcu0_data_vld_2_smecc;
+                  mcu0_data_vld_2_smecc = mcu0_data_vld_1_smecc;
+                  mcu0_data_vld_1_smecc = dram_coverage_ifc_core_clk.mcu0_l2t0_data_vld_r0;
+                  mcu1_data_vld_3_smecc = mcu1_data_vld_2_smecc;
+                  mcu1_data_vld_2_smecc = mcu1_data_vld_1_smecc;
+                  mcu1_data_vld_1_smecc = dram_coverage_ifc_core_clk.mcu1_l2t0_data_vld_r0;
+                  mcu2_data_vld_3_smecc = mcu2_data_vld_2_smecc;
+                  mcu2_data_vld_2_smecc = mcu2_data_vld_1_smecc;
+                  mcu2_data_vld_1_smecc = dram_coverage_ifc_core_clk.mcu2_l2t0_data_vld_r0;
+                  mcu3_data_vld_3_smecc = mcu3_data_vld_2_smecc;
+                  mcu3_data_vld_2_smecc = mcu3_data_vld_1_smecc;
+                  mcu3_data_vld_1_smecc = dram_coverage_ifc_core_clk.mcu3_l2t0_data_vld_r0;
+
+                  if ( (mcu0_data_vld_3_smecc === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_secc_err_r3 === 1'b1) | (mcu1_data_vld_3_smecc === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_secc_err_r3 === 1'b1) | (mcu2_data_vld_3_smecc === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_secc_err_r3 === 1'b1) | (mcu3_data_vld_3_smecc === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_secc_err_r3 === 1'b1) && (start_counter_smecc == 0) )
+                   {
+                     start_counter_smecc = 1;
+                     mcu0_mcu1_secc_mecc_counter = 0;
+                   }
+                  else if ( (mcu0_data_vld_3_smecc === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_mecc_err_r3 === 1'b1) | (mcu1_data_vld_3_smecc === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_mecc_err_r3 === 1'b1) | (mcu2_data_vld_3_smecc === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_mecc_err_r3 === 1'b1) | (mcu3_data_vld_3_smecc === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_mecc_err_r3 === 1'b1) && (start_counter_smecc == 1) && (mcu0_mcu1_secc_mecc_counter <= 20) )
+                     {
+                         trigger (mcu01_secc_mecc_error_evnt_trig);
+                     // printf("\n%d: %d AFTER_TRIG",get_time(LO), mcu0_mcu1_secc_mecc_counter );
+                         start_counter_smecc = 0;
+                         @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                         mcu0_mcu1_secc_mecc_counter = 0;
+                     }
+                  else if ( (mcu0_data_vld_3_smecc === 1'b0 && dram_coverage_ifc_core_clk.mcu0_l2t0_secc_err_r3 === 1'b0) && (mcu1_data_vld_3_smecc === 1'b0 && dram_coverage_ifc_core_clk.mcu1_l2t0_scb_secc_err === 1'b0) | (mcu2_data_vld_3_smecc === 1'b0 && dram_coverage_ifc_core_clk.mcu2_l2t0_secc_err_r3 === 1'b0) | (mcu3_data_vld_3_smecc === 1'b0 && dram_coverage_ifc_core_clk.mcu3_l2t0_secc_err_r3 === 1'b0) && (start_counter_smecc == 1) && (mcu0_mcu1_secc_mecc_counter <= 20) )
+                     {
+                      mcu0_mcu1_secc_mecc_counter = mcu0_mcu1_secc_mecc_counter + 1 ;
+                     // printf("\n%d: %d LOOP_MCU_MCU1_SMECC_COUNT",get_time(LO), mcu0_mcu1_secc_mecc_counter );
+                     }
+                  else if (( start_counter_smecc == 1) && (mcu0_mcu1_secc_mecc_counter >= 20))
+                     {
+                      start_counter_smecc = 0 ;
+                      mcu0_mcu1_secc_mecc_counter = 0;
+                     }
+           }
+        }
+join none
+
+fork
+        {
+           while (1)
+           {
+                @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                  mcu0_data_vld_3_sscbmecc = mcu0_data_vld_2_sscbmecc;
+                  mcu0_data_vld_2_sscbmecc = mcu0_data_vld_1_sscbmecc; 
+                  mcu0_data_vld_1_sscbmecc = dram_coverage_ifc_core_clk.mcu0_l2t0_data_vld_r0;
+                  mcu1_data_vld_3_sscbmecc = mcu1_data_vld_2_sscbmecc;
+                  mcu1_data_vld_2_sscbmecc = mcu1_data_vld_1_sscbmecc;
+                  mcu1_data_vld_1_sscbmecc = dram_coverage_ifc_core_clk.mcu1_l2t0_data_vld_r0;
+                  mcu2_data_vld_3_sscbmecc = mcu2_data_vld_2_sscbmecc;
+                  mcu2_data_vld_2_sscbmecc = mcu2_data_vld_1_sscbmecc;
+                  mcu2_data_vld_1_sscbmecc = dram_coverage_ifc_core_clk.mcu2_l2t0_data_vld_r0;
+                  mcu3_data_vld_3_sscbmecc = mcu3_data_vld_2_sscbmecc;
+                  mcu3_data_vld_2_sscbmecc = mcu3_data_vld_1_sscbmecc;
+                  mcu3_data_vld_1_sscbmecc = dram_coverage_ifc_core_clk.mcu3_l2t0_data_vld_r0;
+                  
+                  if ( (mcu0_data_vld_3_sscbmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_secc_err_r3 === 1'b1) | (mcu1_data_vld_3_sscbmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_secc_err_r3 === 1'b1) | (mcu2_data_vld_3_sscbmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_secc_err_r3 === 1'b1) | (mcu3_data_vld_3_sscbmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_secc_err_r3 === 1'b1) && (start_counter_sscbmecc == 0) )
+                   {
+                     start_counter_sscbmecc = 1;
+                     mcu0_mcu1_secc_scbm_counter = 0;
+                   }
+                  else if ( (mcu0_data_vld_3_sscbmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_scb_mecc_err === 1'b1) | (mcu1_data_vld_3_sscbmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_scb_mecc_err === 1'b1) | (mcu2_data_vld_3_sscbmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_scb_mecc_err === 1'b1) | (mcu3_data_vld_3_sscbmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_scb_mecc_err === 1'b1) && (start_counter_sscbmecc == 1) && (mcu0_mcu1_secc_scbm_counter <= 20) )
+                     {
+                         trigger (mcu01_secc_scbm_error_evnt_trig);
+                         start_counter_sscbmecc = 0;
+                         @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                         mcu0_mcu1_secc_scbm_counter = 0;
+                     }
+                  else if ( (mcu0_data_vld_3_sscbmecc === 1'b0 && dram_coverage_ifc_core_clk.mcu0_l2t0_secc_err_r3 === 1'b0) && (mcu1_data_vld_3_sscbmecc === 1'b0 && dram_coverage_ifc_core_clk.mcu1_l2t0_scb_secc_err === 1'b0) | (mcu2_data_vld_3_sscbmecc === 1'b0 && dram_coverage_ifc_core_clk.mcu2_l2t0_secc_err_r3 === 1'b0) | (mcu3_data_vld_3_sscbmecc === 1'b0 && dram_coverage_ifc_core_clk.mcu3_l2t0_secc_err_r3 === 1'b0) && (start_counter_sscbmecc == 1) && (mcu0_mcu1_secc_scbm_counter <= 20) )
+                     {
+                      mcu0_mcu1_secc_scbm_counter = mcu0_mcu1_secc_scbm_counter + 1;
+                     }
+                  else if (( start_counter_sscbmecc == 1) && (mcu0_mcu1_secc_scbm_counter >= 20))
+                     {
+                      start_counter_sscbmecc = 0;
+                      mcu0_mcu1_secc_scbm_counter = 0;
+                     }
+           }
+        }
+join none
+
+fork
+        {
+           while (1)
+           {
+                @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                  mcu0_data_vld_3_scbsmecc = mcu0_data_vld_2_scbsmecc;
+                  mcu0_data_vld_2_scbsmecc = mcu0_data_vld_1_scbsmecc; 
+                  mcu0_data_vld_1_scbsmecc = dram_coverage_ifc_core_clk.mcu0_l2t0_data_vld_r0;
+                  mcu1_data_vld_3_scbsmecc = mcu1_data_vld_2_scbsmecc;
+                  mcu1_data_vld_2_scbsmecc = mcu1_data_vld_1_scbsmecc;
+                  mcu1_data_vld_1_scbsmecc = dram_coverage_ifc_core_clk.mcu1_l2t0_data_vld_r0;
+                  mcu2_data_vld_3_scbsmecc = mcu2_data_vld_2_scbsmecc;
+                  mcu2_data_vld_2_scbsmecc = mcu2_data_vld_1_scbsmecc;
+                  mcu2_data_vld_1_scbsmecc = dram_coverage_ifc_core_clk.mcu2_l2t0_data_vld_r0;
+                  mcu3_data_vld_3_scbsmecc = mcu3_data_vld_2_scbsmecc;
+                  mcu3_data_vld_2_scbsmecc = mcu3_data_vld_1_scbsmecc;
+                  mcu3_data_vld_1_scbsmecc = dram_coverage_ifc_core_clk.mcu3_l2t0_data_vld_r0;
+                  if ( (mcu0_data_vld_3_scbsmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_scb_secc_err === 1'b1) | (mcu1_data_vld_3_scbsmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_scb_secc_err === 1'b1) | (mcu2_data_vld_3_scbsmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_scb_secc_err === 1'b1) | (mcu3_data_vld_3_scbsmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_scb_secc_err === 1'b1) && (start_counter_scbsmecc == 0) )
+                   {
+                     start_counter_scbsmecc = 1;
+                     mcu0_mcu1_scb_mecc1_counter = 0;
+                   }
+                  else if ( (mcu0_data_vld_3_scbsmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_mecc_err_r3 === 1'b1) | (mcu1_data_vld_3_scbsmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_mecc_err_r3 === 1'b1) | (mcu2_data_vld_3_scbsmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_mecc_err_r3 === 1'b1) | (mcu3_data_vld_3_scbsmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_mecc_err_r3 === 1'b1) && (start_counter_scbsmecc == 1) && (mcu0_mcu1_secc_mecc_counter <= 20) )
+                     {
+                         trigger (mcu01_scb_mecc1_error_evnt_trig);
+                         start_counter_scbsmecc = 0;
+                         @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                         mcu0_mcu1_scb_mecc1_counter = 0;
+                     }
+                  else if ( (mcu0_data_vld_3_scbsmecc === 1'b0 && dram_coverage_ifc_core_clk.mcu0_l2t0_scb_secc_err === 1'b0) && (mcu1_data_vld_3_scbsmecc === 1'b0 && dram_coverage_ifc_core_clk.mcu1_l2t0_scb_secc_err === 1'b0) | (mcu2_data_vld_3_scbsmecc === 1'b0 && dram_coverage_ifc_core_clk.mcu2_l2t0_scb_secc_err === 1'b0) | (mcu3_data_vld_3_scbsmecc === 1'b0 && dram_coverage_ifc_core_clk.mcu3_l2t0_scb_secc_err === 1'b0) && (start_counter_scbsmecc == 1) && (mcu0_mcu1_secc_mecc_counter <= 20) )
+                     {
+                      mcu0_mcu1_scb_mecc1_counter = mcu0_mcu1_scb_mecc1_counter + 1;
+                     }
+                  else if (( start_counter_scbsmecc == 1) && (mcu0_mcu1_scb_mecc1_counter >= 20))
+                     {
+                      start_counter_scbsmecc = 0;
+                      mcu0_mcu1_scb_mecc1_counter = 0;
+                     }
+
+
+           }
+        }
+join none
+
+fork
+        {
+           while (1)
+           {
+                @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                  mcu0_data_vld_3_scb2smecc = mcu0_data_vld_2_scb2smecc;
+                  mcu0_data_vld_2_scb2smecc = mcu0_data_vld_1_scb2smecc; 
+                  mcu0_data_vld_1_scb2smecc = dram_coverage_ifc_core_clk.mcu0_l2t0_data_vld_r0;
+                  mcu1_data_vld_3_scb2smecc = mcu1_data_vld_2_scb2smecc;
+                  mcu1_data_vld_2_scb2smecc = mcu1_data_vld_1_scb2smecc;
+                  mcu1_data_vld_1_scb2smecc = dram_coverage_ifc_core_clk.mcu1_l2t0_data_vld_r0;
+                  mcu2_data_vld_3_scb2smecc = mcu2_data_vld_2_scb2smecc;
+                  mcu2_data_vld_2_scb2smecc = mcu2_data_vld_1_scb2smecc;
+                  mcu2_data_vld_1_scb2smecc = dram_coverage_ifc_core_clk.mcu2_l2t0_data_vld_r0;
+                  mcu3_data_vld_3_scb2smecc = mcu3_data_vld_2_scb2smecc;
+                  mcu3_data_vld_2_scb2smecc = mcu3_data_vld_1_scb2smecc;
+                  mcu3_data_vld_1_scb2smecc = dram_coverage_ifc_core_clk.mcu3_l2t0_data_vld_r0;
+                  if ( (mcu0_data_vld_3_scb2smecc === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_scb_secc_err === 1'b1) | (mcu1_data_vld_3_scb2smecc === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_scb_secc_err === 1'b1) | (mcu2_data_vld_3_scb2smecc === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_scb_secc_err === 1'b1) | (mcu3_data_vld_3_scb2smecc === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_scb_secc_err === 1'b1) && (start_counter_scb2smecc == 0) )
+                   {
+                     start_counter_scb2smecc = 1;
+                     mcu0_mcu1_scb_scbm_counter = 0;
+                   }
+                  else if ( (mcu0_data_vld_3_scb2smecc === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_scb_mecc_err === 1'b1) | (mcu1_data_vld_3_scb2smecc === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_scb_mecc_err === 1'b1) | (mcu2_data_vld_3_scb2smecc === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_scb_mecc_err === 1'b1) | (mcu3_data_vld_3_scb2smecc === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_scb_mecc_err === 1'b1) && (start_counter_scb2smecc == 1) && (mcu0_mcu1_scb_scbm_counter <= 20) )
+                     {
+                         trigger (mcu01_scb_scbm_error_evnt_trig);
+                         start_counter_scb2smecc = 0;
+                         @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                         mcu0_mcu1_scb_scbm_counter = 0;
+                     }
+                  else if ( (mcu0_data_vld_3_scb2smecc === 1'b0 && dram_coverage_ifc_core_clk.mcu0_l2t0_scb_secc_err === 1'b0) && (mcu1_data_vld_3_scb2smecc === 1'b0 && dram_coverage_ifc_core_clk.mcu1_l2t0_scb_secc_err === 1'b0) | (mcu2_data_vld_3_scb2smecc === 1'b0 && dram_coverage_ifc_core_clk.mcu2_l2t0_scb_secc_err === 1'b0) | (mcu3_data_vld_3_scb2smecc === 1'b0 && dram_coverage_ifc_core_clk.mcu3_l2t0_scb_secc_err === 1'b0) && (start_counter_scb2smecc == 1) && (mcu0_mcu1_secc_mecc_counter <= 20) )
+                     {
+                      mcu0_mcu1_scb_scbm_counter = mcu0_mcu1_scb_scbm_counter + 1;
+                     }
+                  else if (( start_counter_scb2smecc == 1) && (mcu0_mcu1_scb_scbm_counter >= 20))
+                     {
+                      start_counter_scb2smecc = 0;
+                      mcu0_mcu1_scb_scbm_counter = 0;
+                     }
+           }
+        }
+join none
+
+fork
+        {
+           while (1)
+           {    
+                @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                  mcu0_data_vld_3_mscbmecc = mcu0_data_vld_2_mscbmecc;
+                  mcu0_data_vld_2_mscbmecc = mcu0_data_vld_1_mscbmecc;
+                  mcu0_data_vld_1_mscbmecc = dram_coverage_ifc_core_clk.mcu0_l2t0_data_vld_r0;
+                  mcu1_data_vld_3_mscbmecc = mcu1_data_vld_2_mscbmecc;
+                  mcu1_data_vld_2_mscbmecc = mcu1_data_vld_1_mscbmecc;
+                  mcu1_data_vld_1_mscbmecc = dram_coverage_ifc_core_clk.mcu1_l2t0_data_vld_r0;
+                  mcu2_data_vld_3_mscbmecc = mcu2_data_vld_2_mscbmecc;
+                  mcu2_data_vld_2_mscbmecc = mcu2_data_vld_1_mscbmecc;
+                  mcu2_data_vld_1_mscbmecc = dram_coverage_ifc_core_clk.mcu2_l2t0_data_vld_r0;
+                  mcu3_data_vld_3_mscbmecc = mcu3_data_vld_2_mscbmecc;
+                  mcu3_data_vld_2_mscbmecc = mcu3_data_vld_1_mscbmecc;
+                  mcu3_data_vld_1_mscbmecc = dram_coverage_ifc_core_clk.mcu3_l2t0_data_vld_r0;
+
+                  if ( (mcu0_data_vld_3_mscbmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_mecc_err_r3 === 1'b1) | (mcu1_data_vld_3_mscbmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_mecc_err_r3 === 1'b1) | (mcu2_data_vld_3_mscbmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_mecc_err_r3 === 1'b1) | (mcu3_data_vld_3_mscbmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_mecc_err_r3 === 1'b1) && (start_counter_mscbmecc == 0) )
+                   { 
+                     start_counter_mscbmecc = 1;
+                     mcu0_mcu1_mecc_scbm_counter = 0;
+                   }
+                  else if ( (mcu0_data_vld_3_mscbmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_scb_mecc_err === 1'b1) | (mcu1_data_vld_3_mscbmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_scb_mecc_err === 1'b1) | (mcu2_data_vld_3_mscbmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_scb_mecc_err === 1'b1) | (mcu3_data_vld_3_mscbmecc === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_scb_mecc_err === 1'b1) && (start_counter_mscbmecc == 1) && (mcu0_mcu1_mecc_scbm_counter <= 20) )
+                     {   
+                         trigger (mcu01_mecc_scbm_error_evnt_trig);
+                         start_counter_mscbmecc = 0;
+                         @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                         mcu0_mcu1_mecc_scbm_counter = 0;
+                     } 
+                  else if ( (mcu0_data_vld_3_mscbmecc === 1'b0 && dram_coverage_ifc_core_clk.mcu0_l2t0_mecc_err_r3 === 1'b0) && (mcu1_data_vld_3_mscbmecc === 1'b0 && dram_coverage_ifc_core_clk.mcu1_l2t0_mecc_err_r3 === 1'b0) | (mcu2_data_vld_3_mscbmecc === 1'b0 && dram_coverage_ifc_core_clk.mcu2_l2t0_mecc_err_r3 === 1'b0) | (mcu3_data_vld_3_mscbmecc === 1'b0 && dram_coverage_ifc_core_clk.mcu3_l2t0_mecc_err_r3 === 1'b0) && (start_counter_mscbmecc == 1) && (mcu0_mcu1_mecc_scbm_counter <= 20) )
+                     {
+                      mcu0_mcu1_mecc_scbm_counter = mcu0_mcu1_mecc_scbm_counter + 1 ;
+                     } 
+                  else if (( start_counter_mscbmecc == 1) && (mcu0_mcu1_mecc_scbm_counter >= 20))
+                     {
+                      start_counter_mscbmecc = 0;
+                      mcu0_mcu1_mecc_scbm_counter = 0;
+                     }
+           }
+        }
+join none
+
+fork
+        {
+          integer i ;
+           while (1)
+           {
+                @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                  mcu0_data_vld_3_secc_3 = mcu0_data_vld_2_secc_3 ;
+                  mcu0_data_vld_2_secc_3 = mcu0_data_vld_1_secc_3 ;
+                  mcu0_data_vld_1_secc_3 = dram_coverage_ifc_core_clk.mcu0_l2t0_data_vld_r0 ;
+                  mcu1_data_vld_3_secc_3 = mcu1_data_vld_2_secc_3 ;
+                  mcu1_data_vld_2_secc_3 = mcu1_data_vld_1_secc_3 ;
+                  mcu1_data_vld_1_secc_3 = dram_coverage_ifc_core_clk.mcu1_l2t0_data_vld_r0 ;
+                  mcu2_data_vld_3_secc_3 = mcu2_data_vld_2_secc_3 ;
+                  mcu2_data_vld_2_secc_3 = mcu2_data_vld_1_secc_3 ;
+                  mcu2_data_vld_1_secc_3 = dram_coverage_ifc_core_clk.mcu2_l2t0_data_vld_r0 ;
+                  mcu3_data_vld_3_secc_3 = mcu3_data_vld_2_secc_3 ;
+                  mcu3_data_vld_2_secc_3 = mcu3_data_vld_1_secc_3 ;
+                  mcu3_data_vld_1_secc_3 = dram_coverage_ifc_core_clk.mcu3_l2t0_data_vld_r0 ;
+                    {
+                     error_bits_secc_3[0] =  ( mcu0_data_vld_3_secc_3 === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_secc_err_r3 === 1'b1);
+                     error_bits_secc_3[1] =  ( mcu1_data_vld_3_secc_3 === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_secc_err_r3 === 1'b1);
+                     error_bits_secc_3[2] =  ( mcu2_data_vld_3_secc_3 === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_secc_err_r3 === 1'b1);
+                     error_bits_secc_3[3] =  ( mcu3_data_vld_3_secc_3 === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_secc_err_r3 === 1'b1);
+                   }
+                   for (i=0 ; i<4 ; i++)
+                     {
+                       if (error_bits_secc_3[i] == 1)
+                       error_count_secc_3 = error_count_secc_3 + 1 ;
+                     }
+    
+                    if (error_bits_secc_3 !==4'b0)
+                       start_counter_secc_3 = 1;
+                       if (start_counter_secc_3)
+                       mcu0_mcu1_mcu2_secc_counter++ ;
+                
+                    if (mcu0_mcu1_mcu2_secc_counter <= 30)
+                     {
+                       if (error_count_secc_3 == 3)
+			{
+                         trigger (mcu012_secc_error_evnt_trig );
+                         error_count_secc_3 = 0 ;
+                         start_counter_secc_3 = 0;
+                         @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+			 mcu0_mcu1_mcu2_secc_counter = 0;
+			}
+                     }
+		   else
+			{
+                         error_count_secc_3 = 0 ;
+                         start_counter_secc_3 = 0;
+			 mcu0_mcu1_mcu2_secc_counter = 0;
+			}
+         }           
+        }            
+join none         
+
+fork
+        {
+          integer i ;
+           while (1)
+           {
+                @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                  mcu0_data_vld_3_scb_secc_3 = mcu0_data_vld_2_scb_secc_3 ;
+                  mcu0_data_vld_2_scb_secc_3 = mcu0_data_vld_1_scb_secc_3 ;
+                  mcu0_data_vld_1_scb_secc_3 = dram_coverage_ifc_core_clk.mcu0_l2t0_data_vld_r0 ;
+                  mcu1_data_vld_3_scb_secc_3 = mcu1_data_vld_2_scb_secc_3 ;
+                  mcu1_data_vld_2_scb_secc_3 = mcu1_data_vld_1_scb_secc_3 ;
+                  mcu1_data_vld_1_scb_secc_3 = dram_coverage_ifc_core_clk.mcu1_l2t0_data_vld_r0 ;
+                  mcu2_data_vld_3_scb_secc_3 = mcu2_data_vld_2_scb_secc_3 ;
+                  mcu2_data_vld_2_scb_secc_3 = mcu2_data_vld_1_scb_secc_3 ;
+                  mcu2_data_vld_1_scb_secc_3 = dram_coverage_ifc_core_clk.mcu2_l2t0_data_vld_r0 ;
+                  mcu3_data_vld_3_scb_secc_3 = mcu3_data_vld_2_scb_secc_3 ;
+                  mcu3_data_vld_2_scb_secc_3 = mcu3_data_vld_1_scb_secc_3 ;
+                  mcu3_data_vld_1_scb_secc_3 = dram_coverage_ifc_core_clk.mcu3_l2t0_data_vld_r0 ;
+
+                    {
+                     error_bits_scb_secc_3[0] =  ( mcu0_data_vld_3_scb_secc_3 === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_scb_secc_err === 1'b1);          
+                     error_bits_scb_secc_3[1] =  ( mcu1_data_vld_3_scb_secc_3 === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_scb_secc_err === 1'b1);            
+                     error_bits_scb_secc_3[2] =  ( mcu2_data_vld_3_scb_secc_3 === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_scb_secc_err === 1'b1);            
+                     error_bits_scb_secc_3[3] =  ( mcu3_data_vld_3_scb_secc_3 === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_scb_secc_err === 1'b1);        
+                   }
+                   for (i=0 ; i<4 ; i++)
+                     {   
+                       if (error_bits_scb_secc_3[i] == 1)
+                       error_count_scb_secc_3 = error_count_scb_secc_3 + 1 ;
+                     }
+
+                    if (error_bits_scb_secc_3 !==4'b0)
+                       start_counter_scb_secc_3 = 1;
+                       if (start_counter_scb_secc_3)
+                       mcu0_mcu1_mcu2_scb_secc_counter++ ;
+
+                    if (mcu0_mcu1_mcu2_scb_secc_counter <= 30)
+                     {
+                       if (error_count_scb_secc_3 == 3)
+                        {
+                         trigger (mcu012_scb_secc_error_evnt_trig );
+                         error_count_scb_secc_3 = 0 ;
+                         start_counter_scb_secc_3 = 0;
+                         @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                         mcu0_mcu1_mcu2_scb_secc_counter = 0;
+                        }
+                     }
+                   else
+                        {
+                         error_count_scb_secc_3 = 0 ;
+                         start_counter_scb_secc_3 = 0;
+                         mcu0_mcu1_mcu2_scb_secc_counter = 0;
+                        }
+
+         }
+        }
+join none
+
+fork    
+        { 
+          integer i ;
+           while (1)
+           {    
+                @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                  mcu0_data_vld_3_secc_4 = mcu0_data_vld_2_secc_4 ;
+                  mcu0_data_vld_2_secc_4 = mcu0_data_vld_1_secc_4 ;
+                  mcu0_data_vld_1_secc_4 = dram_coverage_ifc_core_clk.mcu0_l2t0_data_vld_r0 ;
+                  mcu1_data_vld_3_secc_4 = mcu1_data_vld_2_secc_4 ;
+                  mcu1_data_vld_2_secc_4 = mcu1_data_vld_1_secc_4 ;
+                  mcu1_data_vld_1_secc_4 = dram_coverage_ifc_core_clk.mcu1_l2t0_data_vld_r0 ;
+                  mcu2_data_vld_3_secc_4 = mcu2_data_vld_2_secc_4 ;
+                  mcu2_data_vld_2_secc_4 = mcu2_data_vld_1_secc_4 ;
+                  mcu2_data_vld_1_secc_4 = dram_coverage_ifc_core_clk.mcu2_l2t0_data_vld_r0 ;
+                  mcu3_data_vld_3_secc_4 = mcu3_data_vld_2_secc_4 ;
+                  mcu3_data_vld_2_secc_4 = mcu3_data_vld_1_secc_4 ;
+                  mcu3_data_vld_1_secc_4 = dram_coverage_ifc_core_clk.mcu3_l2t0_data_vld_r0 ;
+                    {
+                     error_bits_secc_4[0] =  ( mcu0_data_vld_3_secc_4 === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_secc_err_r3 === 1'b1 );
+                     error_bits_secc_4[1] =  ( mcu1_data_vld_3_secc_4 === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_secc_err_r3 === 1'b1 );
+                     error_bits_secc_4[2] =  ( mcu2_data_vld_3_secc_4 === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_secc_err_r3 === 1'b1 );
+                     error_bits_secc_4[3] =  ( mcu3_data_vld_3_secc_4 === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_secc_err_r3 === 1'b1 );
+                   }
+                   for (i=0 ; i<4 ; i++)
+                     {
+                       if (error_bits_secc_4[i] == 1)
+                       error_count_secc_4 = error_count_secc_4 + 1 ;
+                     }
+
+                    if (error_bits_secc_4 !==4'b0)
+                       start_counter_secc_4 = 1;
+                       if (start_counter_secc_4)
+                       mcu0_mcu1_mcu2_mcu3_secc_counter++ ;
+
+                    if (mcu0_mcu1_mcu2_mcu3_secc_counter <= 50)
+                     {
+                       if (error_count_secc_4 == 4)
+                        {
+                         trigger (mcu0123_secc_error_evnt_trig );
+                         error_count_secc_4 = 0 ;
+                         start_counter_secc_4 = 0;
+                         @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                         mcu0_mcu1_mcu2_mcu3_secc_counter = 0;
+                        }
+                     }
+                   else
+                        {
+                         error_count_secc_4 = 0 ;
+                         start_counter_secc_4 = 0;
+                         mcu0_mcu1_mcu2_mcu3_secc_counter = 0;
+                        }
+
+         }
+        }
+join none
+
+fork    
+        { 
+          integer i ;
+           while (1)
+           {    
+                @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                  mcu0_data_vld_3_scb_secc_4 = mcu0_data_vld_2_scb_secc_4 ;
+                  mcu0_data_vld_2_scb_secc_4 = mcu0_data_vld_1_scb_secc_4 ;
+                  mcu0_data_vld_1_scb_secc_4 = dram_coverage_ifc_core_clk.mcu0_l2t0_data_vld_r0 ;
+                  mcu1_data_vld_3_scb_secc_4 = mcu1_data_vld_2_scb_secc_4 ;
+                  mcu1_data_vld_2_scb_secc_4 = mcu1_data_vld_1_scb_secc_4 ;
+                  mcu1_data_vld_1_scb_secc_4 = dram_coverage_ifc_core_clk.mcu1_l2t0_data_vld_r0 ;
+                  mcu2_data_vld_3_scb_secc_4 = mcu2_data_vld_2_scb_secc_4 ;
+                  mcu2_data_vld_2_scb_secc_4 = mcu2_data_vld_1_scb_secc_4 ;
+                  mcu2_data_vld_1_scb_secc_4 = dram_coverage_ifc_core_clk.mcu2_l2t0_data_vld_r0 ;
+                  mcu3_data_vld_3_scb_secc_4 = mcu3_data_vld_2_scb_secc_4 ;
+                  mcu3_data_vld_2_scb_secc_4 = mcu3_data_vld_1_scb_secc_4 ;
+                  mcu3_data_vld_1_scb_secc_4 = dram_coverage_ifc_core_clk.mcu3_l2t0_data_vld_r0 ;
+                    {
+                     error_bits_scb_secc_4[0] =  ( mcu0_data_vld_3_scb_secc_4 === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_scb_secc_err === 1'b1 );            
+                     error_bits_scb_secc_4[1] =  ( mcu1_data_vld_3_scb_secc_4 === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_scb_secc_err === 1'b1 );            
+                     error_bits_scb_secc_4[2] =  ( mcu2_data_vld_3_scb_secc_4 === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_scb_secc_err === 1'b1 );
+                     error_bits_scb_secc_4[3] =  ( mcu3_data_vld_3_scb_secc_4 === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_scb_secc_err === 1'b1 );
+                   }
+                   for (i=0 ; i<4 ; i++)
+                     {
+                       if (error_bits_scb_secc_4[i] == 1)
+                       error_count_scb_secc_4 = error_count_scb_secc_4 + 1 ;
+                     }
+
+                    if (error_bits_scb_secc_4 !==4'b0)
+                       start_counter_scb_secc_4 = 1;
+                       if (start_counter_scb_secc_4)
+                       mcu0_mcu1_mcu2_mcu3_scb_secc_counter++ ;
+
+                    if (mcu0_mcu1_mcu2_mcu3_scb_secc_counter <= 50)
+                     {
+                       if (error_count_scb_secc_4 == 4)
+                        {
+                         trigger (mcu0123_scb_secc_error_evnt_trig );
+                         error_count_scb_secc_4 = 0 ;
+                         start_counter_scb_secc_4 = 0;
+                         @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                         mcu0_mcu1_mcu2_mcu3_scb_secc_counter = 0;
+                        }
+                     }
+                   else
+                        {
+                         error_count_scb_secc_4 = 0 ;
+                         start_counter_scb_secc_4 = 0;
+                         mcu0_mcu1_mcu2_mcu3_scb_secc_counter = 0;
+                        }
+
+         }
+        }
+join none
+
+fork
+        {
+          integer i ;
+           while (1)
+           {
+                @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                  mcu0_data_vld_3_all = mcu0_data_vld_2_all;
+                  mcu0_data_vld_2_all = mcu0_data_vld_1_all;
+                  mcu0_data_vld_1_all = dram_coverage_ifc_core_clk.mcu0_l2t0_data_vld_r0;
+                  mcu1_data_vld_3_all = mcu1_data_vld_2_all;
+                  mcu1_data_vld_2_all = mcu1_data_vld_1_all;
+                  mcu1_data_vld_1_all = dram_coverage_ifc_core_clk.mcu1_l2t0_data_vld_r0;
+                  mcu2_data_vld_3_all = mcu2_data_vld_2_all;
+                  mcu2_data_vld_2_all = mcu2_data_vld_1_all;
+                  mcu2_data_vld_1_all = dram_coverage_ifc_core_clk.mcu2_l2t0_data_vld_r0;
+                  mcu3_data_vld_3_all = mcu3_data_vld_2_all;
+                  mcu3_data_vld_2_all = mcu3_data_vld_1_all;
+                  mcu3_data_vld_1_all = dram_coverage_ifc_core_clk.mcu3_l2t0_data_vld_r0;
+
+                    {
+                     error_bits_all[0]  =  ( mcu0_data_vld_3_all === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_secc_err_r3 === 1'b1 );
+                     error_bits_all[1]  =  ( mcu1_data_vld_3_all === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_secc_err_r3 === 1'b1 );
+                     error_bits_all[2]  =  ( mcu2_data_vld_3_all === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_secc_err_r3 === 1'b1 );
+                     error_bits_all[3]  =  ( mcu3_data_vld_3_all === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_secc_err_r3 === 1'b1 );
+                     error_bits_all[4]  =  ( mcu0_data_vld_3_all === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_scb_secc_err === 1'b1 );
+                     error_bits_all[5]  =  ( mcu1_data_vld_3_all === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_scb_secc_err === 1'b1 );
+                     error_bits_all[6]  =  ( mcu2_data_vld_3_all === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_scb_secc_err === 1'b1 );
+                     error_bits_all[7]  =  ( mcu3_data_vld_3_all === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_scb_secc_err === 1'b1 );
+                     error_bits_all[8]  =  ( mcu0_data_vld_3_all === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_mecc_err_r3 === 1'b1 );
+                     error_bits_all[9]  =  ( mcu1_data_vld_3_all === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_mecc_err_r3 === 1'b1 );
+                     error_bits_all[10] =  ( mcu2_data_vld_3_all === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_mecc_err_r3 === 1'b1 );
+                     error_bits_all[11] =  ( mcu3_data_vld_3_all === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_mecc_err_r3 === 1'b1 );
+                     error_bits_all[12] =  ( mcu0_data_vld_3_all === 1'b1 && dram_coverage_ifc_core_clk.mcu0_l2t0_scb_mecc_err === 1'b1 );
+                     error_bits_all[13] =  ( mcu1_data_vld_3_all === 1'b1 && dram_coverage_ifc_core_clk.mcu1_l2t0_scb_mecc_err === 1'b1 );
+                     error_bits_all[14] =  ( mcu2_data_vld_3_all === 1'b1 && dram_coverage_ifc_core_clk.mcu2_l2t0_scb_mecc_err === 1'b1 );
+                     error_bits_all[15] =  ( mcu3_data_vld_3_all === 1'b1 && dram_coverage_ifc_core_clk.mcu3_l2t0_scb_mecc_err === 1'b1 );
+                   }
+
+                   for (i=0; i< 16; i++)
+                     {
+                       if (error_bits_all[i] == 1)
+                       error_count_all = error_count_all + 1 ;
+                     }
+                    if (error_bits_all !==16'b0)
+                       start_counter_all = 1;
+                       if (start_counter_all)
+                       mcu0_mcu1_mcu2_mcu3_all_counter++ ;
+
+                    if (mcu0_mcu1_mcu2_mcu3_all_counter <= 100)
+                     {
+                       if (error_count_all == 16)
+                        {
+                         trigger (mcu0123_all_error_evnt_trig );
+                         error_count_all = 0 ;
+                         start_counter_all = 0;
+                         @(posedge dram_coverage_ifc_core_clk.cmp_clk);
+                         mcu0_mcu1_mcu2_mcu3_all_counter = 0 ;
+                        }
+                     }
+                    else
+                      {
+                         error_count_all = 0 ;
+                         start_counter_all = 0;
+                         mcu0_mcu1_mcu2_mcu3_all_counter = 0 ;
+                       }
+
+         }
+        }
+join none
+
+}
+
+// *******************************************************************************************
+//    MCU RAS Coverage objects - MAQ
+// *******************************************************************************************
+
+class fc_mcu_ras_coverage
+{
+  // for dispmon
+// MAQ  StandardDisplay dbg;
+// MAQ  local string    myname;
+
+. for($mcu_no=0; $mcu_no<1; $mcu_no++)
+. {
+  reg l2_to_mcu${mcu_no}_sameclk = 1'b0;
+  reg l2_to_mcu${mcu_no}_error = 1'b0;
+  reg mcu${mcu_no}_to_l2t0_err = 1'b0;
+  reg mcu${mcu_no}_to_l2t1_err = 1'b0;
+  reg mcu${mcu_no}_to_l2t0_err_seen = 1'b0;
+  reg mcu${mcu_no}_to_l2t1_err_seen = 1'b0;
+  reg [3:0] l2_to_mcu${mcu_no}_error_10clk = 'd0;
+  reg [3:0] l2_to_mcu${mcu_no}_error_count = 'd0;
+  reg [3:0] mcu${mcu_no}_to_l2_error_10clk = 'd0;
+  reg [3:0] mcu${mcu_no}_l2t0_scb_secc_err_count = 'd0;
+  reg [3:0] mcu${mcu_no}_l2t1_scb_secc_err_count = 'd0;
+  reg [3:0] mcu${mcu_no}_l2t0_secc_err_count = 'd0;
+  reg [3:0] mcu${mcu_no}_l2t1_secc_err_count = 'd0;
+
+  reg mcu${mcu_no}_l2t0_scb_secc_err_seen = 1'b0;
+  reg mcu${mcu_no}_l2t1_scb_secc_err_seen = 1'b0;
+  reg mcu${mcu_no}_l2t0_secc_err_seen = 1'b0;
+  reg mcu${mcu_no}_l2t1_secc_err_seen = 1'b0;
+
+  reg [4:0] mcu${mcu_no}_l2t0_mecc_err_seen_20clk_count = 'd0;
+  reg [4:0] mcu${mcu_no}_l2t1_mecc_err_seen_20clk_count = 'd0;
+  reg [4:0] mcu${mcu_no}_to_l2_error_20clk = 'd0;
+  reg [4:0] mcu${mcu_no}_l2t0_scb_mecc_err_seen_20clk_count = 'd0;
+  reg [4:0] mcu${mcu_no}_l2t1_scb_mecc_err_seen_20clk_count = 'd0;
+  reg mcu${mcu_no}_l2t0_secc_err_seen_20clk = 1'b0;
+  reg mcu${mcu_no}_l2t1_secc_err_seen_20clk = 1'b0;
+  reg mcu${mcu_no}_l2t0_mecc_err_seen_20clk = 1'b0;
+  reg mcu${mcu_no}_l2t1_mecc_err_seen_20clk = 1'b0;
+  reg mcu${mcu_no}_l2t0_scb_secc_err_seen_20clk = 1'b0;
+  reg mcu${mcu_no}_l2t1_scb_secc_err_seen_20clk = 1'b0;
+  reg mcu${mcu_no}_l2t0_scb_mecc_err_seen_20clk = 1'b0;
+  reg mcu${mcu_no}_l2t1_scb_mecc_err_seen_20clk = 1'b0;
+
+  reg mcu${mcu_no}_rdpctl_dac_error_20clk_seen = 1'b0;
+  reg mcu${mcu_no}_rdpctl_fbr_error_20clk_seen = 1'b0;
+  reg mcu${mcu_no}_rdpctl_dsc_error_20clk_seen = 1'b0;
+  reg mcu${mcu_no}_rdpctl_dac_error_50clk_seen = 1'b0;
+  reg mcu${mcu_no}_rdpctl_dau_error_50clk_seen = 1'b0;
+  reg mcu${mcu_no}_rdpctl_dsc_error_50clk_seen = 1'b0;
+  reg mcu${mcu_no}_rdpctl_fbr_error_50clk_seen = 1'b0;
+  reg mcu${mcu_no}_rdpctl_fbu_error_50clk_seen = 1'b0;
+  reg mcu${mcu_no}_rdpctl_dac_error_100clk_seen = 1'b0;
+  reg mcu${mcu_no}_rdpctl_dau_error_100clk_seen = 1'b0;
+  reg mcu${mcu_no}_rdpctl_dsc_error_100clk_seen = 1'b0;
+  reg mcu${mcu_no}_rdpctl_fbr_error_100clk_seen = 1'b0;
+  reg mcu${mcu_no}_rdpctl_fbu_error_100clk_seen = 1'b0;
+
+  reg [4:0] mcu${mcu_no}_ESR_20clk = 'd0;
+  reg [5:0] mcu${mcu_no}_ESR_50clk = 'd0;
+  reg [7:0] mcu${mcu_no}_ESR_100clk = 'd0;
+
+
+  event l2_to_mcu${mcu_no}_error_10clk_trig;
+  event mcu${mcu_no}_to_l2_error_10clk_trig;
+  event mcu${mcu_no}_l2t0_scb_secc_err_count_trig;
+  event mcu${mcu_no}_l2t1_scb_secc_err_count_trig;
+  event mcu${mcu_no}_l2t0_secc_err_count_trig;
+  event mcu${mcu_no}_l2t1_secc_err_count_trig;
+  event mcu${mcu_no}_l2t0_secc_and_subsecc_trig;
+  event mcu${mcu_no}_l2t1_secc_and_subsecc_trig;
+
+  event mcu${mcu_no}_l2t0_secc_mecc_trig;
+  event mcu${mcu_no}_l2t1_secc_mecc_trig;
+  event mcu${mcu_no}_l2t0_secc_scbmecc_trig;
+  event mcu${mcu_no}_l2t1_secc_scbmecc_trig;
+  event mcu${mcu_no}_l2t0_scbsecc_mecc_trig;
+  event mcu${mcu_no}_l2t1_scbsecc_mecc_trig;
+  
+  event mcu${mcu_no}_l2t0_mecc_err_seen_20clk_trig;
+  event mcu${mcu_no}_l2t1_mecc_err_seen_20clk_trig;
+  event mcu${mcu_no}_l2t0_mecc_scbmecc_trig;
+  event mcu${mcu_no}_l2t1_mecc_scbmecc_trig;
+  event mcu${mcu_no}_l2t0_scb_mecc_err_seen_20clk_trig;
+  event mcu${mcu_no}_l2t1_scb_mecc_err_seen_20clk_trig;
+
+  event mcu${mcu_no}_rdpctl_dac_fbr_error_20clk_seen_trig;
+  event mcu${mcu_no}_rdpctl_dac_dsc_error_20clk_seen_trig;
+  event mcu${mcu_no}_rdpctl_dsc_fbr_error_20clk_seen_trig;
+ 
+  event mcu${mcu_no}_rdpctl_dac_fbu_error_50clk_seen_trig;
+  event mcu${mcu_no}_rdpctl_dsc_fbu_error_50clk_seen_trig;
+  event mcu${mcu_no}_rdpctl_dac_dau_error_50clk_seen_trig;
+  event mcu${mcu_no}_rdpctl_dsc_dau_error_50clk_seen_trig;
+  event mcu${mcu_no}_rdpctl_dau_fbr_error_50clk_seen_trig;
+  event mcu${mcu_no}_rdpctl_dau_fbu_error_50clk_seen_trig;
+
+  event mcu${mcu_no}_rdpctl_dac_dau_fbr_error_100clk_seen_trig;
+  event mcu${mcu_no}_rdpctl_dac_dau_fbu_error_100clk_seen_trig;
+  event mcu${mcu_no}_rdpctl_dac_fbr_fbu_error_100clk_seen_trig;
+  event mcu${mcu_no}_rdpctl_dac_dau_fbr_fbu_error_100clk_seen_trig;
+
+. }
+
+. for($mcu_no=0; $mcu_no<1; $mcu_no++)
+. {
+  // ----------- coverage_group ----------------Table 7----------------------
+        coverage_group l2_mcu${mcu_no}_err_signal_sameclk
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = @(posedge l2_to_mcu${mcu_no}_ras_intf.clk);
+           sample l2_mcu${mcu_no}_err_signal_sameclk_sample (l2_to_mcu${mcu_no}_sameclk)
+           {
+                state S_l2_mcu${mcu_no}_err_signal_sameclk	(1) ;
+           }
+        }
+  // ----------- coverage_group ----------------Table 7----------------------
+        coverage_group l2_mcu${mcu_no}_err_signal_window
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ALL, l2_to_mcu${mcu_no}_error_10clk_trig);
+           sample l2_mcu${mcu_no}_err_signal_window_sample  (l2_to_mcu${mcu_no}_error_count)
+           {
+                state S_l2_mcu${mcu_no}_err_signal_window	(0:10);
+           }
+        } 
+  // ----------- coverage_group ----------------Table 7----------------------
+        coverage_group l2_mcu${mcu_no}_err_signal_repeat
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ALL, l2_to_mcu${mcu_no}_error_10clk_trig);
+           at_least = 10;
+           sample l2_mcu${mcu_no}_err_signal_repeat_sample  (l2_to_mcu${mcu_no}_error_count)
+           {
+                state S_l2_mcu${mcu_no}_err_signal_repeat       (0:10);
+           }
+        }
+
+// ************************************************************************************************************************
+
+  // ----------- coverage_group ----------------Table 8----------------------
+        coverage_group mcu${mcu_no}_l2_err_signal_window
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ALL, mcu${mcu_no}_to_l2_error_10clk_trig);
+           sample mcu${mcu_no}_l2_err_signal_window_sample  ({mcu${mcu_no}_to_l2t0_err_seen, mcu${mcu_no}_to_l2t1_err_seen})
+           {
+                state S_mcu${mcu_no}_l2_err_signal_window       (2'b11);
+           }
+        }
+
+  // ----------- coverage_group ----------------Table 8----------------------
+        coverage_group mcu${mcu_no}_l2t0_ce_ce_err_signal_window
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ALL, mcu${mcu_no}_l2t0_secc_err_count_trig);
+           sample mcu${mcu_no}_l2t0_ce_ce_err_signal_window_sample  (mcu${mcu_no}_l2t0_secc_err_count)
+           {
+                state S_mcu${mcu_no}_l2t0_ce_ce_err_signal_window       (0:10);
+           }
+        } 
+
+  // ----------- coverage_group ----------------Table 8----------------------
+        coverage_group mcu${mcu_no}_l2t1_ce_ce_err_signal_window
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ALL, mcu${mcu_no}_l2t1_secc_err_count_trig);
+           sample mcu${mcu_no}_l2t1_ce_ce_err_signal_window_sample  (mcu${mcu_no}_l2t1_secc_err_count)
+           {
+                state S_mcu${mcu_no}_l2t1_ce_ce_err_signal_window       (0:10);
+           }
+        }
+
+  // ----------- coverage_group ----------------Table 8----------------------
+        coverage_group mcu${mcu_no}_l2t0_sce_sce_err_signal_window
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ALL, mcu${mcu_no}_l2t0_scb_secc_err_count_trig);
+           sample mcu${mcu_no}_l2t0_sce_sce_err_signal_window_sample  (mcu${mcu_no}_l2t0_scb_secc_err_count)
+           {
+                state S_mcu${mcu_no}_l2t0_sce_sce_err_signal_window       (0:10);
+           }
+        }
+
+  // ----------- coverage_group ----------------Table 8----------------------
+        coverage_group mcu${mcu_no}_l2t1_sce_sce_err_signal_window
+        {  
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ALL, mcu${mcu_no}_l2t1_scb_secc_err_count_trig);
+           sample mcu${mcu_no}_l2t1_sce_sce_err_signal_window_sample  (mcu${mcu_no}_l2t1_scb_secc_err_count)
+           {
+                state S_mcu${mcu_no}_l2t1_sce_sce_err_signal_window       (0:10);
+           }
+        }
+
+  // ----------- coverage_group ----------------Table 8----------------------
+        coverage_group mcu${mcu_no}_l2t0_ce_sce_err_signal_window
+        { 
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ALL, mcu${mcu_no}_l2t0_secc_and_subsecc_trig);
+           sample mcu${mcu_no}_l2t0_ce_sce_err_signal_window_sample  ({mcu${mcu_no}_l2t0_scb_secc_err_seen, mcu${mcu_no}_l2t0_secc_err_seen})
+           {
+                state S_mcu${mcu_no}_l2t0_ce_sce_err_signal_window       (2'b11);
+           }
+        }
+
+  // ----------- coverage_group ----------------Table 8----------------------
+        coverage_group mcu${mcu_no}_l2t1_ce_sce_err_signal_window
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ALL, mcu${mcu_no}_l2t1_secc_and_subsecc_trig);
+           sample mcu${mcu_no}_l2t1_ce_sce_err_signal_window_sample  ({mcu${mcu_no}_l2t1_scb_secc_err_seen, mcu${mcu_no}_l2t1_secc_err_seen})
+           {
+                state S_mcu${mcu_no}_l2t1_ce_sce_err_signal_window       (2'b11);
+           }
+        }
+
+  // ----------- coverage_group ----------------Table 8----------------------
+        coverage_group mcu${mcu_no}_l2t0_ue_ue_err_signal_window
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ALL, mcu${mcu_no}_l2t0_mecc_err_seen_20clk_trig);
+           sample mcu${mcu_no}_l2t0_ue_ue_err_signal_window_sample  (mcu${mcu_no}_l2t0_mecc_err_seen_20clk_count)
+           {
+                state S_mcu${mcu_no}_l2t0_ue_ue_err_signal_window       (0:10);
+           }
+        }
+
+  // ----------- coverage_group ----------------Table 8----------------------
+        coverage_group mcu${mcu_no}_l2t1_ue_ue_err_signal_window
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ALL, mcu${mcu_no}_l2t1_mecc_err_seen_20clk_trig);
+           sample mcu${mcu_no}_l2t1_ue_ue_err_signal_window_sample  (mcu${mcu_no}_l2t1_mecc_err_seen_20clk_count)
+           {
+                state S_mcu${mcu_no}_l2t1_ue_ue_err_signal_window       (0:10);
+           }
+        }
+
+  // ----------- coverage_group ----------------Table 8----------------------
+        coverage_group mcu${mcu_no}_l2t0_ue_sue_err_signal_window
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ALL, mcu${mcu_no}_l2t0_mecc_scbmecc_trig);
+           sample mcu${mcu_no}_l2t0_ue_sue_err_signal_window_sample  ({mcu${mcu_no}_l2t0_mecc_err_seen_20clk, mcu${mcu_no}_l2t0_scb_mecc_err_seen_20clk})
+           {
+                state S_mcu${mcu_no}_l2t0_ue_sue_err_signal_window       (2'b11);
+           }
+        }
+
+  // ----------- coverage_group ----------------Table 8----------------------
+        coverage_group mcu${mcu_no}_l2t1_ue_sue_err_signal_window
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ALL, mcu${mcu_no}_l2t1_mecc_scbmecc_trig);
+           sample mcu${mcu_no}_l2t1_ue_sue_err_signal_window_sample  ({mcu${mcu_no}_l2t1_mecc_err_seen_20clk, mcu${mcu_no}_l2t1_scb_mecc_err_seen_20clk})
+           {
+                state S_mcu${mcu_no}_l2t1_ue_sue_err_signal_window       (2'b11);
+           }
+        }
+
+  // ----------- coverage_group ----------------Table 8----------------------
+        coverage_group mcu${mcu_no}_l2t0_sue_sue_err_signal_window
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ALL, mcu${mcu_no}_l2t0_scb_mecc_err_seen_20clk_trig);
+           sample mcu${mcu_no}_l2t0_sue_sue_err_signal_window_sample  (mcu${mcu_no}_l2t0_scb_mecc_err_seen_20clk_count)
+           {
+                state S_mcu${mcu_no}_l2t0_sue_sue_err_signal_window       (0:10);
+           }
+        }
+
+  // ----------- coverage_group ----------------Table 8----------------------
+        coverage_group mcu${mcu_no}_l2t1_sue_sue_err_signal_window
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ALL, mcu${mcu_no}_l2t1_scb_mecc_err_seen_20clk_trig);
+           sample mcu${mcu_no}_l2t1_sue_sue_err_signal_window_sample  (mcu${mcu_no}_l2t1_scb_mecc_err_seen_20clk_count)
+           {
+                state S_mcu${mcu_no}_l2t1_sue_sue_err_signal_window       (0:10);
+           }
+        }
+
+// ************************************************************************************************************************
+
+  // ----------- coverage_group ----------------Table 10----------------------
+        coverage_group mcu${mcu_no}_err_fbd_synd_type
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = @(negedge mcu${mcu_no}_FBD_Error_Synd_intf.clk);
+           sample mcu${mcu_no}_err_fbd_sync_type_sample       ({mcu${mcu_no}_FBD_Error_Synd_intf.fbr_error,
+								mcu${mcu_no}_FBD_Error_Synd_intf.fbu_error,
+								mcu${mcu_no}_FBD_Error_Synd_intf.fbdic_mcu_synd_valid,
+								mcu${mcu_no}_FBD_Error_Synd_intf.fbdic_mcu_synd_aa,
+								mcu${mcu_no}_FBD_Error_Synd_intf.fbdic_mcu_synd_c,
+								mcu${mcu_no}_FBD_Error_Synd_intf.fbdic_mcu_synd_sfpe,
+								mcu${mcu_no}_FBD_Error_Synd_intf.fbdic_mcu_synd_afe
+						       	       })
+           {
+		wildcard state S_mcu${mcu_no}_err_fbd_sync_type_fbr_aa       	(7'b1x11xxx);
+		wildcard state S_mcu${mcu_no}_err_fbd_sync_type_fbr_c    	(7'b1x1x1xx);
+		wildcard state S_mcu${mcu_no}_err_fbd_sync_type_fbr_sfpe       	(7'b1x1xx1x);
+		wildcard state S_mcu${mcu_no}_err_fbd_sync_type_fbr_afe       	(7'b1x1xxx1);
+
+		wildcard state S_mcu${mcu_no}_err_fbd_sync_type_fbu_aa       	(7'bx111xxx);
+		wildcard state S_mcu${mcu_no}_err_fbd_sync_type_fbu_c    	(7'bx11x1xx);
+		wildcard state S_mcu${mcu_no}_err_fbd_sync_type_fbu_sfpe       	(7'bx11xx1x);
+		wildcard state S_mcu${mcu_no}_err_fbd_sync_type_fbu_afe       	(7'bx11xxx1);
+           }
+        }
+
+// ************************************************************************************************************************
+
+  // ----------- coverage_group ----------------Table 11----------------------
+        coverage_group mcu${mcu_no}_err_fbr_mult
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = @(negedge mcu${mcu_no}_FBD_Error_Synd_intf.clk);
+           sample mcu${mcu_no}_err_fbr_mult_sample    ({mcu${mcu_no}_FBD_Error_Synd_intf.fbr_error,
+                                                        mcu${mcu_no}_FBD_Error_Synd_intf.fbdic_mcu_synd_valid,
+                                                        mcu${mcu_no}_FBD_Error_Synd_intf.fbdic_mcu_synd_aa,
+                                                        mcu${mcu_no}_FBD_Error_Synd_intf.fbdic_mcu_synd_c,
+                                                        mcu${mcu_no}_FBD_Error_Synd_intf.fbdic_mcu_synd_sfpe,
+                                                        mcu${mcu_no}_FBD_Error_Synd_intf.fbdic_mcu_synd_afe
+                                                       })
+           {                                           
+                wildcard state S_mcu${mcu_no}_err_fbr_mult_aa_c                 (6'b1111xx);
+                wildcard state S_mcu${mcu_no}_err_fbr_mult_aa_sfpe              (6'b111x1x);
+                wildcard state S_mcu${mcu_no}_err_fbr_mult_aa_c_sfpe            (6'b11111x);
+           }
+        }
+
+  // ----------- coverage_group ----------------Table 11----------------------
+        coverage_group mcu${mcu_no}_err_fbu_mult
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = @(negedge mcu${mcu_no}_FBD_Error_Synd_intf.clk);
+           sample mcu${mcu_no}_err_fbu_mult_sample    ({mcu${mcu_no}_FBD_Error_Synd_intf.fbu_error,
+                                                        mcu${mcu_no}_FBD_Error_Synd_intf.fbdic_mcu_synd_valid,
+                                                        mcu${mcu_no}_FBD_Error_Synd_intf.fbdic_mcu_synd_aa,
+                                                        mcu${mcu_no}_FBD_Error_Synd_intf.fbdic_mcu_synd_c,
+                                                        mcu${mcu_no}_FBD_Error_Synd_intf.fbdic_mcu_synd_sfpe,
+                                                        mcu${mcu_no}_FBD_Error_Synd_intf.fbdic_mcu_synd_afe
+                                                       })
+           {
+                wildcard state S_mcu${mcu_no}_err_fbu_mult_aa_c                 (6'b1111xx);
+                wildcard state S_mcu${mcu_no}_err_fbu_mult_aa_sfpe              (6'b111x1x);
+                wildcard state S_mcu${mcu_no}_err_fbu_mult_aa_c_sfpe            (6'b11111x);
+           }
+        }
+
+// ************************************************************************************************************************
+
+  // ----------- coverage_group ----------------Table 12----------------------
+        coverage_group mcu${mcu_no}_err_fbd_mult
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ANY, mcu${mcu_no}_rdpctl_dac_fbr_error_20clk_seen_trig, mcu${mcu_no}_rdpctl_dac_dsc_error_20clk_seen_trig, mcu${mcu_no}_rdpctl_dsc_fbr_error_20clk_seen_trig);
+           sample mcu${mcu_no}_err_fbd_mult_sample    ({mcu${mcu_no}_rdpctl_dac_error_20clk_seen,
+                                                        mcu${mcu_no}_rdpctl_fbr_error_20clk_seen,
+                                                        mcu${mcu_no}_rdpctl_dsc_error_20clk_seen
+                                                       })
+           {
+                wildcard state S_mcu${mcu_no}_err_fbd_mult_dac_fbr              (3'b11x);
+                wildcard state S_mcu${mcu_no}_err_fbd_mult_dac_dsc              (3'b1x1);
+                wildcard state S_mcu${mcu_no}_err_fbd_mult_dsc_fbr		(3'bx11);
+           }
+        }
+
+  // ----------- coverage_group ----------------Table 12----------------------
+        coverage_group mcu${mcu_no}_err_fbd_mult_repeat
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ANY, mcu${mcu_no}_rdpctl_dac_fbr_error_20clk_seen_trig, mcu${mcu_no}_rdpctl_dac_dsc_error_20clk_seen_trig, mcu${mcu_no}_rdpctl_dsc_fbr_error_20clk_seen_trig);
+           at_least = 10;
+           sample mcu${mcu_no}_err_fbd_mult_repeat_sample     ({mcu${mcu_no}_rdpctl_dac_error_20clk_seen,
+                                                        	mcu${mcu_no}_rdpctl_fbr_error_20clk_seen,
+                                                        	mcu${mcu_no}_rdpctl_dsc_error_20clk_seen
+                                                               })
+           {
+                wildcard state S_mcu${mcu_no}_err_fbd_mult_repeat_dac_fbr              (3'b11x);
+                wildcard state S_mcu${mcu_no}_err_fbd_mult_repeat_dac_dsc              (3'b1x1);
+                wildcard state S_mcu${mcu_no}_err_fbd_mult_repeat_dsc_fbr              (3'bx11);
+           }
+        }
+
+  // ----------- coverage_group ----------------Table 12----------------------
+        coverage_group mcu${mcu_no}_err_fbd_mult2
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ANY, mcu${mcu_no}_rdpctl_dac_fbu_error_50clk_seen_trig,
+					mcu${mcu_no}_rdpctl_dsc_fbu_error_50clk_seen_trig,
+					mcu${mcu_no}_rdpctl_dac_dau_error_50clk_seen_trig,
+					mcu${mcu_no}_rdpctl_dsc_dau_error_50clk_seen_trig,
+					mcu${mcu_no}_rdpctl_dau_fbr_error_50clk_seen_trig,
+					mcu${mcu_no}_rdpctl_dau_fbu_error_50clk_seen_trig);
+           sample mcu${mcu_no}_err_fbd_mult2_sample    ({mcu${mcu_no}_rdpctl_dac_error_50clk_seen,
+                                                        mcu${mcu_no}_rdpctl_dau_error_50clk_seen,
+                                                        mcu${mcu_no}_rdpctl_dsc_error_50clk_seen,
+							mcu${mcu_no}_rdpctl_fbr_error_50clk_seen,
+							mcu${mcu_no}_rdpctl_fbu_error_50clk_seen
+                                                       })
+           {
+                wildcard state S_mcu${mcu_no}_err_fbd_mult2_dac_fbu              (5'b1xxx1);
+                wildcard state S_mcu${mcu_no}_err_fbd_mult2_dsc_fbu              (5'bxx1x1);
+                wildcard state S_mcu${mcu_no}_err_fbd_mult2_dac_dau              (5'b11xxx);
+                wildcard state S_mcu${mcu_no}_err_fbd_mult2_dsc_dau              (5'bx11xx);
+                wildcard state S_mcu${mcu_no}_err_fbd_mult2_dau_fbr              (5'bx1x1x);
+                wildcard state S_mcu${mcu_no}_err_fbd_mult2_dau_fbu              (5'bx1xx1);
+           }
+        }
+
+  // ----------- coverage_group ----------------Table 12----------------------
+        coverage_group mcu${mcu_no}_err_fbd_mult3
+        {
+           const_sample_reference = 1;  // ref. to sample vars. is constant
+           sample_event = sync (ANY, mcu${mcu_no}_rdpctl_dac_dau_fbr_error_100clk_seen_trig,
+					mcu${mcu_no}_rdpctl_dac_dau_fbu_error_100clk_seen_trig,
+					mcu${mcu_no}_rdpctl_dac_fbr_fbu_error_100clk_seen_trig,
+					mcu${mcu_no}_rdpctl_dac_dau_fbr_fbu_error_100clk_seen_trig);
+           sample mcu${mcu_no}_err_fbd_mult3_sample    ({mcu${mcu_no}_rdpctl_dac_error_100clk_seen,
+                                                        mcu${mcu_no}_rdpctl_dau_error_100clk_seen,
+							mcu${mcu_no}_rdpctl_dsc_error_100clk_seen,
+							mcu${mcu_no}_rdpctl_fbr_error_100clk_seen,
+							mcu${mcu_no}_rdpctl_fbu_error_100clk_seen
+                                                       })
+           {
+                wildcard state S_mcu${mcu_no}_err_fbd_mult3_dac_dau_fbr              (5'b11x1x);
+                wildcard state S_mcu${mcu_no}_err_fbd_mult3_dac_dau_fbu              (5'b11xx1);
+                wildcard state S_mcu${mcu_no}_err_fbd_mult3_dac_fbr_fbu              (5'b1xx11);
+                wildcard state S_mcu${mcu_no}_err_fbd_mult3_dac_dau_fbr_fbu          (5'b11x11);
+           }
+        }
+
+
+
+. }
+
+// MAQ  task new(StandardDisplay dbg);
+  task new();
+  task set_cov_cond_bits ();
+. for($mcu_no=0; $mcu_no<1; $mcu_no++)
+. {
+  task mcu${mcu_no}_ras_table7();
+  task mcu${mcu_no}_ras_table8();
+  task mcu${mcu_no}_ras_table12();
+. }
+
+} //class fc_mcu_ras_coverage
+
+/////////////////////////////////////////////////////////////////
+// Class creation 
+/////////////////////////////////////////////////////////////////
+// MAQ task fc_mcu_ras_coverage::new(StandardDisplay dbg)
+task fc_mcu_ras_coverage::new()
+{ 
+  bit coverage_on = 0;
+  integer j;
+  
+  // for dispmon
+// MAQ  myname = "fc_mcu_ras_coverage";
+// MAQ  this.dbg = dbg;
+
+  if (mChkPlusarg(fc_mcu_ras_coverage) || mChkPlusarg(coverage_on)) {
+    coverage_on = 1;
+  }
+
+  if (coverage_on) {
+// MAQ    dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :MCU RAS Coverage Turned ON\n\n", get_time(LO)));
+
+. for($mcu_no=0; $mcu_no<1; $mcu_no++)
+. {
+    l2_mcu${mcu_no}_err_signal_sameclk  = new();
+    l2_mcu${mcu_no}_err_signal_window	= new();
+    l2_mcu${mcu_no}_err_signal_repeat	= new();
+
+    mcu${mcu_no}_l2_err_signal_window	= new();
+    mcu${mcu_no}_l2t0_ce_ce_err_signal_window	= new();
+    mcu${mcu_no}_l2t1_ce_ce_err_signal_window	= new();
+    mcu${mcu_no}_l2t0_sce_sce_err_signal_window	= new();
+    mcu${mcu_no}_l2t1_sce_sce_err_signal_window	= new();
+    mcu${mcu_no}_l2t0_ce_sce_err_signal_window	= new();
+    mcu${mcu_no}_l2t1_ce_sce_err_signal_window	= new();
+    mcu${mcu_no}_l2t0_ue_ue_err_signal_window	= new();
+    mcu${mcu_no}_l2t1_ue_ue_err_signal_window	= new();
+    mcu${mcu_no}_l2t0_ue_sue_err_signal_window	= new();
+    mcu${mcu_no}_l2t1_ue_sue_err_signal_window	= new();
+    mcu${mcu_no}_l2t0_sue_sue_err_signal_window = new();
+    mcu${mcu_no}_l2t1_sue_sue_err_signal_window	= new();
+    
+    mcu${mcu_no}_err_fbd_synd_type	= new();
+    mcu${mcu_no}_err_fbr_mult	= new();
+    mcu${mcu_no}_err_fbu_mult	= new();
+
+    mcu${mcu_no}_err_fbd_mult = new();
+    mcu${mcu_no}_err_fbd_mult_repeat = new();
+    mcu${mcu_no}_err_fbd_mult2 = new();
+    mcu${mcu_no}_err_fbd_mult3 = new();
+.}
+
+    set_cov_cond_bits ();
+
+  } // if coverage_on
+} // fc_mcu_ras_coverage::new()
+
+//////////////////////////////////////////////////////////////////////////
+
+task fc_mcu_ras_coverage:: set_cov_cond_bits ()
+{
+
+fork
+. for($mcu_no=0; $mcu_no<1; $mcu_no++)
+. {
+        mcu${mcu_no}_ras_table7();
+	mcu${mcu_no}_ras_table8();
+	mcu${mcu_no}_ras_table12();
+.}
+
+join none
+
+} // task fc_mcu_ras_coverage:: set_cov_cond_bits
+
+
+. for($mcu_no=0; $mcu_no<1; $mcu_no++)
+. {
+task fc_mcu_ras_coverage:: mcu${mcu_no}_ras_table7()
+{
+
+	while(1)
+	{
+	   @(negedge l2_to_mcu${mcu_no}_ras_intf.clk);
+	   {
+		l2_to_mcu${mcu_no}_sameclk = (l2_to_mcu${mcu_no}_ras_intf.l2b0_mcu_data_mecc_r5 && l2_to_mcu${mcu_no}_ras_intf.l2b1_mcu_data_mecc_r5);
+		l2_to_mcu${mcu_no}_error = (l2_to_mcu${mcu_no}_ras_intf.l2b0_mcu_data_mecc_r5 || l2_to_mcu${mcu_no}_ras_intf.l2b1_mcu_data_mecc_r5);
+
+		if(l2_to_mcu${mcu_no}_error_10clk == 'd10)
+		{
+		  l2_to_mcu${mcu_no}_error_10clk = 'd0;
+		  if(l2_to_mcu${mcu_no}_error_count > 'd1)
+		     trigger(l2_to_mcu${mcu_no}_error_10clk_trig);
+		  l2_to_mcu${mcu_no}_error_count = 1'b0;
+		}
+		else
+		  {
+		    if(l2_to_mcu${mcu_no}_error == 1'b1)
+		    {
+// MAQ		       printf ("\n %d :Error_count Inside  = %d, \n\n", get_time(LO), l2_to_mcu${mcu_no}_error_count );
+		       l2_to_mcu${mcu_no}_error_count = l2_to_mcu${mcu_no}_error_count + 'd1;
+		    }
+		    l2_to_mcu${mcu_no}_error_10clk = l2_to_mcu${mcu_no}_error_10clk + 'd1;
+		  }
+
+	   }
+
+
+	} 
+} // task fc_mcu_ras_coverage:: mcu${mcu_no}_ras_table7()
+
+task fc_mcu_ras_coverage:: mcu${mcu_no}_ras_table8()
+{
+	while(1)
+	{
+	   @(negedge mcu${mcu_no}_to_l2_ras_intf.clk);
+	   {
+		mcu${mcu_no}_to_l2t0_err = (mcu${mcu_no}_to_l2_ras_intf.mcu_l2t0_scb_mecc_err ||
+					    mcu${mcu_no}_to_l2_ras_intf.mcu_l2t0_scb_secc_err ||
+					    mcu${mcu_no}_to_l2_ras_intf.mcu_l2t0_mecc_err_r3  ||
+					    mcu${mcu_no}_to_l2_ras_intf.mcu_l2t0_secc_err_r3 );
+
+		mcu${mcu_no}_to_l2t1_err = (mcu${mcu_no}_to_l2_ras_intf.mcu_l2t1_scb_mecc_err ||
+					    mcu${mcu_no}_to_l2_ras_intf.mcu_l2t1_scb_secc_err ||
+					    mcu${mcu_no}_to_l2_ras_intf.mcu_l2t1_mecc_err_r3  ||
+					    mcu${mcu_no}_to_l2_ras_intf.mcu_l2t1_secc_err_r3 );
+
+                if(mcu${mcu_no}_to_l2_error_10clk == 'd10)
+                {
+                  mcu${mcu_no}_to_l2_error_10clk = 'd0;
+                  if((mcu${mcu_no}_to_l2t0_err_seen == 1'b1) && (mcu${mcu_no}_to_l2t1_err_seen == 1'b1))
+                     trigger(mcu${mcu_no}_to_l2_error_10clk_trig);
+
+		  if(mcu${mcu_no}_l2t0_scb_secc_err_count > 'd1)
+		     trigger(mcu${mcu_no}_l2t0_scb_secc_err_count_trig);
+		  if(mcu${mcu_no}_l2t1_scb_secc_err_count > 'd1)
+		     trigger(mcu${mcu_no}_l2t1_scb_secc_err_count_trig);
+
+		  if(mcu${mcu_no}_l2t0_secc_err_count > 'd1)
+		     trigger(mcu${mcu_no}_l2t0_secc_err_count_trig);
+		  if(mcu${mcu_no}_l2t1_secc_err_count > 'd1)
+		     trigger(mcu${mcu_no}_l2t1_secc_err_count_trig);
+
+		  if((mcu${mcu_no}_l2t0_scb_secc_err_seen == 1'b1) && (mcu${mcu_no}_l2t0_secc_err_seen == 1'b1))
+		     trigger(mcu${mcu_no}_l2t0_secc_and_subsecc_trig);
+
+		  if((mcu${mcu_no}_l2t1_scb_secc_err_seen == 1'b1) && (mcu${mcu_no}_l2t1_secc_err_seen == 1'b1))
+		     trigger(mcu${mcu_no}_l2t1_secc_and_subsecc_trig);
+		 
+		}
+                else if(mcu${mcu_no}_to_l2_error_10clk == 'd1)
+                {
+		  mcu${mcu_no}_to_l2t0_err_seen = 1'b0;
+		  mcu${mcu_no}_to_l2t1_err_seen = 1'b0;
+
+		  mcu${mcu_no}_l2t0_scb_secc_err_count = 'd0;
+		  mcu${mcu_no}_l2t1_scb_secc_err_count = 'd0;
+
+		  mcu${mcu_no}_l2t0_secc_err_count = 'd0;
+		  mcu${mcu_no}_l2t1_secc_err_count = 'd0;
+
+		  mcu${mcu_no}_l2t0_scb_secc_err_seen = 1'b0;
+		  mcu${mcu_no}_l2t1_scb_secc_err_seen = 1'b0;
+		  mcu${mcu_no}_l2t0_secc_err_seen = 1'b0;
+		  mcu${mcu_no}_l2t1_secc_err_seen = 1'b0;
+
+                  mcu${mcu_no}_to_l2_error_10clk = mcu${mcu_no}_to_l2_error_10clk + 'd1;
+                }
+                else
+                  {
+                    if(mcu${mcu_no}_to_l2t0_err == 1'b1)
+                       mcu${mcu_no}_to_l2t0_err_seen = 1'b1;
+                    if(mcu${mcu_no}_to_l2t1_err == 1'b1)
+                       mcu${mcu_no}_to_l2t1_err_seen = 1'b1;
+
+		    if(mcu${mcu_no}_to_l2_ras_intf.mcu_l2t0_scb_secc_err)
+		    {
+			mcu${mcu_no}_l2t0_scb_secc_err_seen = 1'b1;
+			mcu${mcu_no}_l2t0_scb_secc_err_count = mcu${mcu_no}_l2t0_scb_secc_err_count + 'd1;
+		    }
+		    if(mcu${mcu_no}_to_l2_ras_intf.mcu_l2t1_scb_secc_err)
+		    {
+			mcu${mcu_no}_l2t1_scb_secc_err_seen = 1'b1;
+			mcu${mcu_no}_l2t1_scb_secc_err_count = mcu${mcu_no}_l2t1_scb_secc_err_count + 'd1;
+		    }
+
+		    if(mcu${mcu_no}_to_l2_ras_intf.mcu_l2t1_secc_err_r3)
+		    {
+			mcu${mcu_no}_l2t0_secc_err_seen = 1'b1;
+			mcu${mcu_no}_l2t0_secc_err_count = mcu${mcu_no}_l2t0_secc_err_count + 'd1;
+		    }
+		    if(mcu${mcu_no}_to_l2_ras_intf.mcu_l2t1_secc_err_r3)
+		    {
+			mcu${mcu_no}_l2t1_secc_err_seen = 1'b1;
+			mcu${mcu_no}_l2t1_secc_err_count = mcu${mcu_no}_l2t1_secc_err_count + 'd1;
+		    }
+
+
+                    mcu${mcu_no}_to_l2_error_10clk = mcu${mcu_no}_to_l2_error_10clk + 'd1;
+                  }
+
+// ***********************************************************************************************************************
+                if(mcu${mcu_no}_to_l2_error_20clk == 'd20)
+                {	
+                  mcu${mcu_no}_to_l2_error_20clk = 'd0;
+
+		  if((mcu${mcu_no}_l2t0_secc_err_seen_20clk == 1'b1) && (mcu${mcu_no}_l2t0_mecc_err_seen_20clk == 1'b1))
+		      trigger(mcu${mcu_no}_l2t0_secc_mecc_trig);
+		  if((mcu${mcu_no}_l2t1_secc_err_seen_20clk == 1'b1) && (mcu${mcu_no}_l2t1_mecc_err_seen_20clk == 1'b1))
+		      trigger(mcu${mcu_no}_l2t1_secc_mecc_trig);
+
+		  if((mcu${mcu_no}_l2t0_secc_err_seen_20clk == 1'b1) && (mcu${mcu_no}_l2t0_scb_mecc_err_seen_20clk == 1'b1))
+		      trigger(mcu${mcu_no}_l2t0_secc_scbmecc_trig);
+		  if((mcu${mcu_no}_l2t1_secc_err_seen_20clk == 1'b1) && (mcu${mcu_no}_l2t1_scb_mecc_err_seen_20clk == 1'b1))
+		      trigger(mcu${mcu_no}_l2t1_secc_scbmecc_trig);
+		  
+		  if((mcu${mcu_no}_l2t0_scb_secc_err_seen_20clk == 1'b1) && (mcu${mcu_no}_l2t0_mecc_err_seen_20clk == 1'b1))
+			trigger(mcu${mcu_no}_l2t0_scbsecc_mecc_trig);
+		  if((mcu${mcu_no}_l2t1_scb_secc_err_seen_20clk == 1'b1) && (mcu${mcu_no}_l2t1_mecc_err_seen_20clk == 1'b1))
+			trigger(mcu${mcu_no}_l2t1_scbsecc_mecc_trig);
+
+		  // *******************************************************************************************************
+
+		  if(mcu${mcu_no}_l2t0_mecc_err_seen_20clk_count > 'd1)
+			trigger(mcu${mcu_no}_l2t0_mecc_err_seen_20clk_trig);
+		  if(mcu${mcu_no}_l2t1_mecc_err_seen_20clk_count > 'd1)
+			trigger(mcu${mcu_no}_l2t1_mecc_err_seen_20clk_trig);
+
+		  if((mcu${mcu_no}_l2t0_mecc_err_seen_20clk == 1'b1) && (mcu${mcu_no}_l2t0_scb_mecc_err_seen_20clk == 1'b1))
+			trigger(mcu${mcu_no}_l2t0_mecc_scbmecc_trig);
+		  if((mcu${mcu_no}_l2t1_mecc_err_seen_20clk == 1'b1) && (mcu${mcu_no}_l2t1_scb_mecc_err_seen_20clk == 1'b1))
+			trigger(mcu${mcu_no}_l2t1_mecc_scbmecc_trig);
+
+		  if(mcu${mcu_no}_l2t0_scb_mecc_err_seen_20clk_count > 'd1)
+			trigger(mcu${mcu_no}_l2t0_scb_mecc_err_seen_20clk_trig);
+		  if(mcu${mcu_no}_l2t1_scb_mecc_err_seen_20clk_count > 'd1)
+			trigger(mcu${mcu_no}_l2t1_scb_mecc_err_seen_20clk_trig);
+
+		}
+		else if(mcu${mcu_no}_to_l2_error_20clk == 'd1)
+		  {
+		  mcu${mcu_no}_l2t0_secc_err_seen_20clk = 1'b0;
+		  mcu${mcu_no}_l2t1_secc_err_seen_20clk = 1'b0;
+		  mcu${mcu_no}_l2t0_mecc_err_seen_20clk = 1'b0;
+		  mcu${mcu_no}_l2t1_mecc_err_seen_20clk = 1'b0;
+		  mcu${mcu_no}_l2t0_scb_secc_err_seen_20clk = 1'b0;
+		  mcu${mcu_no}_l2t1_scb_secc_err_seen_20clk = 1'b0;
+		  mcu${mcu_no}_l2t0_scb_mecc_err_seen_20clk = 1'b0;
+		  mcu${mcu_no}_l2t1_scb_mecc_err_seen_20clk = 1'b0;
+		  mcu${mcu_no}_l2t0_mecc_err_seen_20clk_count = 'd0;
+		  mcu${mcu_no}_l2t1_mecc_err_seen_20clk_count = 'd0;
+		  mcu${mcu_no}_l2t0_scb_mecc_err_seen_20clk_count = 'd0;
+		  mcu${mcu_no}_l2t1_scb_mecc_err_seen_20clk_count = 'd0;
+
+	    	  mcu${mcu_no}_to_l2_error_20clk = mcu${mcu_no}_to_l2_error_20clk + 'd1;
+		}
+		else
+		  {
+		    if(mcu${mcu_no}_to_l2_ras_intf.mcu_l2t0_secc_err_r3)
+			mcu${mcu_no}_l2t0_secc_err_seen_20clk = 1'b1;
+		    if(mcu${mcu_no}_to_l2_ras_intf.mcu_l2t1_secc_err_r3)
+			mcu${mcu_no}_l2t1_secc_err_seen_20clk = 1'b1;
+
+		    if(mcu${mcu_no}_to_l2_ras_intf.mcu_l2t0_mecc_err_r3)
+		    {
+			mcu${mcu_no}_l2t0_mecc_err_seen_20clk = 1'b1;
+			mcu${mcu_no}_l2t0_mecc_err_seen_20clk_count = mcu${mcu_no}_l2t0_mecc_err_seen_20clk_count + 'd1;
+		    }
+		    if(mcu${mcu_no}_to_l2_ras_intf.mcu_l2t1_mecc_err_r3)
+		    {
+			mcu${mcu_no}_l2t1_mecc_err_seen_20clk = 1'b1;
+			mcu${mcu_no}_l2t1_mecc_err_seen_20clk_count = mcu${mcu_no}_l2t1_mecc_err_seen_20clk_count + 'd1;
+		    }
+
+		    if(mcu${mcu_no}_to_l2_ras_intf.mcu_l2t0_scb_secc_err)
+			mcu${mcu_no}_l2t0_scb_secc_err_seen_20clk = 1'b1;
+		    if(mcu${mcu_no}_to_l2_ras_intf.mcu_l2t1_scb_secc_err)
+			mcu${mcu_no}_l2t1_scb_secc_err_seen_20clk = 1'b1;
+
+		    if(mcu${mcu_no}_to_l2_ras_intf.mcu_l2t0_scb_mecc_err)
+	 	    {
+			mcu${mcu_no}_l2t0_scb_mecc_err_seen_20clk = 1'b1;
+			mcu${mcu_no}_l2t0_scb_mecc_err_seen_20clk_count = mcu${mcu_no}_l2t0_scb_mecc_err_seen_20clk_count + 'd1;
+		    }
+		    if(mcu${mcu_no}_to_l2_ras_intf.mcu_l2t1_scb_mecc_err)
+		    {
+			mcu${mcu_no}_l2t1_scb_mecc_err_seen_20clk = 1'b1;
+			mcu${mcu_no}_l2t1_scb_mecc_err_seen_20clk_count = mcu${mcu_no}_l2t1_scb_mecc_err_seen_20clk_count + 'd1;
+		    }
+
+		    mcu${mcu_no}_to_l2_error_20clk = mcu${mcu_no}_to_l2_error_20clk + 'd1;
+		  }
+
+
+	   }
+	}
+
+} // task fc_mcu_ras_coverage:: mcu${mcu_no}_ras_table8()
+
+task fc_mcu_ras_coverage:: mcu${mcu_no}_ras_table12()
+{
+	while(1)
+	{
+	   @(negedge mcu${mcu_no}_ESR_intf.clk);
+	   {
+	   if(mcu${mcu_no}_ESR_20clk == 'd20)
+	   {
+		mcu${mcu_no}_ESR_20clk = 'd0;
+
+		if((mcu${mcu_no}_rdpctl_dac_error_20clk_seen == 1'b1) && (mcu${mcu_no}_rdpctl_fbr_error_20clk_seen == 1'b1))
+		    trigger(mcu${mcu_no}_rdpctl_dac_fbr_error_20clk_seen_trig);
+		if((mcu${mcu_no}_rdpctl_dac_error_20clk_seen == 1'b1) && (mcu${mcu_no}_rdpctl_dsc_error_20clk_seen == 1'b1))
+		    trigger(mcu${mcu_no}_rdpctl_dac_dsc_error_20clk_seen_trig);
+		if((mcu${mcu_no}_rdpctl_dsc_error_20clk_seen == 1'b1) && (mcu${mcu_no}_rdpctl_fbr_error_20clk_seen == 1'b1))
+		    trigger(mcu${mcu_no}_rdpctl_dsc_fbr_error_20clk_seen_trig);
+	   }
+	   else if(mcu${mcu_no}_ESR_20clk == 'd1)
+		{
+		mcu${mcu_no}_rdpctl_dac_error_20clk_seen = 1'b0;
+		mcu${mcu_no}_rdpctl_fbr_error_20clk_seen = 1'b0;
+		mcu${mcu_no}_rdpctl_dsc_error_20clk_seen = 1'b0;
+
+		mcu${mcu_no}_ESR_20clk = mcu${mcu_no}_ESR_20clk + 'd1;
+	   }
+	   else
+	   {
+		if(mcu${mcu_no}_ESR_intf.rdpctl_dac_error)
+		     mcu${mcu_no}_rdpctl_dac_error_20clk_seen = 1'b1;
+		if(mcu${mcu_no}_ESR_intf.rdpctl_fbr_error)
+		     mcu${mcu_no}_rdpctl_fbr_error_20clk_seen = 1'b1;
+		if(mcu${mcu_no}_ESR_intf.rdpctl_dsc_error)
+		     mcu${mcu_no}_rdpctl_dsc_error_20clk_seen = 1'b1;
+
+		mcu${mcu_no}_ESR_20clk = mcu${mcu_no}_ESR_20clk + 'd1;
+	   }
+
+// ***********************************************************************************************************************
+	   if(mcu${mcu_no}_ESR_50clk == 'd50)
+	   {
+                mcu${mcu_no}_ESR_50clk = 'd0;
+		if((mcu${mcu_no}_rdpctl_dac_error_50clk_seen == 1'b1) && (mcu${mcu_no}_rdpctl_fbu_error_50clk_seen == 1'b1))
+			trigger(mcu${mcu_no}_rdpctl_dac_fbu_error_50clk_seen_trig);
+		if((mcu${mcu_no}_rdpctl_dsc_error_50clk_seen == 1'b1) && (mcu${mcu_no}_rdpctl_fbu_error_50clk_seen == 1'b1))
+			trigger(mcu${mcu_no}_rdpctl_dsc_fbu_error_50clk_seen_trig);
+		if((mcu${mcu_no}_rdpctl_dac_error_50clk_seen == 1'b1) && (mcu${mcu_no}_rdpctl_dau_error_50clk_seen == 1'b1))
+			trigger(mcu${mcu_no}_rdpctl_dac_dau_error_50clk_seen_trig);
+		if((mcu${mcu_no}_rdpctl_dsc_error_50clk_seen == 1'b1) && (mcu${mcu_no}_rdpctl_dau_error_50clk_seen == 1'b1))
+			trigger(mcu${mcu_no}_rdpctl_dsc_dau_error_50clk_seen_trig);
+		if((mcu${mcu_no}_rdpctl_dau_error_50clk_seen == 1'b1) && (mcu${mcu_no}_rdpctl_fbr_error_50clk_seen == 1'b1))
+			trigger(mcu${mcu_no}_rdpctl_dau_fbr_error_50clk_seen_trig);
+		if((mcu${mcu_no}_rdpctl_dau_error_50clk_seen == 1'b1) && (mcu${mcu_no}_rdpctl_fbu_error_50clk_seen == 1'b1))
+			trigger(mcu${mcu_no}_rdpctl_dau_fbu_error_50clk_seen_trig);
+
+//		printf("\n %d MAQ : mcu0_ESR_50clk : DAU = %b, FBR = %b, FBU = %b\n", get_time(LO), mcu${mcu_no}_rdpctl_dau_error_50clk_seen, mcu${mcu_no}_rdpctl_fbr_error_50clk_seen, mcu${mcu_no}_rdpctl_fbu_error_50clk_seen);
+	   }
+	   else if(mcu${mcu_no}_ESR_50clk == 'd1)
+		{
+//		printf("\n %d MAQ d1 : mcu0_ESR_50clk : DAU = %b, FBR = %b, FBU = %b\n", get_time(LO), mcu${mcu_no}_rdpctl_dau_error_50clk_seen, mcu${mcu_no}_rdpctl_fbr_error_50clk_seen, mcu${mcu_no}_rdpctl_fbu_error_50clk_seen);
+		
+		mcu${mcu_no}_rdpctl_dac_error_50clk_seen = 1'b0;
+		mcu${mcu_no}_rdpctl_dau_error_50clk_seen = 1'b0;
+		mcu${mcu_no}_rdpctl_dsc_error_50clk_seen = 1'b0;
+		mcu${mcu_no}_rdpctl_fbr_error_50clk_seen = 1'b0;
+		mcu${mcu_no}_rdpctl_fbu_error_50clk_seen = 1'b0;
+
+                mcu${mcu_no}_ESR_50clk = mcu${mcu_no}_ESR_50clk + 'd1;
+           }
+           else
+           {
+                if(mcu${mcu_no}_ESR_intf.rdpctl_dac_error)
+                     mcu${mcu_no}_rdpctl_dac_error_50clk_seen = 1'b1;
+		if(mcu${mcu_no}_ESR_intf.rdpctl_dau_error)
+		     mcu${mcu_no}_rdpctl_dau_error_50clk_seen = 1'b1;
+                if(mcu${mcu_no}_ESR_intf.rdpctl_dsc_error)
+                     mcu${mcu_no}_rdpctl_dsc_error_50clk_seen = 1'b1;
+                if(mcu${mcu_no}_ESR_intf.rdpctl_fbr_error)
+                     mcu${mcu_no}_rdpctl_fbr_error_50clk_seen = 1'b1;
+		if(mcu${mcu_no}_ESR_intf.rdpctl_fbu_error)
+		     mcu${mcu_no}_rdpctl_fbu_error_50clk_seen = 1'b1;
+
+                mcu${mcu_no}_ESR_50clk = mcu${mcu_no}_ESR_50clk + 'd1;
+           }
+// ***********************************************************************************************************************
+           if(mcu${mcu_no}_ESR_100clk == 'd100)
+           {
+                mcu${mcu_no}_ESR_100clk = 'd0;
+
+		if((mcu${mcu_no}_rdpctl_dac_error_100clk_seen == 1'b1) && (mcu${mcu_no}_rdpctl_dau_error_100clk_seen == 1'b1) && (mcu${mcu_no}_rdpctl_fbr_error_100clk_seen == 1'b1))
+			trigger(mcu${mcu_no}_rdpctl_dac_dau_fbr_error_100clk_seen_trig);
+		if((mcu${mcu_no}_rdpctl_dac_error_100clk_seen == 1'b1) && (mcu${mcu_no}_rdpctl_dau_error_100clk_seen == 1'b1) && (mcu${mcu_no}_rdpctl_fbu_error_100clk_seen == 1'b1))
+			trigger(mcu${mcu_no}_rdpctl_dac_dau_fbu_error_100clk_seen_trig);
+		if((mcu${mcu_no}_rdpctl_dac_error_100clk_seen == 1'b1) && (mcu${mcu_no}_rdpctl_fbr_error_100clk_seen == 1'b1) && (mcu${mcu_no}_rdpctl_fbu_error_100clk_seen == 1'b1))
+			trigger(mcu${mcu_no}_rdpctl_dac_fbr_fbu_error_100clk_seen_trig);
+		if((mcu${mcu_no}_rdpctl_dac_error_100clk_seen == 1'b1) && (mcu${mcu_no}_rdpctl_dau_error_100clk_seen == 1'b1) && 
+		   (mcu${mcu_no}_rdpctl_fbr_error_100clk_seen == 1'b1) && (mcu${mcu_no}_rdpctl_fbu_error_100clk_seen == 1'b1))
+			trigger(mcu${mcu_no}_rdpctl_dac_dau_fbr_fbu_error_100clk_seen_trig);
+	   }
+	   else if(mcu${mcu_no}_ESR_100clk == 'd1)
+	        {
+
+		mcu${mcu_no}_rdpctl_dac_error_100clk_seen = 1'b0;
+		mcu${mcu_no}_rdpctl_dau_error_100clk_seen = 1'b0;
+		mcu${mcu_no}_rdpctl_dsc_error_100clk_seen = 1'b0;
+		mcu${mcu_no}_rdpctl_fbr_error_100clk_seen = 1'b0;
+		mcu${mcu_no}_rdpctl_fbu_error_100clk_seen = 1'b0;
+
+                mcu${mcu_no}_ESR_100clk = mcu${mcu_no}_ESR_100clk + 'd1;
+           }
+           else
+           {
+                if(mcu${mcu_no}_ESR_intf.rdpctl_dac_error)
+                     mcu${mcu_no}_rdpctl_dac_error_100clk_seen = 1'b1;
+                if(mcu${mcu_no}_ESR_intf.rdpctl_dau_error)
+                     mcu${mcu_no}_rdpctl_dau_error_100clk_seen = 1'b1;
+                if(mcu${mcu_no}_ESR_intf.rdpctl_dsc_error)
+                     mcu${mcu_no}_rdpctl_dsc_error_100clk_seen = 1'b1;
+                if(mcu${mcu_no}_ESR_intf.rdpctl_fbr_error)
+                     mcu${mcu_no}_rdpctl_fbr_error_100clk_seen = 1'b1;
+                if(mcu${mcu_no}_ESR_intf.rdpctl_fbu_error)
+                     mcu${mcu_no}_rdpctl_fbu_error_100clk_seen = 1'b1;
+
+                mcu${mcu_no}_ESR_100clk = mcu${mcu_no}_ESR_100clk + 'd1;
+           }
+	   } // @
+	} // while
+} // task fc_mcu_ras_coverage:: mcu${mcu_no}_ras_table12()
+
+. }
+// *******************************************************************************************

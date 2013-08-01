@@ -1,0 +1,89 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_errclass.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "niu_error_dfn.vri"
+
+class CHostErrors {
+	bit[63:0] dma_errors=0;
+	bit [63:0] dma_address[];
+	bit[63:0] packet_errors=0;
+	bit[63:0] host_error_code=0;
+	bit [63:0] packet_address[];
+	function bit[63:0] isErrSet() {
+	  isErrSet = dma_errors|packet_errors|host_error_code;
+	}
+	task setError( integer type, bit [63:0] address[]) {
+	}
+	task new() {
+	  dma_errors=0;
+	  packet_errors=0;
+	}
+}
+
+class CMemErrors {
+   integer fifo_errors=0; 
+   task new() {
+	fifo_errors = 0;
+   }
+   function bit[63:0] isErrSet() {
+     isErrSet = fifo_errors;
+   }
+}
+
+class CNiuErrors {
+	CHostErrors hosterrors;
+	CMemErrors  memerrors;
+	integer exp_interrupt;
+	// CMacError   macerrors;
+
+        task new() {
+	  hosterrors = new();
+	  memerrors = new();
+        }
+	task setErrorCode(integer type, bit[63:0] error_code){
+	  if(type==HOST_ERRORMODE) {
+	   hosterrors.host_error_code = error_code;
+	   printf("CNiuErrors: hosterrors.host_error_code - %d \n",hosterrors.host_error_code);
+	  } else if(type==MEM_ERRORMODE) {
+	   memerrors.fifo_errors = error_code;
+	  }
+	}
+
+	function bit[63:0] isErrSet() {
+	   printf("CNiuErrors: hosterrors.host_error_code - %d \n",hosterrors.host_error_code);
+          isErrSet = hosterrors.isErrSet() | memerrors.isErrSet(); 
+        }
+
+}

@@ -1,0 +1,334 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: meta_monitor.if.vri
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#ifdef NIU_GATE
+
+//   Do nothing
+
+
+#else
+#ifndef METAMON_IF
+#define METAMON_IF
+
+#define OUTPUT_EDGE     PHOLD
+#define INPUT_EDGE      PSAMPLE #-1
+#define OUTPUT_SKEW     #1
+
+#define META_RESP_PATH    NIU_DUV_PATH.tds.niu_smx
+#define META_PATH         NIU_DUV_PATH.tds.niu_meta_arb // where NIU_DUV_PATH=TOP.cpu
+
+
+interface metamon_write_if
+{
+  input         clk                         CLOCK      verilog_node META_PATH.niu_clk";
+  input         dmc_meta0_req               INPUT_EDGE verilog_node META_PATH.dmc_meta0_req";
+  input [7:0]   dmc_meta0_req_cmd           INPUT_EDGE verilog_node META_PATH.dmc_meta0_req_cmd";
+  input [5:0]   dmc_meta0_transid           INPUT_EDGE verilog_node META_PATH.dmc_meta0_req_transID";
+  input [1:0]   dmc_meta0_port_num          INPUT_EDGE verilog_node META_PATH.dmc_meta0_req_port_num";
+  input [4:0]   dmc_meta0_dma_num           INPUT_EDGE verilog_node META_PATH.dmc_meta0_req_dma_num";
+  input [1:0]   dmc_meta0_func_num          INPUT_EDGE verilog_node META_PATH.dmc_meta0_req_func_num";
+  input [13:0]  dmc_meta0_req_length        INPUT_EDGE verilog_node META_PATH.dmc_meta0_req_length";
+  input [63:0]  dmc_meta0_req_address       INPUT_EDGE verilog_node META_PATH.dmc_meta0_req_address";
+  input [7:0]   dmc_meta0_clientid          INPUT_EDGE verilog_node META_PATH.dmc_meta0_req_client";
+  input [127:0] dmc_meta0_data              INPUT_EDGE verilog_node META_PATH.dmc_meta0_data";
+  input         dmc_meta0_data_valid        INPUT_EDGE verilog_node META_PATH.dmc_meta0_data_valid";
+  input         dmc_meta0_transfer_complete INPUT_EDGE verilog_node META_PATH.dmc_meta0_transfer_complete";
+  input [3:0]   dmc_meta0_status            INPUT_EDGE verilog_node META_PATH.dmc_meta0_status";
+  input [15:0]  dmc_meta0_req_byteenable    INPUT_EDGE verilog_node META_PATH.dmc_meta0_req_byteenable";
+
+  input         meta_dmc0_req_accept        INPUT_EDGE verilog_node META_PATH.meta_dmc0_req_accept";
+  input         meta_dmc0_data_req          INPUT_EDGE verilog_node META_PATH.meta_dmc0_data_req";
+//input         meta_dmc0_req_errors        INPUT_EDGE verilog_node META_PATH.meta_dmc0_req_errors";
+}
+
+port metamon_write_port
+{
+  clk;
+  command;
+  address;
+  command_request;
+  length;
+  dma_num;
+  func_num;
+  port_num;
+  transid;
+  client_id;
+  data;
+  data_valid;
+  byte_enables;
+
+  command_accept;
+  data_req;
+  transfer_complete;
+}
+
+bind metamon_write_port metamon_write_pbind
+{
+  clk                   metamon_write_if.clk;
+  command_request       metamon_write_if.dmc_meta0_req;
+  command               metamon_write_if.dmc_meta0_req_cmd;
+  address               metamon_write_if.dmc_meta0_req_address;
+  length                metamon_write_if.dmc_meta0_req_length;
+  dma_num               metamon_write_if.dmc_meta0_dma_num;
+  func_num              metamon_write_if.dmc_meta0_func_num;
+  port_num              metamon_write_if.dmc_meta0_port_num;
+  transid               metamon_write_if.dmc_meta0_transid;
+  client_id             metamon_write_if.dmc_meta0_clientid;
+  data                  metamon_write_if.dmc_meta0_data;
+  data_valid            metamon_write_if.dmc_meta0_data_valid;
+  byte_enables          metamon_write_if.dmc_meta0_req_byteenable;
+  command_accept        metamon_write_if.meta_dmc0_req_accept;
+  data_req              metamon_write_if.meta_dmc0_data_req;
+  transfer_complete     metamon_write_if.dmc_meta0_transfer_complete;
+}
+
+
+interface metamon_read_if
+{
+  input        clk                    CLOCK      verilog_node META_PATH.niu_clk";
+  input        dmc_meta1_req          INPUT_EDGE verilog_node META_PATH.dmc_meta1_req";
+  input [7:0]  dmc_meta1_req_cmd      INPUT_EDGE verilog_node META_PATH.dmc_meta1_req_cmd";
+  input [5:0]  dmc_meta1_transid      INPUT_EDGE verilog_node META_PATH.dmc_meta1_req_transID";
+  input [1:0]  dmc_meta1_port_num     INPUT_EDGE verilog_node META_PATH.dmc_meta1_req_port_num";
+  input [4:0]  dmc_meta1_dma_num      INPUT_EDGE verilog_node META_PATH.dmc_meta1_req_dma_num";
+  input [1:0]  dmc_meta1_func_num     INPUT_EDGE verilog_node META_PATH.dmc_meta1_req_func_num";
+  input [13:0] dmc_meta1_req_length   INPUT_EDGE verilog_node META_PATH.dmc_meta1_req_length";
+  input [63:0] dmc_meta1_req_address  INPUT_EDGE verilog_node META_PATH.dmc_meta1_req_address";
+  input [7:0]  dmc_meta1_clientid     INPUT_EDGE verilog_node META_PATH.dmc_meta1_req_client";
+  input        meta_dmc1_req_accept   INPUT_EDGE verilog_node META_PATH.meta_dmc1_req_accept";
+//input        meta_dmc1_req_errors   INPUT_EDGE verilog_node META_PATH.meta_dmc1_req_errors";
+}
+
+port metamon_read_port
+{
+  clk;
+  command;
+  address;
+  command_request;
+  length;
+  dma_num;
+  func_num;
+  port_num;
+  transid;
+  client_id;
+
+  command_accept;
+}
+
+bind metamon_read_port metamon_read_pbind
+{
+  clk                   metamon_read_if.clk;
+  command_request       metamon_read_if.dmc_meta1_req;
+  command               metamon_read_if.dmc_meta1_req_cmd;
+  address               metamon_read_if.dmc_meta1_req_address;
+  length                metamon_read_if.dmc_meta1_req_length;
+  dma_num               metamon_read_if.dmc_meta1_dma_num;
+  func_num              metamon_read_if.dmc_meta1_func_num;
+  port_num              metamon_read_if.dmc_meta1_port_num;
+  transid               metamon_read_if.dmc_meta1_transid;
+  client_id             metamon_read_if.dmc_meta1_clientid;
+  command_accept        metamon_read_if.meta_dmc1_req_accept;
+}
+
+
+
+interface metamon_response_if
+{
+  input         clk                      CLOCK      verilog_node META_RESP_PATH.niu_clk";
+  input         meta_dmc_resp_ready      INPUT_EDGE verilog_node META_RESP_PATH.meta_dmc_resp_ready";
+  input [7:0]   meta_dmc_resp_cmd        INPUT_EDGE verilog_node META_RESP_PATH.meta_dmc_resp_cmd";
+  input [5:0]   meta_dmc_resp_transid    INPUT_EDGE verilog_node META_RESP_PATH.meta_dmc_resp_transID";
+  input [1:0]   meta_dmc_resp_port_num   INPUT_EDGE verilog_node META_RESP_PATH.meta_dmc_resp_port_num";
+  input [4:0]   meta_dmc_resp_dma_num    INPUT_EDGE verilog_node META_RESP_PATH.meta_dmc_resp_dma_num";
+  input [13:0]  meta_dmc_resp_length     INPUT_EDGE verilog_node META_RESP_PATH.meta_dmc_resp_length";
+  input [63:0]  meta_dmc_resp_address    INPUT_EDGE verilog_node META_RESP_PATH.meta_dmc_resp_address";
+  input [7:0]   meta_dmc_resp_clientid   INPUT_EDGE verilog_node META_RESP_PATH.meta_dmc_resp_client";
+  input [15:0]  meta_dmc_resp_byteenable INPUT_EDGE verilog_node META_RESP_PATH.meta_dmc_resp_byteenable";
+  input [127:0] meta_dmc_resp_data       INPUT_EDGE verilog_node META_RESP_PATH.meta_dmc_data";
+  input [7:0]   meta_dmc_resp_data_valid INPUT_EDGE verilog_node META_RESP_PATH.meta_dmc_data_valid";
+  input [3:0]   meta_dmc_status          INPUT_EDGE verilog_node META_RESP_PATH.meta_dmc_data_status";
+
+  input [7:0]   meta_dmc_resp_complete   INPUT_EDGE verilog_node META_RESP_PATH.meta_dmc_resp_complete";
+  input [7:0]   meta_dmc_trans_complete  INPUT_EDGE verilog_node META_RESP_PATH.meta_dmc_resp_transfer_cmpl";
+  input [7:0]   dmc_meta_resp_accept     INPUT_EDGE verilog_node META_PATH.dmc_meta_resp_accept";
+}
+
+port metamon_response_port
+{
+  clk;
+  resp_command;
+  address;
+  resp_ready;
+  length;
+  dma_num;
+  port_num;
+  transid;
+  client_id;
+  resp_accept;
+  data;
+  byte_enables;
+  status;
+  data_valid;
+  resp_complete;
+  transfer_complete;
+}
+
+bind metamon_response_port metamon_resp_pbind
+{
+  clk                 metamon_response_if.clk;
+  resp_command        metamon_response_if.meta_dmc_resp_cmd;
+  address             metamon_response_if.meta_dmc_resp_address;
+  resp_ready          metamon_response_if.meta_dmc_resp_ready;
+  length              metamon_response_if.meta_dmc_resp_length;
+  dma_num             metamon_response_if.meta_dmc_resp_dma_num;
+  port_num            metamon_response_if.meta_dmc_resp_port_num;
+  transid             metamon_response_if.meta_dmc_resp_transid;
+  client_id           metamon_response_if.meta_dmc_resp_clientid;
+  resp_accept         metamon_response_if.dmc_meta_resp_accept;
+  data                metamon_response_if.meta_dmc_resp_data;
+  byte_enables        metamon_response_if.meta_dmc_resp_byteenable;
+  status              metamon_response_if.meta_dmc_status;
+  data_valid          metamon_response_if.meta_dmc_resp_data_valid;
+  resp_complete       metamon_response_if.meta_dmc_resp_complete;
+  transfer_complete   metamon_response_if.meta_dmc_trans_complete;
+}
+
+#endif
+
+
+interface metamon_ack_if
+{
+  input        clk                        CLOCK      verilog_node  META_RESP_PATH.niu_clk";
+  input [7:0]  meta_dmc_ack_cmd           INPUT_EDGE verilog_node  META_RESP_PATH.meta_dmc_ack_cmd[7:0]";
+  input [5:0]  meta_dmc_ack_transID       INPUT_EDGE verilog_node  META_RESP_PATH.meta_dmc_ack_transID[5:0]";
+  input [4:0]  meta_dmc_ack_dma_num       INPUT_EDGE verilog_node  META_RESP_PATH.meta_dmc_ack_dma_num[4:0]";
+  input        meta_dmc_ack_client        INPUT_EDGE verilog_node  META_RESP_PATH.meta_dmc_ack_client_rdmc";
+  input        meta_dmc_ack_ready         INPUT_EDGE verilog_node  META_RESP_PATH.meta_dmc_ack_ready";
+  input        dmc_meta_ack_accept        INPUT_EDGE verilog_node  META_RESP_PATH.rdmc_meta_ack_accept";
+  input        meta_dmc_ack_complete      INPUT_EDGE verilog_node  META_RESP_PATH.meta_dmc_ack_complete";
+  input        meta_dmc_ack_transfer_cmpl INPUT_EDGE verilog_node  META_RESP_PATH.meta_dmc_ack_transfer_cmpl[7:0]";
+
+//input [3:0]  meta_dmc_ack_cmd_status    INPUT_EDGE verilog_node  META_RESP_PATH.meta_dmc_ack_cmd_status[3:0]";
+}
+
+port metamon_ack_port
+{
+  clk;
+  ack_command;
+  transid;
+  dma_num;
+  client_id;
+  ack_ready;
+  ack_accept;
+  ack_complete;
+  ack_xfer_complete;
+
+//ack_status;
+}
+
+bind metamon_ack_port metamon_ack_pbind
+{
+  clk                  metamon_ack_if.clk;
+  ack_command          metamon_ack_if.meta_dmc_ack_cmd;
+  transid              metamon_ack_if.meta_dmc_ack_transID;
+  dma_num              metamon_ack_if.meta_dmc_ack_dma_num;
+  client_id            metamon_ack_if.meta_dmc_ack_client;
+  ack_ready            metamon_ack_if.meta_dmc_ack_ready;
+  ack_accept           metamon_ack_if.dmc_meta_ack_accept;
+  ack_complete         metamon_ack_if.meta_dmc_ack_complete;
+  ack_xfer_complete    metamon_ack_if.meta_dmc_ack_transfer_cmpl;
+
+//ack_status           metamon_ack_if.meta_dmc_ack_cmd_status;
+}
+
+interface metamon_arb_write_req_if
+{
+  input        clk                        CLOCK      verilog_node  META_PATH.niu_clk";
+  input        rcr_arb0_req               INPUT_EDGE verilog_node  META_PATH.rcr_arb0_req";
+  input        rdc_arb0_req               INPUT_EDGE verilog_node  META_PATH.rdc_arb0_req";
+  input        tdmc_arb0_req              INPUT_EDGE verilog_node  META_PATH.tdmc_arb0_req";
+  input        meta_dmc0_req_accept       INPUT_EDGE verilog_node  META_PATH.meta_dmc0_req_accept";
+}
+
+port metamon_arb_wr_req_port
+{
+  clk;                 
+  rcr_arb0_req;
+  rdc_arb0_req;
+  tdmc_arb0_req;
+  meta_dmc0_req_accept;
+}
+
+bind metamon_arb_wr_req_port metamon_arb_wr_req_pbind
+{
+  clk                    metamon_arb_write_req_if.clk;
+  rcr_arb0_req           metamon_arb_write_req_if.rcr_arb0_req;
+  rdc_arb0_req           metamon_arb_write_req_if.rdc_arb0_req;
+  tdmc_arb0_req          metamon_arb_write_req_if.tdmc_arb0_req;
+  meta_dmc0_req_accept   metamon_arb_write_req_if.meta_dmc0_req_accept;
+}
+
+interface metamon_arb_read_req_if
+{
+  input        clk                        CLOCK      verilog_node  META_PATH.niu_clk";
+  input        zcp_arb1_req               INPUT_EDGE verilog_node  META_PATH.zcp_arb1_req";
+  input        rbr_arb1_req               INPUT_EDGE verilog_node  META_PATH.rbr_arb1_req";
+  input        tdmc_arb1_req              INPUT_EDGE verilog_node  META_PATH.tdmc_arb1_req";
+  input        txc_arb1_req               INPUT_EDGE verilog_node  META_PATH.txc_arb1_req";
+  input        meta_dmc1_req_accept       INPUT_EDGE verilog_node  META_PATH.meta_dmc1_req_accept";
+}
+
+port metamon_arb_rd_req_port
+{
+  clk;
+  zcp_arb1_req;
+  rbr_arb1_req;
+  tdmc_arb1_req;
+  txc_arb1_req;
+  meta_dmc1_req_accept;
+}
+
+bind metamon_arb_rd_req_port metamon_arb_rd_req_pbind
+{
+  clk                      metamon_arb_read_req_if.clk;
+  zcp_arb1_req             metamon_arb_read_req_if.zcp_arb1_req;
+  rbr_arb1_req             metamon_arb_read_req_if.rbr_arb1_req;
+  tdmc_arb1_req            metamon_arb_read_req_if.tdmc_arb1_req;
+  txc_arb1_req             metamon_arb_read_req_if.txc_arb1_req;
+  meta_dmc1_req_accept     metamon_arb_read_req_if.meta_dmc1_req_accept;
+}
+
+
+#endif	// if NIU_GATE... else...endif
+// End                                           

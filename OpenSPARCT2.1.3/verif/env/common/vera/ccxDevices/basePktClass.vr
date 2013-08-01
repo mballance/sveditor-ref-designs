@@ -1,0 +1,102 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: basePktClass.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+
+// Generic CCX Packet.  Yes, there is no code in here.
+
+virtual class BasePkt {
+
+  protected string name = "Name Me";
+
+  public reg [16:0] sendPorts=0;   // pkt will be sent from this/these ports (start at)
+  public reg [16:0] targetPorts=0; // pkt is going to these ports (end at)
+  public integer arrivalPort=99;   // this packet arrived at this port
+  public integer arrivalTime=0;
+  public reg pktArrived=0; // set by BFM when the anticipated pkt arrives.
+  public integer senderPort;     // initiating port for this arriving pkt
+  public reg ccxSourced = 0; // req pkt came in from CCX, not backdoor initiated
+  public reg ccxSourced2 = 0; // cas/swap req pkt came in from CCX, not backdoor initiated
+  public integer decGntTarget; // serviceSends task uses this for multicast gnt tracking
+  public reg [2:0] tid = 0;
+  public reg [3:0] rtntyp = 4'b1111;
+  public reg [4:0] rqtyp = 5'b11111;
+  public integer rtntypU = 0; // identifies specific packet type using defines
+  public integer rqtypU = 0; // identifies specific packet type using defines    
+  public reg [39:0]  addr = 0;
+  public reg CASstore = 0; // holds true when a CAS request stores to L2. (for ld st sync)
+  public reg [2:0] atomic = 0; // 1 for CAS1, 2 for CAS2 or ifill response 1=1,2=2
+  public reg [8:0] atm_wire = 0;
+  public reg [8:0] req_wire = 9'bxxxxxxxxx;
+  public integer reqTime;
+  public integer reqId;
+  public reg [3:0] lineWay = 4'hf;
+  public reg [28:0] tag = ~0;
+  public reg [127:0] signature;
+      
+  virtual task print(integer atPort);
+  virtual task loadPkt(reg [145:0] dataIn, integer atPort);
+  virtual task send(integer fastResp=0);
+  virtual task recv();  
+//  virtual task cancelRecv();
+  virtual function reg [145:0] makeSignature();
+  virtual function reg [145:0] getVector();
+
+
+  
+  // how many bits set?
+  protected function integer manyHot(reg [63:0] vec) {
+    manyHot = 0;
+    while (vec) {
+      manyHot += vec[0];
+      vec >>= 1;
+    }
+  }
+
+  // which bit set? if return is 99, there was 0 or > 1 hot.
+  // returns the lowest bit number set.
+  protected function integer whichHot(reg [63:0] vec, reg check=1) {
+    whichHot = 0;
+
+    while(vec[whichHot] !== 1) whichHot++;
+
+    // none hot
+    if (check && vec == 0) whichHot=99;
+    // >1 hot
+    if (check && manyHot(vec) > 1) whichHot=99;
+
+  }
+
+}

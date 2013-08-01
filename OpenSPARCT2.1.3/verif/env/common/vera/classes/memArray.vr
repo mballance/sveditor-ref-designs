@@ -1,0 +1,496 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: memArray.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "std_display_defines.vri"
+#include "std_display_class.vrh"
+#include <baseUtilsClass.vrh>
+
+
+//////////////////////////////////////////////////////
+// Stuff that Will change with data width
+//////////////////////////////////////////////////////
+
+#define BYTE_LANES             8
+
+// high order bits
+#define MEM_BM                 7
+#define MEM_DATA               63
+#define MEM_ADDR               39
+#define MEM_ECC                7
+
+// low order bits
+// Array is 8 byte addressed, NOT byte addressed!!!
+#define MASK_EBW               64'hfffffffffffffff8
+#define MASK_128               64'hfffffffffffffff0
+#define MASK_512               64'hffffffffffffffc0
+
+#define RAND_DATA      {urandom(),urandom()}
+//#define DEFAULT_DATA   64'ha5a5a5a5a5a5a5a5  // breaks sparc model since it uses 0
+#define DEFAULT_DATA   0
+
+#define STD_DISP dbg
+
+//#define MEMARRAY_DEBUG 1
+
+class MemArray {
+
+  local reg [MEM_DATA:0] mainMem[]; // Array is 8 byte addressed, NOT byte addressed!!!
+  local StandardDisplay dbg;
+  local reg returnRandom = 0; // return random data for uninitialized address
+  local reg shft;
+  // general lock
+  local integer semaLock;
+  
+  task new (reg shift=0, StandardDisplay dbgin, reg retnRandom=0)
+  {
+    this.dbg = dbgin;
+    this.returnRandom = retnRandom;
+    this.shft = shift;
+    semaLock = alloc( SEMAPHORE, 0, 1, 1 );
+  }
+
+  //----------------------------------------------------------
+  // read mem.image and store them into mainMem
+
+  task loadMem (string mem_data, reg loadOnlyIOmem = 0,
+                reg hash_on = 0, BaseUtils utils = null)
+  {
+    integer    fdi;
+    string     line, val;
+    reg [63:0] addr;
+    reg [63:0] data;
+
+    PR_NORMAL("loadMainMem", MON_NORMAL,
+                psprintf("Loading mainMem from file = %s (loadOnlyIOmem=%0d)", mem_data, loadOnlyIOmem));
+    if (hash_on) {
+      PR_NORMAL("loadMainMem", MON_NORMAL,
+                   psprintf("L2 Index Hash is ON"));
+    }
+    if (hash_on && utils == null) {
+      PR_ERROR("loadMainMem", MON_ERROR,
+                   psprintf("L2 Index Hash is ON but BaseUtils handle is null! Need handle!"));
+    }
+
+    fdi = fopen (mem_data, "r");
+    if (fdi == 0) error ("Can't open input file\n");
+
+    while (1) {
+      line = freadstr (fdi, RAWIN); // NTB needs RAWIN
+      if (line == null) break;
+      if(line.match("^\s*$"))continue;    // empty line
+      if(line.match("^\s*//.*"))continue; // 0 or more blanks then // (comment line)
+      if(line.match("^@(\w+)")){          // @ in first column
+        val = line.backref(0);
+        addr = val.atohex();
+        if (shft) addr = addr >> 3;
+        continue; // have address, now get data lines, if any
+      }
+      //while(line.match("\s*(\w+)")){
+      while(line.match("\s*([0-9a-fA-F]+)")){ // hex number
+        val = line.backref(0);
+        data = val.atohex();
+        if ((loadOnlyIOmem && addr[39]) || !loadOnlyIOmem) {
+          // I/O Address are not hashed
+          if (hash_on & (addr[39]==1'b0)) {
+            mainMem[utils.hashpa(addr)] = data;
+            PR_DEBUG("loadMainMem", MON_DEBUG,
+                      psprintf("Loading %x into %x", data, utils.hashpa(addr)));
+          } else {
+            mainMem[addr] = data;
+            PR_DEBUG("loadMainMem", MON_DEBUG,
+                      psprintf("Loading %x into %x", data, addr));
+          }
+
+        }
+        line = line.postmatch();
+        if(shft)addr++;
+        else addr += 8;
+      }
+    }
+    fclose (fdi);
+    printf("");
+  }
+
+  //----------------------------------------------------------
+  // Dump Memory contents to specified file
+  //  (ported from N1)
+  //
+  task dump_mem(string filename, reg [MEM_ADDR:0] addr, integer num, reg shft)
+  {
+    integer fp, w_num;
+
+    addr = addr & MASK_EBW;
+    
+    PR_NORMAL("dump_mem", MON_NORMAL,
+                psprintf("Dumping mainMem to file = %s ", filename));
+    
+    if (shft) {
+      addr = addr >> 3;
+    }
+    fp     = fopen (filename, "w");
+    w_num  = 0;
+    fprintf(fp, "=============================\n");
+    fprintf(fp, "   ADDRESS       :  DATA\n");
+    fprintf(fp, "=============================\n");
+    while(w_num < num){
+      fprintf(fp, "%x : %x\n", addr, mainMem[addr]);
+      if (shft) {
+        addr = addr + 1;
+      } else {
+        addr = addr + 8;
+      }
+      w_num += 8;
+    }
+    fclose(fp);
+  }
+
+  //----------------------------------------------------------
+  // Write 64 bit word to memory
+  task write_mem (reg [MEM_ADDR:0] addr, reg [MEM_DATA:0] data, integer id = 0) {
+    semaphore_get( WAIT, semaLock , 1 );
+    addr = addr & MASK_EBW;
+    mainMem[addr] = data;
+#ifdef MEMARRAY_DEBUG
+    printf("%0d MemArray::write_mem [%0d] addr=%h, data=%h\n",get_cycle(),id,addr,data);
+    dumpMem({addr[MEM_ADDR:6],6'b000000},8); // L2 block size
+#endif
+    semaphore_put( semaLock , 1 );
+  }
+
+
+  //----------------------------------------------------------
+  // Masked write
+  task writeBM(bit [MEM_ADDR:0] addr,
+               bit [MEM_DATA:0] data,
+               bit [MEM_BM:0] byteMask,
+               integer id = 0) {
+
+    bit [MEM_DATA:0] tmpData, mem_out, memMask, tmp;
+    integer i;
+    
+    semaphore_get( WAIT, semaLock , 1 );
+    addr = addr & MASK_EBW;
+    
+    // build up a mask as wide as the data.
+    // if mask is "all bytes" then call the faster write() task.
+    if (byteMask == ~0)
+    {
+      semaphore_put( semaLock , 1 );    
+      this.write_mem(addr,data,id);
+      return;
+    }
+    else
+    {
+      memMask = 0;
+      for (i = MEM_BM ; i >= 0 ; i--)
+      {
+        if (byteMask[i] == 1) memMask = {memMask, 8'hFF};
+        else memMask = {memMask, 8'h00};
+      }
+    }
+
+    if (assoc_index(CHECK,mainMem,addr))
+    {
+      tmp = mainMem[addr];
+      mem_out = tmp[MEM_DATA:0];
+    }
+    else // adress never written
+    {
+      if (returnRandom) mem_out = RAND_DATA;
+      else mem_out = 64'h0;
+    }
+
+    // merge in selected data bytes
+    tmpData = ( mem_out & ~memMask ) | ( data & memMask ) ;
+    // update array
+    mainMem[ addr ] = tmpData;
+#ifdef MEMARRAY_DEBUG
+    printf("%0d MemArray::writeBM [%0d] addr=%h, data=%h, mask=%h\n",get_cycle(),id,addr,data,byteMask);
+    dumpMem({addr[MEM_ADDR:6],6'b000000},8); // L2 block size
+#endif
+
+    semaphore_put( semaLock , 1 );    
+    
+  }
+  
+  //----------------------------------------------------------
+  // Write 512 bit block to memory
+  task write512(reg [MEM_ADDR:0] addr, reg [511:0] data, integer id=0, reg revEndian=0) {
+    integer i,j;
+
+    addr = addr & MASK_512;
+
+    if (revEndian) {
+      for (i=0,j=7;i<8;i++,j--) {
+        mainMem[addr+(i*8)] = data[(j*64)+63:j*64];
+      }
+    } else {      
+      for (i=0;i<8;i++) {
+        mainMem[addr+(i*8)] = data[(i*64)+63:i*64];
+      }
+    }
+#ifdef MEMARRAY_DEBUG
+    printf("%0d MemArray::write512 [%0d] addr=%h, data=%h, revEndian=%0b\n",get_cycle(),id,addr,data,revEndian);
+    dumpMem({addr[MEM_ADDR:6],6'b000000},8); // L2 block size
+#endif
+    
+  }
+
+  //----------------------------------------------------------
+  // Write 128 bit block to memory
+  task write128(reg [MEM_ADDR:0] addr, reg [127:0] data, integer id=0, reg revEndian=0) {
+    integer i,j;
+
+    addr = addr & MASK_128;
+
+    if (revEndian) {
+      for (i=0,j=1;i<2;i++,j--) {
+        mainMem[addr+(i*8)] = data[(j*64)+63:j*64];
+      }
+    } else {      
+      for (i=0;i<2;i++) {
+        mainMem[addr+(i*8)] = data[(i*64)+63:i*64];
+      }
+    }
+#ifdef MEMARRAY_DEBUG
+    printf("%0d MemArray::write128 [%0d] addr=%h, data=%h, revEndian=%0b\n",get_cycle(),id,addr,data,revEndian);
+    dumpMem({addr[MEM_ADDR:6],6'b000000},8); // L2 block size
+#endif
+    
+  }
+  
+
+  //----------------------------------------------------------
+  // Read 64 bit word from memory
+  function reg [MEM_DATA:0] read_mem (reg [MEM_ADDR:0] addr,integer id=0, reg uninitWarn=0) {
+    
+    addr = addr & MASK_EBW;
+    
+    // If memory location has not been initialized,
+    // return all 0's or random data
+    if (assoc_index(CHECK,mainMem,addr)) {
+      read_mem = mainMem[addr];
+    } else {
+      if (returnRandom) read_mem = RAND_DATA;
+      else read_mem = DEFAULT_DATA;
+//       if (! addr[39]) PR_INFO("memArray", MON_INFO,
+//                     psprintf("WARNING - Access to uninitialized address(%h) in L2 memory ",addr));
+    }
+
+#ifdef MEMARRAY_DEBUG
+    printf("%0d MemArray::read_mem [%0d] addr=%h, data=%h\n",get_cycle(),id,addr,read_mem);
+    dumpMem({addr[MEM_ADDR:6],6'b000000},8); // L2 block size
+#endif
+    
+  }
+
+  // Read 512 bit block from memory
+  function reg [511:0] read512 (reg [MEM_ADDR:0] addr, integer id=0, reg revEndian=0, reg uninitWarn=0) {
+    integer i,j;
+    read512 = 0;
+
+    addr = addr & MASK_512;
+
+    if (revEndian) {
+      for (i=0,j=7;i<8;i++,j--) {
+        if (assoc_index(CHECK,mainMem,addr+(i*8))) {
+          read512[(j*64)+63:j*64] = mainMem[addr+(i*8)];
+        } else {
+          if (returnRandom) read512[(j*64)+63:j*64] = RAND_DATA;
+          else read512[(j*64)+63:j*64] = DEFAULT_DATA;
+//           if (! addr[39]) PR_INFO("memArray", MON_INFO,
+//                     psprintf("WARNING - Access to uninitialized address(%h) in L2 memory ",addr));
+        }
+      }
+    } else {
+      for (i=0;i<8;i++) {
+        if (assoc_index(CHECK,mainMem,addr+(i*8))) {
+          read512[(i*64)+63:i*64] = mainMem[addr+(i*8)];
+        } else {
+          if (returnRandom) read512[(i*64)+63:i*64] = RAND_DATA;
+          else read512[(i*64)+63:i*64] = DEFAULT_DATA;
+//           if (! addr[39]) PR_INFO("memArray", MON_INFO,
+//                     psprintf("WARNING - Access to uninitialized address(%h) in L2 memory ",addr));
+        }
+      }
+    }
+#ifdef MEMARRAY_DEBUG
+    printf("%0d MemArray::read512 [%0d] addr=%h, data=%h, revEndian=%0b\n",get_cycle(),id,addr,read512,revEndian);
+    dumpMem({addr[MEM_ADDR:6],6'b000000},8); // L2 block size
+#endif    
+  }
+
+  // Read 128 bit block from memory
+  function reg [127:0] read128 (reg [MEM_ADDR:0] addr, integer id=0, reg revEndian=0, reg uninitWarn=0) {
+    integer i,j;
+    read128 = 0;
+    
+    addr = addr & MASK_128;
+
+    if (revEndian) {
+      for (i=0,j=1;i<2;i++,j--) {
+        if (assoc_index(CHECK,mainMem,addr+(i*8))) {
+          read128[(j*64)+63:j*64] = mainMem[addr+(i*8)];
+        } else {
+          if (returnRandom) read128[(j*64)+63:j*64] = RAND_DATA;
+          else read128[(j*64)+63:j*64] = DEFAULT_DATA;
+//           if (! addr[39]) PR_INFO("memArray", MON_INFO,
+//                     psprintf("WARNING - Access to uninitialized address(%h) in L2 memory ",addr));
+        }
+      }
+    } else {
+      for (i=0;i<2;i++) {
+        if (assoc_index(CHECK,mainMem,addr+(i*8))) {
+          read128[(i*64)+63:i*64] = mainMem[addr+(i*8)];
+        } else {
+          if (returnRandom) read128[(i*64)+63:i*64] = RAND_DATA;
+          else read128[(i*64)+63:i*64] = DEFAULT_DATA;
+//           if (! addr[39]) PR_INFO("memArray", MON_INFO,
+//                     psprintf("WARNING - Access to uninitialized address(%h) in L2 memory ",addr));
+        }
+      }
+    }
+#ifdef MEMARRAY_DEBUG
+    printf("%0d MemArray::read128 [%0d] addr=%h, data=%h, revEndian=%0b\n",get_cycle(),id,addr,read128,revEndian);
+    dumpMem({addr[MEM_ADDR:6],6'b000000},8); // L2 block size
+#endif       
+  }
+
+
+
+  // free contents. Use either start & end address OR
+  // start address and amount. Amount is number of BYTES
+  task freeMem(bit [MEM_ADDR:0] start,
+               bit [MEM_ADDR:0] ending=0,
+               integer amount=0)
+  {
+
+    integer success;
+    integer remaining;
+    bit [MEM_ADDR:0] tmpaddr, index;
+
+    
+    semaphore_get( WAIT, semaLock , 1 );
+    start = start & MASK_EBW;
+    ending = ending & MASK_EBW;
+
+    if (amount & ending)
+    {
+      error("ERROR - freeMem was used incorrectly!!!\n");
+    }
+
+    if (amount) {
+      // adjust amount in bytes to be amount in "memory array width" lines.
+      amount = amount + start[2:0]; // take offset into account  8 byte word based
+      if (amount % BYTE_LANES) amount = amount/BYTE_LANES + 1;
+      else amount = amount/BYTE_LANES;
+
+      index = start;
+      remaining = amount;
+      while (remaining)
+      {
+        assoc_index (DELETE, mainMem, index);
+        success = assoc_index (NEXT,  mainMem, index);
+        if (success == 0 || index >= start+amount) break;
+        remaining--;
+      }
+
+    } else { // user gave ending address
+      index = start;
+      ending = ending;
+      while (index <= ending)
+      {
+        assoc_index (DELETE, mainMem, index);
+        success = assoc_index (NEXT,  mainMem, index);
+        // if unsuccessful we need to break out
+        if (success == 0 || index >= ending) break;
+      }
+    }
+    semaphore_put( semaLock , 1 );
+  }
+
+
+  // Dump a range of memory.
+  // amount is in array widths/elements.
+  task dumpMem(bit [MEM_ADDR:0] addr,
+               integer amount)
+
+  {
+    bit [MEM_DATA:0] data;
+    integer i,tmp;
+    bit [MEM_ADDR:0] word_size_mask=BYTE_LANES-1; // 4-1=3
+
+    addr = addr & MASK_EBW;
+    
+    printf("%0d  dumpMem: dumping memory at 0x%h for %0d Addresses :\n",get_cycle(), addr,amount);
+
+    // adjust amount in bytes to be amount in "memory array width" lines.
+    //amount = amount + start[2:0];
+    //if (amount % 8) amount = amount/8 + 1;
+    //else amount = amount/8;
+
+    
+    for (i = 1 ; i <= amount ; i++) {
+      if (assoc_index(CHECK,mainMem,addr))
+        printf("  Addr = 0x%h,  Data = 0x%h\n",addr,mainMem[addr]);
+      else
+        printf("  Addr = 0x%h,  Data = uninitialized addr\n",addr);
+      addr += BYTE_LANES;
+    }
+
+    printf("%0d  dumpMem: finished dumping memory.\n\n",get_cycle());
+
+  }
+
+  // for debug only
+  task dumpArray()
+  {
+
+    bit [MEM_ADDR:0] index=0;
+
+    printf("\n");
+    printf("%0d  dumpArray: \n", get_cycle());
+    
+    if ( assoc_index(FIRST, mainMem, index))
+      printf(" index=0x%h, data=0x%h \n", index, mainMem[index]);
+    else return;
+
+    while ( assoc_index(NEXT, mainMem, index) )
+      printf(" index=0x%h, data=0x%h \n", index, mainMem[index]);
+
+    printf("\n");
+  }
+  
+}

@@ -1,0 +1,306 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: baseUtilsClass.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "std_display_defines.vri"
+#include "std_display_class.vrh"
+#include "plusArgMacros.vri"
+
+// if your bench does not use any common Verilog error detection,
+// define NO_VERILOG_ERRORS so that code gets excluded from here!
+
+#ifndef NO_VERILOG_ERRORS
+#include "errorCountTasks.if.vrh"
+#endif
+
+class BaseUtils {
+  
+  local string className = "baseUtilsClass";
+  local StandardDisplay dbg;
+  local integer startTime = 0;
+  local integer clockPeriod;
+  
+  task new(StandardDisplay dbgHndl, integer clockPeriod = 100);
+  function reg [63:0] list2vector(string thrstr);
+  task dumpFailing();
+  task startTimer();
+  task dumpStats();
+  task wait4termination(integer maxCycle=0);
+  task exitBench(string scope=null, string message="",
+                 reg noPrint=0, reg externalFail=0);
+
+  function reg file_exists(string filename, string mode);
+  function reg [39:0] hashpa(reg [39:0] pa);
+  task updateClockPeriod(integer period);
+}
+
+
+
+//----------------------------------------------------------  
+task BaseUtils::new(StandardDisplay dbgHndl, integer clockPeriod = 100) {
+  this.dbg = dbgHndl;
+  this.clockPeriod = clockPeriod;
+}
+
+task BaseUtils::updateClockPeriod(integer period) {
+  if (this.clockPeriod != period)
+    dbg.dispmon("baseUtils", MON_ALWAYS,
+                psprintf("clockPeriod updated to %0d",clockPeriod));
+  this.clockPeriod = period;
+}
+
+  
+// Extract vector from comma seperated string
+function reg [63:0] BaseUtils::list2vector(string thrstr) {
+  string tempstr;
+  integer i;
+
+  list2vector = 0;
+
+  if (thrstr.match("^all$")) { 
+    list2vector = 64'hffffffffffffffff;
+  } else if (thrstr.match("^none$"))  {
+    list2vector = 0;
+  } else {
+    for (i=0;i<thrstr.len();i++) {
+      tempstr.bittostr(thrstr.getc(i));
+      if (tempstr != ",") {
+        list2vector[tempstr.atoi()] = 1;
+      }
+    }
+  }
+}
+
+//----------------------------------------------------------
+// Placeholders - expect to be extended in bench
+task BaseUtils::dumpFailing() {
+  printf ("[dumpFailing] Nothing to Dump: Need to override this method\n");
+}
+
+task BaseUtils::startTimer () {
+  startTime = 0; // review, NTB cant get_systime();
+}
+
+//----------------------------------------------------------
+// Placeholders - expect to be extended in bench
+task BaseUtils::dumpStats () {
+  integer endTime;
+  integer cycleCount;
+  integer simTime;
+
+  endTime = 2; // review, NTB cant get_systime();
+  cycleCount = get_cycle();
+  simTime = endTime - startTime;
+  if (simTime <1) simTime = 1;
+
+  printf ("\nINFO >> Simulation CPS = %0d [%0d cycles in %0d secs]\n\n",
+          cycleCount/simTime, cycleCount, simTime);
+}
+
+
+// Will wait for too many errors, too much time,
+// too many clocks, too many idle cycles etc.
+// Will NOT participate in a natural "good end".
+//
+// This is for certain benches. You may want to redefine this
+// in your class that extends this.
+task BaseUtils::wait4termination(integer maxCycle=0) {
+  
+  // combine Verilog and Vera counts
+  integer myErrors[2]; // = {0,0};
+  integer myWarns[2]; // = {0,0};
+  integer previousCountE[2]; // = {0,0};
+  integer previousCountW[2]; // = {0,0};
+  integer i;
+  
+  // for NTB
+  for (i=0;i<2;i++) {
+    myErrors[i] = 0;
+    myWarns[i] = 0;
+    previousCountE[i] = 0;
+    previousCountW[i] = 0;
+  }
+
+      
+  fork // too many errors
+#ifndef NO_VERILOG_ERRORS    
+  {
+    // watch verilog errors. you can see an inc of > 1...
+    while (1) {
+      @(errorCount_if.errorCount or errorCount_if.warnCount); 
+      myErrors[0] += (errorCount_if.errorCount - previousCountE[0]);
+      previousCountE[0] = errorCount_if.errorCount;
+      myWarns[0] += (errorCount_if.warnCount - previousCountW[0]);
+      previousCountW[0] = errorCount_if.warnCount;
+    }
+  }
+#endif
+  {
+    // watch vera errors. you can see an inc of > 1...
+    while (1) {
+      wait_var(dbg.errors, dbg.warnings); 
+      myErrors[1] += (dbg.errors - previousCountE[1]);
+      previousCountE[1] = dbg.errors;
+      myWarns[1] += (dbg.warnings - previousCountW[1]);
+      previousCountW[1] = dbg.warnings;
+    }
+  }
+  {
+    while ((myErrors[0] + myErrors[1]) < dbg.maxerror &&
+           (myWarns[0] + myWarns[1]) < dbg.maxwarning)
+      wait_var(myErrors[0],myWarns[0],myErrors[1],myWarns[1]);
+
+    exitBench(*,  // scope
+              *,  // message
+              myErrors[0] > 0 ? 1 : 0, // no vera print, verilog will
+              1); // force a fail
+  }
+  
+  // too many clocks
+  // NOTE: get_cycle is based on Vera's SystemClock and may not
+  // match your particular concept of what a "cycle" is in your bench!
+  {
+    if ((maxCycle > 0) && (clockPeriod > 0)) {
+      while (1) {
+        // Please to not check every clock!
+        // delay is measurably better than repeat (x) @(posedge CLOCK).
+        // I asked Synopsys to measure it, really.
+        delay(this.clockPeriod*500);
+        if (get_cycle() >= maxCycle) {
+          dbg.dispmon("baseUtils", MON_ALWAYS,
+                      psprintf("Max cycles of %0d exceeded (Vera)! Exiting with ERRORs...",maxCycle));
+        }
+      }
+    }
+  }
+
+  join none
+
+
+}
+
+
+
+//----------------------------------------------------------
+// This task may not be reached if the bench fails for some
+// other reason like a call to error(), expect error, std_display_class
+// deciding there are too many errors, etc.
+// It is suggested that this be the last thing you do when you
+// think that you are done.
+task BaseUtils::exitBench(string scope=null,
+                          string message="",
+                          reg noPrint=0, // set if you know Verilog will print FAIL
+                          reg externalFail=0) {
+  string tmpstr;
+  reg [1024:0] testNameVera,testNameAsm,testNameAlt;
+  integer seedFileHndl, errors, warns, weFailed=0;
+
+  if (message == null) message = " ";
+  
+  // check VERA error count
+  dbg.getCounts(errors,warns);  
+  if (errors || (warns >= dbg.maxwarning) || externalFail) weFailed = 1;
+  
+  // If you are using seeding.vri, this will update seeds.log with status.
+  seedFileHndl = fopen( "./seeds.log", "a" );
+  if ( seedFileHndl !== 0 ) {
+    if (mChkPlusarg(vera_diag_name=)) mGetPlusargStr(vera_diag_name=,testNameVera);
+    if (mChkPlusarg(asm_diag_name=)) mGetPlusargStr(asm_diag_name=,testNameAsm);
+    if (mChkPlusarg(test=)) mGetPlusargStr(test=,testNameAlt);
+    if (weFailed) {
+      fprintf(seedFileHndl, "Diag %s %s %s FAILED! Use this seed...\n", testNameVera, testNameAsm, testNameAlt, errors, warns);
+    } else {
+      fprintf(seedFileHndl, "Diag %s %s %s possibly PASSED. If you don't see PASSED, it may have hung.\n", testNameVera, testNameAsm, testNameAlt);
+    }
+    fclose(seedFileHndl);
+  }
+
+  // if we are not printing this stuff in verilog, print it here in vera!
+  // if both Vera and Verilog are checking for errors, this text may get
+  // printed by both Vera and Verilog.
+  if (noPrint == 0) {
+    if (scope == null) scope = className;
+
+    if (weFailed) {
+      printf("\n");
+      // regreport needs "ERROR". Do not alter.
+      sprintf(tmpstr, "Diag Finished/Failed with ERRORs!  %s\n", message);
+      dbg.dispmon(scope, MON_ALWAYS, tmpstr);
+      // NOTE: CLOCK is based on Vera's SystemClock and may not
+      // match your particular concept of what a "clock" or "cycle" is in your bench!
+      repeat (dbg.wait_cycle_to_kill) @(posedge CLOCK);
+    } else {
+      printf("\n");
+      // regreport needs "GOOD End". Do not alter.
+      //
+      // Reaching "GOOD End" does not imply passing. The word PASS shall never
+      // be printed, ever! That is up to regreport to decide. This assumes a Sparc
+      // bench and regreport being in use although I expect regreport to be used for
+      // all simulations that are not Sparc based.
+      sprintf(tmpstr, "Diag Reached GOOD End! (pre-regreport checking) %s\n", message);      
+      dbg.dispmon(scope, MON_ALWAYS,tmpstr);
+      // will remove following later after sims gets changed
+      sprintf(tmpstr, "regreport will determine if diag has really PASSED\n");
+      dbg.dispmon(scope, MON_ALWAYS,tmpstr);
+    }
+
+    sprintf(tmpstr, "regreport clock period: %0d units\n", this.clockPeriod);
+    dbg.dispmon(scope, MON_ALWAYS,tmpstr);
+
+    exit(errors);
+  }
+
+}
+
+
+//----------------------------------------------------------
+function reg BaseUtils::file_exists(string filename, string mode) {
+  integer FP;
+
+  FP = fopen(filename, mode, SILENT);
+  if (FP === 0) {
+    file_exists = 0;
+  } else {
+    file_exists = 1;
+  }
+  fclose (FP);
+}
+
+//----------------------------------------------------------
+// It is assumed that gParam.hash_on is checked before calling the routine.
+function reg [39:0] BaseUtils::hashpa(reg [39:0] pa) {
+
+  hashpa = pa;
+  hashpa [17:11] = {(pa[32:28]^pa[17:13]),(pa[19:18]^pa[12:11])};
+}

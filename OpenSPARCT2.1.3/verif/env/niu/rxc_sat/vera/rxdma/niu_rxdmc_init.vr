@@ -1,0 +1,134 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_rxdmc_init.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "niu_rxdmc.vrh"
+
+extern CRDMC rdmc;
+class niu_rxdmc_init_class {
+
+  task new() {
+     rxdmc_init();
+  }
+
+  task rxdmc_init();
+}
+
+task niu_rxdmc_init_class::rxdmc_init() {
+       shadow integer n;
+       shadow integer i;
+       integer dma_chnl, desc_ring_length,compl_ring_len,initial_kick;
+       integer blk_size,buf_siz0,buf_siz1,buf_siz2,vld0,vld1,vld2;
+       bit [63:0] rbr_config_B_data;
+
+
+        if (get_plus_arg (CHECK, "LOOP_BACK_RXDMA_CHNL"))
+        dma_chnl = (get_plus_arg (NUM, "LOOP_BACK_RXDMA_CHNL"))%16;
+        else
+        dma_chnl = 0 ;
+
+       if (get_plus_arg (CHECK,"RX_BLKSZ"))
+          blk_size = get_plus_arg(NUM,"RX_BLKSZ");
+       else
+          blk_size = 4;
+       if (get_plus_arg (CHECK,"RX_BUF_SIZ0"))
+          buf_siz0 = get_plus_arg(NUM,"RX_BUF_SIZ0");
+       else
+          buf_siz0 = 256;
+       if (get_plus_arg (CHECK,"RX_BUF_SIZ1"))
+          buf_siz1 = get_plus_arg(NUM,"RX_BUF_SIZ1");
+       else
+          buf_siz1 = 1024;
+       if (get_plus_arg (CHECK,"RX_BUF_SIZ2"))
+          buf_siz2 = get_plus_arg(NUM,"RX_BUF_SIZ2");
+       else
+          buf_siz2 = 2048;
+       if (get_plus_arg (CHECK,"VLD0"))
+          vld0 = get_plus_arg(NUM,"VLD0");
+       else
+          vld0 = 1;
+       if (get_plus_arg (CHECK,"VLD1"))
+          vld1 = get_plus_arg(NUM,"VLD1");
+       else
+          vld1 = 1;
+       if (get_plus_arg (CHECK,"VLD2"))
+          vld2 = get_plus_arg(NUM,"VLD2");
+       else
+          vld2 = 1;
+
+        rbr_config_B_data[63:26]= 0;
+        rbr_config_B_data[22:18]= 0;
+        rbr_config_B_data[14:10]= 0;
+        rbr_config_B_data[6:2]= 0;
+
+        case(blk_size) {
+                4: rbr_config_B_data[25:24] = 2'b00;
+                8: rbr_config_B_data[25:24] = 2'b01;
+               16: rbr_config_B_data[25:24] = 2'b10;
+               32: rbr_config_B_data[25:24] = 2'b11;
+                    }
+                rbr_config_B_data[23]    = vld2; //VLD2
+                rbr_config_B_data[17:16] = 2'b00;
+        case(buf_siz2) {
+               2048: rbr_config_B_data[17:16] = 2'b00;
+               4096: rbr_config_B_data[17:16] = 2'b01;
+               8192: rbr_config_B_data[17:16] = 2'b10;
+              16384: rbr_config_B_data[17:16] = 2'b11;
+                    }
+                rbr_config_B_data[15] = vld1; //VLD1
+                rbr_config_B_data[9:8] = 2'b00;
+        case(buf_siz1) {
+               1024: rbr_config_B_data[9:8] = 2'b00;
+               2048: rbr_config_B_data[9:8] = 2'b01;
+               4096: rbr_config_B_data[9:8] = 2'b10;
+               8192: rbr_config_B_data[9:8] = 2'b11;
+                    }
+                rbr_config_B_data[7]  = vld0; //VLD0
+        case(buf_siz0) {
+                256: rbr_config_B_data[1:0] = 2'b00;
+                512: rbr_config_B_data[1:0] = 2'b01;
+               1024: rbr_config_B_data[1:0] = 2'b10;
+               2048: rbr_config_B_data[1:0] = 2'b11;
+                    }
+
+// ###################################################################################################
+// ###################################################################################################
+// ###################################################################################################
+        // One single function to initialize the whole RXDMA channel
+        // This function should be called for each RXDMA channel you want to initialize
+        desc_ring_length = 16'h1fff;
+        compl_ring_len = 16'h2000;
+        initial_kick = 16'h00ff;
+        rdmc.InitRXDMA(dma_chnl, desc_ring_length, compl_ring_len, rbr_config_B_data, initial_kick);
+
+}

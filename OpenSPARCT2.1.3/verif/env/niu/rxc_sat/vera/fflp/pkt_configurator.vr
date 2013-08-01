@@ -1,0 +1,2206 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: pkt_configurator.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "pkt_configurator_defines.vri"
+#include "fflp_test_defines.vri"
+#include "ip_util.vrh"
+#include "rxc_class.vrh"
+#include "ip_ingress_db.vrh"
+#include "pcg_defines.vri"
+#include "pcg_types.vri"
+#include "pack_db.vrh"
+#include "flow_db.vrh"
+#include "flow_db_tasks.vrh"
+#include "pg_top_pp.vrh"
+#include "pc_top_pp.vrh"
+#include "pcg_token.vrh"
+#include "niu_byte_array.vrh"
+#include "fflp_model.vrh"
+#include "pgIdgen.vrh"
+#include "niu_lptoken.vrh"
+
+extern pg pack_gen[16];
+extern mbox_class mbox_id;
+extern Crxc rxc_cl;
+
+extern hdl_task force_tcam_entry (bit [7:0] tcam_index, bit [199:0] tcam_key);
+
+class pkt_class_info {
+
+  bit tcam_disc;
+  bit tcam_sel;
+  bit tcam_ipaddr;
+  bit [4:0] pkt_class;
+
+  task new(integer class_num){
+    tcam_disc = 0;
+    tcam_sel = 0;
+    tcam_ipaddr = 0;
+    pkt_class = class_num;
+  }
+}
+
+class flow_key {
+  bit	    PORT;
+  bit	    L2DA;
+  bit 	    VLAN;
+  bit 	    IPSA;
+  bit 	    IPDA;
+  bit 	    PROTO;
+  bit [1:0] L4_0;
+  bit [1:0] L4_1;
+ 
+  task new(integer class_num){
+    PORT  = 0;
+    L2DA  = 0;
+    VLAN  = 0;
+    IPSA  = 0;
+    IPDA  = 0;
+    PROTO = 0;
+    L4_0  = 0;
+    L4_1  = 0;
+  }
+}
+
+//extern setup_cam_ram_fcram_class tables_shadow;
+
+class pkt_configurator {
+
+  integer pktgen_mbox_out; // to send the pkt info to pktgen
+  integer total_tcam_entries;
+  integer tcam_l2_rdc_tblnum;
+  bit debug_en;
+  bit force_lookup_hit;
+  CpgIdgen pgIdgen;
+  bit flow_from_test_en;
+
+  bit [31:0] crc_table[256] =
+  {
+    32'h00000000, 32'h77073096, 32'hee0e612c, 32'h990951ba, 32'h076dc419, 32'h706af48f,
+    32'he963a535, 32'h9e6495a3, 32'h0edb8832, 32'h79dcb8a4, 32'he0d5e91e, 32'h97d2d988,
+    32'h09b64c2b, 32'h7eb17cbd, 32'he7b82d07, 32'h90bf1d91, 32'h1db71064, 32'h6ab020f2,
+    32'hf3b97148, 32'h84be41de, 32'h1adad47d, 32'h6ddde4eb, 32'hf4d4b551, 32'h83d385c7,
+    32'h136c9856, 32'h646ba8c0, 32'hfd62f97a, 32'h8a65c9ec, 32'h14015c4f, 32'h63066cd9,
+    32'hfa0f3d63, 32'h8d080df5, 32'h3b6e20c8, 32'h4c69105e, 32'hd56041e4, 32'ha2677172,
+    32'h3c03e4d1, 32'h4b04d447, 32'hd20d85fd, 32'ha50ab56b, 32'h35b5a8fa, 32'h42b2986c,
+    32'hdbbbc9d6, 32'hacbcf940, 32'h32d86ce3, 32'h45df5c75, 32'hdcd60dcf, 32'habd13d59,
+    32'h26d930ac, 32'h51de003a, 32'hc8d75180, 32'hbfd06116, 32'h21b4f4b5, 32'h56b3c423,
+    32'hcfba9599, 32'hb8bda50f, 32'h2802b89e, 32'h5f058808, 32'hc60cd9b2, 32'hb10be924,
+    32'h2f6f7c87, 32'h58684c11, 32'hc1611dab, 32'hb6662d3d, 32'h76dc4190, 32'h01db7106,
+    32'h98d220bc, 32'hefd5102a, 32'h71b18589, 32'h06b6b51f, 32'h9fbfe4a5, 32'he8b8d433,
+    32'h7807c9a2, 32'h0f00f934, 32'h9609a88e, 32'he10e9818, 32'h7f6a0dbb, 32'h086d3d2d,
+    32'h91646c97, 32'he6635c01, 32'h6b6b51f4, 32'h1c6c6162, 32'h856530d8, 32'hf262004e,
+    32'h6c0695ed, 32'h1b01a57b, 32'h8208f4c1, 32'hf50fc457, 32'h65b0d9c6, 32'h12b7e950,
+    32'h8bbeb8ea, 32'hfcb9887c, 32'h62dd1ddf, 32'h15da2d49, 32'h8cd37cf3, 32'hfbd44c65,
+    32'h4db26158, 32'h3ab551ce, 32'ha3bc0074, 32'hd4bb30e2, 32'h4adfa541, 32'h3dd895d7,
+    32'ha4d1c46d, 32'hd3d6f4fb, 32'h4369e96a, 32'h346ed9fc, 32'had678846, 32'hda60b8d0,
+    32'h44042d73, 32'h33031de5, 32'haa0a4c5f, 32'hdd0d7cc9, 32'h5005713c, 32'h270241aa,
+    32'hbe0b1010, 32'hc90c2086, 32'h5768b525, 32'h206f85b3, 32'hb966d409, 32'hce61e49f,
+    32'h5edef90e, 32'h29d9c998, 32'hb0d09822, 32'hc7d7a8b4, 32'h59b33d17, 32'h2eb40d81,
+    32'hb7bd5c3b, 32'hc0ba6cad, 32'hedb88320, 32'h9abfb3b6, 32'h03b6e20c, 32'h74b1d29a,
+    32'head54739, 32'h9dd277af, 32'h04db2615, 32'h73dc1683, 32'he3630b12, 32'h94643b84,
+    32'h0d6d6a3e, 32'h7a6a5aa8, 32'he40ecf0b, 32'h9309ff9d, 32'h0a00ae27, 32'h7d079eb1,
+    32'hf00f9344, 32'h8708a3d2, 32'h1e01f268, 32'h6906c2fe, 32'hf762575d, 32'h806567cb,
+    32'h196c3671, 32'h6e6b06e7, 32'hfed41b76, 32'h89d32be0, 32'h10da7a5a, 32'h67dd4acc,
+    32'hf9b9df6f, 32'h8ebeeff9, 32'h17b7be43, 32'h60b08ed5, 32'hd6d6a3e8, 32'ha1d1937e,
+    32'h38d8c2c4, 32'h4fdff252, 32'hd1bb67f1, 32'ha6bc5767, 32'h3fb506dd, 32'h48b2364b,
+    32'hd80d2bda, 32'haf0a1b4c, 32'h36034af6, 32'h41047a60, 32'hdf60efc3, 32'ha867df55,
+    32'h316e8eef, 32'h4669be79, 32'hcb61b38c, 32'hbc66831a, 32'h256fd2a0, 32'h5268e236,
+    32'hcc0c7795, 32'hbb0b4703, 32'h220216b9, 32'h5505262f, 32'hc5ba3bbe, 32'hb2bd0b28,
+    32'h2bb45a92, 32'h5cb36a04, 32'hc2d7ffa7, 32'hb5d0cf31, 32'h2cd99e8b, 32'h5bdeae1d,
+    32'h9b64c2b0, 32'hec63f226, 32'h756aa39c, 32'h026d930a, 32'h9c0906a9, 32'heb0e363f,
+    32'h72076785, 32'h05005713, 32'h95bf4a82, 32'he2b87a14, 32'h7bb12bae, 32'h0cb61b38,
+    32'h92d28e9b, 32'he5d5be0d, 32'h7cdcefb7, 32'h0bdbdf21, 32'h86d3d2d4, 32'hf1d4e242,
+    32'h68ddb3f8, 32'h1fda836e, 32'h81be16cd, 32'hf6b9265b, 32'h6fb077e1, 32'h18b74777,
+    32'h88085ae6, 32'hff0f6a70, 32'h66063bca, 32'h11010b5c, 32'h8f659eff, 32'hf862ae69,
+    32'h616bffd3, 32'h166ccf45, 32'ha00ae278, 32'hd70dd2ee, 32'h4e048354, 32'h3903b3c2,
+    32'ha7672661, 32'hd06016f7, 32'h4969474d, 32'h3e6e77db, 32'haed16a4a, 32'hd9d65adc,
+    32'h40df0b66, 32'h37d83bf0, 32'ha9bcae53, 32'hdebb9ec5, 32'h47b2cf7f, 32'h30b5ffe9,
+    32'hbdbdf21c, 32'hcabac28a, 32'h53b39330, 32'h24b4a3a6, 32'hbad03605, 32'hcdd70693,
+    32'h54de5729, 32'h23d967bf, 32'hb3667a2e, 32'hc4614ab8, 32'h5d681b02, 32'h2a6f2b94,
+    32'hb40bbe37, 32'hc30c8ea1, 32'h5a05df1b, 32'h2d02ef8d
+  };
+
+  bit [383:0] sample_flow_key [64]; // 16 sample flow keys which can result in a Hash1
+                                    // of all possible rdc offset values 0-15
+  bit [3:0] calculated_crc4bits [64]; // correspond to the hash1 crc[3:0] for all 16 flow keys
+
+  bit[15:0] packet_id[4];  // packet id for all 4 ports
+
+  bit [3:0] MAC_LOOP_BACK_MODE; // FOR MAC LOOP BACK CASE WITH PKTCFGRT 
+
+  //setup_cam_ram_fcram_class tables_shadow;
+  setup_ip_db_class ip_db;
+  fflp_model FFLP_Model;
+  flow_key flow_key_shadow[10]; // shadow of tcam_key register for all 10 classes
+  pkt_class_info pkt_class_shadow[10]; // shadow of tcam_key register for all 10 classes
+				// only classes 8-17 are considered here
+  
+  task new() {
+  integer ii;
+  integer i,j;
+  string init_loopback,temp_port;
+  bit [31:0] loopback;
+
+
+	//tables_shadow = new;
+	debug_en = 1;
+	force_lookup_hit = 0;
+	total_tcam_entries = 0;
+        if (get_plus_arg (CHECK, "PKT_CFG_TCAM_LOOKUP"))
+	  tcam_l2_rdc_tblnum = 0;
+ 	else
+	  tcam_l2_rdc_tblnum = 0;
+	ip_db = new;
+	rxc_cl = new;
+	pgIdgen = new();
+
+	rxc_cl.setup_ip_db_cl = new;
+        for(ii=0;ii<10;ii++){
+	  pkt_class_shadow[ii] = new(ii+8);
+          flow_key_shadow[ii] = new(ii+8);
+	}
+	FFLP_Model = new;
+        for(ii=0;ii<4;ii++){
+	  packet_id[ii] = 0;
+	}
+	flow_from_test_en = 0;
+
+        for(i=0;i<4;i++) {
+          if(mbox_id.niu_pktcfglp[i] == -1) {
+	    mbox_id.niu_pktcfglp[i] = alloc(MAILBOX,0,1);
+	  }
+        }
+    
+        if( get_plus_arg( CHECK, "MAC_LOOP_BACK=")) {
+          loopback = get_plus_arg( STR, "MAC_LOOP_BACK=");
+          init_loopback.bittostr(loopback);
+          for (j=0; j<init_loopback.len();j++)
+          { temp_port =init_loopback.substr(j,j);
+           MAC_LOOP_BACK_MODE = MAC_LOOP_BACK_MODE | ( 1<<temp_port.atoi()); }
+        } else MAC_LOOP_BACK_MODE = 0;
+
+
+
+
+  }
+
+  // table search functions
+  // reverse lookup ZCP RDC TABLE with dma no.
+  function integer find_zcp_rdc_offset(integer dma_num);
+  // reverse lookup TCAM and come up with a flow that can hit the given rdc
+  function bit [199:0] matching_tcam_entry(bit [2:0] rdc_tbl_num, bit [3:0] rdc_tbl_offset);
+  // reverse lookup VLAN TABLE with rdc_offset
+  function bit [11:0] find_vlan_id(integer rdc_tbl_num, integer mac_id, (integer path = 9));
+  // reverse lookup MACDA TABLE with rdc_tbl no.
+  function bit [47:0] find_mac_da(integer rdc_tbl_num, integer mac_id);
+  // send pkt fields picked up from tables to pktgen
+  task send_flow_db (integer path_num, (integer dma_num = 0));
+
+  // setup the tables in "setup_cam_ram_fcram_class" class
+  task setup_macda_table(integer mac_id);
+  task prog_mac_reg(bit [1:0] mac_id, integer index, bit [51:0] mac_entry);
+  task setup_vlan_table((integer mode = 0));
+  task prog_vlan_entry(integer index, bit [17:0] vlan_entry, (bit backdoor = 0));
+  task setup_zcp_rdc_table((integer mode = 0));
+  task setup_ext_hash_table(bit [19:0] address, bit [63:0] data);
+  task setup_tcam(integer total_entries, integer path, (integer mode = 0), (bit overwrite_asdata_disc=0));
+  function bit [199:0] get_tcam_shadow(integer index);
+  function bit [199:0] get_tcam_mask(integer index);
+  function bit [63:0] get_assoc_data(integer index);
+  task pio_write_tcam_key_rand();
+  task pio_write_assoc_data_rand();
+  task pio_read_tcam_key_rand();
+  task pio_read_assoc_data_rand();
+  function bit [31:0] hash1_crc32(byte_array buf, integer len);
+  task setup_flow_keys(bit [1:0] mac_id);
+  function bit [31:0] calculate_H1_poly (bit [383:0] flow_key);
+  function bit [383:0] find_matching_flow_key(bit [3:0] rdc_offset);
+  task configure_flow_key_classes();
+  task program_tcam_key_reg(bit [11:0] tcam_disc, bit [11:0] tcam_tsel, bit[11:0] tcam_ipaddr);
+  task program_tcam_key_asdata(integer cam_index, bit [199:0] cam_data, bit [63:0] assoc_data, (bit[199:0] cam_mask={200{1'b1}}), (bit frontdoor=0));
+  task zcp_rdc(integer index, integer Zdma);
+  task prog_flow_key(integer class_num, bit [9:0] flow_key);
+  task prog_initial_h1_poly (bit [31:0] h1_poly_init);
+  function byte_array convert_cntl_fifo_to_byte_array (cntl_fifo ctl_fifo);
+  task pio_compare_tcam_key_rand () ;
+  task SendPktForLoopBack(flow_desc flow, integer data_length,integer dma_num,integer mac_id, integer last_packet = 0);
+
+  
+  // This function programs the tables/reverse searches so as to hit the specified path
+  task pkt_configurator_genPkt(integer path, integer data_length, integer dma_num, integer mac_id, integer last_packet, (flow_desc flow_in = null));
+
+}
+
+task pkt_configurator::prog_initial_h1_poly(bit [31:0] h1_poly_init) {
+ bit [39:0]  addr;
+ bit [63:0]  wr_data;
+
+  // update fflp model
+  FFLP_Model.update_initial_h1_poly(h1_poly_init);
+  // update RTL, pio write
+   wr_data = {32'h0, h1_poly_init};
+   addr = FFLP_FLOW_ADDRESS_RANGE + FFLP_FLOW_H1POLY;
+   fflp_util.fflp_pio_wrapper(addr, wr_data);
+}
+
+task pkt_configurator::prog_flow_key(integer class_num, bit [9:0] flow_key) {
+ bit [39:0]  addr;
+ bit [63:0]  wr_data;
+
+  // First write the flow_key into RTL
+  case(class_num){
+   4:  addr = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_4;
+   5:  addr = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_5;
+   6:  addr = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_6;
+   7:  addr = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_7;
+   8:  addr = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_8;
+   9:  addr = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_9;
+   10: addr = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_A;
+   11: addr = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_B;
+   12: addr = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_C;
+   13: addr = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_D;
+   14: addr = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_E;
+   15: addr = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_F;
+   default: printf("pkt_configurator::prog_flow_key. NOT a valid class %0d for FLOW classification\n", class_num);
+  }
+
+  wr_data   = {54'h0, flow_key};
+  fflp_util.fflp_pio_wrapper(addr, wr_data);   
+
+
+  // Now, update the shadow registers of flow_key in FFLP Model
+  FFLP_Model.update_flow_key_cntl_shadow(class_num, flow_key);
+}
+
+task pkt_configurator::prog_mac_reg(bit [1:0] mac_id, integer index, bit [51:0] mac_entry) {
+  FFLP_Model.update_mac_da_shadow(mac_id, index, mac_entry); // Just the shadow
+  case (mac_id) {
+  0,1:
+   ip_db.prog_mac_reg(index+16*mac_id, mac_entry[47:0], mac_entry[51:48]); // PIOs to RTL
+  2,3:
+   ip_db.prog_mac_reg(32+index+8*(mac_id-2), mac_entry[47:0], mac_entry[51:48]); // PIOs to RTL
+  default: { }
+  }
+
+}
+
+function bit [383:0] pkt_configurator::find_matching_flow_key(bit [3:0] rdc_offset) {
+integer index;
+
+  for(index=0;index<64;index++){ 
+    printf ("pkt_configurator::find_matching_flow_key calculated_crc4bits[index]=%h, rdc_offset=%h\n", calculated_crc4bits[index], rdc_offset);
+    if (calculated_crc4bits[index] === rdc_offset) {
+        find_matching_flow_key = sample_flow_key[index];
+	return;
+    }
+  }
+  find_matching_flow_key = {200{1'bz}};
+  
+}
+
+function bit [31:0] pkt_configurator:: calculate_H1_poly (bit [383:0] flow_key) {
+
+  bit [39:0]  rd_addr;
+  bit [32:0]  shtol_h1poly = 33'h0;
+  bit [63:0]  flow_keyb[6];
+  bit [63:0]  flow_keyb_tmp;
+  integer i, j;
+ 
+  flow_keyb[0] = flow_key[63:0];
+  flow_keyb[1] = flow_key[127:64];
+  flow_keyb[2] = flow_key[191:128];
+  flow_keyb[3] = flow_key[255:192];
+  flow_keyb[4] = flow_key[319:256];
+  flow_keyb[5] = flow_key[383:320];
+
+  for (i=0;i<6;i++)
+     {
+      for (j=63;j>=0;j--)
+         {
+          if (j === 63)
+            {
+             flow_keyb_tmp = flow_keyb[i];
+            }
+          else
+            {
+             flow_keyb_tmp = flow_keyb_tmp;
+            }
+          shtol_h1poly = shtol_h1poly << 1;
+          if (shtol_h1poly[32] ^ flow_keyb_tmp[j])
+            {
+             shtol_h1poly = {1'b0,(shtol_h1poly[31:0] ^ H1_CRC_32C_POLY)};
+            }
+          else
+            {
+             shtol_h1poly = {1'b0, shtol_h1poly[31:0]};
+            }
+         }
+     }
+
+  calculate_H1_poly = shtol_h1poly[31:0];
+  printf("pkt_configurator::calculate_H1_poly() CALCULATED H1 HASH = %h.\n",calculate_H1_poly);
+  
+}
+
+task pkt_configurator::setup_flow_keys(bit [1:0] mac_id) {
+  bit [3:0]   flow_key_vlan_valid;
+  bit [47:0]  flow_key_da_addr;
+  bit [11:0]  flow_key_tci;
+  bit [127:0] flow_key_ipsrc_addr = 128'hff000000_00000000_00000000_33221100;
+  bit [127:0] flow_key_ipdst_addr = 128'hff000000_00000000_00000000_66554400;
+  bit [15:0]  flow_key_L4_0 = 16'hbaba;
+  bit [15:0]  flow_key_L4_1 = 16'hcaca;
+  bit [7:0]   flow_key_protocol;
+  bit [1:0]   flow_key_port = mac_id;
+  bit [31:0]  hash1_crc;
+  integer ii, TOT_MAC_DAs, start_index;
+
+	case (mac_id) {
+	  0: { TOT_MAC_DAs = MAX_DA_10G; start_index = 0; }
+  	  1: { TOT_MAC_DAs = MAX_DA_10G; start_index = 16; }
+	  2: { TOT_MAC_DAs = MAX_DA_1G; start_index = 32; }
+	  3: { TOT_MAC_DAs = MAX_DA_1G; start_index = 40; }
+	  default: { TOT_MAC_DAs = 0; start_index = 0; }
+  	}
+
+	flow_key_tci = random() % 4096; // generate a random VLAN ID
+
+	flow_key_da_addr = ip_db.mac_entry(start_index);
+
+	if (get_plus_arg (CHECK, "HASH_HIT_PKT_TYPE_UDP")) // UDP
+	  flow_key_protocol = 17;
+	else // TCP
+	  flow_key_protocol = 06;
+  
+	if (!get_plus_arg (CHECK, "HASH_HIT_PKT_TYPE_IPV6")) { // if ipv4, set the upper bits to 0
+	  flow_key_ipsrc_addr = {96'h0, flow_key_ipsrc_addr[31:0]};
+	  flow_key_ipdst_addr = {96'h0, flow_key_ipdst_addr[31:0]};
+ 	}
+
+ 	if (get_plus_arg (CHECK, "PKTS_VLAN_TAGGED"))
+ 	  flow_key_vlan_valid = 4'b1111;
+        else
+	  flow_key_vlan_valid = 4'b0000;
+	  
+        for(ii=0;ii<16;ii++) {
+          sample_flow_key[16*mac_id + ii] =
+				{flow_key_vlan_valid,
+                                 flow_key_da_addr + ii,
+                                 flow_key_tci,
+                                 flow_key_ipsrc_addr,
+                                 flow_key_ipdst_addr,
+                                 flow_key_L4_0,
+                                 flow_key_L4_1,
+                                 flow_key_protocol,
+                                 flow_key_port,
+                                 22'h0};
+	  if (debug_en)
+	    printf("sample_flow_key[%0d]=%h\n", 16*mac_id + ii, sample_flow_key[16*mac_id + ii]);
+	  hash1_crc = calculate_H1_poly(sample_flow_key[16*mac_id + ii]);
+	  calculated_crc4bits[16*mac_id + ii] = hash1_crc[3:0];
+	}
+
+}
+
+task pkt_configurator::configure_flow_key_classes() {
+
+ bit [39:0]  addr;
+ bit [63:0]  wr_data;
+
+   // Scan FFLP (Khosrow's) run_args to find out FLOW_KEY info for all 12 classes (which fields go for Hash1)
+   if (get_plus_arg (CHECK, "HOW_FLOW_IPORT_12HEX="))
+      rxc_cl.setup_cam_ram_fcram_cl.how_flow_iport = get_plus_arg( HNUM, "HOW_FLOW_IPORT_12HEX=");
+   if (get_plus_arg (CHECK, "HOW_FLOW_DA_12HEX="))
+      rxc_cl.setup_cam_ram_fcram_cl.how_flow_da_addr = get_plus_arg( HNUM, "HOW_FLOW_DA_12HEX=");
+   if (get_plus_arg (CHECK, "HOW_FLOW_VLAN_12HEX="))
+      rxc_cl.setup_cam_ram_fcram_cl.how_flow_vlan = get_plus_arg( HNUM, "HOW_FLOW_VLAN_12HEX=");
+   if (get_plus_arg (CHECK, "HOW_FLOW_IPSRC_12HEX="))
+      rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipsrc = get_plus_arg( HNUM, "HOW_FLOW_IPSRC_12HEX=");
+   if (get_plus_arg (CHECK, "HOW_FLOW_IPDST_12HEX="))
+      rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipdst = get_plus_arg( HNUM, "HOW_FLOW_IPDST_12HEX=");
+   if (get_plus_arg (CHECK, "HOW_FLOW_PID_12HEX="))
+      rxc_cl.setup_cam_ram_fcram_cl.how_flow_pid = get_plus_arg( HNUM, "HOW_FLOW_PID_12HEX=");
+
+   if (get_plus_arg (CHECK, "HOW_FLOW_L40_24HEX="))
+      rxc_cl.setup_cam_ram_fcram_cl.how_flow_l40 = get_plus_arg( HNUM, "HOW_FLOW_L40_24HEX=");
+   else if (get_plus_arg (CHECK, "HOW_FLOW_L40_B1_B2"))
+      rxc_cl.setup_cam_ram_fcram_cl.how_flow_l40 = 24'haa_aaaa;
+   else if (get_plus_arg (CHECK, "HOW_FLOW_L40_B5_B6"))
+      rxc_cl.setup_cam_ram_fcram_cl.how_flow_l40 = 24'hff_ffff;
+
+   if (get_plus_arg (CHECK, "HOW_FLOW_L41_24HEX="))
+      rxc_cl.setup_cam_ram_fcram_cl.how_flow_l41 = get_plus_arg( HNUM, "HOW_FLOW_L41_24HEX=");
+   else if (get_plus_arg (CHECK, "HOW_FLOW_L41_B3_B4"))
+      rxc_cl.setup_cam_ram_fcram_cl.how_flow_l41 = 24'haa_aaaa;
+   else if (get_plus_arg (CHECK, "HOW_FLOW_L41_B7_B8"))
+      rxc_cl.setup_cam_ram_fcram_cl.how_flow_l41 = 24'hff_ffff;
+
+   addr      = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_4;
+   wr_data   = {54'h0,
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_iport[0],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_da_addr[0],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_vlan[0],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipsrc[0],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipdst[0],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_pid[0],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l40[1:0],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l41[1:0]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+
+   addr      = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_5;
+   wr_data   = {54'h0,
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_iport[1],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_da_addr[1],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_vlan[1],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipsrc[1],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipdst[1],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_pid[1],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l40[3:2],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l41[3:2]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+
+   addr      = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_6;
+   wr_data   = {54'h0,
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_iport[2],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_da_addr[2],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_vlan[2],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipsrc[2],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipdst[2],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_pid[2],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l40[5:4],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l41[5:4]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+
+   addr      = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_7;
+   wr_data   = {54'h0,
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_iport[3],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_da_addr[3],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_vlan[3],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipsrc[3],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipdst[3],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_pid[3],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l40[7:6],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l41[7:6]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+
+   addr      = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_8;
+   wr_data   = {54'h0,
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_iport[4],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_da_addr[4],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_vlan[4],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipsrc[4],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipdst[4],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_pid[4],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l40[9:8],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l41[9:8]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+
+   addr      = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_9;
+   wr_data   = {54'h0,
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_iport[5],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_da_addr[5],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_vlan[5],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipsrc[5],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipdst[5],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_pid[5],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l40[11:10],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l41[11:10]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+
+   addr      = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_A;
+   wr_data   = {54'h0,
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_iport[6],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_da_addr[6],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_vlan[6],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipsrc[6],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipdst[6],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_pid[6],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l40[13:12],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l41[13:12]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+
+   addr      = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_B;
+   wr_data   = {54'h0,
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_iport[7],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_da_addr[7],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_vlan[7],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipsrc[7],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipdst[7],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_pid[7],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l40[15:14],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l41[15:14]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+
+   addr      = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_C;
+   wr_data   = {54'h0,
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_iport[8],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_da_addr[8],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_vlan[8],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipsrc[8],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipdst[8],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_pid[8],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l40[17:16],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l41[17:16]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+
+   addr      = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_D;
+   wr_data   = {54'h0,
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_iport[9],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_da_addr[9],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_vlan[9],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipsrc[9],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipdst[9],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_pid[9],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l40[19:18],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l41[19:18]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+
+   addr      = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_E;
+   wr_data   = {54'h0,
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_iport[10],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_da_addr[10],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_vlan[10],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipsrc[10],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipdst[10],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_pid[10],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l40[21:20],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l41[21:20]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+
+   addr      = FFLP_FLOW_ADDRESS_RANGE + FFLP_HOW_FLOW_KEY_CLS_F;
+   wr_data   = {54'h0,
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_iport[11],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_da_addr[11],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_vlan[11],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipsrc[11],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_ipdst[11],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_pid[11],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l40[23:22],
+                rxc_cl.setup_cam_ram_fcram_cl.how_flow_l41[23:22]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+
+}
+
+task pkt_configurator::setup_macda_table(integer mac_id) {
+integer ii, tbl_num;
+integer total_loc;
+
+printf ("In pkt_configurator::setup_macda_table, mac_id=%0d\n", mac_id);
+case (mac_id) {
+0,1: total_loc = 16;
+2,3: total_loc = 8;
+default: printf("ERROR: There is no such mac_id as %0d\n", mac_id);
+}
+
+for(ii=0;ii<total_loc;ii++) {
+  tbl_num = ii%8;
+  case (mac_id) {
+    0,1: rxc_cl.setup_ip_db_cl.prog_mac_reg(ii+16*mac_id, 48'hf00102030020+ii+mac_id*'h100, {1'b0,tbl_num});
+    2,3: rxc_cl.setup_ip_db_cl.prog_mac_reg(ii+32+8*(mac_id-2), 48'hf00102030020+ii+mac_id*'h100, {1'b0,tbl_num});
+    default: printf("ERROR: There is no such mac_id as %0d\n", mac_id);
+  } 
+}
+}
+
+task pkt_configurator::zcp_rdc(integer index, integer Zdma) {
+  void=rxc_cl.setup_cam_ram_fcram_cl.program_zcp_rdc_tbl(0, index, 3'b001, Zdma);
+  FFLP_Model.update_zcp_rdc_tbl_shadow(index, Zdma);
+}
+
+task pkt_configurator::setup_zcp_rdc_table((integer mode = 0)) {
+
+     bit [4:0] ret;
+     integer n,loc, inc_dma;
+     integer total_rx_dmas;
+	case (mode) {
+	// mode = 0 means any valid dma number (0-15) is written only once in the
+	// entire ZCP_RDC table. All other entries have an invalid dma number (like 31)
+	// i.e. when searched for a dma number, we'll find it only once in the entire table
+	0: { 
+ 	    for(n=0;n<MAX_RDC_TABLE;n++) {
+ 	     for(loc=0;loc<MAX_DMA_CHAN;loc++) {
+	      if (loc==0) {
+	       ret = rxc_cl.setup_cam_ram_fcram_cl.program_zcp_rdc_tbl(0, 16*n+loc, 3'b001, 2*n);
+	       FFLP_Model.update_zcp_rdc_tbl_shadow(16*n+loc, 2*n);
+		printf("writing to ZCP table index = %0d, value = %0d\n", 16*n+loc, 2*n);
+	      }
+	      else if (loc==8) {
+	       ret = rxc_cl.setup_cam_ram_fcram_cl.program_zcp_rdc_tbl(0, 16*n+loc, 3'b001, 2*n+1);
+	       FFLP_Model.update_zcp_rdc_tbl_shadow(16*n+loc, 2*n+1);
+		printf("writing to ZCP table index = %0d, value = %0d\n", 16*n+loc, 2*n+1);
+	      }
+	      else {
+	        //ret = rxc_cl.setup_cam_ram_fcram_cl.program_zcp_rdc_tbl(0, 16*n+loc, 3'b001, INVALID_DMA_NUM);
+	       FFLP_Model.update_zcp_rdc_tbl_shadow(16*n+loc, INVALID_DMA_NUM);
+		//printf("writing to ZCP table index = %0d, value = %0d\n", 16*n+loc, INVALID_DMA_NUM);
+	      }
+	     }
+	    }
+	   }
+	// mode = 1 means incremental dma_num through the entire ZCP_RDC table
+	1: {
+ 	    for(n=0;n<MAX_DMA_CHAN*MAX_RDC_TABLE;n++) {
+	       ret = rxc_cl.setup_cam_ram_fcram_cl.program_zcp_rdc_tbl(0, n, 3'b001, n%MAX_DMA_CHAN);
+	       FFLP_Model.update_zcp_rdc_tbl_shadow(n, n%MAX_DMA_CHAN);
+	    }
+	   }
+	// mode = 2 means a valid dma_num is present only on the first entry of each TABLE (MAC type, offset = 0)
+	// dma numbers 0-7 are programmed
+	2: {
+ 	    for(n=0;n<MAX_RDC_TABLE;n++) {
+ 	     for(loc=0;loc<MAX_DMA_CHAN;loc++) {
+	      if (loc==0) {
+	       ret = rxc_cl.setup_cam_ram_fcram_cl.program_zcp_rdc_tbl(0, 16*n+loc, 3'b001, n);
+	       FFLP_Model.update_zcp_rdc_tbl_shadow(16*n+loc, n);
+		printf("writing to ZCP table index = %0d, value = %0d\n", 16*n+loc, n);
+	      }
+	     }
+	    }
+           }
+	// mode = 3 means a valid dma_num is present only on the first entry of each TABLE (MAC type, offset = 0)
+	// dma numbers 8-15 are programmed
+	3: {
+ 	    for(n=0;n<MAX_RDC_TABLE;n++) {
+ 	     for(loc=0;loc<MAX_DMA_CHAN;loc++) {
+	      if (loc==0) {
+	       ret = rxc_cl.setup_cam_ram_fcram_cl.program_zcp_rdc_tbl(0, 16*n+loc, 3'b001, 8+n);
+	       FFLP_Model.update_zcp_rdc_tbl_shadow(16*n+loc, 8+n);
+		printf("writing to ZCP table index = %0d, value = %0d\n", 16*n+loc, 8+n);
+	      }
+	     }
+	    }
+           }
+	4: { // 112 entries are programmed (subtable 0 is not programmed), suitable for tcam match test cases
+
+            if (get_plus_arg (CHECK,"TOTAL_NO_OF_RXDMA"))
+              total_rx_dmas = get_plus_arg(NUM,"TOTAL_NO_OF_RXDMA");
+            else
+              total_rx_dmas = 16;
+     
+            inc_dma = 0;
+ 	    for(n=1;n<MAX_RDC_TABLE;n++) {
+ 	     for(loc=0;loc<MAX_DMA_CHAN;loc++) {
+	       ret = rxc_cl.setup_cam_ram_fcram_cl.program_zcp_rdc_tbl(0, 16*n+loc, 3'b001, inc_dma%total_rx_dmas);
+	       FFLP_Model.update_zcp_rdc_tbl_shadow(16*n+loc, inc_dma%16);
+		printf("writing to ZCP table index = %0d, value = %0d\n", 16*n+loc, inc_dma%total_rx_dmas);
+               inc_dma ++ ;
+	     }
+	    }
+           }
+	5 : { // all 128 entries are programmed, suitable for flow_key Hash1 test cases
+            inc_dma = 0;
+ 	    for(n=0;n<MAX_RDC_TABLE;n++) {
+ 	     for(loc=0;loc<MAX_DMA_CHAN;loc++) {
+	       ret = rxc_cl.setup_cam_ram_fcram_cl.program_zcp_rdc_tbl(0, 16*n+loc, 3'b001, inc_dma%16);
+	       FFLP_Model.update_zcp_rdc_tbl_shadow(16*n+loc, inc_dma%16);
+		printf("writing to ZCP table index = %0d, value = %0d\n", 16*n+loc, inc_dma%16);
+               inc_dma ++ ;
+	     }
+	    }
+           }
+	default: {}
+	}
+
+}
+
+task pkt_configurator::setup_vlan_table((integer mode = 0)) {
+bit[2:0] rdctbl0,rdctbl1,rdctbl2,rdctbl3;
+bit parity0, parity1, vpr0, vpr1, vpr2, vpr3;
+integer i;
+bit[17:0] vlan_entry;
+bit[31:0] tmp;
+
+case (mode) {
+  0:{ for(i=0;i<MAX_VLAN_ENTRIES;i++) {
+       if(get_plus_arg (CHECK, "PKT_CFG_TCAM_LOOKUP") || get_plus_arg (CHECK, "PKT_CFG_HASH1_HIT"))
+        rdctbl0 = 0;
+       else
+        rdctbl0 = i%8; 
+       vpr0 = 1;
+       if(get_plus_arg (CHECK, "PKT_CFG_TCAM_LOOKUP") || get_plus_arg (CHECK, "PKT_CFG_HASH1_HIT"))
+        rdctbl1 = 0;
+       else
+        rdctbl1 = (i+1)%8; 
+       vpr1 = 1;
+       if(get_plus_arg (CHECK, "PKT_CFG_TCAM_LOOKUP") || get_plus_arg (CHECK, "PKT_CFG_HASH1_HIT"))
+        rdctbl2 = 0;
+       else
+        rdctbl2 = (i+2)%8; 
+       vpr2 = 1;
+       if(get_plus_arg (CHECK, "PKT_CFG_TCAM_LOOKUP") || get_plus_arg (CHECK, "PKT_CFG_HASH1_HIT"))
+        rdctbl3 = 0;
+       else
+        rdctbl3 = (i+3)%8; 
+       vpr3 = 1;
+
+      if(get_plus_arg (CHECK, "PKT_CFG_VLAN_PARITY_ERR")) {
+       parity0 = !(^{vpr1,rdctbl1,vpr0,rdctbl0}); // parity bit is corrupted for creating ERROR
+       parity1 = !(^{vpr3,rdctbl3,vpr2,rdctbl2}); // parity bit is corrupted for creating ERROR
+      }
+      else {
+       parity0 = ^{vpr1,rdctbl1,vpr0,rdctbl0};    // correct even parity
+       parity1 = ^{vpr3,rdctbl3,vpr2,rdctbl2};    // correct even parity
+      }
+
+      rxc_cl.setup_cam_ram_fcram_cl.prog_vlan_table(i,parity0,vpr1,rdctbl1,vpr0,rdctbl0);
+      vlan_entry = {parity1,parity0,vpr3,rdctbl3,vpr2,rdctbl2,vpr1,rdctbl1,vpr0,rdctbl0};
+
+   	FFLP_Model.update_vlan_shadow(i, vlan_entry);
+      }
+     }
+  1:{ for(i=0;i<MAX_VLAN_ENTRIES;i++) {   //random: rdctbl0, rdctbl1, vpr0, vpr1
+       if(get_plus_arg (CHECK, "PKT_CFG_TCAM_LOOKUP") || get_plus_arg (CHECK, "PKT_CFG_HASH1_HIT"))
+        rdctbl0 = 0;
+       else rdctbl0 = random();
+       if(get_plus_arg (CHECK, "PKT_CFG_TCAM_LOOKUP") || get_plus_arg (CHECK, "PKT_CFG_HASH1_HIT"))
+         rdctbl1 = 0;
+       else rdctbl1 = random();
+       tmp=random();
+       vpr0 = tmp[1]; vpr1 = tmp[0];
+
+      if(get_plus_arg (CHECK, "PKT_CFG_VLAN_PARITY_ERR"))
+       parity0 = !(^{vpr1,rdctbl1,vpr0,rdctbl0}); // parity bit is corrupted for creating ERROR
+      else
+       parity0 = ^{vpr1,rdctbl1,vpr0,rdctbl0};    // correct even parity
+
+       rxc_cl.setup_cam_ram_fcram_cl.prog_vlan_table(i,parity0,vpr1,rdctbl1,vpr0,rdctbl0);
+       vlan_entry = {1'b0,parity0,8'h0,vpr1,rdctbl1,vpr0,rdctbl0};
+       FFLP_Model.update_vlan_shadow(i, vlan_entry);
+      }
+    }
+  default: {}
+} // case
+
+}
+
+task pkt_configurator::prog_vlan_entry(integer index, bit [17:0] vlan_entry, (bit backdoor = 0)) {
+bit parity0, parity1;
+bit [63:0] addr;
+bit [63:0] wr_data;
+
+    addr = FFLP_VLAN_TBL_ADDRESS_RANGE + (index*8);
+    parity0 = ^vlan_entry[7:0];
+    parity1 = ^vlan_entry[15:8];
+    wr_data = {46'h0, parity1, parity0, vlan_entry[15:0]};
+
+    if (backdoor==0) {
+      gen_pio_drv.pio_wr(addr, wr_data);
+    }
+    else {
+	rxc_cl.setup_cam_ram_fcram_cl.prog_vlan_table ( index,
+							parity0,
+							vlan_entry[7],
+							vlan_entry[6:4],
+							vlan_entry[3],
+							vlan_entry[2:0] );
+    }
+
+    // Update the FFLP model's vlan entry shadow
+    FFLP_Model.update_vlan_shadow(index, vlan_entry);
+
+    printf("pkt_configurator::prog_vlan_entry  index %0d, vlan_entry 0x%h backdoor = %b\n", 
+	index, vlan_entry, backdoor);
+
+}
+
+function integer pkt_configurator::find_zcp_rdc_offset(integer dma_num) {
+     integer i,j;
+     integer dma_value_got;
+
+     for(i=0;i<MAX_RDC_TABLE;i++) {
+      for(j=0;j<16;j++) {
+      dma_value_got = rxc_cl.setup_cam_ram_fcram_cl.program_zcp_rdc_tbl(1'b0,16*i+j,3'b000,5'h0);
+      if (dma_value_got == dma_num) {
+        find_zcp_rdc_offset = 16*i+j;
+        return;
+      }
+      else {
+        find_zcp_rdc_offset = 32'hdeadc0de;
+      }
+      if (debug_en)
+        printf("pkt_configurator::find_zcp_rdc_offset():  dma_num from zcp_rdc_tbl[%0d]=%0d\n", 16*i+j, dma_value_got);
+      }
+     }	
+}
+
+function bit [11:0] pkt_configurator::find_vlan_id(integer rdc_tbl_num, integer mac_id, (integer path = 9)) {
+integer i;
+bit [15:0] vlan_id_line;
+
+  // search in the VLAN table, and find out the index (indices) which has the given rdc_tbl_num
+  // The index number is the VLAN_ID, which should be sent to pkt_gen to construct the packet
+
+     for(i=0;i<MAX_VLAN_ENTRIES;i++) {
+      vlan_id_line = rxc_cl.setup_cam_ram_fcram_cl.get_vlan_entry(i);
+	case(path) {
+          9:{
+               if( (vlan_id_line[(4*mac_id+2):(4*mac_id)] == rdc_tbl_num) && (vlan_id_line[4*mac_id+3]==1) ) {
+                 find_vlan_id = i;
+                 return;
+               }
+               else { find_vlan_id = 12'hzzz; }
+            }
+            default: {}
+	}
+      if (debug_en)
+        printf("pkt_configurator::find_vlan_id():  VLAN_TABLE_ENTRY[%0d]=%h\n", i, vlan_id_line);
+     }	
+}
+
+
+function bit [199:0] pkt_configurator::matching_tcam_entry(bit [2:0] rdc_tbl_num, bit [3:0] rdc_tbl_offset) {
+
+bit [63:0] temp_assoc_data;
+integer index;
+
+  // search the associative RAM for the given rdc_offset and rdc_tbl_num
+  // and use that index to fetch the corresponding TCAM entry (200 bits)
+
+  for(index=0;index<total_tcam_entries;index++){ 
+    temp_assoc_data = rxc_cl.setup_cam_ram_fcram_cl.get_assoc_data(index);
+    printf ("get_assoc_data=%h, tcam_rdc_tbl=%h, tcam_rdc_offset=%h, rdc_tbl=%h, rdc_offset=%h\n", temp_assoc_data, temp_assoc_data[9:7], temp_assoc_data[5:2], rdc_tbl_num, rdc_tbl_offset);
+    if ((temp_assoc_data[9:7]===rdc_tbl_num) && (temp_assoc_data[5:2]===rdc_tbl_offset)){
+        matching_tcam_entry = rxc_cl.setup_cam_ram_fcram_cl.get_tcam_key(index);
+	return;
+    }
+  }
+  matching_tcam_entry = {200{1'bz}};
+}
+
+function bit [47:0] pkt_configurator::find_mac_da(integer rdc_tbl_num, integer mac_id) {
+
+  bit [51:0] mac_table_entry;
+  integer i, TOT_MAC_DAs, start_index;
+
+  // search the MAC_DA table to find out which entry has the given rdc_tbl num
+  // and pass that MAC_DA to pkt_gen to build the packet
+
+  case (mac_id) {
+	0: { 
+		TOT_MAC_DAs = MAX_DA_10G;
+		start_index = 0;
+	   }
+	1: { 
+		TOT_MAC_DAs = MAX_DA_10G;
+		start_index = 16;
+	   }
+	2: { 
+		TOT_MAC_DAs = MAX_DA_1G;
+		start_index = 32;
+	   }
+	3: { 
+		TOT_MAC_DAs = MAX_DA_1G;
+		start_index = 40;
+	   }
+	default: {
+		TOT_MAC_DAs = 0;
+		start_index = 0;
+	   }   
+  }
+
+  for(i=start_index;i<(start_index+TOT_MAC_DAs);i++) {
+    mac_table_entry = ip_db.mac_entry(i);
+      if (debug_en)
+    printf ("In mac_table, pri=%b, mac_table_entry[50:48]=%0d, mac_da=%h, rdc_tbl_num=%0d\n", 
+	   mac_table_entry[51], mac_table_entry[50:48], mac_table_entry[47:0], rdc_tbl_num);
+    if (rdc_tbl_num==mac_table_entry[50:48]) {
+      find_mac_da = mac_table_entry[47:0];
+      return;
+    }
+    else {
+      find_mac_da = 48'hzzzz_zzzz_zzzz;
+    }
+  }
+}
+
+task pkt_configurator::program_tcam_key_reg(bit [11:0] tcam_disc, bit [11:0] tcam_tsel, bit[11:0] tcam_ipaddr) {
+bit [63:0] 	addr, wr_data, assoc_data;
+
+// Enable the TCAM lookup for all IP classes 8-15 (All ipv4 and ipv6 classes)
+   printf("Enabling the TCAM lookup for all classes 8-15 (All ipv4 and ipv6 classes)\n");
+   addr      = FFLP_ADDRESS_RANGE + FFLP_HOW_TCAM_KEY_CLS_4;
+   wr_data   = {60'h0,tcam_disc[0],tcam_tsel[0],1'b0,tcam_ipaddr[0]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+   FFLP_Model.update_tcam_reg_shadow(4, {tcam_disc[0],tcam_tsel[0],tcam_ipaddr[0]});
+   addr      = FFLP_ADDRESS_RANGE + FFLP_HOW_TCAM_KEY_CLS_5;
+   wr_data   = {60'h0,tcam_disc[1],tcam_tsel[1],1'b0,tcam_ipaddr[1]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+   FFLP_Model.update_tcam_reg_shadow(5, {tcam_disc[1],tcam_tsel[1],tcam_ipaddr[1]});
+   addr      = FFLP_ADDRESS_RANGE + FFLP_HOW_TCAM_KEY_CLS_6;
+   wr_data   = {60'h0,tcam_disc[2],tcam_tsel[2],1'b0,tcam_ipaddr[2]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+   FFLP_Model.update_tcam_reg_shadow(6, {tcam_disc[2],tcam_tsel[2],tcam_ipaddr[2]});
+   addr      = FFLP_ADDRESS_RANGE + FFLP_HOW_TCAM_KEY_CLS_7;
+   wr_data   = {60'h0,tcam_disc[3],tcam_tsel[3],1'b0,tcam_ipaddr[3]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+   FFLP_Model.update_tcam_reg_shadow(7, {tcam_disc[3],tcam_tsel[3],tcam_ipaddr[3]});
+   addr      = FFLP_ADDRESS_RANGE + FFLP_HOW_TCAM_KEY_CLS_8;
+   wr_data   = {60'h0,tcam_disc[4],tcam_tsel[4],1'b0,tcam_ipaddr[4]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+   FFLP_Model.update_tcam_reg_shadow(8, {tcam_disc[4],tcam_tsel[4],tcam_ipaddr[4]});
+   addr      = FFLP_ADDRESS_RANGE + FFLP_HOW_TCAM_KEY_CLS_9;
+   wr_data   = {60'h0,tcam_disc[5],tcam_tsel[5],1'b0,tcam_ipaddr[5]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+   FFLP_Model.update_tcam_reg_shadow(9, {tcam_disc[5],tcam_tsel[5],tcam_ipaddr[5]});
+   addr      = FFLP_ADDRESS_RANGE + FFLP_HOW_TCAM_KEY_CLS_A;
+   wr_data   = {60'h0,tcam_disc[6],tcam_tsel[6],1'b0,tcam_ipaddr[6]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+   FFLP_Model.update_tcam_reg_shadow(10, {tcam_disc[6],tcam_tsel[6],tcam_ipaddr[6]});
+   addr      = FFLP_ADDRESS_RANGE + FFLP_HOW_TCAM_KEY_CLS_B;
+   wr_data   = {60'h0,tcam_disc[7],tcam_tsel[7],1'b0,tcam_ipaddr[7]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+   FFLP_Model.update_tcam_reg_shadow(11, {tcam_disc[7],tcam_tsel[7],tcam_ipaddr[7]});
+   addr      = FFLP_ADDRESS_RANGE + FFLP_HOW_TCAM_KEY_CLS_C;
+   wr_data   = {60'h0,tcam_disc[8],tcam_tsel[8],1'b0,tcam_ipaddr[8]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+   FFLP_Model.update_tcam_reg_shadow(12, {tcam_disc[8],tcam_tsel[8],tcam_ipaddr[8]});
+   addr      = FFLP_ADDRESS_RANGE + FFLP_HOW_TCAM_KEY_CLS_D;
+   wr_data   = {60'h0,tcam_disc[9],tcam_tsel[9],1'b0,tcam_ipaddr[9]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+   FFLP_Model.update_tcam_reg_shadow(13, {tcam_disc[9],tcam_tsel[9],tcam_ipaddr[9]});
+   addr      = FFLP_ADDRESS_RANGE + FFLP_HOW_TCAM_KEY_CLS_E;
+   wr_data   = {60'h0,tcam_disc[10],tcam_tsel[10],1'b0,tcam_ipaddr[10]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+   FFLP_Model.update_tcam_reg_shadow(14, {tcam_disc[10],tcam_tsel[10],tcam_ipaddr[10]});
+   addr      = FFLP_ADDRESS_RANGE + FFLP_HOW_TCAM_KEY_CLS_F;
+   wr_data   = {60'h0,tcam_disc[11],tcam_tsel[11],1'b0,tcam_ipaddr[11]};
+   fflp_util.fflp_pio_wrapper(addr, wr_data);   
+   FFLP_Model.update_tcam_reg_shadow(15, {tcam_disc[11],tcam_tsel[11],tcam_ipaddr[11]});
+}
+
+task pkt_configurator::program_tcam_key_asdata(integer cam_index, bit [199:0] cam_data, bit [63:0] assoc_data, (bit[199:0] cam_mask={200{1'b1}}), (bit frontdoor=0)) {
+//bit [199:0] cam_mask = {200{1'b1}};
+bit [15:0] 	syndrome;
+bit v4_ecc_ck;
+bit [129:0] 	adata_cam_key;
+bit [4:0] 	pkt_class;
+bit [63:0] 	addr, wr_data;
+
+   pkt_class = cam_data[TCAM_CLS_CODE];
+
+   if(get_plus_arg (CHECK, "TCAM_FRONTDOOR") || (frontdoor==1)) {
+     fflp_util.pio_wr_tcam_key(cam_index, cam_data, cam_mask);
+     repeat(50) @(posedge CLOCK);
+   }
+   else {    // Backdoor forcing of TCAM memory data
+     force_tcam_entry(cam_index, cam_data);
+   }
+
+   // Update the tcam_key shadow in the FFLP Model
+   FFLP_Model.update_tcam_key_shadow(cam_index, cam_data);
+   FFLP_Model.update_tcam_mask_shadow(cam_index, cam_mask);
+
+   adata_cam_key = {assoc_data[25:1],1'b0,cam_data[103:0]};
+   v4_ecc_ck = assoc_data[13];
+
+   syndrome=0;
+   //always check parity, SYNDROME field has even parity (4bits) the assoc_data[25:0]
+   // Bit 0 for bits [7:0], bit 1 for [15:8], bit 2 for [23:16], bit 3 for [25:24]
+   syndrome[3:0] = rxc_cl.setup_cam_ram_fcram_cl.calculate_asdata_parity (cam_index,assoc_data);
+
+   //overwrite parity with ecc if v4_type && v4_ecc_chk
+   // for bits { Associated_data[25:1], 1'b0, CAM_KEY[103:0] }
+   if(v4_ecc_ck && (pkt_class>=8) && (pkt_class<=11)) {
+     syndrome[7:0]  = rxc_cl.setup_cam_ram_fcram_cl.calculate_ecc_syndrome (adata_cam_key[64:0]);
+     syndrome[15:8] = rxc_cl.setup_cam_ram_fcram_cl.calculate_ecc_syndrome (adata_cam_key[129:65]);
+   }
+   assoc_data = {22'h0,syndrome,assoc_data[25:0]};
+
+   // Always programming the associated data using regular PIO Writes
+   fflp_util.pio_wr_tcam_asdata(cam_index, assoc_data);
+   repeat(50) @(posedge CLOCK);
+
+   // Update the assoc_data shadow in the FFLP Model
+   FFLP_Model.update_tcam_assoc_data_shadow(cam_index, assoc_data);
+   repeat(50) @(posedge CLOCK);
+}
+
+task pkt_configurator::setup_tcam(integer total_entries, integer path, (integer mode = 0), (bit overwrite_asdata_disc=0)) {
+bit [2:0] 	l2_rdc_tbl_num;
+bit [7:0] 	cam_addr;
+integer		cam_addr_int;
+bit [3:0] 	cam_addr_4bit;
+bit [199:0] 	ipv4_cam_key, ipv6_cam_key, cam_lmask;
+bit [4:0] 	pkt_class;
+bit [63:0] 	addr, wr_data, assoc_data;
+bit [129:0] 	adata_cam_key;
+bit [15:0] 	syndrome;
+bit [3:0]  	asdata_parity_value;
+bit [11:0] 	zfid;
+bit [11:0] 	tcam_disc;
+bit        	v4_ecc_ck;
+bit        	asdata_disc;
+bit [1:0]  	tres;
+bit [4:0]  	asdata_offset;
+bit [2:0]  	asdata_rdctbl;
+bit        	zfvld;
+bit        	asdata_age;
+integer		inc_offset;
+bit [3:0]       suggested_cam_lat;
+bit [63:0]   	rd_data;
+	
+   if (get_plus_arg (CHECK, "TCAM_DISC_12HEX="))
+    tcam_disc = get_plus_arg( HNUM, "TCAM_DISC_12HEX=");
+   else
+    tcam_disc = 12'h000;
+
+// TCAM_KEY Registers programmed for classes 4->15
+// For all 12 classes: DISC     TSEL    IPADDR
+ program_tcam_key_reg(tcam_disc, 12'hfff, 12'h000);
+
+if (total_entries > MAX_CAM_ENTRIES) total_tcam_entries = MAX_CAM_ENTRIES;
+else total_tcam_entries = total_entries;
+
+if (get_plus_arg (CHECK, "PKT_CFG_TCAM_LOOKUP"))
+   l2_rdc_tbl_num = 0;
+else
+   l2_rdc_tbl_num = 0;
+
+   inc_offset = 0;
+
+// change the CAM latency to 4 for both niu/neptune
+ suggested_cam_lat = 4;
+ gen_pio_drv.pio_rd(FFLP_ADDRESS_RANGE+FFLP_CONFIG, rd_data, 1'b0);
+ printf ("pkt_configurator: Rewriting the default value of cam_latency(%0d) with %0d\n", rd_data[19:16], suggested_cam_lat);
+ rd_data[19:16] = suggested_cam_lat;
+ gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE+FFLP_CONFIG, rd_data);
+
+ case (mode) {
+  0: { // mode=0 programs a mix of IPv4(5-tuple) and IPv6(4-tuple) entries
+      for(cam_addr_int=0;cam_addr_int<total_tcam_entries;cam_addr_int++) {
+	  cam_addr = cam_addr_int;
+          cam_addr_4bit = cam_addr;
+   /*###################### Setting up TCAM entry/Associative data for IPv6 ######################*/
+/*
+   pkt_class = 12 + cam_addr%4;
+   ipv6_cam_key = {pkt_class,
+                  3'b000,
+                  {2'b00,l2_rdc_tbl_num},
+                  nop,
+                  10'h0,
+                  tos,
+                  pkt_next_hdr,
+                  src_tcp_udp_port,
+                  dst_tcp_udp_port,
+                  ipv6_addr};
+   fflp_util.pio_wr_tcam_key(cam_addr, ipv6_cam_key, cam_lmask);
+   fflp_util.pio_wr_tcam_asdata(cam_addr, assoc_data);
+*/
+   /*###################### Setting up TCAM entry/Associative data for IPv4 ######################*/
+
+   //pkt_class = 8 + cam_addr%4;
+   pkt_class = 8;
+   cam_lmask = { 200 {1'b1} };
+
+   ipv4_cam_key = {pkt_class,			// packet CLASS
+                  3'b000, 			// Reserved
+                  {2'b00,l2_rdc_tbl_num}, 	// Layer 2 RDC TBL NUM
+                  1'b0, 			// NOPORT
+                  74'h0, 			// Reserved
+                  8'h00, 			// TOS 
+                  8'h06,			// protocol_id
+                  16'h3322,			// L4_port_or_spi
+                  16'h1100,			// L4_port_or_spi
+                  32'hffff3400+cam_addr_4bit,  	// ip_addr_sa
+                  32'hfefe1200+cam_addr_4bit};	// ip_addr_da
+
+/*
+        cam_key = {pkt_class,
+                   3'b000,
+                   {2'b00,l2_rdc_tbl_num[i]},
+                   nop,
+                   74'h0,
+                   tos,
+                   pkt_protocol,
+                   src_tcp_udp_port,
+                   dst_tcp_udp_port,
+                   ip_src_addr,
+                   ip_dst_addr};
+*/
+
+   syndrome           = 0;
+   zfid               = 0;
+
+   // take the argument to see if the test wants ecc checking on v4 entries
+   if (get_plus_arg(CHECK, "PKT_CFG_ASDATA_ECC_EN"))
+    v4_ecc_ck	      = 1;
+   else
+    v4_ecc_ck         = 0;
+
+   // set DISC bit in all entries of associated RAM if specified by the run
+   if (get_plus_arg(CHECK, "PKT_CFG_SET_ASDATA_DISC_BIT"))
+       if(overwrite_asdata_disc)
+          asdata_disc = 0;
+       else
+          asdata_disc = 1;
+   else
+    asdata_disc        = 0;
+
+   if (path==2)
+     tres               = 2'b11; // means: override L2_rdc_num, take tcam rdc_num/offset and "no further flow lookup".
+   else if (path==3)
+     tres               = 2'b00; // means: use the L2_rdc_num, and continue to flow lookup.
+   asdata_rdctbl      = 1;
+   asdata_offset      = inc_offset ++; // just to make sure tcam always results in a non-zero offset
+   zfvld              = 0;
+   asdata_age         = 1;
+
+   adata_cam_key = {assoc_data[25:1],1'b0,ipv4_cam_key[103:0]};
+
+   assoc_data = {22'h0,syndrome,zfid,v4_ecc_ck,asdata_disc,tres,asdata_rdctbl,asdata_offset,zfvld,asdata_age};
+   // If ECC Check is enabled, SYNDROME field has ECC_SYNDROME calculated 
+   // for the bits { Associated_data[25:1], 1'b0, CAM_KEY[103:0] }
+   if ((v4_ecc_ck) && (pkt_class>=8) && (pkt_class<=11)) {  // Only IPv4 classes 
+   syndrome[7:0]  = rxc_cl.setup_cam_ram_fcram_cl.calculate_ecc_syndrome (adata_cam_key[64:0]); 
+   syndrome[15:8] = rxc_cl.setup_cam_ram_fcram_cl.calculate_ecc_syndrome (adata_cam_key[129:65]); 
+   }
+   // If ECC Check is enabled, SYNDROME field has even parity (4bits) for the assoc_data[25:0]
+   // Bit 0 for bits [7:0], bit 1 for [15:8], bit 2 for [23:16], bit 3 for [25:24]
+   else {  // if v4_ecc_ck=0 (OR) if it is IPv6 or L2
+    syndrome[3:0]  = rxc_cl.setup_cam_ram_fcram_cl.calculate_asdata_parity (cam_addr,assoc_data);
+    syndrome[15:4] = 0;
+   }
+
+   // corrupting tcam assoc data ECC if asked for
+   if (get_plus_arg(CHECK, "PKT_CFG_ASDATA_ECC_ERR"))
+    syndrome ^= random()%256;
+
+   assoc_data = {22'h0,syndrome,zfid,v4_ecc_ck,asdata_disc,tres,asdata_rdctbl,asdata_offset,zfvld,asdata_age};
+
+   // If plus_arg +TCAM_FRONTDOOR is given, PIOs are done to TCAM key regs. Otherwise, backdoor loaded (NIU only)
+   if (get_plus_arg (CHECK, "TCAM_FRONTDOOR")) {
+   // PIO Writes into the RTL
+   fflp_util.pio_wr_tcam_key(cam_addr, ipv4_cam_key, cam_lmask);
+   repeat(50) @(posedge CLOCK);
+   }
+   else {
+   force_tcam_entry(cam_addr, ipv4_cam_key);
+   }
+   
+
+   // Update the tcam_key shadow in the FFLP Model
+     FFLP_Model.update_tcam_key_shadow(cam_addr, ipv4_cam_key);
+
+   // Always programming the associated data using regular PIO Writes
+   fflp_util.pio_wr_tcam_asdata(cam_addr, assoc_data);
+
+   // update the tcam_key/assoc_data shadow to be able to read quickly for searching
+   rxc_cl.setup_cam_ram_fcram_cl.setup_ip_db_cl.ip_db[0].ip_cam.shadow_cam_key[cam_addr]   = ipv4_cam_key;
+   rxc_cl.setup_cam_ram_fcram_cl.setup_ip_db_cl.ip_db[0].ip_cam.shadow_cam_lmask[cam_addr] = cam_lmask;
+   rxc_cl.setup_cam_ram_fcram_cl.setup_ip_db_cl.ip_db[0].ip_cam.shadow_adata[cam_addr]     = assoc_data;
+   
+   printf("cam_index=%d, SHADOW_ADATA %h.\n",cam_addr,rxc_cl.setup_cam_ram_fcram_cl.setup_ip_db_cl.ip_db[0].ip_cam.shadow_adata [cam_addr]);
+   printf("cam_index=%d, SHADOW_KEY %h.\n",cam_addr,rxc_cl.setup_cam_ram_fcram_cl.setup_ip_db_cl.ip_db[0].ip_cam.shadow_cam_key [cam_addr]);
+
+   // Update the assoc_data shadow in the FFLP Model
+     FFLP_Model.update_tcam_assoc_data_shadow(cam_addr, assoc_data);
+     if(cam_addr%16 == 15) {
+     	l2_rdc_tbl_num++;
+     }
+  }
+  }
+  1: { // mode=1 programs all entries with IPv4 5-tuple type entries
+  }
+  2: { // mode=2 programs all entries with IPv6 4-tuple type entries
+  }
+  default: { }
+ }
+
+
+
+/*
+// program the remaining entries with all 0s (so class=0, an invalid class)
+  for(cam_addr=total_tcam_entries;cam_addr<MAX_CAM_ENTRIES;cam_addr++) {
+   cam_lmask = { 200 {1'b1} };
+
+   ipv4_cam_key = { 200 {1'b0} };
+
+   assoc_data = { 64 {1'b0} };
+
+   // If plus_arg +TCAM_FRONTDOOR is given, PIOs are done to TCAM key regs. Otherwise, backdoor loaded
+   if (get_plus_arg (CHECK, "TCAM_FRONTDOOR")) {
+   // PIO Writes into the RTL
+   fflp_util.pio_wr_tcam_key(cam_addr, ipv4_cam_key, cam_lmask);
+   }
+   else {
+   force_tcam_entry(cam_addr, ipv4_cam_key);
+   }
+
+   // Always programming the associated data using regular PIO Writes
+   fflp_util.pio_wr_tcam_asdata(cam_addr, assoc_data);
+
+   // SHADOW update the tcam_key/assoc_data shadow
+   rxc_cl.setup_cam_ram_fcram_cl.setup_ip_db_cl.ip_db[0].ip_cam.shadow_cam_key[cam_addr]   = ipv4_cam_key;
+   rxc_cl.setup_cam_ram_fcram_cl.setup_ip_db_cl.ip_db[0].ip_cam.shadow_cam_lmask[cam_addr] = cam_lmask;
+   rxc_cl.setup_cam_ram_fcram_cl.setup_ip_db_cl.ip_db[0].ip_cam.shadow_adata[cam_addr]     = assoc_data;
+   
+   printf("cam_index=%d, SHADOW_ADATA %h.\n",cam_addr,rxc_cl.setup_cam_ram_fcram_cl.setup_ip_db_cl.ip_db[0].ip_cam.shadow_adata [cam_addr]);
+   printf("cam_index=%d, SHADOW_KEY %h.\n",cam_addr,rxc_cl.setup_cam_ram_fcram_cl.setup_ip_db_cl.ip_db[0].ip_cam.shadow_cam_key [cam_addr]);
+
+  }
+*/
+}
+
+
+function bit[199:0] pkt_configurator::get_tcam_mask(integer index) {
+  get_tcam_mask = FFLP_Model.tcam_mask[index];
+}
+
+function bit [199:0] pkt_configurator::get_tcam_shadow(integer index) {
+  if (get_plus_arg(CHECK, "USE_FFLP_SAT_SHADOW"))
+    get_tcam_shadow = rxc_cl.setup_cam_ram_fcram_cl.setup_ip_db_cl.ip_db[0].ip_cam.shadow_cam_key[index];
+  else
+    get_tcam_shadow = FFLP_Model.get_tcam_entry(index);
+}
+
+function bit [63:0] pkt_configurator::get_assoc_data(integer index) {
+  if (get_plus_arg(CHECK, "USE_FFLP_SAT_SHADOW"))
+    get_assoc_data = rxc_cl.setup_cam_ram_fcram_cl.setup_ip_db_cl.ip_db[0].ip_cam.shadow_adata[index];
+  else
+    get_assoc_data = FFLP_Model.tcam_assoc_data[index];
+}
+
+task pkt_configurator::pio_write_tcam_key_rand () {
+
+     bit [63:0] wr_data;
+     bit [39:0] addr;
+     bit [199:0] wr_tcam_mask = {200{1'b1}};
+     bit [199:0] wr_tcam_key;
+     bit [9:0] rand_index;
+
+        rand_index = random() % total_tcam_entries;
+ 	wr_tcam_key = get_tcam_shadow(rand_index);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_MASK_REG0;
+        wr_data = {56'h0,wr_tcam_mask[199:192]};
+        fflp_util.fflp_pio_wrapper ( addr, wr_data);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_MASK_REG1;
+        wr_data = wr_tcam_mask[191:128];
+        fflp_util.fflp_pio_wrapper ( addr, wr_data);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_MASK_REG2;
+        wr_data = wr_tcam_mask[127:64];
+        fflp_util.fflp_pio_wrapper ( addr, wr_data);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_MASK_REG3;
+        wr_data = wr_tcam_mask[63:0];
+        fflp_util.fflp_pio_wrapper ( addr, wr_data);
+        printf("PKT_CONFIG'TOR: Index = %d, Write_TCAM_Mask Value = %h.\n",rand_index,wr_tcam_mask);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG0;
+        wr_data = {56'h0,wr_tcam_key[199:192]};
+        fflp_util.fflp_pio_wrapper ( addr, wr_data);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG1;
+        wr_data = wr_tcam_key[191:128];
+        fflp_util.fflp_pio_wrapper ( addr, wr_data);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG2;
+        wr_data = wr_tcam_key[127:64];
+        fflp_util.fflp_pio_wrapper ( addr, wr_data);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG3;
+        wr_data = wr_tcam_key[63:0];
+        fflp_util.fflp_pio_wrapper ( addr, wr_data);
+        printf("PKT_CONFIG'TOR: Index = %d, Write_TCAM Value = %h.\n",rand_index,wr_tcam_key);
+
+       //****************************************
+       // CPU write to command register *********
+       //****************************************
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_CONTROL;
+        wr_data = {43'h0,3'b000,8'h00,rand_index};
+        fflp_util.fflp_pio_wrapper ( addr, wr_data);
+	repeat(50) @(posedge CLOCK);
+
+}
+
+task pkt_configurator::pio_compare_tcam_key_rand () {
+
+     bit [63:0] wr_data;
+     bit [39:0] addr;
+     bit [9:0] rand_index;
+
+        rand_index = random() % MAX_CAM_ENTRIES;
+
+       //****************************************
+       // CPU write to command register *********
+       //****************************************
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_CONTROL;
+        wr_data = {43'h0,3'b010,8'h00,rand_index};
+        fflp_util.fflp_pio_wrapper ( addr, wr_data);
+	repeat(50) @(posedge CLOCK);
+
+}
+
+task pkt_configurator::pio_read_tcam_key_rand () {
+
+     bit [63:0] wr_data;
+     bit [39:0] addr;
+     bit [199:0] wr_tcam_mask = {200{1'b1}};
+     bit [199:0] wr_tcam_key;
+     bit [9:0] rand_index;
+
+        rand_index = random() % MAX_CAM_ENTRIES;
+ 	wr_tcam_key = get_tcam_shadow(rand_index);
+
+       //****************************************
+       // CPU write to command register *********
+       //****************************************
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_CONTROL;
+        wr_data = {43'h0,3'b001,8'h00,rand_index};
+        fflp_util.fflp_pio_wrapper ( addr, wr_data);
+	repeat(50) @(posedge CLOCK);
+
+}
+
+task pkt_configurator::pio_write_assoc_data_rand () {
+
+     bit [63:0] wr_data;
+     bit [39:0] addr;
+     bit [9:0] rand_index;
+
+        rand_index = random() % MAX_CAM_ENTRIES;
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG1;
+ 	wr_data = get_assoc_data(rand_index);
+        fflp_util.fflp_pio_wrapper ( addr, wr_data);
+
+        printf("PKT_CONFIG'TOR: Index = %d, Write_Assoc_Data Value = %h.\n",rand_index,wr_data);
+
+       //****************************************
+       // CPU write to command register *********
+       //****************************************
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_CONTROL;
+        wr_data = {43'h0,3'b100,8'h00,rand_index};
+        fflp_util.fflp_pio_wrapper ( addr, wr_data);
+	repeat(50) @(posedge CLOCK);
+
+}
+
+task pkt_configurator::pio_read_assoc_data_rand () {
+
+     bit [63:0] wr_data;
+     bit [39:0] addr;
+     bit [199:0] wr_adata;
+     bit [9:0] rand_index;
+
+        rand_index = random() % MAX_CAM_ENTRIES;
+ 	wr_adata = get_assoc_data(rand_index);
+
+        printf("PKT_CONFIG'TOR: Index = %d, Read_Assoc_Data Value = %h.\n",rand_index,wr_adata);
+
+       //****************************************
+       // CPU write to command register *********
+       //****************************************
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_CONTROL;
+        wr_data = {43'h0,3'b101,8'h00,rand_index};
+        fflp_util.fflp_pio_wrapper ( addr, wr_data);
+	repeat(50) @(posedge CLOCK);
+
+}
+
+task pkt_configurator::pkt_configurator_genPkt(integer path, integer data_length, integer dma_num, integer mac_id, integer last_packet, (flow_desc flow_in = null)) {
+bit [11:0] pkt_vlan_id;
+bit [47:0] pkt_mac_da;
+integer zcp_tblnum_offset, zcp_tblnum;
+bit [2:0] tblnum;
+bit [3:0] offset;
+integer dma_reqd;
+integer pkt_path;
+flow_desc flow;
+bit [13:0] pkt_length;
+CRxToken RxToken;
+CpgToken pgToken;
+bit [4:0] ret;
+integer TOT_MAC_DAs;
+integer start_index;
+Cpkt_info pkt_info;
+bit [199:0] tcam_entry;
+bit [63:0] rd_data;
+bit [383:0] flow_entry;
+cntl_fifo ctl_fifo;
+byte_array buf_18B;
+bit[23:0] r;
+bit[15:0] id;
+bit[1:0] m;
+bit[5:0] d;
+
+  pkt_path = path;
+  flow     = new;
+  RxToken = new();
+  pkt_info = new;
+  ctl_fifo = new();
+  buf_18B = new();
+
+ if (get_plus_arg (CHECK, "FLOW_FROM_TEST")  ||  flow_from_test_en) {
+  flow = flow_in;
+
+  // Before sending the packet to the FFLP Model, fill in the right Pkt_ID
+  // Generate an ID on the mac SA so the checker can sort the packets.
+  // Since getMacSA increments pktid
+  flow.src_node.l2_addr[15:0] = pgIdgen.packet_id[mac_id];
+  flow.src_node.l2_addr[17:16] = mac_id;
+  flow.src_node.l2_addr[23:18] = dma_num;
+  flow.src_node.l2_addr[47:24] = random();
+  // pkt_info = rxc_cl.setup_cam_ram_fcram_cl.construct_flow(0, TCP_SYN, flow);
+  // dma_reqd = pkt_info.zcp_dma_chnl;
+
+   
+  if(get_plus_arg (CHECK, "SKIP_PAUSE_FRAME_PREDICTION")) { // This is for pauseframe tests
+     // Skip predict_control_fifo call for pause frames since any way it is going to be dropped by MAC
+     if(flow.dst_node.l2_addr !== 48'h0180c2000001) {
+       ctl_fifo = FFLP_Model.predict_control_fifo(mac_id, flow);
+     } else {
+       ctl_fifo.final_dma_chnl = dma_num;
+       ctl_fifo.port_num = mac_id; 	// 7:6
+     }
+  } else { // This is normal route for all tests except pause frame tests
+     ctl_fifo = FFLP_Model.predict_control_fifo(mac_id, flow);
+  }
+  
+  dma_reqd = ctl_fifo.final_dma_chnl;
+  if(get_plus_arg (CHECK, "RX_DROP_PKT_CHECK")) {
+    
+    //flow.src_node.l2_addr = pgIdgen.getMacSA(dma_reqd,mac_id);
+    // Fill up variables for backward compatibility
+    packet_id[mac_id] = flow.src_node.l2_addr[15:0];
+    id = flow.src_node.l2_addr[15:0];
+    m = flow.src_node.l2_addr[17:16];
+    d = flow.src_node.l2_addr[23:18];
+    printf("pkt_configurator::genPkt() Replaced MAC_SA with ID - 0x%x\n", flow.src_node.l2_addr);
+  }
+  // At this point dma_reqd is avaliable
+  printf ("PKT_CONFIGURATOR send frame mac.seq=%0d.%0d len=%4d dma=%0d LastPkt=%0d\n", mac_id, packet_id[mac_id], data_length, dma_reqd, last_packet);
+
+  // convert ctl_fifo information to an 18B byte array, to send it to end checker
+  if(get_plus_arg (CHECK, "ENABLE_RX_CNTL_HDR_CHECK"))
+     buf_18B = convert_cntl_fifo_to_byte_array(ctl_fifo);
+ }
+
+ else {
+
+  dma_reqd = dma_num;
+  printf ("PKT_CONFIGURATOR: REVERSE. FLOW_FROM_PKT_CFG. path %0d pkt_len %0d dma_num %0d mac_id %0d IsLastPkt %0d\n",
+	   pkt_path, data_length, dma_reqd, mac_id, last_packet);
+  // The following case{} block will construct the flow_desc object, according to the "path"
+  case (pkt_path) {
+
+   0: { // NO CLASS MATCH MAC RDC TBL NUMBER, RDC OFFSET=0
+
+	// If asked for guaranteed lookup, program the entries so we have all the (relevant) hits
+	if (force_lookup_hit) {
+	  // Let the dma_num go randomly into one of the 8 tables
+	  ret = rxc_cl.setup_cam_ram_fcram_cl.program_zcp_rdc_tbl(0, 16*dma_num, 3'b001, dma_num);
+	}
+
+	// First lookup the ZCP RDC table to findout which table has the required DMA num
+	zcp_tblnum_offset = find_zcp_rdc_offset(dma_reqd);
+	// randomly select the rdc_tbl_num and find out which of the 8 MAC_DAs corresponds to that
+	zcp_tblnum = zcp_tblnum_offset/16;
+	pkt_mac_da = find_mac_da(zcp_tblnum, mac_id);
+      if (debug_en)
+	printf ("zcp_tblnum_offset=0x%h, zcp_tblnum=%0d, mac_id=%0d, pkt_mac_da for pkt = %h\n", 
+		zcp_tblnum_offset, zcp_tblnum, mac_id, pkt_mac_da);
+
+	// set the TYPE/LEN field to have "NO CLASS MATCH"
+        flow.src_node.l2_addr = 48'hde_f0_72_94_38_15;
+        flow.src_node.tos     = 8'hf5;
+        flow.src_node.tci     = 16'hcb00;
+        flow.src_node.ip_addr = 32'hcccc_0000;
+        flow.src_node.src_port = 20'h00001;
+
+        flow.dst_node.l2_addr = pkt_mac_da;
+        flow.dst_node.tci     = 16'hcb00;
+        flow.dst_node.ip_addr = 32'h8888_0000;
+        flow.dst_node.src_port = 20'h00001;
+
+        flow.tup.src_tcp_udp_port = 16'h1234;
+        flow.tup.dst_tcp_udp_port = 16'hABCD;
+
+        flow.frame.frame_type = 5'b00010;
+        flow.frame.frame_class = CL_ICMP; // This will be recognized as "NO CLASS MATCH" by FFLP
+        flow.frame.type = -1;
+        flow.frame.class_mask = 0;
+        flow.frame.class_funct = CLF_SRC;
+        flow.frame.data_type = DAT_SEQ |DAT_LEN_EXACT;
+        flow.frame.data_seed = 128;
+
+        flow.rx_param.rcv_isn = 32'hA5A5_F5F5;
+        flow.fl_state.tcp_flags = 6'b00_0010;
+        flow.flow_no = 0;
+	
+      }
+   1: { // L2 CLASS MATCH NO CAM MATCH MAC RDC TBL NUMBER, RDC OFFSET=0
+
+	// First lookup the ZCP RDC table to findout which table has the required DMA num
+	zcp_tblnum_offset = find_zcp_rdc_offset(dma_reqd);
+	// randomly select the rdc_tbl_num and find out which of the 8 MAC_DAs corresponds to that
+	zcp_tblnum = zcp_tblnum_offset/16;
+	pkt_mac_da = find_mac_da(zcp_tblnum, mac_id);
+      if (debug_en)
+	printf ("zcp_tblnum_offset=0x%h, zcp_tblnum=%0d, mac_id=%0d, pkt_mac_da for pkt = %h\n", zcp_tblnum_offset, zcp_tblnum, mac_id, pkt_mac_da);
+
+	// set the TYPE/LEN field to have "L2 CLASS MATCH"
+        flow.src_node.l2_addr = 48'hde_f0_72_94_38_15;
+        flow.src_node.tos     = 8'hf5;
+        flow.src_node.tci     = 16'hcb00;
+        flow.src_node.ip_addr = 32'hcccc_0000;
+        flow.src_node.src_port = 20'h00001;
+
+        flow.dst_node.l2_addr = pkt_mac_da;
+        flow.dst_node.tci     = 16'hcb00;
+        flow.dst_node.ip_addr = 32'h8888_0000;
+        flow.dst_node.src_port = 20'h00001;
+
+        flow.tup.src_tcp_udp_port = 16'h1234;
+        flow.tup.dst_tcp_udp_port = 16'hABCD;
+
+        if (data_length < 128) {
+	randcase {
+	 30:{   // IPV4, TCP
+            flow.frame.frame_type = 5'b00010; 
+            flow.frame.frame_class = CL_TCP;
+	   }
+	 20:{   // IPV4, UDP
+            flow.frame.frame_type = 5'b00010;
+            flow.frame.frame_class = CL_UDP;
+	   }
+	 20:{   // IPV4, AH/ESP
+            flow.frame.frame_type = 5'b00010;
+            flow.frame.frame_class = CL_IP_SEC_AH;
+	   }
+	 20:{   // IPV4, SCTP
+            flow.frame.frame_type = 5'b00010;
+            flow.frame.frame_class = CL_SCTP;
+	   }
+	 10:{   // ARP
+            flow.frame.frame_type = 5'b00010;
+            flow.frame.frame_class = CL_ARP;
+	   }
+        }
+        }
+        else if (data_length >= 128) {
+        randcase {
+         20:{   // IPV4, TCP
+            flow.frame.frame_type = 5'b00010;
+            flow.frame.frame_class = CL_TCP;
+           }
+         10:{   // IPV4, UDP
+            flow.frame.frame_type = 5'b00010;
+            flow.frame.frame_class = CL_UDP;
+           }
+         10:{   // IPV4, AH/ESP
+            flow.frame.frame_type = 5'b00010;
+            flow.frame.frame_class = CL_IP_SEC_AH;
+           }
+         10:{   // IPV4, SCTP
+            flow.frame.frame_type = 5'b00010;
+            flow.frame.frame_class = CL_SCTP;
+           }
+         10:{   // IPV6, TCP
+            flow.frame.frame_type = 5'b01010;
+            flow.frame.frame_class = CL_TCP_IP_V6;
+           }
+         10:{   // IPV6, UDP
+            flow.frame.frame_type = 5'b01010;
+            flow.frame.frame_class = CL_UDP_IP_V6;
+           }
+         10:{   // IPV6, AH/ESP
+            flow.frame.frame_type = 5'b01010;
+            flow.frame.frame_class = CL_IP_V6_SEC_AH;
+           }
+         10:{   // IPV6, SCTP
+            flow.frame.frame_type = 5'b01010;
+            flow.frame.frame_class = CL_SCTP_IP_V6;
+           }
+         10:{   // ARP
+            flow.frame.frame_type = 5'b00010;
+            flow.frame.frame_class = CL_ARP;
+           }
+        }
+	}
+
+        if (get_plus_arg(CHECK, "IP_FRAG_BUG_ERR")) {
+          case (packet_id[mac_id]%3) {
+           0: {
+	    flow.frame.frame_class = CL_UDP_FRAG;
+            flow.frame.frame_type = 5'b00010;
+	      }
+           1: {
+	    flow.frame.frame_class = CL_TCP_FRAG;
+            flow.frame.frame_type = 5'b00010;
+	      }
+           2: {
+	    flow.frame.frame_class = CL_SCTP_FRAG;
+            flow.frame.frame_type = 5'b00010;
+	      }
+          }
+          flow.frame.error_code = PG_CHKSUM_ERR;
+          flow.frame.ip_frag = 16'h6000;
+	}
+
+        flow.frame.type = -1;
+        flow.frame.class_mask = 0;
+        flow.frame.class_funct = CLF_SRC;
+        flow.frame.data_type = DAT_SEQ |DAT_LEN_EXACT;
+        flow.frame.data_seed = 128;
+
+        flow.rx_param.rcv_isn = 32'hA5A5_F5F5;
+        flow.fl_state.tcp_flags = 6'b00_0010;
+        flow.flow_no = 0;
+
+      }
+   2: { // L3 CLASS MATCH CAM MATCH MAC RDC TBL NUMBER, RDC OFFSET=0
+
+	// First lookup the ZCP RDC table to findout which subtable+offset has the required DMA num
+	zcp_tblnum_offset = find_zcp_rdc_offset(dma_reqd);
+
+	// Then search the tcam associated data to find out which tcam entry has that rdc+offset
+	tblnum = zcp_tblnum_offset/16;
+	offset = zcp_tblnum_offset%16;
+	tcam_entry = matching_tcam_entry(tblnum,offset);
+
+	// choose a vlan id, all the entries should result in an RDC=l2_rdc_tbl_num
+	pkt_vlan_id = random()%MAX_VLAN_ENTRIES;
+ 
+	// choose one of 16 MAC_DAs randomly, all the mac_cntl_words should result in RDC=l2_rdc_tbl_num
+	case (mac_id) {
+	  0: { TOT_MAC_DAs = MAX_DA_10G; start_index = 0; }
+  	  1: { TOT_MAC_DAs = MAX_DA_10G; start_index = 16; }
+	  2: { TOT_MAC_DAs = MAX_DA_1G; start_index = 32; }
+	  3: { TOT_MAC_DAs = MAX_DA_1G; start_index = 40; }
+	  default: { TOT_MAC_DAs = 0; start_index = 0; }
+  	}
+        printf("index %0d, TOT_MAC_DAs %0d, mac_id %0d \n", 
+	 	start_index+random()%TOT_MAC_DAs, TOT_MAC_DAs, mac_id);
+
+        pkt_mac_da = ip_db.mac48_da[start_index+random()%TOT_MAC_DAs];
+
+      if (debug_en)
+	printf ("zcp_entry=0x%h tblnum=%02d offset=%02d Port=%0d DA for pkt %h, vlan=%04d, tcam_key=%h\n", 
+		zcp_tblnum_offset, tblnum, offset, mac_id, pkt_mac_da, pkt_vlan_id, tcam_entry);
+
+	// set the TYPE/LEN field to have "L3 CLASS MATCH"
+	// ###############################################################################################
+	// frame_type[4:0] bit definitions for pkt_gen
+        //
+        //   Tunneling 	  IPv4/IPv6(0/1)   VLAN_Tagged	    IP_Packet	   LLC/SNAP_Pkt
+	//       |		|		|		|		|
+	//       |		|		|		|		|
+	// frame_type[4]  frame_type[3]   frame_type[2]   frame_type[1]   frame_type[0]
+	// ###############################################################################################
+
+        flow.src_node.l2_addr = 48'hde_f0_72_94_38_15;
+        flow.src_node.tci     = pkt_vlan_id;
+        flow.src_node.src_port = 20'h00001;
+
+        flow.dst_node.l2_addr = pkt_mac_da;
+        flow.dst_node.tci     = 16'hcb00;
+        flow.dst_node.src_port = 20'h00001;
+
+
+        if (debug_en)
+          printf ("tcam_entry[CLASS]=%0d,", tcam_entry[TCAM_CLS_CODE]);
+
+	case (tcam_entry[TCAM_CLS_CODE]){
+
+	 8,9,10,11: {
+          flow.src_node.tos         = tcam_entry[IPV4_CAM_TOS];
+          flow.src_node.ip_addr     = tcam_entry[IPV4_CAM_IP_ADDR_SA];
+          flow.dst_node.ip_addr     = tcam_entry[IPV4_CAM_IP_ADDR_DA];
+          flow.tup.src_tcp_udp_port = tcam_entry[IPV4_CAM_L4_SRC_PORT];
+          flow.tup.dst_tcp_udp_port = tcam_entry[IPV4_CAM_L4_DST_PORT];
+	 }
+	 12,13,14,15: {
+          flow.src_node.tos         = tcam_entry[IPV6_CAM_TOS];
+	  if (pkt_class_shadow[tcam_entry[TCAM_CLS_CODE]].tcam_ipaddr)
+            flow.src_node.ipv6_addr   = tcam_entry[IPV6_CAM_IP_ADDR];
+	  else
+            flow.dst_node.ipv6_addr   = tcam_entry[IPV6_CAM_IP_ADDR];
+          flow.tup.src_tcp_udp_port = tcam_entry[IPV6_CAM_L4_SRC_PORT];
+          flow.tup.dst_tcp_udp_port = tcam_entry[IPV6_CAM_L4_DST_PORT];
+	 }
+
+
+	}
+
+        if (debug_en)
+          printf ("flow.src_node.tos=%h,flow.src_node.ip_addr=%h,flow.dst_node.ip_addr=%h, flow.tup.src_tcp_udp_port=%h,flow.tup.dst_tcp_udp_port=%h\n", 
+                   flow.src_node.tos,flow.src_node.ip_addr,flow.dst_node.ip_addr, flow.tup.src_tcp_udp_port,flow.tup.dst_tcp_udp_port);
+
+	case (tcam_entry[TCAM_CLS_CODE]){
+	 8:{   // IPV4, TCP
+            flow.frame.frame_type = 5'b00010; 
+            flow.frame.frame_class = CL_TCP;
+	   }
+	 9:{   // IPV4, UDP
+            flow.frame.frame_type = 5'b00010;
+            flow.frame.frame_class = CL_UDP;
+	   }
+	10:{   // IPV4, AH/ESP
+            flow.frame.frame_type = 5'b00010;
+            flow.frame.frame_class = CL_IP_SEC_AH;
+	   }
+	11:{   // IPV4, SCTP
+            flow.frame.frame_type = 5'b00010;
+            flow.frame.frame_class = CL_SCTP;
+	   }
+	12:{   // IPV6, TCP
+            flow.frame.frame_type = 5'b01010;
+            flow.frame.frame_class = CL_TCP_IP_V6;
+	   }
+	13:{   // IPV6, UDP
+            flow.frame.frame_type = 5'b01010;
+            flow.frame.frame_class = CL_UDP_IP_V6;
+	   }
+	14:{   // IPV6, AH/ESP
+            flow.frame.frame_type = 5'b01010;
+            flow.frame.frame_class = CL_IP_V6_SEC_AH;
+	   }
+	15:{   // IPV6, SCTP
+            flow.frame.frame_type = 5'b01010;
+            // flow.frame.frame_class = CL_SCTP_IP_V6; // Not defined in PKTGEN yet
+	   }
+        default: { }
+        }
+
+ 	// If VLAN tag is asked for, generate a tagged packet from PKTGEN
+ 	if (get_plus_arg (CHECK, "PKTS_VLAN_TAGGED"))
+	    flow.frame.frame_type[2] = 1;
+
+        if (debug_en)
+	  printf ("flow.frame.frame_type=%h, flow.frame.frame_class=%h\n", flow.frame.frame_type,flow.frame.frame_class);
+
+        flow.frame.type = -1;
+        flow.frame.class_mask = 0;
+        flow.frame.class_funct = CLF_SRC;
+        flow.frame.data_type = DAT_SEQ |DAT_LEN_EXACT;
+        flow.frame.data_seed = 128;
+
+        flow.rx_param.rcv_isn = 32'hA5A5_F5F5;
+        flow.fl_state.tcp_flags = 6'b00_0010;
+        flow.flow_no = 0;
+
+      }
+   3: { // L3 CLASS MATCH, NO CAM MATCH, MAC RDC TBL NUMBER, HASH1 RDC OFFSET
+
+
+	// First lookup the ZCP RDC table to findout which subtable+offset has the required DMA num
+	zcp_tblnum_offset = find_zcp_rdc_offset(dma_reqd);
+
+	// Then search the tcam associated data to find out which tcam entry has that rdc+offset
+	tblnum = zcp_tblnum_offset/16;
+	offset = zcp_tblnum_offset%16;
+
+	// find a matching flow key, given this rdc_offset
+        flow_entry = find_matching_flow_key(offset);
+	// VLAN id should match what's there in the flow_entry, to have a hash1_hit
+	pkt_vlan_id = flow_entry[FLOW_KEY_VLAN_ID];
+ 	// pkt_mac_da
+	pkt_mac_da = flow_entry[FLOW_KEY_MAC_DA];
+
+	printf ("zcp_entry=0x%h tblnum=%02d offset=%02d Port=%0d DA for pkt %h, vlan=%04d, flow_entry=%h\n", zcp_tblnum_offset, tblnum, offset, mac_id, pkt_mac_da, pkt_vlan_id, flow_entry);
+
+        flow.src_node.l2_addr = 48'hde_f0_72_94_38_15;
+        flow.src_node.tci     = pkt_vlan_id;
+        flow.src_node.src_port = flow_entry[63:48];
+
+        flow.dst_node.l2_addr = pkt_mac_da;
+        flow.dst_node.tci     = 16'hcb00;
+        flow.dst_node.src_port = 20'h00001;
+
+        if (debug_en)
+          printf ("flow.src_node.tos=%h,flow.src_node.ip_addr=%h,flow.dst_node.ip_addr=%h, flow.tup.src_tcp_udp_port=%h,flow.tup.dst_tcp_udp_port=%h\n", 
+                   flow.src_node.tos,flow.src_node.ip_addr,flow.dst_node.ip_addr, flow.tup.src_tcp_udp_port,flow.tup.dst_tcp_udp_port);
+
+	if (get_plus_arg (CHECK, "HASH_HIT_PKT_TYPE_UDP")) {
+	    flow.frame.frame_class = CL_UDP;
+	    if (rxc_cl.setup_cam_ram_fcram_cl.how_flow_l40[11:10]==2'b10)
+	      flow.tup.src_tcp_udp_port = flow_entry[FLOW_KEY_L4_0];
+	    //else if (rxc_cl.setup_cam_ram_fcram_cl.how_flow_l40[11:10]==2'b11)
+	    //  flow.tup.udp_length = flow_entry[FLOW_KEY_L4_0];
+
+	    if (rxc_cl.setup_cam_ram_fcram_cl.how_flow_l41[11:10]==2'b10)
+	      flow.tup.dst_tcp_udp_port = flow_entry[FLOW_KEY_L4_1];
+	    //else if (rxc_cl.setup_cam_ram_fcram_cl.how_flow_l41[11:10]==2'b11)
+	    //  flow.tup.udp_checksum = flow_entry[FLOW_KEY_L4_1];
+	}
+	else {
+	    flow.frame.frame_class = CL_TCP;
+	    if (rxc_cl.setup_cam_ram_fcram_cl.how_flow_l40[9:8]==2'b10)
+	      flow.tup.src_tcp_udp_port = flow_entry[FLOW_KEY_L4_0];
+	    //else if (rxc_cl.setup_cam_ram_fcram_cl.how_flow_l40[9:8]==2'b11)
+	    //  flow.tup.seq_num[31:16] = flow_entry[FLOW_KEY_L4_0];
+
+	    if (rxc_cl.setup_cam_ram_fcram_cl.how_flow_l41[11:10]==2'b10)
+	      flow.tup.dst_tcp_udp_port = flow_entry[FLOW_KEY_L4_1];
+	    //else if (rxc_cl.setup_cam_ram_fcram_cl.how_flow_l41[11:10]==2'b11)
+	    //  flow.tup.seq_num[15:0] = flow_entry[FLOW_KEY_L4_1];
+	}
+
+	// Take an option of IPv4 or IPv6
+	if (get_plus_arg (CHECK, "HASH_HIT_PKT_TYPE_IPV6")) {
+	    flow.frame.frame_type[3] = 1; // v6
+	    flow.frame.frame_type[1] = 1; // IP
+            flow.src_node.ipv6_addr     = flow_entry[FLOW_KEY_IPV6_SA];
+            flow.dst_node.ipv6_addr     = flow_entry[FLOW_KEY_IPV6_DA];
+	}
+	else {
+	    flow.frame.frame_type[3] = 0; // v4
+	    flow.frame.frame_type[1] = 1; // IP
+            flow.src_node.ip_addr     = flow_entry[FLOW_KEY_IPV4_SA];
+            flow.dst_node.ip_addr     = flow_entry[FLOW_KEY_IPV4_DA];
+	}
+ 	// If VLAN tag is asked for, generate a tagged packet from PKTGEN
+ 	if (get_plus_arg (CHECK, "PKTS_VLAN_TAGGED"))
+	    flow.frame.frame_type[2] = 1;
+
+        if (debug_en)
+	  printf ("flow.frame.frame_type=%h, flow.frame.frame_class=%h\n", flow.frame.frame_type,flow.frame.frame_class);
+
+        if (debug_en)
+          printf ("IPSA=%h,IPDA=%h, L4_0=%h, L4_1=%h\n", 
+             flow.src_node.ip_addr,flow.dst_node.ip_addr, flow.tup.src_tcp_udp_port, flow.tup.dst_tcp_udp_port);
+
+        flow.frame.type = -1;
+        flow.frame.class_mask = 0;
+        flow.frame.class_funct = CLF_SRC;
+        flow.frame.data_type = DAT_SEQ |DAT_LEN_EXACT;
+        flow.frame.data_seed = 128+dma_reqd;
+
+        flow.rx_param.rcv_isn = 32'hA5A5_F5F5;
+        flow.fl_state.tcp_flags = 6'b00_0010;
+        flow.flow_no = 0;
+
+      }
+   9: {
+
+	// First lookup the ZCP RDC table to findout which table has the required DMA num
+	zcp_tblnum_offset = find_zcp_rdc_offset(dma_reqd);
+	zcp_tblnum = zcp_tblnum_offset/16;
+	pkt_vlan_id = find_vlan_id(zcp_tblnum, mac_id);
+	case (mac_id) {
+	  0: { TOT_MAC_DAs = MAX_DA_10G; start_index = 0; }
+  	  1: { TOT_MAC_DAs = MAX_DA_10G; start_index = 16; }
+	  2: { TOT_MAC_DAs = MAX_DA_1G; start_index = 32; }
+	  3: { TOT_MAC_DAs = MAX_DA_1G; start_index = 40; }
+	  default: { TOT_MAC_DAs = 0; start_index = 0; }   
+  	}
+        printf ("mac_index = %0d\n", start_index+random()%TOT_MAC_DAs);
+	pkt_mac_da = ip_db.mac_entry(start_index+random()%TOT_MAC_DAs);
+      if (debug_en)
+	printf ("rdctbl_offset=%0d, rdc_tblnum=%0d, mac_id=%0d, pkt_mac_da %h, pkt_vlan %h\n", zcp_tblnum_offset, zcp_tblnum, mac_id, pkt_mac_da,pkt_vlan_id);
+
+	// set the TYPE/LEN field to have "L3 CLASS MATCH"
+        flow.src_node.l2_addr = 48'hde_f0_72_94_38_15;
+        flow.src_node.tos     = 8'hf5;
+        flow.src_node.tci     = {4'h0, pkt_vlan_id[11:0]};
+        flow.src_node.ip_addr = 32'hcccc_0000;
+        flow.src_node.src_port = 20'h00001;
+
+        flow.dst_node.l2_addr = pkt_mac_da;
+        flow.dst_node.tci     = 16'hcb00;
+        flow.dst_node.ip_addr = 32'h8888_0000;
+        flow.dst_node.src_port = 20'h00001;
+
+        flow.tup.src_tcp_udp_port = 16'h1234;
+        flow.tup.dst_tcp_udp_port = 16'hABCD;
+
+	// ###############################################################################################
+	// frame_type[4:0] bit definitions for pkt_gen
+        //
+        //   Tunneling 	  IPv4/IPv6(0/1)   VLAN_Tagged	    IP_Packet	   LLC/SNAP_Pkt
+	//       |		|		|		|		|
+	//       |		|		|		|		|
+	// frame_type[4]  frame_type[3]   frame_type[2]   frame_type[1]   frame_type[0]
+	// ###############################################################################################
+
+        if (data_length < 128) {
+	randcase {
+	 30:{   // IPV4, TCP
+            flow.frame.frame_type = 5'b00110; 
+            flow.frame.frame_class = CL_TCP;
+	   }
+	 20:{   // IPV4, UDP
+            flow.frame.frame_type = 5'b00110;
+            flow.frame.frame_class = CL_UDP;
+	   }
+	 20:{   // IPV4, AH/ESP
+            flow.frame.frame_type = 5'b00110;
+            flow.frame.frame_class = CL_IP_SEC_AH;
+	   }
+	 20:{   // IPV4, SCTP
+            flow.frame.frame_type = 5'b00110;
+            flow.frame.frame_class = CL_SCTP;
+	   }
+	 10:{   // ARP
+            flow.frame.frame_type = 5'b00110;
+            flow.frame.frame_class = CL_ARP;
+	   }
+        }
+        }
+        else if (data_length >= 128) {
+        randcase {
+         20:{   // IPV4, TCP
+            flow.frame.frame_type = 5'b00110;
+            flow.frame.frame_class = CL_TCP;
+           }
+         10:{   // IPV4, UDP
+            flow.frame.frame_type = 5'b00110;
+            flow.frame.frame_class = CL_UDP;
+           }
+         10:{   // IPV4, AH/ESP
+            flow.frame.frame_type = 5'b00110;
+            flow.frame.frame_class = CL_IP_SEC_AH;
+           }
+         10:{   // IPV4, SCTP
+            flow.frame.frame_type = 5'b00110;
+            flow.frame.frame_class = CL_SCTP;
+           }
+         10:{   // IPV6, TCP
+            flow.frame.frame_type = 5'b01110;
+            flow.frame.frame_class = CL_TCP_IP_V6;
+           }
+         10:{   // IPV6, UDP
+            flow.frame.frame_type = 5'b01110;
+            flow.frame.frame_class = CL_UDP_IP_V6;
+           }
+         10:{   // IPV6, AH/ESP
+            flow.frame.frame_type = 5'b01110;
+            flow.frame.frame_class = CL_IP_V6_SEC_AH;
+           }
+         10:{   // IPV6, SCTP
+            flow.frame.frame_type = 5'b01110;
+            flow.frame.frame_class = CL_SCTP_IP_V6;
+           }
+         10:{   // ARP
+            flow.frame.frame_type = 5'b00110;
+            flow.frame.frame_class = CL_ARP;
+           }
+        }
+	}
+
+        flow.frame.type = -1;
+        flow.frame.class_mask = 0;
+        flow.frame.class_funct = CLF_SRC;
+        flow.frame.data_type = DAT_SEQ |DAT_LEN_EXACT;
+        flow.frame.data_seed = 128;
+
+        flow.rx_param.rcv_isn = 32'hA5A5_F5F5;
+        flow.fl_state.tcp_flags = 6'b00_0010;
+        flow.flow_no = 0;
+      }
+  10: {
+
+	// First lookup the ZCP RDC table to findout which table has the required DMA num
+	zcp_tblnum_offset = find_zcp_rdc_offset(dma_reqd);
+	zcp_tblnum = zcp_tblnum_offset/16;
+	pkt_vlan_id = find_vlan_id(zcp_tblnum, mac_id%2); 
+	case (mac_id) {
+	  0: { TOT_MAC_DAs = MAX_DA_10G; start_index = 0; }
+  	  1: { TOT_MAC_DAs = MAX_DA_10G; start_index = 16; }
+	  2: { TOT_MAC_DAs = MAX_DA_1G; start_index = 32; }
+	  3: { TOT_MAC_DAs = MAX_DA_1G; start_index = 40; }
+	  default: { TOT_MAC_DAs = 0; start_index = 0; }   
+  	}
+	pkt_mac_da = ip_db.mac_entry(start_index+random()%TOT_MAC_DAs);
+      if (debug_en)
+	printf ("rdctbl_offset=%0d, rdc_tblnum=%0d, mac_id=%0d, pkt_mac_da %h, pkt_vlan %h\n", zcp_tblnum_offset, zcp_tblnum, mac_id, pkt_mac_da,pkt_vlan_id);
+
+	// set the TYPE/LEN field to have "L3 CLASS MATCH"
+        flow.src_node.l2_addr = 48'hde_f0_72_94_38_15;
+        flow.src_node.tos     = 8'hf5;
+        flow.src_node.tci     = {4'h0, pkt_vlan_id[11:0]};
+        flow.src_node.ip_addr = 32'hcccc_0000;
+        flow.src_node.src_port = 20'h00001;
+
+        flow.dst_node.l2_addr = pkt_mac_da;
+        flow.dst_node.tci     = 16'hcb00;
+        flow.dst_node.ip_addr = 32'h8888_0000;
+        flow.dst_node.src_port = 20'h00001;
+
+        flow.tup.src_tcp_udp_port = 16'h1234;
+        flow.tup.dst_tcp_udp_port = 16'hABCD;
+
+	// ###############################################################################################
+	// frame_type[4:0] bit definitions for pkt_gen
+        //
+        //   Tunneling 	  IPv4/IPv6(0/1)   VLAN_Tagged	    IP_Packet	   LLC/SNAP_Pkt
+	//       |		|		|		|		|
+	//       |		|		|		|		|
+	// frame_type[4]  frame_type[3]   frame_type[2]   frame_type[1]   frame_type[0]
+	// ###############################################################################################
+
+        flow.frame.frame_type = 5'b00110;
+        flow.frame.frame_class = CL_ARP; // This will be recognized as "L2 CLASS MATCH" by FFLP
+        flow.frame.type = -1;
+        flow.frame.class_mask = 0;
+        flow.frame.class_funct = CLF_SRC;
+        flow.frame.data_type = DAT_SEQ |DAT_LEN_EXACT;
+        flow.frame.data_seed = 128;
+
+        flow.rx_param.rcv_isn = 32'hA5A5_F5F5;
+        flow.fl_state.tcp_flags = 6'b00_0010;
+        flow.flow_no = 0;
+      }
+  } // case
+
+  // Reverse mode should fill in the "modeled control header info" too
+  ctl_fifo = FFLP_Model.predict_control_fifo(mac_id, flow);
+  // convert ctl_fifo information to an 18B byte array, to send it to end checker
+  if(get_plus_arg (CHECK, "ENABLE_RX_CNTL_HDR_CHECK"))
+     buf_18B = convert_cntl_fifo_to_byte_array(ctl_fifo);
+
+ } // else
+
+  // Before sending the packet, see if RX_DROP_PKT_CHECK is enabled.
+  // If so, generate an ID on the mac SA so the checker can sort the packets.
+     if(get_plus_arg (CHECK, "RX_DROP_PKT_CHECK")) {
+       //id = packet_id[mac_id]++;
+       //m = mac_id;
+       //d = dma_reqd;
+       //flow.src_node.l2_addr = {r,d,m,id};
+       flow.src_node.l2_addr = pgIdgen.getMacSA(dma_reqd,mac_id);
+       // Fill up variables for backward compatibility
+       packet_id[mac_id] = flow.src_node.l2_addr[15:0];
+       id = flow.src_node.l2_addr[15:0];
+       m = flow.src_node.l2_addr[17:16];
+       d = flow.src_node.l2_addr[23:18];
+       printf("pkt_configurator::genPkt() Replaced MAC_SA with ID - 0x%x dma_num:%0d d, mac_id:%0d, id:%0d \n", 
+              flow.src_node.l2_addr, d, m, id);
+     }
+
+     if(0 /*MAC_LOOP_BACK_MODE[mac_id]*/  /*CHANGETHIS*/) {
+	SendPktForLoopBack(flow, data_length,dma_reqd,mac_id,last_packet);
+     } else {
+      // Now, the flow object is done, now create the RxToken object
+         pack_gen[mac_id].pkt_gen(flow, data_length, 3, pgToken, O_WAIT_SEND);
+         pack_gen[mac_id].display_db(pgToken.pack_db);	
+         RxToken.id=pgToken.gId;
+         RxToken.pkt_length = data_length;
+         RxToken.pgToken = new pgToken;
+         RxToken.dma_num=dma_reqd;
+         RxToken.port_num=mac_id;
+         RxToken.last_packet=last_packet;
+    
+         if(get_plus_arg (CHECK, "ENABLE_RX_CNTL_HDR_CHECK"))
+          RxToken.rx_cntl_hdr = buf_18B.object_copy();
+    
+         mailbox_put(mbox_id.niu_rxpath_mb[mac_id],RxToken);
+      
+         if (last_packet) {
+    
+          // print all FFLP Error Status registers if this is the last_packet
+          gen_pio_drv.pio_rd(FZC_FFLP_BASE_ADDRESS+20'h08000, rd_data, 0); // FFLP_VLAN_PAR_ERR Register
+          printf ("FFLP_VLAN_PAR_ERR_REG[ERR] = %b\n", rd_data[31]);
+          printf ("FFLP_VLAN_PAR_ERR_REG[MULTI_ERR] = %b\n", rd_data[30]);
+          printf ("FFLP_VLAN_PAR_ERR_REG[ADDRESS] = 0x%h\n", rd_data[29:18]);
+          printf ("FFLP_VLAN_PAR_ERR_REG[DATA] = 0x%h\n", rd_data[17:0]);
+        
+          gen_pio_drv.pio_rd(FZC_FFLP_BASE_ADDRESS+20'h200d8, rd_data, 0); // FFLP_TCAM_ERR Register
+          printf ("FFLP_TCAM_ERR[ERR] = %b\n", rd_data[31]);
+          printf ("FFLP_TCAM_ERR[P_ECC] = %b\n", rd_data[30]);
+          printf ("FFLP_TCAM_ERR[MULT] = %b\n", rd_data[29]);
+          printf ("FFLP_TCAM_ERR[ADDR] = 0x%h\n", rd_data[23:16]);
+          printf ("FFLP_TCAM_ERR[SYNDROME] = 0x%h\n", rd_data[15:0]);
+ 
+	  // FFLP Functional path coverage Summary, done by FFLP Model.         
+ 	  FFLP_Model.path_analysis.print_histogram_summary();
+
+         }
+
+    }
+
+}
+
+function bit [31:0] pkt_configurator::hash1_crc32(byte_array buf, integer len) {
+    bit[31:0]  val;
+    integer i;
+
+    val = 32'hffffffff;
+    i = 0;
+    while (len--)
+    {
+        val = crc_table[(val ^ buf.val[i]) & 8'hff] ^ (val >> 8'h08);
+        i++;
+    }
+    val = ~val;
+    hash1_crc32 = val;
+}
+
+function byte_array pkt_configurator::convert_cntl_fifo_to_byte_array (cntl_fifo ctl_fifo) {
+integer i;
+byte_array buf_tmp;
+
+ printf("port_num %h maccheck %h packet_class %h vlan %h llcsnap %h noport %h badip %h tcamhit %h tres %h tzfvld %h\n",
+       ctl_fifo.port_num,ctl_fifo.maccheck,ctl_fifo.packet_class,ctl_fifo.vlan,ctl_fifo.llcsnap,ctl_fifo.noport,
+       ctl_fifo.badip,ctl_fifo.tcamhit,ctl_fifo.tres,ctl_fifo.tzfvld);
+
+buf_tmp = new();
+
+    buf_tmp.val[0] = {	ctl_fifo.port_num, 	// 7:6
+		      	ctl_fifo.maccheck,	// 5
+			ctl_fifo.packet_class   // 4:0
+		     };
+    buf_tmp.val[1] = {	ctl_fifo.vlan,		// 7
+    			ctl_fifo.llcsnap,	// 6
+    			ctl_fifo.noport,	// 5
+    			ctl_fifo.badip,		// 4
+    			ctl_fifo.tcamhit,	// 3
+    			ctl_fifo.tres,		// 2:1
+    			ctl_fifo.tzfvld		// 0
+		     };
+    for(i=2;i<18;i++)
+     buf_tmp.val[i] = 0;
+    
+    convert_cntl_fifo_to_byte_array = buf_tmp;
+}
+
+
+task pkt_configurator::SendPktForLoopBack(flow_desc flow, integer data_length,integer dma_num,integer mac_id, integer last_packet = 0 ) {
+  CpktCfgLp pktCfgLp;
+  
+
+   pktCfgLp = new();
+   pktCfgLp.flow = flow;
+   pktCfgLp.rx_dma = dma_num;
+   pktCfgLp.port_id = mac_id;
+   pktCfgLp.last_packet = last_packet;
+   pktCfgLp.data_length = data_length;
+
+   mailbox_put(mbox_id.niu_pktcfglp[mac_id],pktCfgLp);
+
+}

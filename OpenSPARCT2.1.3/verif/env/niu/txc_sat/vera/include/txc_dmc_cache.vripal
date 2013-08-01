@@ -1,0 +1,63 @@
+/* Port defines for DMA Tx Cache interface for TxC */
+
+#include "neptune_defines.vri"
+
+// #define OUTPUT_EDGE PHOLD
+// #define INPUT_EDGE PSAMPLE #-1
+// #define OUTPUT_SKEW #1
+
+#define TXC_CK_IN_TIMING PSAMPLE #-1
+#define TXC_CK_OUT_TIMING PHOLD #1
+#define TXC_CK_CLK_TIMING  CLOCK
+
+#define TXC_DUV_PATH NIU_DUV_PATH.niu
+
+.for($DMA=0;$DMA<32;$DMA=$DMA+1) {
+
+interface dmc_cache_$DMA {
+
+	input  	clk CLOCK verilog_node TXC_DUV_PATH.clk";
+	output   dmc_txc_${DMA}_active TXC_CK_OUT_TIMING verilog_node TXC_DUV_PATH.dmc_txc_dma${DMA}_active";
+	output   dmc_txc_${DMA}_eofList TXC_CK_OUT_TIMING verilog_node TXC_DUV_PATH.dmc_txc_dma${DMA}_eoflist" ;
+	output   dmc_txc_${DMA}_error TXC_CK_OUT_TIMING verilog_node TXC_DUV_PATH.dmc_txc_dma${DMA}_error" ;
+	output   dmc_txc_${DMA}_gotNextDesc TXC_CK_OUT_TIMING verilog_node TXC_DUV_PATH.dmc_txc_dma${DMA}_gotnxtdesc"  ;
+	output  [63:0] dmc_txc_${DMA}_descriptor TXC_CK_OUT_TIMING verilog_node TXC_DUV_PATH.dmc_txc_dma${DMA}_descriptor"  ;
+
+	input txc_dmc_${DMA}_getNextDesc TXC_CK_IN_TIMING verilog_node TXC_DUV_PATH.txc_dmc_dma${DMA}_getnxtdesc" ;
+	input txc_dmc_${DMA}_unRecov TXC_CK_IN_TIMING verilog_node TXC_DUV_PATH.txc_dmc_dma${DMA}_unrecov" ;
+	
+}
+
+
+.}
+
+
+
+port dmc_cache_if{
+
+	clk;
+	active;
+	eofList;
+	error;
+	descriptor;
+	gotNextDesc;
+	getNextDesc;
+	unRecov;
+}
+
+
+.for($DMA=0;$DMA<32;$DMA=$DMA+1) {
+bind dmc_cache_if dmc_cache_port_${DMA} {
+
+	clk dmc_cache_${DMA}.clk;
+	active dmc_cache_${DMA}.dmc_txc_${DMA}_active;
+	eofList  dmc_cache_${DMA}.dmc_txc_${DMA}_eofList;
+	error dmc_cache_${DMA}.dmc_txc_${DMA}_error ;
+	gotNextDesc dmc_cache_${DMA}.dmc_txc_${DMA}_gotNextDesc ;
+	descriptor dmc_cache_${DMA}.dmc_txc_${DMA}_descriptor ;
+	getNextDesc dmc_cache_${DMA}.txc_dmc_${DMA}_getNextDesc ;
+	unRecov dmc_cache_${DMA}.txc_dmc_${DMA}_unRecov ;
+
+}
+
+.}

@@ -1,0 +1,611 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: std_display_class.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "std_display_defines.vri"
+#include "plusArgMacros.vri"
+
+
+#ifdef DISPLAY_CYCLES
+#define STD_GET_TIME sprintf (tmp_str,"%9d: ",get_cycle())
+#else
+#define STD_GET_TIME sprintf (tmp_str,"%9d: ",{get_time(HI),get_time(LO)})
+#endif
+
+#ifdef NTB
+// NTB does not suport get_time(HI), sighhh
+// get_time(LO) returns nothing, double sighhh
+#define STD_GET_TIME sprintf (tmp_str,"%8d__: ",get_cycle())
+#endif
+
+
+class StandardDisplay {
+
+  local reg[MAX_VERBOSITY-1:0]    verbosity[];
+  local reg[MAX_VERBOSITY-1:0]    default_verbosity = NORMAL_VERBOSITY;
+  local string                    context_name[];
+  local string                    vlabel[MAX_VERBOSITY];
+  local reg [63:0] tmpTime;
+  
+  // these are not local so they can be accessed directly.
+  integer errors = 0;    
+  integer warnings = 0;
+  integer info_all = 0;
+  // The following plus args are "standard":
+  integer maxerror = 1;
+  integer maxwarning = 5;
+  integer wait_cycle_to_kill = 5;
+  integer debug = 0;
+  integer debug_all = 0;
+  integer info = 0;
+  integer start_debug = 0;
+  integer quiet = 0;
+
+  static reg [1:0] instanceCount;
+  
+  //------------------------------------------------------------------------------
+  //  task new.  paramater passing not required...
+  //------------------------------------------------------------------------------    
+  task new (integer maxErrors = 1,
+            integer errorCnt = 0,
+            integer maxWarnings = 5,
+            integer wait_cycle_to_kill = 5,
+            integer start_debug = 0)
+  { 
+
+    reg[2048:0] arg_bit_str = 0;
+    string      src_str;
+
+    if (instanceCount !== 2'bxx) instanceCount++;
+    else instanceCount = 1;
+
+    // sanity check
+    if (instanceCount > 1) {
+      printf("More than one instance of std_display_class.vr/StandardDisplay detected!\n");
+      printf("Since this class keeps error counts, we only want one. You can have as\n");
+      printf("many pointers as you want to the single instance though. (A=new();B=A;C=A;)\n");
+      error("Need to FAIL, sorry!\n");
+    }
+    
+    maxerror = maxErrors;
+    errors = errorCnt;
+    maxwarning = maxWarnings;
+    wait_cycle_to_kill = wait_cycle_to_kill;
+    start_debug = start_debug;
+    
+    init_vlabels();
+
+
+    if (mChkPlusarg(quiet) && !mChkPlusarg(noquiet)) {
+      default_verbosity = QUIET_VERBOSITY;
+      quiet     = 1;
+      info_all  = 0;
+      info      = 0;
+      debug_all = 0;
+      debug     = 0;
+    }
+
+    if (mChkPlusarg(info_all)) {
+      default_verbosity = INFO_VERBOSITY;
+      quiet     = 0;
+      info_all  = 1;
+      info      = 1;
+      debug_all = 0;
+      debug     = 0;
+    }
+    
+    if (mChkPlusarg(debug_all)) {
+      default_verbosity = DEBUG_VERBOSITY;
+      quiet     = 0;
+      info_all  = 1;
+      info      = 1;
+      debug_all = 1;
+      debug     = 1;
+    }
+    
+    if (mChkPlusarg(info)) {
+      quiet     = 0;
+      info      = 1;
+      debug     = 0;
+    }
+    
+    if (mChkPlusarg(debug)) {
+      quiet     = 0;
+      info      = 1;
+      debug     = 1;
+    }
+    
+    if (mChkPlusarg(mon+)) {
+      mGetPlusargStr(mon+,arg_bit_str);
+      src_str.bittostr (arg_bit_str);
+      parse_mon_arg_str (src_str);
+    }
+
+    if (mChkPlusarg(maxerror=)) {
+      mGetPlusargDec(maxerror=,maxerror);
+    }
+    if (mChkPlusarg(maxwarning=)) {
+      mGetPlusargDec(maxwarning=,maxwarning);
+    }
+    if (mChkPlusarg(wait_cycle_to_kill=)) {
+      mGetPlusargDec(wait_cycle_to_kill=,wait_cycle_to_kill);
+    }
+    if (mChkPlusarg(start_debug=)) {
+      mGetPlusargDec(start_debug=,start_debug);
+    }
+    
+  } // end task new
+
+  //------------------------------------------------------------------------------
+  //  task dispmon
+  //------------------------------------------------------------------------------    
+
+  task dispmon (string context_str, integer level, string message,
+                string file = null, integer lineNum = 0 ) {
+
+    reg[MAX_VERBOSITY-1:0] verbosity_enabled;
+    string                 tmp_str;
+
+
+    if (level == MON_DEBUG) 
+      if (start_debug && get_cycle() < start_debug) return;
+
+    
+    // !context_exists(context_str)
+    if (! assoc_index(CHECK,verbosity,context_ndx(context_str))) {
+      create_context (context_str);
+    }
+
+    verbosity_enabled = verbosity[context_ndx(context_str)];
+
+    if (verbosity_enabled[level]) {
+
+      STD_GET_TIME; 
+      if (file == null) {
+        printf("%s%s%s[]: %s\n", tmp_str, vlabel[level], context_str, message);
+      }
+      else {
+        printf("%s%s%s[%s:%0d]: %s\n", tmp_str, vlabel[level], context_str, file, lineNum, message);
+      }
+
+      if (level == MON_ERR) errors++;
+      else if (level == MON_WARN) warnings++;
+    }
+
+  } // end task dispmon
+
+
+  task writemon (string context_str, integer level,
+                 string message, string file = null, integer lineNum = 0 ) {
+
+    reg[MAX_VERBOSITY-1:0] verbosity_enabled;
+    string                 tmp_str;
+
+
+    if (level == MON_DEBUG) 
+      if (start_debug && get_cycle() < start_debug) return;
+    
+    // !context_exists(context_str)
+    if (! assoc_index(CHECK,verbosity,context_ndx(context_str))) {
+      create_context (context_str);
+    }
+
+    verbosity_enabled = verbosity[context_ndx(context_str)];
+
+    if (verbosity_enabled[level]) {
+
+      STD_GET_TIME;
+      if (file == null) {
+        printf("%s%s%s[]: %s", tmp_str, vlabel[level], context_str, message);
+      }
+      else {
+        printf("%s%s%s[%s:%0d]: %s", tmp_str, vlabel[level], context_str, file, lineNum, message);
+      }
+
+      if (level == MON_ERR) errors++;
+      if (level == MON_WARN) warnings++;
+    }
+
+  } // end task writemon
+
+
+  task appendmon (string context_str, integer level, string message) {
+    
+    reg[MAX_VERBOSITY-1:0] verbosity_enabled;
+    string                 tmp_str;
+    
+    if (!context_exists(context_str)) {
+      create_context (context_str);
+    }
+    
+    verbosity_enabled = verbosity[context_ndx(context_str)];
+    
+    if (verbosity_enabled[level]) {
+      printf("%s",message);
+    }
+    
+  } // end task appendmon
+
+
+  //------------------------------------------------------------------------------
+  //  function integer get_errors()
+  //------------------------------------------------------------------------------    
+  function integer get_errors() {
+    get_errors = errors;
+  }
+  
+  task getCounts(var integer err, var integer warn) {
+    err = errors;
+    warn = warnings;
+  }
+  
+  //------------------------------------------------------------------------------
+  //  task init_vlabels
+  //------------------------------------------------------------------------------    
+
+  protected task init_vlabels() {
+    integer ii;
+
+    vlabel[MON_ALWAYS] = "";
+    vlabel[MON_WARN]   = "WARNING: ";
+    vlabel[MON_ERR]    = "ERROR: ";
+
+    for (ii=1;ii<MON_INFO;ii++) {
+      vlabel[ii] = "DBG: ";
+    }
+    for (ii=MON_INFO;ii<MON_NORMAL;ii++) {
+      vlabel[ii] = "INFO: ";
+    }
+    for (ii=MON_NORMAL;ii<MON_WARN;ii++) {
+      vlabel[ii] = "";
+    }
+  } // end task init_vlabels
+
+
+
+  //------------------------------------------------------------------------------
+  //  task parse_mon_arg_str
+  //------------------------------------------------------------------------------    
+
+  protected task parse_mon_arg_str ( string src_str ) {
+
+    integer eos = 0;  // end of string flag
+    integer ii  = 0;
+    integer jj  = 0;
+    integer kk  = 0;
+    integer nxt_marker;
+    integer level;
+    integer value;
+    string  marker[3];
+    string  args[];
+    string  context_str;
+
+    marker[0] = "="; marker[1] = "="; marker[2] = ",";
+
+    while (!eos) {
+      nxt_marker = src_str.search(marker[jj]);
+      if (nxt_marker == -1) {
+        args[ii++] = src_str.substr(0);
+        eos = 1;
+      }
+      else {
+        args[ii++]  = src_str.substr(0,nxt_marker-1);   // extract the first element
+        src_str     = src_str.substr(nxt_marker+1);     // update arg string head pointer
+        jj          = (jj+1) % 3;                       // update delimiter search pattern pointer
+        nxt_marker  = src_str.search(marker[jj]);       // search for next delimiter
+      }
+    } // end while loop
+
+    if (!(jj==2) || (ii==0))  {
+      error ("Test Error -- Unmatched arguments.\n");     
+    }
+
+    while (kk < ii) {
+      context_str = args[kk++];
+      level       = args[kk++].atoi();
+      value       = args[kk++].atoi();
+      
+      if (!(context_exists(context_str))) {
+        create_context(context_str); 
+      }
+
+      set_level (context_str, level, value);
+    } // end while
+    
+  } // end task parse_arg_str
+
+
+  //------------------------------------------------------------------------------
+  //  function integer context_exists
+  //------------------------------------------------------------------------------    
+
+  function integer context_exists ( string context_str ) {
+    context_exists = assoc_index(CHECK,verbosity,context_ndx(context_str));  
+  } // end function context_exists
+
+
+  //------------------------------------------------------------------------------
+  //  task create_context
+  //------------------------------------------------------------------------------    
+
+  task create_context ( string context_str ) {
+
+    string tmp_str;
+
+    if ( context_exists (context_str) ) {
+      sprintf(tmp_str,"Context %s already exists",context_str);
+      dispmon ("SDC", MON_ERR, tmp_str, SCOPE);
+    }
+    else {
+      verbosity[context_ndx(context_str)] = default_verbosity;
+      set_context_name (context_str);
+      sprintf(tmp_str, "Created Verbosity[%s] element",context_str);
+      dispmon ("SDC", MON_DEBUG, tmp_str, SCOPE);
+    } 
+  } // end task create_context 
+
+
+  //------------------------------------------------------------------------------
+  //  task set_context_verbosity
+  //------------------------------------------------------------------------------    
+
+  task set_context_verbosity (string context_str, reg[MAX_VERBOSITY-1:0]value = NORMAL_VERBOSITY) {
+
+    string tmp_str;
+
+
+    if (value[0] == 0) {
+      sprintf(tmp_str,"Invalid Verbosity Setting %h",value);
+      dispmon ("SDC", MON_ERR, tmp_str, SCOPE);
+    }
+
+    if ( !(context_exists(context_str)) ) {
+      sprintf(tmp_str,"Context %s does not exist",context_str);
+      dispmon ("SDC", MON_INFO, tmp_str, SCOPE);
+      create_context (context_str);
+    }
+
+    verbosity[context_ndx(context_str)] = value;
+
+    sprintf(tmp_str, "Set verbosity[%s] = %h",context_str, value);
+    dispmon ("SDC", MON_INFO, tmp_str, SCOPE);
+
+  } // end task set_context_verbosity
+
+
+  //------------------------------------------------------------------------------
+  //  function get_verbosity
+  //------------------------------------------------------------------------------    
+
+  function reg[MAX_VERBOSITY-1:0] get_verbosity (string context_str) {
+
+    get_verbosity = verbosity[context_ndx(context_str)];
+
+  } // end function get_verbosity    
+
+
+  //------------------------------------------------------------------------------
+  //  task set_level
+  //------------------------------------------------------------------------------    
+
+  task set_level ( string context_str = null, integer level, integer value ) {
+
+    reg[MAX_VERBOSITY-1:0] tmp_value;
+    string  tmp_str;
+    integer mycontext;
+    integer ii; 
+
+    if (value == 0) {
+      if (!(level == MON_ALWAYS)) {
+        tmp_value = DEBUG_VERBOSITY;
+        tmp_value[level] = value;
+      }
+      else {
+        this.dispmon("SDC", MON_ERR, "Sorry, you cannot turn MON_ALWAYS messages off",SCOPE);
+      }
+    }
+    else {
+      tmp_value = NO_VERBOSITY;
+      for (ii=level;ii<MAX_VERBOSITY;ii++) {
+        tmp_value[ii] = value;
+      }
+    }
+
+    if (context_str == null) {
+      if (assoc_index (FIRST, verbosity, mycontext)) {
+        verbosity[mycontext] = (value) ? tmp_value : (verbosity[mycontext] & tmp_value);
+        sprintf(tmp_str, "Set verbosity[%s] = %h",get_context_name(mycontext), verbosity[mycontext]);
+        dispmon ("SDC", MON_INFO, tmp_str, SCOPE);
+        while ( assoc_index (NEXT, verbosity, mycontext) ) {
+          verbosity[mycontext] = (value) ? tmp_value : (verbosity[mycontext] & tmp_value);
+          sprintf(tmp_str, "Set verbosity[%s] = %h",get_context_name(mycontext), verbosity[mycontext]);
+          dispmon ("SDC", MON_INFO, tmp_str, SCOPE);
+        }
+      }
+      else {
+        dispmon ("SDC", MON_ERR, "There are no verbosity elements.",SCOPE);
+      }
+    }
+    else {
+      if ( !(context_exists (context_str)) ) {
+        sprintf(tmp_str, "The context %s does not exist",context_str);
+        this.dispmon("SDC",MON_INFO, tmp_str, SCOPE); 
+        create_context (context_str);
+      }
+
+      mycontext = context_ndx(context_str);
+      verbosity[mycontext] = (value) ? tmp_value : (verbosity[mycontext] & tmp_value);
+      sprintf(tmp_str, "Set verbosity[%s] = %h",context_str, verbosity[mycontext]);
+      dispmon ("SDC", MON_INFO, tmp_str, SCOPE);
+    }
+  } // end task set_level
+
+
+  //------------------------------------------------------------------------------
+  //  task set_verbosity
+  //------------------------------------------------------------------------------    
+
+  task set_verbosity (reg[MAX_VERBOSITY-1:0] value = NORMAL_VERBOSITY) { 
+    integer mycontext;
+
+    if ( assoc_index (FIRST, verbosity, mycontext) ) {
+      verbosity[mycontext] = value;
+      while ( assoc_index (NEXT, verbosity, mycontext) ) {
+        verbosity[mycontext] = value;
+      }
+    }
+    else {
+      dispmon("SDC", MON_ERR, "There are no verbosity elements to set",SCOPE);
+    }
+
+  } // end task set_verbosity
+
+
+  //------------------------------------------------------------------------------
+  //  task print_verbosity
+  //------------------------------------------------------------------------------    
+
+  task print_verbosity (integer level, string context_str = null) {
+
+    integer mycontext;
+    string  tmp_str;
+
+    if (context_str == null) {
+      this.dispmon ("SDC",level,"Printing Current Verbosity Levels:",SCOPE);
+      if ( assoc_index (FIRST, verbosity, mycontext) ) {
+        sprintf(tmp_str, "verbosity[%s] = %h",get_context_name(mycontext), verbosity[mycontext]);
+        this.dispmon ( get_context_name(mycontext), level, tmp_str, SCOPE);
+        while ( assoc_index (NEXT, verbosity, mycontext) ) {
+          sprintf(tmp_str, "verbosity[%s] = %h",get_context_name(mycontext), verbosity[mycontext]);
+          dispmon ( get_context_name(mycontext), level, tmp_str, SCOPE); 
+        }
+      }
+      else {
+        sprintf(tmp_str, "There are no verbosity elements");
+        dispmon ( "SDC", MON_WARN, tmp_str, SCOPE);
+      }
+    }
+    else {
+      if ( context_exists (context_str) ) {
+        sprintf(tmp_str, "verbosity[%s] = %h \n",context_str, verbosity[context_ndx(context_str)]);
+        dispmon (context_str, level, tmp_str, SCOPE);
+      } 
+      else {
+        sprintf(tmp_str, "Cannot print verbosity for context %s. Does not exist.",context_str); 
+        dispmon (context_str, MON_WARN, tmp_str, SCOPE);
+      }
+    }
+  } // end task print_verbosity
+
+
+  //------------------------------------------------------------------------------
+  //  function context_ndx
+  //------------------------------------------------------------------------------    
+
+  function integer context_ndx (string context_str) {
+    context_ndx = context_str.hash(MAX_HASH_VALUE);
+  }
+
+  
+  //------------------------------------------------------------------------------
+  //  task set_context_name
+  //------------------------------------------------------------------------------    
+
+  local task set_context_name (string context_str) {
+    context_name[context_ndx(context_str)] = context_str;
+  }
+
+  
+  //------------------------------------------------------------------------------
+  //  function get_context_name
+  //------------------------------------------------------------------------------    
+
+  function string get_context_name (integer mycontext) {
+    
+    string tmp_str;
+
+    if (assoc_index(CHECK,context_name,mycontext)) {
+      get_context_name = context_name[mycontext];
+    }
+    else {
+      sprintf(tmp_str, "context name for index %d does not exist",mycontext);
+      dispmon ("SDC",MON_ERR, tmp_str, SCOPE);
+    }
+  }
+
+
+  //------------------------------------------------------------------------------
+  //  task set_default_verbosity
+  //------------------------------------------------------------------------------    
+
+  task set_default_verbosity (reg[MAX_VERBOSITY-1:0] value) {
+    
+    string tmp_str;
+
+    if (value[0] == 0) {
+      this.dispmon("SDC", MON_WARN, "Cannot disable MON_ALWAYS messaging.",SCOPE);
+    }
+
+    default_verbosity = value | 1;
+    sprintf(tmp_str, "Setting the current default verbosity to %h",default_verbosity);
+    dispmon("SDC", MON_INFO, tmp_str, SCOPE);
+    print_default_verbosity(MON_INFO);
+    
+  } // end task set_default_verbosity
+
+
+  //------------------------------------------------------------------------------
+  //  function get_default_verbosity
+  //------------------------------------------------------------------------------    
+
+  function reg[MAX_VERBOSITY-1:0] get_default_verbosity () {
+    get_default_verbosity = default_verbosity;
+  }
+
+
+  //------------------------------------------------------------------------------
+  //  task print_default_verbosity
+  //------------------------------------------------------------------------------    
+
+  task print_default_verbosity (integer level = MON_ALWAYS){
+    
+    string tmp_str;
+
+    sprintf(tmp_str, "current default verbosity is %h",default_verbosity);
+    dispmon("SDC", level, tmp_str, SCOPE);
+
+  } // end task print_default_verbosity
+  
+
+} // end class StdDisplayClass

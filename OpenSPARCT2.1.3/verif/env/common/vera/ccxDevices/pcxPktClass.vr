@@ -1,0 +1,303 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: pcxPktClass.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <std_display_defines.vri>
+#include <ccxDevicesDefines.vri>
+#include <cmp.vri>
+// #include <defines.vri>
+
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// To use this class, you must have in your bench a files called globals.vri
+// that has all global extern declerations in it.
+#include <globals.vri>
+
+#include <std_display_class.vrh>
+#include <basePktClass.vrh>
+#include <cpxPktClass.vrh>
+#include <ccxDevBaseBFM.vrh>
+#include <ccxDevMemBFM.vrh>
+#include <ccxDevSpcBFM.vrh>
+
+#define  MON_CCXPKT   24
+
+
+// PCX Packet
+// defines fields in packet
+
+class PcxPkt extends BasePkt {
+
+  // pcx vector
+  public reg         valid = 1; // 129
+  // in base public reg [4:0]   rqtyp;
+  public reg         nc = 0;
+  public reg [2:0]   cpuId = 0; // 122:120
+  // in base  public reg [2:0]   tid;
+  public reg         inv = 0;   // 116  invalidate
+  public reg         pf = 0;    // 115  prefetch/BST block store
+  public reg         l1wayBis = 0; // 114 L1 way/BIS block init store/MAid
+  public reg [1:0]   l1wayMMUid = 0;
+  public reg [7:0]   size = 0;
+  // in base public reg [39:0]  addr;
+  public reg [63:0]  data = 0;  // 63:0
+  // end pcx vector
+
+ 
+  local reg [129:0] pktVec = 0;
+  local reg [2:0]   coreNum = 0;
+  local bit io = 0;  
+  local integer printCount = 0;
+  local PcxPkt receivedPkt = null;
+  local reg [15:0] dummy = 0;
+  
+  task new ();
+  task loadPkt(reg [145:0] dataIn, integer atPort=99);
+  function reg [145:0] getVector();
+  task print(integer atPort);
+  task send(integer fastResp=0);
+  function reg [145:0] makeSignature();
+  task recv();
+  
+  local task printHeader();
+  task createIntr(reg [5:0] thread, // 64 virtual cores
+                  reg [1:0] type,
+                  reg [5:0] vect);
+  task recvPortByAddr();
+}
+
+  task PcxPkt::new () {
+    name = "PcxPkt";
+    super.reqId = 0;
+    super.reqTime = 0;
+    super.pktArrived = 0;
+  }
+
+  // load this pkt from a vector
+  task PcxPkt::loadPkt(reg [145:0] dataIn, integer atPort=99) { // keep 145:0
+
+// #ifdef PKT_DEBUG
+//     reqTime = get_time(LO);  // time of request
+// #endif
+// #ifdef CCXDEVMEMBFM_DEBUG
+//     reqTime = get_time(LO);  // time of request
+// #endif
+    
+    pktVec = dataIn;
+    '{valid,rqtyp,nc,cpuId,tid,inv,pf,l1wayBis,l1wayMMUid,size,addr,data} = dataIn;
+    //printf("%0d bits = %146h\n",get_cycle(),{valid,rqtyp,nc,cpuId,tid,inv,pf,l1wayBis,l1wayMMUid,size,addr,data};
+    //unpackVec();
+    arrivalPort = atPort;
+    senderPort = cpuId;
+    if (atPort == DEV_NCU) io = 1;
+
+  }
+
+  function reg [145:0] PcxPkt::getVector() { 
+    getVector = {valid,rqtyp,nc,cpuId,tid,inv,pf,l1wayBis,l1wayMMUid,size,addr,data};
+  }
+
+  task PcxPkt::print(integer atPort)
+  {
+    integer line = 999;
+
+    printHeader () ;
+
+    printf ("%9d:", get_time(LO)) ;
+    printf ("|%2d", tid + (8*cpuId)) ;    
+    printf ("|PCX") ;
+    printf ("|%2d", atPort) ;
+    if (req_wire === 9'bxxxxxxxxx) printf ("|---");
+    else printf ("|%3h", req_wire) ;
+//    printf ("|%3h", req_wire) ;
+//     printf ("|%3h", atm_wire) ;
+    printf ("|%1b", valid) ;
+    case (rqtyp)
+    {
+      PCX_LD,PCX_PREF,PCX_PREF_ICE,PCX_DIAG_LD,PCX_D_INVAL: {
+                     if (pf & l1wayBis) printf ("|PREFETCH ICE");
+                     else if (inv)      printf ("|D INVALIDATE");
+                     else if (pf)       printf ("|PREFETCH    ");
+                     else               printf ("|LOAD/DIAG   ");
+                     line = addr[10:4]; tag = addr[39:11];  
+      }
+      PCX_ST,PCX_BLK_ST,PCX_BLK_INIT_ST,PCX_DIAG_ST: {
+                     if (pf & l1wayBis) printf ("|BLK STORE   ");
+                     else if (l1wayBis) printf ("|BLK INIT ST ");
+                     else               printf ("|STORE/DIAG  ");
+                     line = addr[10:4]; tag = addr[39:11];
+      }
+      PCX_CAS1     : {
+        printf ("|CAS 1       ");
+        line = addr[10:4]; tag = addr[39:11];
+      }
+      PCX_CAS2     : {
+        printf ("|CAS 2       ");
+        line = addr[10:4]; tag = addr[39:11];
+      }
+      PCX_STR_LD   : printf ("|STRM LOAD   ");
+      PCX_STR_ST   : printf ("|STRM STORE  ");
+      PCX_SWAP     : {
+        printf ("|SWAP/LDSTUB ");
+        line = addr[10:4]; tag = addr[39:11];
+      }
+      PCX_MMU_LD   : printf ("|MMU LOAD    ");
+      PCX_IFILL,PCX_I_INVAL:
+                     if (inv) printf ("|I INVALIDATE");
+                     else     printf ("|INSTR IFILL ");
+      default      : printf ("|??? %b",rqtyp) ;
+    }
+    printf ("|%2b", nc);
+    printf ("|%3d", cpuId);
+    printf ("|%1d", tid);
+    printf ("|%2b", inv);
+    printf ("|%2b", pf) ;
+    printf ("|%6b", l1wayBis);
+    printf ("|%5b", l1wayMMUid) ;
+    printf ("|%4h", size);
+    printf ("|%10h", addr);
+    printf ("|%h", data) ;
+#ifdef CCXDEVMEMBFM_DEBUG
+    printf ("           ");    
+    printf ("|%3d", reqId);
+    printf ("|%10h", addr);
+    printf ("|%2h/%8h", line, tag);
+    printf ("/%1h", lineWay);
+    if (rqtyp == 0 && nc == 0) printf ("->%1h", l1wayMMUid*4+2);    
+    //printf ("|%8d", reqTime);
+#endif   
+    printf ("\n\n") ;
+
+    printCount++ ;
+  }
+
+
+  task PcxPkt::printHeader ()
+  {
+    printf ("\n%9d:", get_time(LO)) ;
+    printf ("|VC") ;    
+    printf ("|PCX") ;
+    printf ("|At") ;    
+    printf ("|Req");
+//     printf ("|Atm");
+    printf ("|V") ;
+    printf ("|Type        ") ;
+    printf ("|NC") ;
+    printf ("|CPU") ;
+    printf ("|T") ;
+    printf ("|Iv") ;
+    printf ("|Pf") ;
+    printf ("|WayBis");
+    printf ("|WayMM");
+    printf ("|Size");
+    printf ("|Addr      ");
+    printf ("|Data            ") ;
+#ifdef CCXDEVMEMBFM_DEBUG
+    printf ("           ");    
+    printf ("|RID");
+    printf ("|Req Addr  ");
+    printf ("|DL/Tag/Way");    
+//     printf ("|Req Time");
+#endif   
+    printf ("\n") ;
+  }
+
+
+  // correct recvPort based on address
+  // addr bits [8:6] determins which bank an access goes to.
+  // review for partial bank
+  task PcxPkt::recvPortByAddr() {
+    targetPorts = 1 << addr[8:6];
+  }
+  
+
+  task PcxPkt::send(integer fastResp=0) {
+    integer i;
+    pktVec = {valid,rqtyp,nc,cpuId,tid,inv,pf,l1wayBis,l1wayMMUid,size,addr,data};
+    case (rqtyp) {
+      PCX_CAS1: atomic = 1;
+      PCX_CAS2: atomic = 2;
+    }
+    for (i=0;i<9;i++) {
+      if (sendPorts[i]) {
+        if (gCcxDevice[i] == null)
+          error("Can't send packet from a nonExistant BFM! \n");
+        gCcxDevice[i].send(this,fastResp);
+      }
+    }
+  }
+
+
+  // makeSignature returns certain concatinated fields of the packet.
+  // called by BFM that needs it.
+  function reg [145:0] PcxPkt::makeSignature() {
+    makeSignature = {30'b0,valid,rqtyp,cpuId,tid,addr[39:0],data[63:0]};
+  }
+
+  
+  // BFM knows everything that it needs from this packet,
+  // especially the signature for packet matching.
+  // This packet has the signature and recvPorts.
+  // Note that recvPkt call inside the receiving BFM may be blocking review
+  task PcxPkt::recv() {
+
+    if (manyHot(this.targetPorts) !== 1)
+      error("Need to set a single target port in targetPorts var! \n");
+
+    // hand off    
+    gCcxDevice[whichHot(this.targetPorts)].recv(this);
+  }
+
+
+
+  // Create/config Interrupt Pkt. this is really a store packet to a certain
+  // I/O adddress at the NCU. The NCU then does an interrupt to the target.
+  task PcxPkt::createIntr (reg [5:0] thread, // 64 virtual cores
+                           reg [1:0] type,
+                           reg [5:0] vect) {
+
+    targetPorts = 1 << 8; // NCU
+    valid = 1'b1;
+    rqtyp = PCX_ST;
+    nc = 0;
+    cpuId = thread[5:3];
+    tid = thread[2:0];
+    inv = 0;
+    pf = 0;    
+    l1wayBis = 0;    
+    l1wayMMUid = 0;    
+    size = 8'hff;
+    addr = ASI_SWVR_UDB_INTR_W;
+    data[63:0] = {42'b0,thread,type,8'b0,vect};
+  }
+

@@ -1,0 +1,3172 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: FNXPCIEXactorPacket.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+// FNXPCIEXactor library
+#include "FNXPCIEXactorDefines.vri"
+
+// XactorFmwork and XactorComponents libraries
+#include "XactorBasePacket.vrh"
+#include "XactorUtilities.vrh"
+#include "XactorDefines.vri"
+
+// DenaliPCIE libary
+#include "DenaliPCIE.vri"
+
+// CTSupportClasses library
+#include "CTTransactionID.vrh"
+
+// report library
+#include "cReport.vrh"
+#include "report_macros.vri"
+#include "FNXPCIEXactorReportMacros.vri"
+
+class FNXPCIEXactorPacket extends FNXPCIEXactorBasePacket {
+
+  // Inherited data members
+  //   CTTransactionID XactionID
+  //   ReportClass MyReport
+  //   event DriveEvent
+  //   event eDriveStart
+  //   event eDriveEnd
+  //   bit [FNX_PCIE_XTR_PKT_TYPE_WIDTH-1:0] PktType;
+
+  // bit to indicate injecting unsupported dllp type   
+  static bit inject_unsupport_dllp_type = 0; 
+
+
+  // Base Class and Method Names For QR Macros
+  local string ClassName  = "FNXPCIEXactorPacket";
+  local string MethodName = null;
+
+  // Utilities
+  local FNXPCIEXactorUtilities Util;
+
+  //---------------------------------------------------------------------
+  // TLP Common Header Fields
+  //
+  // Located in DW 1 for All Headers
+  bit [FNX_PCIE_XTR_CMN_RESV_1_WIDTH-1:0]  CmnResv1;  // Reserved
+  bit [FNX_PCIE_XTR_CMN_FORMAT_WIDTH-1:0]  CmnFmt;    // Format
+  bit [FNX_PCIE_XTR_CMN_TYPE_WIDTH-1:0]    CmnType;   // Type
+  bit [FNX_PCIE_XTR_CMN_RESV_2_WIDTH-1:0]  CmnResv2;  // Reserved
+  bit [FNX_PCIE_XTR_CMN_TC_WIDTH-1:0]      CmnTC;     // Traffic Class
+  bit [FNX_PCIE_XTR_CMN_RESV_3_WIDTH-1:0]  CmnResv3;  // Reserved
+  bit [FNX_PCIE_XTR_CMN_TD_WIDTH-1:0]      CmnTD;     // TLP Digest
+  bit [FNX_PCIE_XTR_CMN_EP_WIDTH-1:0]      CmnEP;     // Poisoned
+  bit [FNX_PCIE_XTR_CMN_RO_WIDTH-1:0]      CmnRO;     // Relaxed Order Attr[1]
+  bit [FNX_PCIE_XTR_CMN_SNOOP_WIDTH-1:0]   CmnSnoop;  // Snoop Enable  Attr[0]
+  bit [FNX_PCIE_XTR_CMN_RESV_4_WIDTH-1:0]  CmnResv4;  // Reserved
+  bit [FNX_PCIE_XTR_CMN_LENGTH_WIDTH-1:0]  CmnLength; // Length in 4 bytes (0 == 4096)
+  //---------------------------------------------------------------------
+
+  //---------------------------------------------------------------------
+  // TLP Request Header Fields
+  //
+  // Located in DW 2 for Memory, I/O, Config & Message Requests
+  // Located in DW 3 for Completions
+  //
+  bit [FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH-1:0]       ReqBusNum;    // Requester Bus Number
+  bit [FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH-1:0]    ReqDeviceNum; // Requester Device Number
+  bit [FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH-1:0]      ReqFuncNum;   // Requester Function Number
+  bit [FNX_PCIE_XTR_REQ_TAG_WIDTH-1:0]           ReqTag;       // Tag
+  //---------------------------------------------------------------------
+
+  //---------------------------------------------------------------------
+  //
+  // TLP Byte Enable Header Fields
+  //
+  // Located in DW 2 for Memory, I/O, & Config Requests
+  //
+  bit [FNX_PCIE_XTR_BE_LAST_DW_BE_WIDTH-1:0]   BELastDW;    // Last DW Byte Enable
+  bit [FNX_PCIE_XTR_BE_FIRST_DW_BE_WIDTH-1:0]  BEFirstDW;   // First DW Byte Enable
+  //---------------------------------------------------------------------
+
+  //---------------------------------------------------------------------
+  //
+  // TLP Message Header Fields
+  //
+  // Located in DW 2 for Message Requests
+  //
+  bit [FNX_PCIE_XTR_MSG_MESSAGE_CODE_WIDTH-1:0]   MsgCode;     // Message Code
+  bit [FNX_PCIE_XTR_MSG_ROUTING_WIDTH-1:0]        MsgRouting;  // Message Routing, Stored in Type[2:0]
+  bit [FNX_PCIE_XTR_DW_WIDTH-1:0]                 MsgDW3;      // Message DW 3
+  bit [FNX_PCIE_XTR_DW_WIDTH-1:0]                 MsgDW4;      // Message DW 4 
+  bit [15:0]                                      MsgCmplrId;
+  bit [15:0]                                      MsgVendorId;
+  //---------------------------------------------------------------------
+
+  //---------------------------------------------------------------------
+  //
+  // TLP Completion Header Fields
+  //
+  // Located in DW 2 for Completions
+  //
+  bit [FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH-1:0]        CmplBusNum;     // Completer Bus Number
+  bit [FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH-1:0]     CmplDeviceNum;  // Completer Device Number
+  bit [FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH-1:0]       CmplFuncNum;    // Completer Function Number
+  bit [FNX_PCIE_XTR_CMPL_CMPL_STATUS_WIDTH-1:0]   CmplStatus;     // Completion Status
+  bit [FNX_PCIE_XTR_CMPL_BCM_WIDTH-1:0]           CmplBCM;        // Byte Count Modified
+  bit [FNX_PCIE_XTR_CMPL_BYTE_COUNT_WIDTH-1:0]    CmplByteCount;  // Byte Count
+  bit [FNX_PCIE_XTR_CMPL_RESV_5_WIDTH-1:0]        CmplResv5;      // Reserved
+  bit [FNX_PCIE_XTR_CMPL_LOWER_ADDR_WIDTH-1:0]    CmplLowerAddr;  // Lower Address
+  //---------------------------------------------------------------------
+
+  //---------------------------------------------------------------------
+  //
+  // TLP Address Header Fields
+  //
+  // Located in DW3 for I/O Requests
+  // Located in DW 3 and/or DW 4 for Memory Requests
+  //
+  bit [FNX_PCIE_XTR_ADDR_UPPER_ADDR_WIDTH-1:0]  AddrUpper; // Address [63:32]
+  bit [FNX_PCIE_XTR_ADDR_LOWER_ADDR_WIDTH-1:0]  AddrLower; // Address [31:2]
+  bit [FNX_PCIE_XTR_ADDR_RESV_6_WIDTH-1:0]      AddrResv6; // Reserved
+  //---------------------------------------------------------------------
+
+  //---------------------------------------------------------------------
+  //
+  // TLP Configuration Request Header Fields
+  //
+  // Located in DW 3 for Configuration Requests
+  //
+  bit [FNX_PCIE_XTR_CFG_BUS_NUM_WIDTH-1:0]      CfgBusNum;     // Config Dest Bus Number
+  bit [FNX_PCIE_XTR_CFG_DEVICE_NUM_WIDTH-1:0]   CfgDeviceNum;  // Config Dest Device Number
+  bit [FNX_PCIE_XTR_CFG_FUNC_NUM_WIDTH-1:0]     CfgFuncNum;    // Config Dest Function Number
+  bit [FNX_PCIE_XTR_CFG_RESV_7_WIDTH-1:0]       CfgResv7;      // Reserved
+  bit [FNX_PCIE_XTR_CFG_EXT_REG_NUM_WIDTH-1:0]  CfgExtRegNum;  // Extended Register Number
+  bit [FNX_PCIE_XTR_CFG_REG_NUM_WIDTH-1:0]      CfgRegNum;     // Register Number
+  bit [FNX_PCIE_XTR_CFG_RESV_8_WIDTH-1:0]       CfgResv8;      // Reserved
+  //---------------------------------------------------------------------
+
+  //---------------------------------------------------------------------
+  //
+  // TLP Data Fields
+  //
+  bit [FNX_PCIE_XTR_ECRC_WIDTH-1:0] ECRC;  // End-to-End CRC
+  bit [7:0] Pyld[*];                     // Data Payload
+  //---------------------------------------------------------------------
+
+  //---------------------------------------------------------------------
+  //
+  // TLP DLL Framing Fields
+  //
+  bit [FNX_PCIE_XTR_DLL_FRM_RESV_9_WIDTH-1:0]  DLLFrmResv9;  // reserved
+  bit [FNX_PCIE_XTR_DLL_FRM_SEQ_NUM_WIDTH-1:0] DLLFrmSeqNum; // DLL Sequence Number
+  bit [FNX_PCIE_XTR_DLL_FRM_LCRC_32_WIDTH-1:0] DLLFrmLCRC32; // 32-bit DLL LCRC
+  //---------------------------------------------------------------------
+
+  //---------------------------------------------------------------------
+  //
+  // TLP Field Generation Control
+  bit GenTag;     // Xactor Generates Request Tag Field
+  bit GenECRC;    // Xactor Generates ECRC If Present
+  bit GenSeqNum;  // Xactor Generates DLL Sequence Number
+  bit GenLCRC32;  // Xactor Generates DLL 32-bit LCRC
+  //---------------------------------------------------------------------
+
+  //---------------------------------------------------------------------
+  //
+  // Error Injection Control
+  //
+  denaliPcieEiTypeT DenaliErr; // Denali Error Injection Type
+  //---------------------------------------------------------------------
+
+  //---------------------------------------------------------------------
+  //
+  // DLLP Fields
+  // 
+  bit [FNX_PCIE_XTR_DLLP_TYPE_WIDTH-1:0]             DllpType;       // Type
+  bit [FNX_PCIE_XTR_DLLP_LCRC_16_WIDTH-1:0]          DllpLCRC16;     // 16-bit LCRC
+  bit [FNX_PCIE_XTR_DLLP_ACK_NAK_SEQ_NUM_WIDTH-1:0]  AckNakSeqNum;   // Ack/Nak Sequence Number
+  bit [FNX_PCIE_XTR_DLLP_ACK_NAK_RESV_WIDTH-1:0]     AckNakResv;     // Reserved Field (for Ack/Nak DLLPs)
+  bit [FNX_PCIE_XTR_DLLP_FC_RESV_1_WIDTH-1:0]        DllpFCResv1;    // Reserved Field (for FC DLLPs)
+  bit [FNX_PCIE_XTR_DLLP_FC_HDR_FC_WIDTH-1:0]        DllpFCHdrFC;    // Header FC Credits
+  bit [FNX_PCIE_XTR_DLLP_FC_RESV_2_WIDTH-1:0]        DllpFCResv2;    // Reserved Field (for FC DLLPs)
+  bit [FNX_PCIE_XTR_DLLP_FC_DATA_FC_WIDTH-1:0]       DllpFCDataFC;   // Data FC Credits
+  bit [FNX_PCIE_XTR_DLLP_PM_RESV_WIDTH-1:0]          DllpPMResv;     // Reserved Field (for PM DLLPs)
+  bit [FNX_PCIE_XTR_DLLP_VENDOR_DATA_WIDTH-1:0]      DllpVendorData; // Vendor Specific DLLP Data
+  //---------------------------------------------------------------------
+
+  //---------------------------------------------------------------------
+  //
+  // DLLP Field Generation Control
+  bit GenLCRC16;  // Xactor Generates DLLP 16-bit LCRC
+  //---------------------------------------------------------------------
+
+  //---------------------------------------------------------------------
+  //
+  // DLLP End point  
+  bit [8:0] EndFrame;  // DLLP End symbol  
+  //---------------------------------------------------------------------
+
+  //---------------------------------------------------------------------
+  //
+  // DLLP Field Generation Control   
+  bit invertLCRC32 = 0;     // to invert LCRC32  
+  bit set_endsymbol_EDB = 0;  // to setting end symbol= EDB 
+  //---------------------------------------------------------------------
+
+  //---------------------------------------------------------------------
+  //
+  // FNX Exerciser Control
+  bit CheckFmtTypeOnly;  // Only Compare FmtType Field in Expect
+  //---------------------------------------------------------------------
+
+  //---------------------------------------------------------------------
+  //
+  // Replay Statistics
+  bit ReplayCnt; // Times Packet Has Been Replayed
+  bit ReplayInProgress; //Used for Ingress replays, set when packet exits 
+                        // retry_buffer_exit, Used to trigger event at 
+                        // PL_TX_end_packet and then cleared
+  event eReplayEnd;
+  //---------------------------------------------------------------------  
+  
+  //---------------------------------------------------------------------
+  //
+  // Add this packet to the front of the user queue(prepend) instead of 
+  //  the back of the user queue 
+  bit DriveImmediately = 0; // 
+  //---------------------------------------------------------------------  
+
+  // Added so IOS and Full chip can ignore tag generated for PIO packets
+  bit IgnoreTlpReqTag;							// Ignores the expect for request tag
+
+  bit [FNX_PCIE_XTR_REQ_TAG_WIDTH-1:0]		 ReceivedReqTag;	// Recevied from packet expect 
+
+  //Used to mark Denali Received Null Packets
+  bit nullPkt = 0;
+
+  
+  // Local Variables
+  //
+  local string  XactorName;  // Transactor Name
+
+  local integer PortNum; // Port Number of PCIE Link
+  
+  local integer NumTLPHdrDWs;                           // Number of DWs in TLP Header
+  local bit     PyldPres;                               // TLP Has a Data Payload
+  local integer NumPyldBytes;                           // TLP Payload Length in Bytes
+  local bit [FNX_PCIE_XTR_NUM_HDRS-1:0] TLPHdrPresVec;  // TLP Header Presence Vector
+
+  local integer NumTLPResvFieldsPres;                                // Total Number of Reserved Fields in Packet
+  local bit [ FNX_PCIE_XTR_NUM_RESV_FIELDS:0 ] TLPResvFieldsPresVec; // Reserved Field Presence Vector
+
+  local bit TLPNonZeroResvFieldsPres;                                       // Packet Contains Non-Zero Reserved Field
+  local bit [ FNX_PCIE_XTR_NUM_RESV_FIELDS:0 ] NonZeroTLPResvFieldsPresVec; // Non-ZeroReserved Field Presence Vector
+
+  local bit PktStateUpdated;  // Internal Packet State Is Up-to-Date
+  //---------------------------------------------------------------------
+
+  // constructor
+  task new( ReportClass            _Report,
+	    string                 _XactorName,
+	    FNXPCIEXactorUtilities _Util,
+	    integer                _PortNum );
+
+  // public ID methods
+  virtual task SetID( CTTransactionID XactionID );
+  virtual function CTTransactionID GetID();
+  virtual function string GetIDStr();
+  virtual task ResetID();
+
+  // public packet methods
+  virtual task PktDisplay( ReportType TypeRep, 
+			   string Message );
+  virtual function bit PktCompare( string Operation, 
+				   XactorBasePacket Pkt );
+  virtual function integer PktHash( integer HashSize );
+  virtual function bit PktUndef();
+  virtual task PktCopy( XactorBasePacket Pkt );
+  virtual function XactorBasePacket PktClone();
+  virtual task PktReset();
+  virtual task PktZero();
+  virtual function string PktToStr();
+  virtual function XactorBasePacket FormDriven();
+  virtual function bit [FNX_PCIE_XTR_EXPECT_PKT_MAX-1:0] FormExpected();
+  virtual task ParseTLPByteStream( bit [8:0] pktData[*] );
+  virtual task ParseDLLPByteStream( bit [8:0] pktData[*] );
+  virtual function denaliPciePacket CreateDenaliPkt();
+  virtual function string GetPktPrefixStr();
+  virtual task SyncDriveStart();
+  virtual task TriggerDriveStart();
+  virtual task SyncDriveEnd();
+  virtual task TriggerDriveEnd();
+  virtual task SyncReplayEnd();
+  virtual task TriggerReplayEnd();
+
+  // public field methods
+  virtual task Set( string FieldType, 
+		    bit [ XACT_FIELD_WIDTH-1:0 ] FieldValue );
+  virtual function bit [ XACT_FIELD_WIDTH-1:0 ] Get( string FieldType );
+  virtual task SetPyld( bit [7:0] _Pyld[*] );
+  virtual task GetPyld( var bit [7:0] _Pyld[*] );
+  virtual task SetFmtType( bit [FNX_PCIE_XTR_CMN_FMT_TYPE_WIDTH-1:0] fmtType );
+  virtual function bit [FNX_PCIE_XTR_CMN_FMT_TYPE_WIDTH-1:0] GetFmtType();
+  virtual task SetAttr( bit [FNX_PCIE_XTR_CMN_ATTR_WIDTH-1:0] attr );
+  virtual function bit [FNX_PCIE_XTR_CMN_ATTR_WIDTH-1:0] GetAttr();
+  virtual task SetDllpFCType( bit [FNX_PCIE_XTR_DLLP_FC_TYPE_WIDTH-1:0] fcType );
+  virtual function bit [FNX_PCIE_XTR_DLLP_FC_TYPE_WIDTH-1:0] GetDllpFCType();
+  virtual task SetDllpFCVC( bit [FNX_PCIE_XTR_DLLP_FC_VC_WIDTH-1:0] fcVC );
+  virtual function bit [FNX_PCIE_XTR_DLLP_FC_VC_WIDTH-1:0] GetDllpFCVC();
+  virtual task SetReqId( bit [FNX_PCIE_XTR_REQ_REQUESTER_ID_WIDTH-1:0] reqId );
+  virtual function bit [FNX_PCIE_XTR_REQ_REQUESTER_ID_WIDTH-1:0] GetReqId();
+  virtual task SetCmplId( bit [FNX_PCIE_XTR_CMPL_COMPLETER_ID_WIDTH-1:0] cmplId );
+  virtual function bit [FNX_PCIE_XTR_CMPL_COMPLETER_ID_WIDTH-1:0] GetCmplId();
+  virtual task SetCfgId( bit [FNX_PCIE_XTR_REQ_REQUESTER_ID_WIDTH-1:0] cfgId );
+  virtual function bit [FNX_PCIE_XTR_REQ_REQUESTER_ID_WIDTH-1:0] GetCfgId();
+  virtual function integer NumBytes();
+
+  // public TLP default setup helper methods
+  virtual task SetTLPDefaultExpectFields();
+  virtual task SetMemTLPDefaultExpectFields();
+  virtual task SetIOTLPDefaultExpectFields();
+  virtual task SetCfgTLPDefaultExpectFields();
+  virtual task SetTLPDefaultDriveFields();
+  virtual task SetCplTLPDefaultDriveFields();
+  virtual task SetCplDTLPDefaultDriveFields();
+  virtual task SetMemTLPDefaultDriveFields();
+
+  // public packet isType methods
+  virtual function bit isTlp();
+  virtual function bit isTlpRequest();
+  virtual function bit isTlpIORequest();
+  virtual function bit isTlpCfgRequest();
+  virtual function bit isTlpMemRequest32();  
+  virtual function bit isTlpMemRequest64();
+  virtual function bit isTlpCompletion();
+  virtual function bit isTlpMessage();
+  virtual function bit isTlpVendorMessage();
+  virtual function bit isDllp();
+  virtual function bit isDllpAckNak();
+  virtual function bit isDllpFC();
+  virtual function bit isDllpFCUpdate();
+  virtual function bit isDllpVendor();
+  virtual function bit isDllpPM();
+
+  // use by global Denali packet callback processing task
+  function ReportClass CreateReport();
+
+  // local packet methods
+  local task ResetLocalVars();
+  local task UpdatePktState();
+  local function string TlpPktToStr();
+  local function string DllpPktToStr();
+  local function bit [ FNX_PCE_XTR_MAX_RESV_FIELD_WIDTH-1:0 ] GetTLPResvFieldVal( integer idx );
+  local function string GetTLPResvFieldsStr();
+} // end of packet sub-class
+
+// constructor
+task FNXPCIEXactorPacket::new( ReportClass            _Report,
+			       string                 _XactorName,
+			       FNXPCIEXactorUtilities _Util,
+			       integer                _PortNum )
+{
+  super.new();
+  
+  MyReport   = _Report;           // Reference to report object
+  XactorName = _XactorName;       // Name of transactor
+  Util       = _Util;
+  PortNum    = _PortNum;
+  this.PktReset();                // Reset this packet
+}
+
+task FNXPCIEXactorPacket::ResetLocalVars()
+{
+  // Reset All Local Variables
+  PktStateUpdated             = 0;
+  PktType                     = FNX_PCIE_XTR_PKT_TYPE_TLP; // default to TLP
+  NumTLPHdrDWs                = 0;
+  PyldPres                    = 0;
+  NumPyldBytes                = 0;
+  TLPHdrPresVec               = 0;
+  TLPResvFieldsPresVec        = 0;
+  NumTLPResvFieldsPres        = 0;
+  TLPNonZeroResvFieldsPres    = 0;
+  NonZeroTLPResvFieldsPresVec = 0;
+}
+
+task FNXPCIEXactorPacket::PktReset()
+{
+  integer i;
+  
+  // Reset TransID and Local Vars
+  ResetID();
+  ResetLocalVars();
+
+  //---------------------------------------------------------------------
+  //
+  // All TLP Header Fields Which Must Be Set by User Are Reset to X
+  // All Reserved TLP Header Fields Are Reset to Zero
+  // All Generated TLP Fields (Digest, LCRC, Seq_Num) Are Reset to Zero
+  //
+  // Reset TLP Common Header Fields
+  CmnResv1  = { FNX_PCIE_XTR_CMN_RESV_1_WIDTH {1'b0} };
+  CmnFmt    = { FNX_PCIE_XTR_CMN_FORMAT_WIDTH {1'bx} };
+  CmnType   = { FNX_PCIE_XTR_CMN_TYPE_WIDTH {1'bx} };
+  CmnResv2  = { FNX_PCIE_XTR_CMN_RESV_2_WIDTH {1'b0} };
+  CmnTC     = { FNX_PCIE_XTR_CMN_TC_WIDTH {1'bx} };
+  CmnResv3  = { FNX_PCIE_XTR_CMN_RESV_3_WIDTH {1'b0} };
+  CmnTD     = { FNX_PCIE_XTR_CMN_TD_WIDTH {1'bx} };
+  CmnEP     = { FNX_PCIE_XTR_CMN_EP_WIDTH {1'bx} };
+  CmnRO     = { FNX_PCIE_XTR_CMN_RO_WIDTH {1'bx} };
+  CmnSnoop  = { FNX_PCIE_XTR_CMN_SNOOP_WIDTH {1'bx} };
+  CmnResv4  = { FNX_PCIE_XTR_CMN_RESV_4_WIDTH {1'b0} };
+  CmnLength = { FNX_PCIE_XTR_CMN_LENGTH_WIDTH {1'bx} };
+
+  // Reset TLP Request Header Fields
+  ReqBusNum    = { FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH {1'bx} };
+  ReqDeviceNum = { FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH {1'bx} };
+  ReqFuncNum   = { FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH {1'bx} };
+  ReqTag       = { FNX_PCIE_XTR_REQ_TAG_WIDTH {1'bx} };
+
+  // Reset TLP Byte Enable Header Fields
+  BELastDW  = { FNX_PCIE_XTR_BE_LAST_DW_BE_WIDTH {1'bx} };
+  BEFirstDW = { FNX_PCIE_XTR_BE_FIRST_DW_BE_WIDTH {1'bx} };
+
+  // Reset TLP Message Header Fields
+  MsgCode    = { FNX_PCIE_XTR_MSG_MESSAGE_CODE_WIDTH {1'bx} };
+  MsgRouting = { FNX_PCIE_XTR_MSG_ROUTING_WIDTH {1'bx} };
+  MsgDW3     = { FNX_PCIE_XTR_DW_WIDTH {1'b0} };
+  MsgDW4     = { FNX_PCIE_XTR_DW_WIDTH {1'b0} };
+
+  // Reset TLP Completion Header Fields
+  CmplBusNum      = { FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH {1'bx} };
+  CmplDeviceNum   = { FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH {1'bx} };
+  CmplFuncNum     = { FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH {1'bx} };
+  CmplStatus      = { FNX_PCIE_XTR_CMPL_CMPL_STATUS_WIDTH {1'bx} };
+  CmplBCM         = { FNX_PCIE_XTR_CMPL_BCM_WIDTH {1'bx} };
+  CmplByteCount   = { FNX_PCIE_XTR_CMPL_BYTE_COUNT_WIDTH {1'bx} };
+  CmplResv5       = { FNX_PCIE_XTR_CMPL_RESV_5_WIDTH {1'b0} };
+  CmplLowerAddr   = { FNX_PCIE_XTR_CMPL_LOWER_ADDR_WIDTH {1'bx} };
+
+  // Reset TLP Address Header Fields
+  AddrUpper   = { FNX_PCIE_XTR_ADDR_UPPER_ADDR_WIDTH {1'bx} };
+  AddrLower   = { FNX_PCIE_XTR_ADDR_LOWER_ADDR_WIDTH {1'bx} };
+  AddrResv6   = { FNX_PCIE_XTR_ADDR_RESV_6_WIDTH {1'b0} };
+
+  // Reset TLP Configuration Request Header Fields
+  CfgBusNum       = { FNX_PCIE_XTR_CFG_BUS_NUM_WIDTH {1'bx} };
+  CfgDeviceNum    = { FNX_PCIE_XTR_CFG_DEVICE_NUM_WIDTH {1'bx} };
+  CfgFuncNum      = { FNX_PCIE_XTR_CFG_FUNC_NUM_WIDTH {1'bx} };
+  CfgResv7        = { FNX_PCIE_XTR_CFG_RESV_7_WIDTH {1'b0} };
+  CfgExtRegNum    = { FNX_PCIE_XTR_CFG_EXT_REG_NUM_WIDTH {1'bx} };
+  CfgRegNum       = { FNX_PCIE_XTR_CFG_REG_NUM_WIDTH {1'bx} };
+  CfgResv8        = { FNX_PCIE_XTR_CFG_RESV_8_WIDTH {1'b0} };
+
+  // TLP Data Fields
+  ECRC = { FNX_PCIE_XTR_ECRC_WIDTH {1'b0} };
+  
+  // TLP DLL Framing Fields
+  DLLFrmResv9  = { FNX_PCIE_XTR_DLL_FRM_RESV_9_WIDTH {1'b0} };
+  DLLFrmLCRC32 = { FNX_PCIE_XTR_DLL_FRM_LCRC_32_WIDTH {1'bx} };
+  DLLFrmSeqNum = { FNX_PCIE_XTR_DLL_FRM_SEQ_NUM_WIDTH {1'bx} };
+
+  // TLP Field Generation Control
+  GenTag     = 1;
+  GenECRC    = 0;
+  GenSeqNum  = 1;
+  GenLCRC32  = 1;
+  //---------------------------------------------------------------------
+
+  // DLLP Fields
+  DllpType       = { FNX_PCIE_XTR_DLLP_TYPE_WIDTH {1'bx} };
+  DllpLCRC16     = { FNX_PCIE_XTR_DLLP_LCRC_16_WIDTH {1'bx} };
+  AckNakSeqNum   = { FNX_PCIE_XTR_DLLP_ACK_NAK_SEQ_NUM_WIDTH {1'bx} };
+  AckNakResv     = { FNX_PCIE_XTR_DLLP_ACK_NAK_RESV_WIDTH {1'b0} };
+  DllpFCResv1    = { FNX_PCIE_XTR_DLLP_FC_RESV_1_WIDTH {1'b0} };
+  DllpFCHdrFC    = { FNX_PCIE_XTR_DLLP_FC_HDR_FC_WIDTH {1'bx} };
+  DllpFCResv2    = { FNX_PCIE_XTR_DLLP_FC_RESV_2_WIDTH {1'b0} };
+  DllpFCDataFC   = { FNX_PCIE_XTR_DLLP_FC_DATA_FC_WIDTH {1'bx} };
+  DllpPMResv     = { FNX_PCIE_XTR_DLLP_PM_RESV_WIDTH {1'b0} };
+  DllpVendorData = { FNX_PCIE_XTR_DLLP_VENDOR_DATA_WIDTH {1'bx} };
+
+  // DLLP Field Generation Control
+  GenLCRC16 = 1;
+
+  // Error Injection Control
+  DenaliErr = PCIE_EI_NONE;
+
+  // Exerciser Control
+  CheckFmtTypeOnly = 0;
+
+  // Replay Statistics
+  ReplayCnt = 0;
+  ReplayInProgress = 0;
+
+  IgnoreTlpReqTag = 0;
+  ReceivedReqTag = 0;
+
+  // Deallocate Payload Dynamic Array
+  Pyld.delete();
+}
+
+task FNXPCIEXactorPacket::PktZero()
+{
+  // Reset TLP Common Header Fields
+  CmnResv1  = { FNX_PCIE_XTR_CMN_RESV_1_WIDTH {1'b0} };
+  CmnFmt    = { FNX_PCIE_XTR_CMN_FORMAT_WIDTH {1'b0} };
+  CmnType   = { FNX_PCIE_XTR_CMN_TYPE_WIDTH {1'b0} };
+  CmnResv2  = { FNX_PCIE_XTR_CMN_RESV_2_WIDTH {1'b0} };
+  CmnTC     = { FNX_PCIE_XTR_CMN_TC_WIDTH {1'b0} };
+  CmnResv3  = { FNX_PCIE_XTR_CMN_RESV_3_WIDTH {1'b0} };
+  CmnTD     = { FNX_PCIE_XTR_CMN_TD_WIDTH {1'b0} };
+  CmnEP     = { FNX_PCIE_XTR_CMN_EP_WIDTH {1'b0} };
+  CmnRO     = { FNX_PCIE_XTR_CMN_RO_WIDTH {1'b0} };
+  CmnSnoop  = { FNX_PCIE_XTR_CMN_SNOOP_WIDTH {1'b0} };
+  CmnResv4  = { FNX_PCIE_XTR_CMN_RESV_4_WIDTH {1'b0} };
+  CmnLength = { FNX_PCIE_XTR_CMN_LENGTH_WIDTH {1'b0} };
+
+  // Reset TLP Request Header Fields
+  ReqBusNum    = { FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH {1'b0} };
+  ReqDeviceNum = { FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH {1'b0} };
+  ReqFuncNum   = { FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH {1'b0} };
+  ReqTag       = { FNX_PCIE_XTR_REQ_TAG_WIDTH {1'b0} };
+
+  // Reset TLP Byte Enable Header Fields
+  BELastDW  = { FNX_PCIE_XTR_BE_LAST_DW_BE_WIDTH {1'b0} };
+  BEFirstDW = { FNX_PCIE_XTR_BE_FIRST_DW_BE_WIDTH {1'b0} };
+
+  // Reset TLP Message Header Fields
+  MsgCode     = { FNX_PCIE_XTR_MSG_MESSAGE_CODE_WIDTH {1'b0} };
+  MsgRouting  = { FNX_PCIE_XTR_MSG_ROUTING_WIDTH {1'b0} };
+  MsgDW3      = { FNX_PCIE_XTR_DW_WIDTH {1'b0} };
+  MsgDW4      = { FNX_PCIE_XTR_DW_WIDTH {1'b0} };
+
+  // Reset TLP Completion Header Fields
+  CmplBusNum     = { FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH {1'b0} };
+  CmplDeviceNum  = { FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH {1'b0} };
+  CmplFuncNum    = { FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH {1'b0} };
+  CmplStatus     = { FNX_PCIE_XTR_CMPL_CMPL_STATUS_WIDTH {1'b0} };
+  CmplBCM        = { FNX_PCIE_XTR_CMPL_BCM_WIDTH {1'b0} };
+  CmplByteCount  = { FNX_PCIE_XTR_CMPL_BYTE_COUNT_WIDTH {1'b0} };
+  CmplResv5      = { FNX_PCIE_XTR_CMPL_RESV_5_WIDTH {1'b0} };
+  CmplLowerAddr  = { FNX_PCIE_XTR_CMPL_LOWER_ADDR_WIDTH {1'b0} };
+
+  // Reset TLP Address Header Fields
+  AddrUpper   = { FNX_PCIE_XTR_ADDR_UPPER_ADDR_WIDTH {1'b0} };
+  AddrLower   = { FNX_PCIE_XTR_ADDR_LOWER_ADDR_WIDTH {1'b0} };
+  AddrResv6   = { FNX_PCIE_XTR_ADDR_RESV_6_WIDTH {1'b0} };
+
+  // Reset TLP Configuration Request Header Fields
+  CfgBusNum       = { FNX_PCIE_XTR_CFG_BUS_NUM_WIDTH {1'b0} };
+  CfgDeviceNum    = { FNX_PCIE_XTR_CFG_DEVICE_NUM_WIDTH {1'b0} };
+  CfgFuncNum      = { FNX_PCIE_XTR_CFG_FUNC_NUM_WIDTH {1'b0} };
+  CfgResv7        = { FNX_PCIE_XTR_CFG_RESV_7_WIDTH {1'b0} };
+  CfgExtRegNum    = { FNX_PCIE_XTR_CFG_EXT_REG_NUM_WIDTH {1'b0} };
+  CfgRegNum       = { FNX_PCIE_XTR_CFG_REG_NUM_WIDTH {1'b0} };
+  CfgResv8        = { FNX_PCIE_XTR_CFG_RESV_8_WIDTH {1'b0} };
+
+  // DLLP Fields
+  DllpType       = { FNX_PCIE_XTR_DLLP_TYPE_WIDTH {1'b0} };
+  DllpLCRC16     = { FNX_PCIE_XTR_DLLP_LCRC_16_WIDTH {1'b0} };
+  AckNakSeqNum   = { FNX_PCIE_XTR_DLLP_ACK_NAK_SEQ_NUM_WIDTH {1'b0} };
+  AckNakResv     = { FNX_PCIE_XTR_DLLP_ACK_NAK_RESV_WIDTH {1'b0} };
+  DllpFCResv1    = { FNX_PCIE_XTR_DLLP_FC_RESV_1_WIDTH {1'b0} };
+  DllpFCHdrFC    = { FNX_PCIE_XTR_DLLP_FC_HDR_FC_WIDTH {1'b0} };
+  DllpFCResv2    = { FNX_PCIE_XTR_DLLP_FC_RESV_2_WIDTH {1'b0} };
+  DllpFCDataFC   = { FNX_PCIE_XTR_DLLP_FC_DATA_FC_WIDTH {1'b0} };
+  DllpPMResv     = { FNX_PCIE_XTR_DLLP_PM_RESV_WIDTH {1'b0} };
+  DllpVendorData = { FNX_PCIE_XTR_DLLP_VENDOR_DATA_WIDTH {1'b0} };
+
+  // TLP Data Fields
+  ECRC = { FNX_PCIE_XTR_ECRC_WIDTH {1'b0} };
+  
+  // TLP DLL Framing Fields
+  DLLFrmResv9  = { FNX_PCIE_XTR_DLL_FRM_RESV_9_WIDTH {1'b0} };
+  DLLFrmLCRC32 = { FNX_PCIE_XTR_DLL_FRM_LCRC_32_WIDTH {1'b0} };
+  DLLFrmSeqNum = { FNX_PCIE_XTR_DLL_FRM_SEQ_NUM_WIDTH {1'b0} };
+}
+
+task FNXPCIEXactorPacket::ResetID()
+{
+  XactionID = null;
+  XactionID = new();
+  XactionID.SetContextID( -1 );
+  XactionID.SetStrategyID( -1 );
+  XactionID.SetTransID( -1 );
+}
+
+task FNXPCIEXactorPacket::SetID( CTTransactionID XactionID )
+{
+  this.XactionID.SetTransID( XactionID.GetTransID() );
+  this.XactionID.SetContextID( XactionID.GetContextID() );
+  this.XactionID.SetStrategyID( XactionID.GetStrategyID() );
+}
+
+function CTTransactionID FNXPCIEXactorPacket::GetID()
+{
+  GetID = XactionID;
+}
+
+function string FNXPCIEXactorPacket::GetIDStr()
+{
+  GetIDStr = XactionID.GetString();
+}
+
+function string FNXPCIEXactorPacket::PktToStr()
+{
+  string idStr;
+  string MethodName = "PktToStr";
+
+  // Ensure Packet's Internal State is Up-to-Date
+  UpdatePktState(); 
+
+  idStr = GetIDStr();
+
+  case (PktType) {
+    FNX_PCIE_XTR_PKT_TYPE_TLP  : PktToStr = TlpPktToStr();
+    FNX_PCIE_XTR_PKT_TYPE_DLLP : PktToStr = DllpPktToStr();
+    default : sprintf( PktToStr, "%s %s PktType=%s Content Printing Not Yet Supported",
+		       idStr, GetPktPrefixStr(), Util.PktTypeToStr( PktType ) );
+  }
+}
+
+function string FNXPCIEXactorPacket::DllpPktToStr()
+{
+  string tmp, idStr;
+  string MethodName = "DllpPktToStr";
+  
+  // Ensure Packet's Internal State is Up-to-Date
+  UpdatePktState();
+
+  idStr = GetIDStr();
+  
+  sprintf( DllpPktToStr, "%s %s Header Contents:\n",
+	   idStr, GetPktPrefixStr() );
+  
+  sprintf( tmp, "%s %s  Type=%s  LCRC16=%0d'h%h(Gen=%0d)\n",
+	   idStr, GetPktPrefixStr(), Util.DllpTypeToStr(DllpType),
+	   FNX_PCIE_XTR_DLLP_LCRC_16_WIDTH, DllpLCRC16, GenLCRC16 );
+  DllpPktToStr = { DllpPktToStr, tmp };
+
+  if (isDllpAckNak()) {
+    sprintf( tmp, "%s %s  SeqNum=%0d'h%h   Resv=%0d'h%h\n",
+	     idStr, GetPktPrefixStr(),
+	     FNX_PCIE_XTR_DLLP_ACK_NAK_SEQ_NUM_WIDTH, AckNakSeqNum,
+	     FNX_PCIE_XTR_DLLP_ACK_NAK_RESV_WIDTH, AckNakResv );
+    DllpPktToStr = { DllpPktToStr, tmp };
+  }
+
+  if (isDllpPM()) {
+    sprintf( tmp, "%s %s  Resv=%0d'h%h\n",
+	     idStr, GetPktPrefixStr(),
+	     FNX_PCIE_XTR_DLLP_PM_RESV_WIDTH, DllpPMResv );
+    DllpPktToStr = { DllpPktToStr, tmp };
+  }
+  
+  if (isDllpFC()) {
+    sprintf( tmp, "%s %s  VC=%0d'h%h   HdrFC=%0d'h%h   DataFC=%0d'h%h\n",
+	     idStr, GetPktPrefixStr(),
+	     FNX_PCIE_XTR_DLLP_FC_VC_WIDTH, DllpType[FNX_PCIE_XTR_DLLP_FC_TYPE_VC_INT_SLC],
+	     FNX_PCIE_XTR_DLLP_FC_HDR_FC_WIDTH, DllpFCHdrFC,
+	     FNX_PCIE_XTR_DLLP_FC_DATA_FC_WIDTH, DllpFCDataFC );
+    DllpPktToStr = { DllpPktToStr, tmp };
+    sprintf( tmp, "%s %s  Resv1=%0d'h%h   Resv2=%0d'h%h\n",
+	     idStr, GetPktPrefixStr(),
+	     FNX_PCIE_XTR_DLLP_FC_RESV_1_WIDTH, DllpFCResv1,
+	     FNX_PCIE_XTR_DLLP_FC_RESV_2_WIDTH, DllpFCResv2 );
+    DllpPktToStr = { DllpPktToStr, tmp };
+  }
+  
+  if (isDllpVendor()) {
+    sprintf( tmp, "%s %s  VendorData=%0d'h%h\n",
+	     idStr, GetPktPrefixStr(),
+	     FNX_PCIE_XTR_DLLP_VENDOR_DATA_WIDTH, DllpVendorData );
+    DllpPktToStr = { DllpPktToStr, tmp };
+  }
+}
+
+function string FNXPCIEXactorPacket::TlpPktToStr()
+{
+  string tmp, idStr, uppAddrStr, lowAddrStr;
+  string MethodName = "TlpPktToStr";
+  
+  // Ensure Packet's Internal State is Up-to-Date
+  UpdatePktState();
+
+  idStr = GetIDStr();
+
+  sprintf( TlpPktToStr, "%s %s Header Contents:\n",
+	   idStr, GetPktPrefixStr() );
+
+  // Common Header Fields
+  if (TLPHdrPresVec[FNX_PCIE_XTR_CMN_HDR]) {
+    sprintf( tmp, "%s %s   FmtType=%s   Fmt:%s\n",
+	     idStr, GetPktPrefixStr(), Util.FmtTypeToStr( GetFmtType() ), Util.FmtToStr(CmnFmt) );
+    TlpPktToStr = { TlpPktToStr, tmp };
+    if (CheckFmtTypeOnly) {
+      sprintf( tmp, "%s %s   CheckFmtTypeOnly=%0d\n",
+	       idStr, GetPktPrefixStr(), CheckFmtTypeOnly );
+      TlpPktToStr = { TlpPktToStr, tmp };
+    }
+    sprintf( tmp, "%s %s   TC=%0d'h%h   TD=%0d'b%b  EP=%0d'b%b  RO=%0d'b%b  Snoop=%0d'b%b  Length=%0d'h%h(%0d)\n",
+	     idStr, GetPktPrefixStr(), FNX_PCIE_XTR_CMN_TC_WIDTH, CmnTC, 
+	     FNX_PCIE_XTR_CMN_TD_WIDTH, CmnTD,
+	     FNX_PCIE_XTR_CMN_EP_WIDTH, CmnEP,
+	     FNX_PCIE_XTR_CMN_RO_WIDTH, CmnRO,
+	     FNX_PCIE_XTR_CMN_SNOOP_WIDTH, CmnSnoop,
+	     FNX_PCIE_XTR_CMN_LENGTH_WIDTH, CmnLength, CmnLength );
+    TlpPktToStr = { TlpPktToStr, tmp };
+  }
+
+  // Request Header Fields
+  if (TLPHdrPresVec[FNX_PCIE_XTR_REQ_HDR]) {
+    sprintf( tmp, "%s %s   ReqID: BusNum=%0d'h%h DeviceNum=%0d'h%h FuncNum=%0d'h%h\n",
+	     idStr, GetPktPrefixStr(), FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH, ReqBusNum, 
+	     FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH, ReqDeviceNum, 
+	     FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH, ReqFuncNum );
+    TlpPktToStr = { TlpPktToStr, tmp };
+    sprintf( tmp, "%s %s   ReqTag=%0d'h%h(Gen=%0d)\n",
+	     idStr, GetPktPrefixStr(), FNX_PCIE_XTR_REQ_TAG_WIDTH, ReqTag, GenTag );
+    TlpPktToStr = { TlpPktToStr, tmp };
+  }
+
+  // Byte Enable Header Fields
+  if (TLPHdrPresVec[FNX_PCIE_XTR_BE_HDR]) {
+    sprintf( tmp, "%s %s   ByteEnables: FirstDW[0:3]=%b%b%b%b  LastDW[0:3]=%b%b%b%b\n",
+	     idStr, GetPktPrefixStr(), BEFirstDW[0], BEFirstDW[1], BEFirstDW[2], BEFirstDW[3],
+	     BELastDW[0], BELastDW[1], BELastDW[2], BELastDW[3] );
+    TlpPktToStr = { TlpPktToStr, tmp };
+  }
+
+  // Message Header Fields
+  if (TLPHdrPresVec[FNX_PCIE_XTR_MSG_HDR]) {
+    sprintf( tmp, "%s %s   MsgCode=%s   MsgRouting=%s\n",
+	     idStr, GetPktPrefixStr(), Util.MsgCodeToStr(MsgCode), Util.MsgRoutingToStr( MsgRouting ) );
+    TlpPktToStr = { TlpPktToStr, tmp };
+    sprintf( tmp, "%s %s   MsgDW3=%0d'h%h   MsgDW4=%0d'h%h\n",
+	     idStr, GetPktPrefixStr(), FNX_PCIE_XTR_DW_WIDTH, MsgDW3, 
+	     FNX_PCIE_XTR_DW_WIDTH, MsgDW4 );
+    TlpPktToStr = { TlpPktToStr, tmp };
+  }
+
+  // Completion Header Fields
+  if (TLPHdrPresVec[FNX_PCIE_XTR_CMPL_HDR]) {
+    sprintf( tmp, "%s %s   ComplID: BusNum=%0d'h%h DeviceNum=%0d'h%h FuncNum=%0d'h%h\n",
+	     idStr, GetPktPrefixStr(), FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH, CmplBusNum, 
+	     FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH, CmplDeviceNum, 
+	     FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH, CmplFuncNum );
+    TlpPktToStr = { TlpPktToStr, tmp };   
+    sprintf( tmp, "%s %s   CmplStatus=%s   BCM=%0d'b%b\n",
+	     idStr, GetPktPrefixStr(), Util.CmplStatusToStr( CmplStatus ), 
+	     FNX_PCIE_XTR_CMPL_BCM_WIDTH, CmplBCM );
+    TlpPktToStr = { TlpPktToStr, tmp };
+    sprintf( tmp, "%s %s   ByteCount=%0d'h%h(%0d)   LowerAddr=%0d'h%h\n",
+	     idStr, GetPktPrefixStr(), FNX_PCIE_XTR_CMPL_BYTE_COUNT_WIDTH, CmplByteCount, 
+	     CmplByteCount, FNX_PCIE_XTR_CMPL_LOWER_ADDR_WIDTH, CmplLowerAddr );
+    TlpPktToStr = { TlpPktToStr, tmp };
+  }
+  // Addressing Header Fields
+  if (TLPHdrPresVec[FNX_PCIE_XTR_LOWER_ADDR_HDR])
+    sprintf( lowAddrStr, "LowerAddr=%0d'h%h", FNX_PCIE_XTR_ADDR_LOWER_ADDR_WIDTH, AddrLower );
+  else
+    lowAddrStr = "";
+
+  if (TLPHdrPresVec[FNX_PCIE_XTR_UPPER_ADDR_HDR])
+    sprintf( uppAddrStr, "UpperAddr=%0d'h%h   ", FNX_PCIE_XTR_ADDR_UPPER_ADDR_WIDTH, AddrUpper );
+  else
+    uppAddrStr = "";
+
+  if (TLPHdrPresVec[FNX_PCIE_XTR_LOWER_ADDR_HDR] || TLPHdrPresVec[FNX_PCIE_XTR_UPPER_ADDR_HDR]) {
+    sprintf( tmp, "%s %s   %s%s\n",
+	     idStr, GetPktPrefixStr(), uppAddrStr, lowAddrStr );
+    TlpPktToStr = { TlpPktToStr, tmp };
+  }
+
+  // Config Header Fields
+  if (TLPHdrPresVec[FNX_PCIE_XTR_CFG_HDR]) {
+    sprintf( tmp, "%s %s   CfgID: BusNum=%0d'h%h DeviceNum=%0d'h%h FuncNum=%0d'h%h\n",
+	     idStr, GetPktPrefixStr(), FNX_PCIE_XTR_CFG_BUS_NUM_WIDTH, CfgBusNum, 
+	     FNX_PCIE_XTR_CFG_DEVICE_NUM_WIDTH, CfgDeviceNum, 
+	     FNX_PCIE_XTR_CFG_FUNC_NUM_WIDTH, CfgFuncNum );
+    TlpPktToStr = { TlpPktToStr, tmp };
+    sprintf( tmp, "%s %s   RegNum=%0d'h%h   ExtRegNum=%0d'h%h\n",
+	     idStr, GetPktPrefixStr(), FNX_PCIE_XTR_CFG_REG_NUM_WIDTH, CfgRegNum, 
+	     FNX_PCIE_XTR_CFG_EXT_REG_NUM_WIDTH, CfgExtRegNum );
+    TlpPktToStr = { TlpPktToStr, tmp }; 
+  }
+  
+  // Reserved Fields
+  TlpPktToStr = { TlpPktToStr, GetTLPResvFieldsStr() };
+
+  // Payload - Only Printed If Report Threshold >= RTYP_FNX_PCIE_XTR_PYLD
+  if ((PyldPres) && (MyReport.will_this_print(RTYP_FNX_PCIE_XTR_PYLD)))
+    TlpPktToStr = { TlpPktToStr, Util.PyldToStr( Pyld, { idStr, " ", GetPktPrefixStr() }, "Payload" ) };
+
+  // Digest
+  if (CmnTD) {
+    sprintf( tmp, "%s %s ECRC=%0d'h%h\n",
+	     idStr, GetPktPrefixStr(), FNX_PCIE_XTR_ECRC_WIDTH, ECRC );
+    TlpPktToStr = { TlpPktToStr, tmp }; 
+  }
+  
+  // DLL Framing
+//   sprintf( tmp, "%s %s DLL Frame: SeqNum=%0d'h%h(Gen=%0d)   LCRC32=%0d'h%h(Gen=%0d)",
+
+// 	   FNX_PCIE_XTR_DLL_FRM_SEQ_NUM_WIDTH, DLLFrmSeqNum, GenSeqNum, 
+// 	   FNX_PCIE_XTR_DLL_FRM_LCRC_32_WIDTH, DLLFrmLCRC32, GenLCRC32 );
+  sprintf( tmp, "%s %s DLL Frame: SeqNum=%0d'h%h(Gen=%0d)   LCRC32=%0d'h%h(Gen=%0d)  End_symbol=%9'h%h",
+	   idStr, GetPktPrefixStr(), 
+	   FNX_PCIE_XTR_DLL_FRM_SEQ_NUM_WIDTH, DLLFrmSeqNum, GenSeqNum, 
+	   FNX_PCIE_XTR_DLL_FRM_LCRC_32_WIDTH, DLLFrmLCRC32, GenLCRC32, EndFrame );
+  TlpPktToStr = { TlpPktToStr, tmp };
+}
+
+task FNXPCIEXactorPacket::PktDisplay( ReportType TypeRep, 
+				      string Message )
+{
+  QuickReport( MyReport, TypeRep, { GetIDStr(), " ", Message, "\n", PktToStr() } );
+}
+
+function bit FNXPCIEXactorPacket::PktCompare( string Operator, 
+					      XactorBasePacket ExtPkt )
+{ 
+  bit [FNX_PCIE_XTR_EXPECT_PKT_MAX-1:0] ExpectedA;
+  bit [FNX_PCIE_XTR_EXPECT_PKT_MAX-1:0] ExpectedB;
+  FNXPCIEXactorPacket Pkt;
+  string MethodName = "PktCompare";
+
+  cast_assign(Pkt, ExtPkt);
+
+  if (Pkt.CheckFmtTypeOnly) {
+    case (Operator) {
+      "===" : {
+	if (this.GetFmtType() === Pkt.GetFmtType())
+	  PktCompare = 1'b1;
+	else
+	  PktCompare = 1'b0;
+      }
+      ">": {
+	if (this.GetFmtType() > Pkt.GetFmtType())
+	  PktCompare = 1'b1;
+	else
+	  PktCompare = 1'b0;
+      }
+      "<": {
+	if (this.GetFmtType() < Pkt.GetFmtType())
+	  PktCompare = 1'b1;
+	else
+	  PktCompare = 1'b0;
+      }
+      "=?=" : {
+	if (this.GetFmtType() =?= Pkt.GetFmtType())
+	  PktCompare = 1'b1;
+	else
+	  PktCompare = 1'b0;
+      }
+      default : PCIEX_QR_ERR( "%s -> Invalid Packet Compare Operator: %s", XactorName, Operator );
+    }
+    return;
+  }
+  
+  // Get the expected values for the packets that will be compared
+  ExpectedA = this.FormExpected();
+  ExpectedB = Pkt.FormExpected();
+
+  ReceivedReqTag = this.Get("ReqTag");
+
+  case (Operator) {
+
+    // For the following cases A refers to this packet and
+    // B refers to the external packet passed as an argument
+
+    "===": {
+      if (ExpectedA === ExpectedB)
+        PktCompare = 1'b1;
+      else
+        PktCompare = 1'b0;
+    }
+
+    ">": {
+      if (ExpectedA > ExpectedB)
+        PktCompare = 1'b1;
+      else
+        PktCompare = 1'b0;
+    }
+
+    "<": {
+      if (ExpectedA < ExpectedB)
+        PktCompare = 1'b1;
+      else
+        PktCompare = 1'b0;
+    }
+ 
+    "=?=": {
+      if (ExpectedA =?= ExpectedB)
+        PktCompare = 1'b1;
+      else
+        PktCompare = 1'b0;
+    }
+    default : PCIEX_QR_ERR( "%s -> Invalid Packet Compare Operator: %s", XactorName, Operator );
+  }
+}
+
+function integer FNXPCIEXactorPacket::PktHash(integer HashSize)
+{
+  bit [FNX_PCIE_XTR_EXPECT_PKT_MAX-1:0] ThisExpected;
+  
+  ThisExpected = this.FormExpected();
+  PktHash = ThisExpected % HashSize;
+}
+
+// Returns 1 if the expected value of this packet has X's or Z's and 0 otherwise
+function bit FNXPCIEXactorPacket::PktUndef()
+{
+  bit [FNX_PCIE_XTR_EXPECT_PKT_MAX-1:0] ThisExpected;
+  
+  ThisExpected = this.FormExpected();
+  PktUndef = Util.FindXValues(ThisExpected);
+}
+
+task FNXPCIEXactorPacket::PktCopy( XactorBasePacket Pkt )
+{  
+  FNXPCIEXactorPacket PCIEPkt;
+  CTTransactionID tempID;
+  integer i;
+  bit cast_ok;
+  string MethodName = "PktCopy";
+
+  cast_ok = cast_assign( PCIEPkt, Pkt, CHECK );
+  if (cast_ok == 0) {
+    PCIEX_QR_ERR( "%s %s -> Destination Packet Type Not FNXPCIEXactorPacket.",
+		  XactionID.GetSString(), XactorName );
+    return;
+  }
+
+  SetID( PCIEPkt.GetID() );
+
+  // Utilities
+  Util = PCIEPkt.Util;
+
+  // TLP Common Header Fields
+  CmnResv1   = PCIEPkt.CmnResv1;
+  CmnFmt     = PCIEPkt.CmnFmt;
+  CmnType    = PCIEPkt.CmnType;
+  CmnResv2   = PCIEPkt.CmnResv2;
+  CmnTC      = PCIEPkt.CmnTC;
+  CmnResv3   = PCIEPkt.CmnResv3;
+  CmnTD      = PCIEPkt.CmnTD;
+  CmnEP      = PCIEPkt.CmnEP;
+  CmnRO      = PCIEPkt.CmnRO;
+  CmnSnoop   = PCIEPkt.CmnSnoop;
+  CmnResv4   = PCIEPkt.CmnResv4;
+  CmnLength  = PCIEPkt.CmnLength;
+
+  // TLP Request Header Fields
+  ReqBusNum    = PCIEPkt.ReqBusNum;
+  ReqDeviceNum = PCIEPkt.ReqDeviceNum;
+  ReqFuncNum   = PCIEPkt.ReqFuncNum;
+  ReqTag       = PCIEPkt.ReqTag;
+
+  // TLP Byte Enable Header Fields
+  BELastDW  = PCIEPkt.BELastDW;
+  BEFirstDW = PCIEPkt.BEFirstDW;
+
+  // TLP Message Header Fields
+  MsgCode     = PCIEPkt.MsgCode;
+  MsgRouting  = PCIEPkt.MsgRouting;
+  MsgDW3      = PCIEPkt.MsgDW3;
+  MsgDW4      = PCIEPkt.MsgDW4;
+
+  // TLP Completion Header Fields
+  CmplBusNum      = PCIEPkt.CmplBusNum;
+  CmplDeviceNum   = PCIEPkt.CmplDeviceNum;
+  CmplFuncNum     = PCIEPkt.CmplFuncNum;
+  CmplStatus      = PCIEPkt.CmplStatus;
+  CmplBCM         = PCIEPkt.CmplBCM;
+  CmplByteCount   = PCIEPkt.CmplByteCount;
+  CmplResv5       = PCIEPkt.CmplResv5;
+  CmplLowerAddr   = PCIEPkt.CmplLowerAddr;
+
+  // TLP Address Header Fields
+  AddrUpper = PCIEPkt.AddrUpper;
+  AddrLower = PCIEPkt.AddrLower;
+  AddrResv6 = PCIEPkt.AddrResv6;
+
+  // TLP Configuration Request Header Fields
+  CfgBusNum     = PCIEPkt.CfgBusNum;
+  CfgDeviceNum  = PCIEPkt.CfgDeviceNum;
+  CfgFuncNum    = PCIEPkt.CfgFuncNum;
+  CfgResv7      = PCIEPkt.CfgResv7;
+  CfgExtRegNum  = PCIEPkt.CfgExtRegNum;
+  CfgRegNum     = PCIEPkt.CfgRegNum;
+  CfgResv8      = PCIEPkt.CfgResv8;
+
+  // TLP Data Fields
+  ECRC = PCIEPkt.ECRC;
+  PCIEPkt.GetPyld( Pyld );
+  NumPyldBytes = PCIEPkt.NumPyldBytes;
+
+  // TLP DLL Framing Fields
+  DLLFrmResv9  = PCIEPkt.DLLFrmResv9;
+  DLLFrmSeqNum = PCIEPkt.DLLFrmSeqNum;
+  DLLFrmLCRC32 = PCIEPkt.DLLFrmLCRC32;
+
+  // TLP Field Generation Control
+  GenTag    = PCIEPkt.GenTag;
+  GenECRC   = PCIEPkt.GenECRC;
+  GenSeqNum = PCIEPkt.GenSeqNum;
+  GenLCRC32 = PCIEPkt.GenLCRC32;
+
+  // DLLP Fields
+  DllpType       = PCIEPkt.DllpType;
+  DllpLCRC16     = PCIEPkt.DllpLCRC16;
+  AckNakSeqNum   = PCIEPkt.AckNakSeqNum;
+  AckNakResv     = PCIEPkt.AckNakResv;
+  DllpFCResv1    = PCIEPkt.DllpFCResv1;
+  DllpFCHdrFC    = PCIEPkt.DllpFCHdrFC;
+  DllpFCResv2    = PCIEPkt.DllpFCResv2;
+  DllpFCDataFC   = PCIEPkt.DllpFCDataFC;
+  DllpPMResv     = PCIEPkt.DllpPMResv;
+  DllpVendorData = PCIEPkt.DllpVendorData;
+
+  // DLLP Field Generation Control
+  GenLCRC16 = PCIEPkt.GenLCRC16;
+
+  // Error Injection Control
+  DenaliErr = PCIEPkt.DenaliErr;
+
+  // Local Variables
+  XactorName = PCIEPkt.XactorName;
+  PktType    = PCIEPkt.PktType;
+
+  IgnoreTlpReqTag = PCIEPkt.IgnoreTlpReqTag;
+  ReceivedReqTag = PCIEPkt.ReceivedReqTag;
+}
+
+// This task will return a packet of its same type and with the same field values
+function XactorBasePacket FNXPCIEXactorPacket::PktClone()
+{
+  // Packet to be cloned
+  FNXPCIEXactorPacket ClonedPkt;
+  ClonedPkt = new( MyReport, XactorName, Util, PortNum );
+  
+  // Set XactionID of ClonedPkt
+  ClonedPkt.SetID(this.XactionID);
+  
+  // Copy the contents of this packet to ClonedPkt
+  ClonedPkt.PktCopy(this);
+  
+  PktClone = ClonedPkt;
+}
+
+function XactorBasePacket FNXPCIEXactorPacket::FormDriven()
+{
+  // Ensure Packet's Internal State is Up-to-Date
+  UpdatePktState();
+  
+  FormDriven = this;
+}
+
+function bit [FNX_PCIE_XTR_EXPECT_PKT_MAX-1:0] FNXPCIEXactorPacket::FormExpected()
+{
+  bit [FNX_PCIE_XTR_DW_WIDTH-1:0] tlpHdrDW1, tlpHdrDW2, tlpHdrDW3, tlpHdrDW4, dllpDW1;
+  bit [FNX_PCIE_XTR_DLL_FRM_PREFIX_WIDTH-1:0] dllPrefix;
+  integer i, totalBits, dllPrefixStart, hdrStart, pyldStart, ecrcStart, lcrcStart;
+  string MethodName = "FormExpected";
+
+  // Initialize Expected Vector to Zero
+  FormExpected = 0;
+
+  // Ensure Packet's Internal State is Up-to-Date
+  UpdatePktState();
+
+  ///////////////////////////////////////////////////////
+  // Begin -> Create TLP Expect Vector
+  // 
+  if (isTlp()) {
+
+    // Determine Total Number of Bits in Packet
+    totalBits = FNX_PCIE_XTR_DLL_FRM_PREFIX_WIDTH + // DLL Framing
+      FNX_PCIE_XTR_DLL_FRM_LCRC_32_WIDTH;
+    totalBits += NumTLPHdrDWs * FNX_PCIE_XTR_DW_WIDTH; // Header
+    if ((GenECRC) && (CmnTD === 1))               // Digest
+      totalBits += FNX_PCIE_XTR_ECRC_WIDTH;
+    if (PyldPres)                                   // Payload
+      totalBits += Pyld.size() * 8;
+
+    // Determine Starting Position of Various Packet Components
+    dllPrefixStart = totalBits;
+    hdrStart = dllPrefixStart - FNX_PCIE_XTR_DLL_FRM_PREFIX_WIDTH;
+    pyldStart = hdrStart - (NumTLPHdrDWs * FNX_PCIE_XTR_DW_WIDTH);
+    if ((GenECRC) && (CmnTD === 1)) {
+      ecrcStart = pyldStart - (Pyld.size() * 8);
+      lcrcStart = ecrcStart - FNX_PCIE_XTR_ECRC_WIDTH;
+    }
+    else
+      lcrcStart = pyldStart - (Pyld.size() * 8);
+
+    
+    dllPrefix[ FNX_PCIE_XTR_DLL_FRM_PREFIX_RESV_9_SLC ]  = DLLFrmResv9;
+    if (GenSeqNum)
+      dllPrefix[ FNX_PCIE_XTR_DLL_FRM_PREFIX_SEQ_NUM_SLC ] = { FNX_PCIE_XTR_DLL_FRM_SEQ_NUM_WIDTH {1'bx} };
+    else
+      dllPrefix[ FNX_PCIE_XTR_DLL_FRM_PREFIX_SEQ_NUM_SLC ] = DLLFrmSeqNum;
+    
+    // Create First DW of Common TLP Header
+    if (TLPHdrPresVec[ FNX_PCIE_XTR_CMN_HDR ]) {
+      tlpHdrDW1[ FNX_PCIE_XTR_CMN_RESV_1_SLC ]   = CmnResv1;
+      tlpHdrDW1[ FNX_PCIE_XTR_CMN_FORMAT_SLC ]   = CmnFmt;
+      tlpHdrDW1[ FNX_PCIE_XTR_CMN_TYPE_SLC ]     = CmnType;
+      tlpHdrDW1[ FNX_PCIE_XTR_CMN_RESV_2_SLC ]   = CmnResv2;
+      tlpHdrDW1[ FNX_PCIE_XTR_CMN_TC_SLC ]       = CmnTC;
+      tlpHdrDW1[ FNX_PCIE_XTR_CMN_RESV_3_SLC ]   = CmnResv3;
+      tlpHdrDW1[ FNX_PCIE_XTR_CMN_TD_SLC ]       = CmnTD;
+      tlpHdrDW1[ FNX_PCIE_XTR_CMN_EP_SLC ]       = CmnEP;
+      tlpHdrDW1[ FNX_PCIE_XTR_CMN_RO_SLC ]       = CmnRO;
+      tlpHdrDW1[ FNX_PCIE_XTR_CMN_SNOOP_SLC ]    = CmnSnoop;
+      tlpHdrDW1[ FNX_PCIE_XTR_CMN_RESV_4_SLC ]   = CmnResv4;
+      tlpHdrDW1[ FNX_PCIE_XTR_CMN_LENGTH_SLC ]   = CmnLength;
+      
+      if (isTlpMessage())
+	tlpHdrDW1[ FNX_PCIE_XTR_MSG_CMN_ROUTING_SLC ] = MsgRouting;
+    }
+    
+    // Create Second DW of Mem, IO, Config & Msg Request Packets
+    if ( isTlpRequest() ) {
+      tlpHdrDW2[ FNX_PCIE_XTR_REQ_REQUESTER_ID_SLC ] = GetReqId();
+      if (GenTag || IgnoreTlpReqTag)
+	tlpHdrDW2[ FNX_PCIE_XTR_REQ_TAG_SLC ] = { FNX_PCIE_XTR_REQ_TAG_WIDTH {1'bx} };
+      else
+	tlpHdrDW2[ FNX_PCIE_XTR_REQ_TAG_SLC ] = ReqTag;
+      tlpHdrDW2[ FNX_PCIE_XTR_BE_LAST_DW_BE_SLC ]    = BELastDW;
+      tlpHdrDW2[ FNX_PCIE_XTR_BE_FIRST_DW_BE_SLC ]   = BEFirstDW;
+    }
+    
+    // Create Second, Third & Fourth DWs of Message Packets
+    if ( isTlpMessage() ) {
+      
+      tlpHdrDW2[ FNX_PCIE_XTR_MSG_MESSAGE_CODE_SLC ] = MsgCode;
+      tlpHdrDW3 = MsgDW3;
+      tlpHdrDW4 = MsgDW4;
+    }
+    
+    // Create Second and Third DWs of Completion Packets
+    if ( isTlpCompletion() ) {
+      
+      // Completion - Second DW
+      tlpHdrDW2[ FNX_PCIE_XTR_CMPL_COMPLETER_ID_SLC ] = GetCmplId();
+      tlpHdrDW2[ FNX_PCIE_XTR_CMPL_CMPL_STATUS_SLC ]  = CmplStatus;
+      tlpHdrDW2[ FNX_PCIE_XTR_CMPL_BCM_SLC ]          = CmplBCM;
+      tlpHdrDW2[ FNX_PCIE_XTR_CMPL_BYTE_COUNT_SLC ]   = CmplByteCount;
+      
+      // Completion - Third DW
+      tlpHdrDW3[ FNX_PCIE_XTR_REQ_REQUESTER_ID_SLC ] = GetReqId();
+      if (GenTag)
+	tlpHdrDW3[ FNX_PCIE_XTR_REQ_TAG_SLC ] = { FNX_PCIE_XTR_REQ_TAG_WIDTH {1'bx} };
+      else
+	tlpHdrDW3[ FNX_PCIE_XTR_REQ_TAG_SLC ] = ReqTag;
+      tlpHdrDW3[ FNX_PCIE_XTR_CMPL_RESV_5_SLC ]      = CmplResv5;
+      tlpHdrDW3[ FNX_PCIE_XTR_CMPL_LOWER_ADDR_SLC ]  = CmplLowerAddr;
+    }
+    
+    // Create Third DW of 32-bit Mem and IO Request Packets
+    if ( (isTlpIORequest()) || (isTlpMemRequest32()) ) {
+      tlpHdrDW3[ FNX_PCIE_XTR_ADDR_LOWER_ADDR_SLC ] = AddrLower;
+      tlpHdrDW3[ FNX_PCIE_XTR_ADDR_RESV_6_SLC ]     = AddrResv6;
+    }
+    
+    // Create Third DW of Config Request Packets
+    if ( isTlpCfgRequest() ) {
+      tlpHdrDW3[ FNX_PCIE_XTR_CFG_CONFIG_ID_SLC ]   = GetCfgId();
+      tlpHdrDW3[ FNX_PCIE_XTR_CFG_RESV_7_SLC ]      = CfgResv7;
+      tlpHdrDW3[ FNX_PCIE_XTR_CFG_EXT_REG_NUM_SLC ] = CfgExtRegNum;
+      tlpHdrDW3[ FNX_PCIE_XTR_CFG_REG_NUM_SLC ]     = CfgRegNum;
+      tlpHdrDW3[ FNX_PCIE_XTR_CFG_RESV_8_SLC ]      = CfgResv8;
+    }
+    
+    // Create Fourth DW of 64-bit Mem Request Packets
+    if ( isTlpMemRequest64() ) {
+      
+      // 64-bit Mem Request - Third DW
+      tlpHdrDW3[ FNX_PCIE_XTR_ADDR_UPPER_ADDR_SLC ] = AddrUpper;
+      
+      // 64-bit Mem Request - Fourth DW
+      tlpHdrDW4[ FNX_PCIE_XTR_ADDR_LOWER_ADDR_SLC ] = AddrLower;
+      tlpHdrDW4[ FNX_PCIE_XTR_ADDR_RESV_6_SLC ]     = AddrResv6;
+    }
+    
+    
+    FormExpected[ dllPrefixStart-1:dllPrefixStart-FNX_PCIE_XTR_DLL_FRM_PREFIX_WIDTH ] = dllPrefix;
+    
+    // Add TLP Headers To The Expected Vector
+    if (NumTLPHdrDWs == 3)
+      FormExpected[ hdrStart-1:hdrStart-NumTLPHdrDWs*FNX_PCIE_XTR_DW_WIDTH ] = { tlpHdrDW1, tlpHdrDW2, tlpHdrDW3 };
+    if (NumTLPHdrDWs == 4)
+      FormExpected[ hdrStart-1:hdrStart-NumTLPHdrDWs*FNX_PCIE_XTR_DW_WIDTH ] = { tlpHdrDW1, tlpHdrDW2, tlpHdrDW3, tlpHdrDW4 };
+    
+    // Add Payload To The Expected Vector If Present
+    if (PyldPres) {
+      for (i=0; i<NumPyldBytes; i++)
+	FormExpected[pyldStart-i*8-1:pyldStart-i*8-8] = Pyld[i];
+    }
+    
+    // Add ECRC To The Expected Vector If Generated
+    if ((GenECRC) && (CmnTD === 1))
+      FormExpected[ecrcStart-1:ecrcStart-FNX_PCIE_XTR_ECRC_WIDTH] = ECRC;
+    
+    // Add 32-bit LCRC to Expected Vector
+    if (GenLCRC32)
+      FormExpected[lcrcStart-1:lcrcStart-FNX_PCIE_XTR_DLL_FRM_LCRC_32_WIDTH] = { FNX_PCIE_XTR_DLL_FRM_LCRC_32_WIDTH {1'bx} };
+    else
+      FormExpected[lcrcStart-1:lcrcStart-FNX_PCIE_XTR_DLL_FRM_LCRC_32_WIDTH] = DLLFrmLCRC32 ;
+  }
+  // End -> Create TLP Expect Vector
+  ///////////////////////////////////////////////////////
+
+  ///////////////////////////////////////////////////////
+  // Begin -> Create DLLP Expect Vector
+  // 
+  if (isDllp()) {
+    totalBits = FNX_PCIE_XTR_NUM_DLLP_BYTES*8;
+    
+    // Add DLLP Type
+    dllpDW1[ FNX_PCIE_XTR_DLLP_TYPE_SLC ] = DllpType;
+    
+    // Add Ack/Nak DLLP Fields
+    if (isDllpAckNak()) {
+      dllpDW1[ FNX_PCIE_XTR_DLLP_ACK_NAK_SEQ_NUM_SLC ] = AckNakSeqNum;
+      dllpDW1[ FNX_PCIE_XTR_DLLP_ACK_NAK_RESV_SLC ]    = AckNakResv;
+    }
+
+    // Add FC DLLP Fields
+    if (isDllpFC()) {
+      dllpDW1[ FNX_PCIE_XTR_DLLP_FC_RESV_1_SLC ]  = DllpFCResv1;
+      dllpDW1[ FNX_PCIE_XTR_DLLP_FC_HDR_FC_SLC ]  = DllpFCHdrFC;
+      dllpDW1[ FNX_PCIE_XTR_DLLP_FC_RESV_2_SLC ]  = DllpFCResv2;
+      dllpDW1[ FNX_PCIE_XTR_DLLP_FC_DATA_FC_SLC ] = DllpFCDataFC;
+    }
+
+    // Add PM DLLP Fields
+    if (isDllpPM()) { 
+      dllpDW1[ FNX_PCIE_XTR_DLLP_PM_RESV_SLC ] = DllpPMResv;
+    }
+
+    // Add Vendor DLLP Fields
+    if (isDllpVendor()) {
+      dllpDW1[ FNX_PCIE_XTR_DLLP_VENDOR_DATA_SLC ] = DllpVendorData;
+    }
+
+    // Create Expected Vector From DLLP DW 1 and 16-bit LCRC 
+    if (GenLCRC16)
+      FormExpected[totalBits-1:0] = { dllpDW1, { FNX_PCIE_XTR_DLLP_LCRC_16_WIDTH {1'bx} } };
+    else
+      FormExpected[totalBits-1:0] = { dllpDW1, DllpLCRC16 };
+  }
+  // End -> Create DLLP Expect Vector
+  ///////////////////////////////////////////////////////
+  
+  PCIEX_QR_D3( "%s %s -> Expected Vector Created:\n Data=%h",
+	       GetIDStr(), XactorName, FormExpected[totalBits-1:0] );
+}
+
+task FNXPCIEXactorPacket::UpdatePktState()
+{
+  integer i;
+  string MethodName = "UpdatePktState";
+
+  if (PktStateUpdated)
+    return;
+
+  ///////////////////////////////////////////////////////
+  // Begin -> TLP Parsing
+  //
+  if (isTlp()) {
+
+    // Determine Number of DWs in TLP and if Data Payload is Present
+    case (CmnFmt) {
+      2'b00 : {         // 3 DW header, no data payload
+	NumTLPHdrDWs = 3; 
+	PyldPres  = 0;
+      }
+      2'b01 : {         // 4 DW header, no data payload
+	NumTLPHdrDWs = 4;
+	PyldPres  = 0;      
+      }
+      2'b10 : {         // 3 DW header, with data payload
+	NumTLPHdrDWs = 3;
+	PyldPres  = 1;
+      }
+      2'b11 : {         // 4 DW header, with data payload
+	NumTLPHdrDWs = 4;
+	PyldPres  = 1;
+      }
+      default : PCIEX_QR_ERR("%s %s -> Hit default case element CmnFmt=%h",
+			     XactionID.GetSString(), XactorName, CmnFmt );
+    }
+    
+    // Initially Set Common Header as Present
+    TLPHdrPresVec[ FNX_PCIE_XTR_CMN_HDR ] = 1;
+    
+    // Determine Other Header Presence From Packet Type
+
+    // Message Request Headers Present
+    if ( (Util.FmtTypeIsMsg(GetFmtType())) || 
+	 (Util.FmtTypeIsMsgD(GetFmtType())) ) {
+      
+      TLPHdrPresVec[ FNX_PCIE_XTR_REQ_HDR ] = 1;
+      TLPHdrPresVec[ FNX_PCIE_XTR_MSG_HDR ] = 1;
+    }
+    else { // Not a MSG or MSGD Request Packet
+      
+      case (GetFmtType()) {
+	
+	// 32-bit Memory Read/Write Request Headers Present
+	FNX_PCIE_XTR_FMT_TYPE_MRD_32,       
+	  FNX_PCIE_XTR_FMT_TYPE_MRDLK_32,
+	  FNX_PCIE_XTR_FMT_TYPE_MWR_32 : {  
+	    TLPHdrPresVec[ FNX_PCIE_XTR_REQ_HDR ]        = 1;
+	    TLPHdrPresVec[ FNX_PCIE_XTR_BE_HDR ]         = 1;
+	    TLPHdrPresVec[ FNX_PCIE_XTR_LOWER_ADDR_HDR ] = 1;
+	}
+      
+	// 64-bit Memory Read/Write Request Headers Present
+	FNX_PCIE_XTR_FMT_TYPE_MRD_64,
+	  FNX_PCIE_XTR_FMT_TYPE_MRDLK_64,
+	  FNX_PCIE_XTR_FMT_TYPE_MWR_64 : { 
+            TLPHdrPresVec[ FNX_PCIE_XTR_REQ_HDR ]         = 1;
+	    TLPHdrPresVec[ FNX_PCIE_XTR_BE_HDR ]          = 1;
+	    TLPHdrPresVec[ FNX_PCIE_XTR_LOWER_ADDR_HDR ]  = 1;
+	    TLPHdrPresVec[ FNX_PCIE_XTR_UPPER_ADDR_HDR ]  = 1;
+	}
+	
+	// I/O Read/Write Request Headers Present
+	FNX_PCIE_XTR_FMT_TYPE_IORD, 
+	  FNX_PCIE_XTR_FMT_TYPE_IOWR : {
+            TLPHdrPresVec[ FNX_PCIE_XTR_REQ_HDR ]        = 1;
+	    TLPHdrPresVec[ FNX_PCIE_XTR_BE_HDR ]         = 1;
+	    TLPHdrPresVec[ FNX_PCIE_XTR_LOWER_ADDR_HDR ] = 1;
+	}
+      
+	// Configuration Read/Write Request Headers Present
+	FNX_PCIE_XTR_FMT_TYPE_CFGRD0,
+	  FNX_PCIE_XTR_FMT_TYPE_CFGWR0,
+	  FNX_PCIE_XTR_FMT_TYPE_CFGRD1,
+	  FNX_PCIE_XTR_FMT_TYPE_CFGWR1 : {
+            TLPHdrPresVec[ FNX_PCIE_XTR_REQ_HDR ] = 1;
+	    TLPHdrPresVec[ FNX_PCIE_XTR_BE_HDR ]  = 1;
+	    TLPHdrPresVec[ FNX_PCIE_XTR_CFG_HDR ] = 1;	
+	}
+
+	// Completion Pakcet Headers Present
+	FNX_PCIE_XTR_FMT_TYPE_CPL,
+	  FNX_PCIE_XTR_FMT_TYPE_CPLD,
+	  FNX_PCIE_XTR_FMT_TYPE_CPLLK,
+	  FNX_PCIE_XTR_FMT_TYPE_CPLDLK : {
+	    TLPHdrPresVec[ FNX_PCIE_XTR_CMPL_HDR ] = 1;
+	    TLPHdrPresVec[ FNX_PCIE_XTR_REQ_HDR ]  = 1;
+	}
+	
+	default : PCIEX_QR_ERR("%s %s -> Hit default case element fmtType=%h",
+			       XactionID.GetSString(), XactorName, GetFmtType() );
+      }
+    }
+
+    ///////////////////////////////////////////////////////
+    // Begin -> Parse TLP Reserved Field Information
+    //
+    // all packets have DLL framing Resv field 9
+    TLPResvFieldsPresVec[9] = 1; 
+    NumTLPResvFieldsPres    = 1;
+    
+    // common TLP header has Resv fields 1-4
+    if (TLPHdrPresVec[ FNX_PCIE_XTR_CMN_HDR ]) {
+      TLPResvFieldsPresVec[1] = 1;
+      TLPResvFieldsPresVec[2] = 1;
+      TLPResvFieldsPresVec[3] = 1;
+      TLPResvFieldsPresVec[4] = 1;
+      NumTLPResvFieldsPres += 4;
+    }
+
+    // cmpl TLP header has Resv field 5
+    if (TLPHdrPresVec[ FNX_PCIE_XTR_CMPL_HDR ]) {
+      TLPResvFieldsPresVec[5] = 1;
+      NumTLPResvFieldsPres++;
+    }
+    // lower addr TLP header has Resv field 6
+    if (TLPHdrPresVec[ FNX_PCIE_XTR_LOWER_ADDR_HDR ]) {
+      TLPResvFieldsPresVec[6] = 1;
+      NumTLPResvFieldsPres++;
+    }
+
+    // config TLP header has Resv fields 7-8
+    if (TLPHdrPresVec[ FNX_PCIE_XTR_CFG_HDR ]) {
+      TLPResvFieldsPresVec[7] = 1;
+      TLPResvFieldsPresVec[8] = 1; 
+      NumTLPResvFieldsPres += 2;
+    }
+
+    // determine if any present reserved fields are non-zero
+    TLPNonZeroResvFieldsPres    = 0;
+    NonZeroTLPResvFieldsPresVec = 0;
+    for (i=1; i<=FNX_PCIE_XTR_NUM_RESV_FIELDS; i++) {
+      if (TLPResvFieldsPresVec[i]) {
+	if (GetTLPResvFieldVal(i) !== 0) {
+	  TLPNonZeroResvFieldsPres = 1;
+	  NonZeroTLPResvFieldsPresVec[i] = 1;
+	}
+      }
+    }
+    // End -> Parse TLP Reserved Field Information
+    ///////////////////////////////////////////////////////
+  }
+  // End -> TLP Parsing
+  ///////////////////////////////////////////////////////
+
+  ///////////////////////////////////////////////////////
+  // Begin -> DLLP Parsing
+  //
+  if (isDllp()) {
+  }
+  // End -> DLLP Parsing
+  ///////////////////////////////////////////////////////
+  
+  // Mark Internal Packet State as Updated
+  PktStateUpdated = 1;
+}
+
+task FNXPCIEXactorPacket::Set( string FieldType, bit [ XACT_FIELD_WIDTH-1:0 ] FieldValue )
+{
+  integer denaliErr;
+  string MethodName = "Set";
+  
+  // Mark Internal Packet State as Stale
+  PktStateUpdated = 0;
+  
+  case ( FieldType ) {
+
+    "CmnFmt" : {
+      CmnFmt = FieldValue[ FNX_PCIE_XTR_CMN_FORMAT_WIDTH-1:0 ];
+    }
+
+    "CmnType" : {
+      CmnType = FieldValue[ FNX_PCIE_XTR_CMN_TYPE_WIDTH-1:0 ];
+    }
+
+    "CmnFmtType" : {
+      CmnFmt  = FieldValue[ FNX_PCIE_XTR_FMT_TYPE_FMT_INT_SLC ];
+      CmnType = FieldValue[ FNX_PCIE_XTR_FMT_TYPE_TYPE_INT_SLC ];
+    }
+
+    "CmnTC" : {
+      CmnTC = FieldValue[ FNX_PCIE_XTR_CMN_TC_WIDTH-1:0 ];
+    }
+
+    "CmnTD" : {
+      CmnTD = FieldValue[ FNX_PCIE_XTR_CMN_TD_WIDTH-1:0 ];
+    }
+
+    "CmnEP" : {
+      CmnEP = FieldValue[ FNX_PCIE_XTR_CMN_EP_WIDTH-1:0 ];
+    }
+
+    "CmnRO" : {
+      CmnRO = FieldValue[ FNX_PCIE_XTR_CMN_RO_WIDTH-1:0 ];
+    }
+
+    "CmnSnoop" : {
+      CmnSnoop = FieldValue[ FNX_PCIE_XTR_CMN_SNOOP_WIDTH-1:0 ];
+    }
+
+    "CmnAttr" : {
+      SetAttr( FieldValue[ FNX_PCIE_XTR_CMN_ATTR_WIDTH-1:0 ] );
+    }
+
+    "CmnLength" : {
+      CmnLength = FieldValue[ FNX_PCIE_XTR_CMN_LENGTH_WIDTH-1:0 ]; 
+    }
+
+    "ReqBusNum" : {
+      ReqBusNum = FieldValue[ FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH-1:0 ];
+    }
+
+    "ReqDeviceNum" : {
+      ReqDeviceNum = FieldValue[ FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH-1:0 ];
+    }
+
+    "ReqFuncNum" : {
+      ReqFuncNum = FieldValue[ FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH-1:0 ];
+    }
+
+    "ReqId" : {
+      SetReqId( FieldValue[FNX_PCIE_XTR_REQ_REQUESTER_ID_WIDTH-1:0] );
+    }
+
+    "ReqTag" : {
+      ReqTag = FieldValue[ FNX_PCIE_XTR_REQ_TAG_WIDTH-1:0 ];
+    }
+
+    "BELastDW" : {
+      BELastDW = FieldValue[ FNX_PCIE_XTR_BE_LAST_DW_BE_WIDTH-1:0 ];
+    }
+
+    "BEFirstDW" : {
+      BEFirstDW = FieldValue[ FNX_PCIE_XTR_BE_FIRST_DW_BE_WIDTH-1:0 ];
+    }
+
+    "MsgCode" : {
+      MsgCode = FieldValue[ FNX_PCIE_XTR_MSG_MESSAGE_CODE_WIDTH-1:0 ];
+      MsgRouting = FieldValue[ FNX_PCIE_XTR_MSG_ROUTING_WIDTH-1:0 ];
+    }
+
+    "MsgRouting" : {
+      MsgRouting = FieldValue[ FNX_PCIE_XTR_MSG_ROUTING_WIDTH-1:0 ];      
+    }
+    
+    "MsgDW3" : {
+      MsgDW3 = FieldValue[FNX_PCIE_XTR_DW_WIDTH-1:0];
+    }
+
+    "MsgDW4" : {
+      MsgDW4 = FieldValue[FNX_PCIE_XTR_DW_WIDTH-1:0];
+    }
+
+    "CmplBusNum" : {
+      CmplBusNum = FieldValue[ FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH-1:0 ];
+    }
+
+    "CmplDeviceNum" : {
+      CmplDeviceNum = FieldValue[ FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH-1:0 ];
+    }
+
+    "CmplFuncNum" : {
+      CmplFuncNum = FieldValue[ FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH-1:0 ];
+    }
+
+    "CmplId" : {
+      SetCmplId( FieldValue[ FNX_PCIE_XTR_CMPL_COMPLETER_ID_WIDTH-1:0 ] );
+    }
+
+    "CmplStatus" : {
+      CmplStatus = FieldValue[ FNX_PCIE_XTR_CMPL_CMPL_STATUS_WIDTH-1:0 ];
+    }
+
+    "CmplBCM" : {
+      CmplBCM = FieldValue[ FNX_PCIE_XTR_CMPL_BCM_WIDTH-1:0 ];
+    }
+
+    "CmplByteCount" : {
+      CmplByteCount = FieldValue[ FNX_PCIE_XTR_CMPL_BYTE_COUNT_WIDTH-1:0 ];
+    }
+
+    "CmplLowerAddr" : {
+      CmplLowerAddr = FieldValue[ FNX_PCIE_XTR_CMPL_LOWER_ADDR_WIDTH-1:0 ];
+    }
+
+    "AddrUpper" : {
+      AddrUpper = FieldValue[ FNX_PCIE_XTR_ADDR_UPPER_ADDR_WIDTH-1:0 ]; 
+    }
+
+    "AddrLower" : {
+      AddrLower = FieldValue[ FNX_PCIE_XTR_ADDR_LOWER_ADDR_WIDTH-1:0 ]; 
+    }
+
+    "CfgBusNum" : {
+      CfgBusNum = FieldValue[ FNX_PCIE_XTR_CFG_BUS_NUM_WIDTH-1:0 ]; 
+    }
+
+    "CfgDeviceNum" : {
+      CfgDeviceNum = FieldValue[ FNX_PCIE_XTR_CFG_DEVICE_NUM_WIDTH-1:0 ]; 
+    }
+
+    "CfgFuncNum" : {
+      CfgFuncNum = FieldValue[ FNX_PCIE_XTR_CFG_FUNC_NUM_WIDTH-1:0 ]; 
+    }
+
+    "CfgId" : {
+      SetCfgId( FieldValue[ FNX_PCIE_XTR_REQ_REQUESTER_ID_WIDTH-1:0 ] );
+    }
+
+    "CfgExtRegNum" : {
+      CfgExtRegNum = FieldValue[ FNX_PCIE_XTR_CFG_EXT_REG_NUM_WIDTH-1:0 ];
+    }
+
+    "CfgRegNum" : {
+      CfgRegNum = FieldValue[ FNX_PCIE_XTR_CFG_REG_NUM_WIDTH-1:0 ];
+    }
+
+    "CmnResv1" : {
+      CmnResv1 = FieldValue[ FNX_PCIE_XTR_CMN_RESV_1_WIDTH-1:0 ];
+    }
+
+    "CmnResv2" : {
+      CmnResv2 = FieldValue[ FNX_PCIE_XTR_CMN_RESV_2_WIDTH-1:0 ];
+    }
+
+    "CmnResv3" : {
+      CmnResv3 = FieldValue[ FNX_PCIE_XTR_CMN_RESV_3_WIDTH-1:0 ];
+    }
+
+    "CmnResv4" : {
+      CmnResv4 = FieldValue[ FNX_PCIE_XTR_CMN_RESV_4_WIDTH-1:0 ];
+    }
+
+    "CmplResv5" : {
+      CmplResv5 = FieldValue[ FNX_PCIE_XTR_CMPL_RESV_5_WIDTH-1:0 ];
+    }
+
+    "AddrResv6" : {
+      AddrResv6 = FieldValue[ FNX_PCIE_XTR_ADDR_RESV_6_WIDTH-1:0 ];
+    }
+
+    "CfgResv7" : {
+      CfgResv7 = FieldValue[ FNX_PCIE_XTR_CFG_RESV_7_WIDTH-1:0 ];
+    }
+
+    "CfgResv8" : {
+      CfgResv8 = FieldValue[ FNX_PCIE_XTR_CFG_RESV_8_WIDTH-1:0 ];
+    }
+
+    "DLLFrmResv9" : {
+      DLLFrmResv9 = FieldValue[ FNX_PCIE_XTR_DLL_FRM_RESV_9_WIDTH-1:0 ];
+    }
+
+    "ECRC" : {
+      ECRC = FieldValue[ FNX_PCIE_XTR_ECRC_WIDTH-1:0 ];
+    }
+
+    "DLLFrmLCRC32" : {
+      DLLFrmLCRC32 = FieldValue[ FNX_PCIE_XTR_DLL_FRM_LCRC_32_WIDTH-1:0 ];
+    }
+
+    "DLLFrmSeqNum" : {
+      DLLFrmSeqNum = FieldValue[ FNX_PCIE_XTR_DLL_FRM_SEQ_NUM_WIDTH-1:0 ];
+    }
+    
+    "PortNum" : {
+      PortNum = FieldValue; // integer
+    }
+    
+    "GenTag" : {
+      GenTag = FieldValue[0];
+    }
+    
+    "DllpType" : {
+      DllpType = FieldValue[ FNX_PCIE_XTR_DLLP_TYPE_WIDTH-1:0 ];
+    }
+    
+    "DllpLCRC16" : {
+      DllpLCRC16 = FieldValue[ FNX_PCIE_XTR_DLLP_LCRC_16_WIDTH-1:0 ];
+    }
+    
+    "AckNakSeqNum" : {
+      AckNakSeqNum = FieldValue[ FNX_PCIE_XTR_DLLP_ACK_NAK_SEQ_NUM_WIDTH-1:0 ];
+    }
+    
+    "AckNakResv" : {
+    AckNakResv = FieldValue[ FNX_PCIE_XTR_DLLP_ACK_NAK_RESV_WIDTH-1:0 ];
+    }
+    
+    "DllpFCType" : {
+      DllpType[FNX_PCIE_XTR_DLLP_FC_TYPE_TYPE_INT_SLC] = FieldValue[ FNX_PCIE_XTR_DLLP_FC_TYPE_WIDTH-1:0 ];
+    }
+    
+    "DllpFCVC" : {
+      DllpType[FNX_PCIE_XTR_DLLP_FC_TYPE_VC_INT_SLC] = FieldValue[ FNX_PCIE_XTR_DLLP_FC_VC_WIDTH-1:0 ];
+    }
+    
+    "DllpFCResv1" : {
+      DllpFCResv1 = FieldValue[ FNX_PCIE_XTR_DLLP_FC_RESV_1_WIDTH-1:0 ];
+    }
+    
+    "DllpFCHdrFC" : {
+      DllpFCHdrFC = FieldValue[ FNX_PCIE_XTR_DLLP_FC_HDR_FC_WIDTH-1:0 ];
+    }
+    
+    "DllpFCResv2" : {
+      DllpFCResv2 = FieldValue[ FNX_PCIE_XTR_DLLP_FC_RESV_2_WIDTH-1:0 ];
+    }
+    
+    "DllpFCDataFC" : {
+      DllpFCDataFC = FieldValue[ FNX_PCIE_XTR_DLLP_FC_DATA_FC_WIDTH-1:0 ]; 
+    }
+    
+    "DllpPMResv" : {
+      DllpPMResv = FieldValue[ FNX_PCIE_XTR_DLLP_PM_RESV_WIDTH-1:0 ];
+    }
+
+    "DllpVendorData" : {
+      DllpVendorData = FieldValue[ FNX_PCIE_XTR_DLLP_VENDOR_DATA_WIDTH-1:0 ];
+    }
+
+    "GenLCRC16" : {
+      GenLCRC16 = FieldValue[0];
+    }
+    
+    "DenaliErr" : {
+      denaliErr = FieldValue; // integer
+      if (cast_assign( DenaliErr, denaliErr, CHECK) == 0)
+	PCIEX_QR_ERR( "%s %s -> Cast Assign to Parameter DenaliErr Failed.",
+		      XactionID.GetSString(), XactorName );
+    }
+    
+    "GenECRC" : {
+      GenECRC = FieldValue[0];
+    }
+
+    "GenSeqNum" : {
+      GenSeqNum = FieldValue[0];
+    }
+
+    "GenLCRC32" : {
+      GenLCRC32 = FieldValue[0];
+    }
+
+    "PktType" : {
+      PktType = FieldValue[ FNX_PCIE_XTR_PKT_TYPE_WIDTH-1:0 ];
+    }
+    
+    "CheckFmtTypeOnly" : {
+      CheckFmtTypeOnly = FieldValue[0];
+    }
+
+    "IgnoreTlpReqTag" : {
+      IgnoreTlpReqTag = FieldValue[0];
+    }
+
+    "ReceivedReqTag" : {
+      ReceivedReqTag = FieldValue[FNX_PCIE_XTR_REQ_TAG_WIDTH-1:0];
+    }
+
+    default : PCIEX_QR_ERR( "%s %s -> Hit default case element FieldType=%s",
+			    XactionID.GetSString(), XactorName, FieldType );
+  }
+}
+
+function bit [ XACT_FIELD_WIDTH-1:0 ] FNXPCIEXactorPacket::Get( string FieldType )
+{
+  string MethodName = "Get";
+
+  case ( FieldType ) {
+
+    "CmnFmt" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CMN_FORMAT_WIDTH){1'b0}}, CmnFmt };
+    }
+
+    "CmnType" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CMN_TYPE_WIDTH){1'b0}}, CmnType };
+    }
+    
+    "CmnFmtType" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CMN_FMT_TYPE_WIDTH){1'b0}}, GetFmtType() };
+    }
+
+    "CmnTC" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CMN_TC_WIDTH){1'b0}}, CmnTC };
+    }
+
+    "CmnTD" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CMN_TD_WIDTH){1'b0}}, CmnTD };
+    }
+
+    "CmnEP" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CMN_EP_WIDTH){1'b0}}, CmnEP };
+    }
+
+    "CmnRO" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CMN_RO_WIDTH){1'b0}}, CmnRO };
+    }
+
+    "CmnSnoop" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CMN_SNOOP_WIDTH){1'b0}}, CmnSnoop };
+    }
+    
+    "CmnAttr" : {
+      Get = { { (XACT_FIELD_WIDTH-FNX_PCIE_XTR_CMN_ATTR_WIDTH){1'b0}}, GetAttr() };
+    }
+
+    "CmnLength" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CMN_LENGTH_WIDTH){1'b0}}, CmnLength };
+    }
+
+    "ReqBusNum" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH){1'b0}}, ReqBusNum };
+    }
+
+    "ReqDeviceNum" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH){1'b0}}, ReqDeviceNum };
+    }
+
+    "ReqFuncNum" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH){1'b0}}, ReqFuncNum };
+    }
+
+    "ReqId" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_REQ_REQUESTER_ID_WIDTH){1'b0}}, GetReqId() };
+    }
+
+    "ReqTag" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_REQ_TAG_WIDTH){1'b0}}, ReqTag };
+    }
+
+    "BELastDW" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_BE_LAST_DW_BE_WIDTH){1'b0}}, BELastDW };
+    }
+
+    "BEFirstDW" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_BE_FIRST_DW_BE_WIDTH){1'b0}}, BEFirstDW };
+    }
+
+    "MsgCode" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_MSG_MESSAGE_CODE_WIDTH){1'b0}}, MsgCode };
+    }
+
+    "MsgRouting" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_MSG_ROUTING_WIDTH){1'b0}}, MsgRouting };
+    }
+
+    "MsgDW3" : {
+      Get = { {(XACT_FIELD_WIDTH-32){1'b0}}, MsgDW3 };
+    }
+    
+    "MsgDW4" : {
+      Get = { {(XACT_FIELD_WIDTH-32){1'b0}}, MsgDW4 };
+    }
+
+    "CmplBusNum" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH){1'b0}}, CmplBusNum };
+    }
+
+    "CmplDeviceNum" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH){1'b0}}, CmplDeviceNum };
+    }
+
+    "CmplFuncNum" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH){1'b0}}, CmplFuncNum };
+    }
+
+    "CmplId" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CMPL_COMPLETER_ID_WIDTH){1'b0}}, GetCmplId() };
+    }
+
+    "CmplStatus" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CMPL_CMPL_STATUS_WIDTH){1'b0}}, CmplStatus };
+    }
+
+    "CmplBCM" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CMPL_BCM_WIDTH){1'b0}}, CmplBCM };
+    }
+
+    "CmplByteCount" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CMPL_BYTE_COUNT_WIDTH){1'b0}}, CmplByteCount };
+    }
+
+    "CmplLowerAddr" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CMPL_LOWER_ADDR_WIDTH){1'b0}}, CmplLowerAddr };
+    }
+
+    "AddrUpper" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_ADDR_UPPER_ADDR_WIDTH){1'b0}}, AddrUpper };
+    }
+
+    "AddrLower" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_ADDR_LOWER_ADDR_WIDTH){1'b0}}, AddrLower };
+    }
+
+    "CfgBusNum" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CFG_BUS_NUM_WIDTH){1'b0}}, CfgBusNum };
+    }
+
+    "CfgDeviceNum" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CFG_DEVICE_NUM_WIDTH){1'b0}}, CfgDeviceNum };
+    }
+
+    "CfgFuncNum" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CFG_FUNC_NUM_WIDTH){1'b0}}, CfgFuncNum };
+    }
+
+    "CfgId" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_REQ_REQUESTER_ID_WIDTH){1'b0}}, GetCfgId() };
+    }
+
+    "CfgExtRegNum" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CFG_EXT_REG_NUM_WIDTH){1'b0}}, CfgExtRegNum };
+    }
+
+    "CfgRegNum" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CFG_REG_NUM_WIDTH){1'b0}}, CfgRegNum };
+    }
+
+    "CmnResv1" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CMN_RESV_1_WIDTH){1'b0}}, CmnResv1 };
+    }
+
+    "CmnResv2" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CMN_RESV_2_WIDTH){1'b0}}, CmnResv2 };
+    }
+
+    "CmnResv3" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CMN_RESV_3_WIDTH){1'b0}}, CmnResv3 };
+    }
+
+    "CmnResv4" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CMN_RESV_4_WIDTH){1'b0}}, CmnResv4 };
+    }
+
+    "CmplResv5" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CMPL_RESV_5_WIDTH){1'b0}}, CmplResv5 };
+    }
+
+    "AddrResv6" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_ADDR_RESV_6_WIDTH){1'b0}}, AddrResv6 };
+    }
+
+    "CfgResv7" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CFG_RESV_7_WIDTH){1'b0}}, CfgResv7 };
+    }
+
+    "CfgResv8" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_CFG_RESV_8_WIDTH){1'b0}}, CfgResv8 };
+    }
+
+    "DLLFrmResv9" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_DLL_FRM_RESV_9_WIDTH){1'b0}}, DLLFrmResv9 };
+    }
+
+    "ECRC" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_ECRC_WIDTH){1'b0}}, ECRC };
+    }
+
+    "DLLFrmLCRC32" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_DLL_FRM_LCRC_32_WIDTH){1'b0}}, DLLFrmLCRC32 };
+    }
+
+    "DLLFrmSeqNum" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_DLL_FRM_SEQ_NUM_WIDTH){1'b0}}, DLLFrmSeqNum };
+    }
+
+    "PortNum" : {
+      Get = 0;
+      Get = PortNum; // integer
+    }
+
+    "DenaliErr" : {
+      Get = 0;
+      Get = DenaliErr; // enum returned as integer
+    }
+
+    "GenTag" : {
+      Get = { {(XACT_FIELD_WIDTH-1){1'b0}}, GenTag };
+    }
+
+    "GenECRC" : {
+      Get = { {(XACT_FIELD_WIDTH-1){1'b0}}, GenECRC };
+    }
+
+    "GenSeqNum" : {
+      Get = { {(XACT_FIELD_WIDTH-1){1'b0}}, GenSeqNum };
+    }
+    
+    "GenLCRC32" : {
+      Get = { {(XACT_FIELD_WIDTH-1){1'b0}}, GenLCRC32 };
+    }
+    
+    "PktType" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_PKT_TYPE_WIDTH){1'b0}}, PktType };
+    }
+
+    "DllpType" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_DLLP_TYPE_WIDTH){1'b0}}, DllpType };
+    }
+    
+    "DllpLCRC16" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_DLLP_LCRC_16_WIDTH){1'b0}}, DllpLCRC16 };
+    }
+    
+    "AckNakSeqNum" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_DLLP_ACK_NAK_SEQ_NUM_WIDTH){1'b0}}, AckNakSeqNum };
+    }
+    
+    "AckNakResv" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_DLLP_ACK_NAK_RESV_WIDTH){1'b0}}, AckNakResv };
+    }
+    
+    "DllpFCType" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_DLLP_FC_TYPE_WIDTH){1'b0}}, GetDllpFCType() };
+    }
+    
+    "DllpFCVC" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_DLLP_FC_VC_WIDTH){1'b0}}, GetDllpFCVC() };
+    }
+    
+    "DllpFCResv1" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_DLLP_FC_RESV_1_WIDTH){1'b0}}, DllpFCResv1 };
+    }
+    
+    "DllpFCHdrFC" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_DLLP_FC_HDR_FC_WIDTH){1'b0}}, DllpFCHdrFC };
+    }
+    
+    "DllpFCResv2" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_DLLP_FC_RESV_2_WIDTH){1'b0}}, DllpFCResv2 };
+    }
+    
+    "DllpFCDataFC" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_DLLP_FC_DATA_FC_WIDTH){1'b0}}, DllpFCDataFC };
+    }
+    
+    "DllpPMResv" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_DLLP_PM_RESV_WIDTH){1'b0}}, DllpPMResv };
+    }
+
+    "DllpVendorData" : {
+      Get = { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_DLLP_VENDOR_DATA_WIDTH){1'b0}}, DllpVendorData };
+    }
+
+    "GenLCRC16" : {
+      Get = { {(XACT_FIELD_WIDTH-1){1'b0}}, GenLCRC16 };
+    }
+
+    "CheckFmtTypeOnly" : {
+      Get = { {(XACT_FIELD_WIDTH-1){1'b0}}, CheckFmtTypeOnly };
+    }
+
+    "IgnoreTlpReqTag" : {
+      Get =  { {(XACT_FIELD_WIDTH-1){1'b0}}, IgnoreTlpReqTag };
+    }
+
+    "ReceivedReqTag" : {
+      Get =  { {(XACT_FIELD_WIDTH-FNX_PCIE_XTR_REQ_TAG_WIDTH){1'b0}}, ReceivedReqTag }; 
+    }
+    
+    default : PCIEX_QR_ERR( "%s %s -> Hit default case element FieldType=%s",
+			    XactionID.GetSString(), XactorName, FieldType );
+  }
+}
+
+task FNXPCIEXactorPacket::SetPyld( bit [7:0] _Pyld[*] )
+{
+  integer _NumPyldBytes, i;
+  string MethodName = "SetPyld";
+  
+  // Mark Internal Packet State as Stale
+  PktStateUpdated = 0;
+
+  _NumPyldBytes = _Pyld.size();
+
+  if (_NumPyldBytes > FNX_PCIE_XTR_FNX_MAX_NUM_PYLD_BYTES) {
+//    PCIEX_QR_ERR( "%m %s %s -> NumPyldBytes=%0h(%0d) exceeds MaxPyldSize=%0h(%0d)",
+    PCIEX_QR_I( "%m %s %s -> NumPyldBytes=%0h(%0d) exceeds MaxPyldSize=%0h(%0d)",
+		  XactionID.GetSString(), XactorName, _NumPyldBytes, _NumPyldBytes, 
+		  FNX_PCIE_XTR_FNX_MAX_NUM_PYLD_BYTES, FNX_PCIE_XTR_FNX_MAX_NUM_PYLD_BYTES );
+//    return;
+  }
+
+  if ( (_NumPyldBytes % 4) !== 0) {
+    PCIEX_QR_ERR( "%s %s -> NumPyldBytes='h%0h(%0d) is not a multiple of 4 (DW aligned)",
+		  XactionID.GetSString(), XactorName, _NumPyldBytes, _NumPyldBytes );
+    return;
+  }
+  
+  NumPyldBytes = _NumPyldBytes;
+  if( NumPyldBytes == 0 ){
+     Pyld = new[1];
+     Pyld.delete();
+  }else{
+     Pyld = new[NumPyldBytes] (_Pyld);
+  }
+}
+
+task FNXPCIEXactorPacket::GetPyld( var bit [7:0] _Pyld[*] )
+{
+  _Pyld = new[Pyld.size()] (Pyld);
+}
+
+task FNXPCIEXactorPacket::ParseDLLPByteStream( bit [8:0] pktData[*] )
+{
+  bit [FNX_PCIE_XTR_DW_WIDTH-1:0] dllpDW1;
+  bit [8:0]  tmpByte0, tmpByte1, tmpByte2, tmpByte3;
+  string MethodName = "ParseDLLPByteStream";
+
+  // Packet Type is DLLP
+  PktType = FNX_PCIE_XTR_PKT_TYPE_DLLP;
+
+  // Ensure DLLP Size in Bytes is Correct Before Parsing
+  if (pktData.size() !== FNX_PCIE_XTR_NUM_DLLP_BYTES) {
+//N2 DMT Bypass Link Train    PCIEX_QR_I( "%s -> NumberOfBytes=%0d in DLLP Data Stream != %0d",
+//    return;
+     PCIEX_QR_ERR( "%s -> NumberOfBytes=%0d in DLLP Data Stream != %0d",
+		  XactorName, pktData.size(), FNX_PCIE_XTR_NUM_DLLP_BYTES );
+  }
+
+  // Extract DLLP DW0 and LCRC16
+  tmpByte0 = pktData[0]; tmpByte1 = pktData[1];
+  tmpByte2 = pktData[2]; tmpByte3 = pktData[3];
+  dllpDW1 = { tmpByte0[7:0], tmpByte1[7:0], tmpByte2[7:0], tmpByte3[7:0] };
+  tmpByte0 = pktData[4]; tmpByte1 = pktData[5];
+  DllpLCRC16 = { tmpByte0[7:0], tmpByte1[7:0] };
+  GenLCRC16 = 0;
+  
+  // Extract DLLP Type
+  DllpType = dllpDW1[FNX_PCIE_XTR_DLLP_TYPE_SLC];
+
+  // Ensure DLLP Type is Valid Before Parsing Further
+  // but do not report error if this is an error injection case
+// DenaliErr = %s \n ", DenaliErr); 
+// inject_unsupport_dllp_type = %d \n ", inject_unsupport_dllp_type); 
+//   if (DenaliErr  == PCIE_EI_RSRVD_TYPE) {
+  if (inject_unsupport_dllp_type == 1 ) {
+    if (!(isDllpAckNak() || isDllpFC() || isDllpVendor() || isDllpPM()) ) {
+      PCIEX_QR_I( "AC: Forcing %s -> Invalid DLLP Type at time %d. \n", XactorName, get_time(LO) );
+      printf("AC: inside PCIE_EI_RSRVD_TYPE \n"); 
+      inject_unsupport_dllp_type = 0; 
+    }
+  }
+  else if (!(isDllpAckNak() || isDllpFC() || isDllpVendor() || isDllpPM()) ) {
+    PCIEX_QR_ERR( "%s -> Invalid DLLP Type.", XactorName );
+    return;
+  }
+
+  // Ensure Packet's Internal State is Up-to-Date
+  UpdatePktState();
+  
+  // Extract Ack/Nak DLLP Fields
+  if (isDllpAckNak()) {
+    AckNakSeqNum = dllpDW1[ FNX_PCIE_XTR_DLLP_ACK_NAK_SEQ_NUM_SLC ];
+    AckNakResv   = dllpDW1[ FNX_PCIE_XTR_DLLP_ACK_NAK_RESV_SLC ];
+  }
+
+  // Extract FC DLLP Fields
+  if (isDllpFC()) {
+    DllpFCResv1  = dllpDW1[ FNX_PCIE_XTR_DLLP_FC_RESV_1_SLC ];
+    DllpFCHdrFC  = dllpDW1[ FNX_PCIE_XTR_DLLP_FC_HDR_FC_SLC ];
+    DllpFCResv2  = dllpDW1[ FNX_PCIE_XTR_DLLP_FC_RESV_2_SLC ];
+    DllpFCDataFC = dllpDW1[ FNX_PCIE_XTR_DLLP_FC_DATA_FC_SLC ];
+  }
+
+  // Extract PM DLLP Fields
+  if (isDllpPM()) { 
+    DllpPMResv = dllpDW1[ FNX_PCIE_XTR_DLLP_PM_RESV_SLC ];
+  }
+
+  // Extract Vendor DLLP Fields
+  if (isDllpVendor()) {
+    DllpVendorData = dllpDW1[ FNX_PCIE_XTR_DLLP_VENDOR_DATA_SLC ];
+  }
+}
+
+task FNXPCIEXactorPacket::ParseTLPByteStream( bit [8:0] pktData[*] )
+{
+  bit [FNX_PCIE_XTR_DLL_FRM_PREFIX_WIDTH-1:0] dllPrefix;
+  bit [FNX_PCIE_XTR_DW_WIDTH-1:0] tlpDWs[*], currDW;
+  bit [8:0] tmpByte0, tmpByte1, tmpByte2, tmpByte3;
+  integer i, j, k,  numDWs, numBytes;
+  string MethodName = "ParseTLPByteStream";
+
+  // Packet Type is TLP
+  PktType = FNX_PCIE_XTR_PKT_TYPE_TLP;
+  
+  
+  tmpByte0 = pktData[0];
+  tmpByte1 = pktData[1];
+  dllPrefix = { tmpByte0[7:0], tmpByte1[7:0] };
+
+  
+  numBytes = pktData.size() - (FNX_PCIE_XTR_DLL_FRM_PREFIX_WIDTH/8);
+  numDWs = numBytes/4;
+  if ((numBytes % 4) !== 0) {
+    PCIEX_QR_ERR( "%s -> Number of Bytes in Data Stream Excluding DLL Prefix is Not DW Aligned.\n%s",
+		  XactorName, Util.ByteStreamToStr(pktData, GetPktPrefixStr(), "Byte Stream" ) );
+    return;
+  }
+ 
+  
+  DLLFrmResv9  = dllPrefix[ FNX_PCIE_XTR_DLL_FRM_PREFIX_RESV_9_SLC ];
+  DLLFrmSeqNum = dllPrefix[ FNX_PCIE_XTR_DLL_FRM_PREFIX_SEQ_NUM_SLC ];
+  GenSeqNum = 0;
+
+  // Create TLP DWs To Be Parsed
+  tlpDWs = new[numDWs];
+  k = FNX_PCIE_XTR_DLL_FRM_PREFIX_WIDTH/8;
+  for (i=0; i < numDWs; i++) {
+    tmpByte0 = pktData[k++];
+    tmpByte1 = pktData[k++];
+    tmpByte2 = pktData[k++];
+    tmpByte3 = pktData[k++];
+    tlpDWs[i] = { tmpByte0[7:0], tmpByte1[7:0], tmpByte2[7:0], tmpByte3[7:0] };
+  }
+  
+  k = 0;
+  
+  ////////////////////////////////////////////////////
+  // Parse Common TLP Header DW 1
+  //
+  currDW = tlpDWs[k++];
+  CmnResv1  = currDW[ FNX_PCIE_XTR_CMN_RESV_1_SLC ];
+  CmnFmt    = currDW[ FNX_PCIE_XTR_CMN_FORMAT_SLC ];
+  CmnType   = currDW[ FNX_PCIE_XTR_CMN_TYPE_SLC ];
+  CmnResv2  = currDW[ FNX_PCIE_XTR_CMN_RESV_2_SLC ];
+  CmnTC     = currDW[ FNX_PCIE_XTR_CMN_TC_SLC ];
+  CmnResv3  = currDW[ FNX_PCIE_XTR_CMN_RESV_3_SLC ];
+  CmnTD     = currDW[ FNX_PCIE_XTR_CMN_TD_SLC ];
+  CmnEP     = currDW[ FNX_PCIE_XTR_CMN_EP_SLC ];
+  CmnRO     = currDW[ FNX_PCIE_XTR_CMN_RO_SLC ];
+  CmnSnoop  = currDW[ FNX_PCIE_XTR_CMN_SNOOP_SLC ];
+  CmnResv4  = currDW[ FNX_PCIE_XTR_CMN_RESV_4_SLC ];
+  CmnLength = currDW[ FNX_PCIE_XTR_CMN_LENGTH_SLC ];
+  ////////////////////////////////////////////////////
+
+  // Ensure TLP Type is Valid Before Parsing Further
+  if (!(isTlpRequest() || isTlpCompletion() || isTlpMessage())) {
+    PCIEX_QR_ERR( "%s -> Invalid TLP Type.", XactorName );
+    return;
+  }
+
+  // Ensure Packet's Internal State is Up-to-Date
+  UpdatePktState();
+
+  if ( TLPHdrPresVec[ FNX_PCIE_XTR_MSG_HDR ] ) {
+    MsgRouting = currDW[ FNX_PCIE_XTR_MSG_CMN_ROUTING_SLC ];
+  }
+
+  ////////////////////////////////////////////////////
+  // Parse TLP Header DW 2
+  //
+  currDW = tlpDWs[k++];
+  if ( (TLPHdrPresVec[ FNX_PCIE_XTR_REQ_HDR ] ) &&
+       !( TLPHdrPresVec[ FNX_PCIE_XTR_CMPL_HDR ] ) ) {
+    ReqBusNum    = currDW[ FNX_PCIE_XTR_REQ_BUS_NUM_SLC ];
+    ReqDeviceNum = currDW[ FNX_PCIE_XTR_REQ_DEVICE_NUM_SLC ];
+    ReqFuncNum   = currDW[ FNX_PCIE_XTR_REQ_FUNC_NUM_SLC ];
+    ReqTag       = currDW[ FNX_PCIE_XTR_REQ_TAG_SLC ];
+    GenTag = 0;
+  }
+  if ( TLPHdrPresVec[ FNX_PCIE_XTR_BE_HDR ] ) {
+    BELastDW  = currDW[ FNX_PCIE_XTR_BE_LAST_DW_BE_SLC ];
+    BEFirstDW = currDW[ FNX_PCIE_XTR_BE_FIRST_DW_BE_SLC ];
+  }
+  if ( TLPHdrPresVec[ FNX_PCIE_XTR_MSG_HDR ] ) {
+    MsgCode = currDW[ FNX_PCIE_XTR_MSG_MESSAGE_CODE_SLC ];
+  }
+  if ( TLPHdrPresVec[ FNX_PCIE_XTR_CMPL_HDR ] ) {
+    CmplBusNum      = currDW[ FNX_PCIE_XTR_REQ_BUS_NUM_SLC ];
+    CmplDeviceNum   = currDW[ FNX_PCIE_XTR_REQ_DEVICE_NUM_SLC ];
+    CmplFuncNum     = currDW[ FNX_PCIE_XTR_REQ_FUNC_NUM_SLC ];
+    CmplStatus      = currDW[ FNX_PCIE_XTR_CMPL_CMPL_STATUS_SLC ];
+    CmplBCM         = currDW[ FNX_PCIE_XTR_CMPL_BCM_SLC ];
+    CmplByteCount   = currDW[ FNX_PCIE_XTR_CMPL_BYTE_COUNT_SLC ];
+  }
+  ////////////////////////////////////////////////////
+
+  ////////////////////////////////////////////////////
+  // Parse TLP Header DW 3
+  //
+  currDW = tlpDWs[k++];
+  if ( (TLPHdrPresVec[ FNX_PCIE_XTR_LOWER_ADDR_HDR ]) &&
+       !(TLPHdrPresVec[ FNX_PCIE_XTR_UPPER_ADDR_HDR ]) ) {
+    AddrLower = currDW[ FNX_PCIE_XTR_ADDR_LOWER_ADDR_SLC ];
+    AddrResv6 = currDW[ FNX_PCIE_XTR_ADDR_RESV_6_SLC ];    
+  }
+  if ( TLPHdrPresVec[ FNX_PCIE_XTR_UPPER_ADDR_HDR ] ) {
+    AddrUpper = currDW[ FNX_PCIE_XTR_ADDR_UPPER_ADDR_SLC ];
+  }
+  if ( TLPHdrPresVec[ FNX_PCIE_XTR_MSG_HDR ] ) {
+    MsgDW3 = currDW;
+  }
+  if ( TLPHdrPresVec[ FNX_PCIE_XTR_CMPL_HDR ] ) {
+    ReqBusNum      = currDW[ FNX_PCIE_XTR_REQ_BUS_NUM_SLC ];
+    ReqDeviceNum   = currDW[ FNX_PCIE_XTR_REQ_DEVICE_NUM_SLC ];
+    ReqFuncNum     = currDW[ FNX_PCIE_XTR_REQ_FUNC_NUM_SLC ];
+    ReqTag         = currDW[ FNX_PCIE_XTR_REQ_TAG_SLC ];
+    CmplResv5      = currDW[ FNX_PCIE_XTR_CMPL_RESV_5_SLC ];
+    CmplLowerAddr  = currDW[ FNX_PCIE_XTR_CMPL_LOWER_ADDR_SLC ]; 
+    GenTag = 0;
+  }
+  if ( TLPHdrPresVec[ FNX_PCIE_XTR_CFG_HDR ] ) {
+    CfgBusNum       = currDW[ FNX_PCIE_XTR_CFG_BUS_NUM_SLC ];
+    CfgDeviceNum    = currDW[ FNX_PCIE_XTR_CFG_DEVICE_NUM_SLC ];
+    CfgFuncNum      = currDW[ FNX_PCIE_XTR_CFG_FUNC_NUM_SLC ];
+    CfgResv7        = currDW[ FNX_PCIE_XTR_CFG_RESV_7_SLC ];
+    CfgExtRegNum    = currDW[ FNX_PCIE_XTR_CFG_EXT_REG_NUM_SLC ];
+    CfgRegNum       = currDW[ FNX_PCIE_XTR_CFG_REG_NUM_SLC ];
+    CfgResv8        = currDW[ FNX_PCIE_XTR_CFG_RESV_8_SLC ];
+  }
+  ////////////////////////////////////////////////////
+
+  ////////////////////////////////////////////////////
+  // Parse TLP Header DW 4
+  //
+  if (NumTLPHdrDWs === 4) {
+    currDW = tlpDWs[k++];
+    if ( TLPHdrPresVec[ FNX_PCIE_XTR_MSG_HDR ] ) {
+      MsgDW4 = currDW;
+    }
+    if ( (TLPHdrPresVec[ FNX_PCIE_XTR_LOWER_ADDR_HDR ]) &&
+	 (TLPHdrPresVec[ FNX_PCIE_XTR_UPPER_ADDR_HDR ]) ) {
+      AddrLower = currDW[ FNX_PCIE_XTR_ADDR_LOWER_ADDR_SLC ];
+      AddrResv6 = currDW[ FNX_PCIE_XTR_ADDR_RESV_6_SLC ];    
+    }
+  }
+  ////////////////////////////////////////////////////
+
+  // Extract Data Payload If Present
+  if (PyldPres) {
+    NumPyldBytes = CmnLength*4;
+    Pyld = new[ NumPyldBytes ];
+    for (i=0; i < CmnLength; i++) {
+      currDW = tlpDWs[k++];
+      for (j=0; j <4; j++)
+	Pyld[i*4+j] = currDW[FNX_PCIE_XTR_DW_WIDTH-(j*8)-1:FNX_PCIE_XTR_DW_WIDTH-(j+1)*8];
+    }
+  }
+
+  // Extract Digest If Present
+  if (CmnTD === 1'b1) {
+    currDW = tlpDWs[k++];
+    ECRC = currDW[ FNX_PCIE_XTR_ECRC_SLC ];
+    GenECRC = 0;
+  }
+  
+  // Extract 32-bit LCRC
+  currDW = tlpDWs[k++];
+  DLLFrmLCRC32 = currDW[ FNX_PCIE_XTR_DLL_FRM_LCRC_32_SLC ];
+  GenLCRC32 = 0;
+}
+
+// Task Creates a New Denali PCIE Packet Representation of This
+// Packet Classes Contents and Returns a Handle to it
+function denaliPciePacket FNXPCIEXactorPacket::CreateDenaliPkt()
+{
+  // Possible Denali PCI-E Packet Types for DenaliPkt
+  denaliPcieTlpMsgPacket  msgPkt;
+  denaliPcieTlpCplPacket  cplPkt;
+  denaliPcieTlpMemPacket  memPkt;
+  denaliPcieTlpIoPacket   ioPkt;
+  denaliPcieTlpCfgPacket  cfgPkt;
+  denaliPcieDlpPacket     dlpPkt;
+  denaliPcieDllpPacket    dllpPkt;
+  denaliPciePlpPacket     plpPkt;
+  denaliPciePllpPacket    pllpPkt;
+  denaliPcieRawDlpPacket  rawDlpPkt;
+  denaliPcieRawPacket     rawPkt;   // RawDllp / RawTlp / RawData
+  denaliPcieOrderedSet    ordSetPkt;
+  denaliPcieTrainingSet   trnSetPkt;
+
+  // Additional Denali PCI-E Packet Handles
+  denaliPcieTlpPacket    tlpPkt;
+  denaliPcieTlpReqPacket reqPkt;
+  
+  // Denali Requester IDs
+  denaliPcieTlpIdInfo reqId, cmplId;
+  
+  string MethodName = "CreateDenaliPkt";
+  
+  integer cast_ok, i;
+
+  case (PktType) {
+
+    FNX_PCIE_XTR_PKT_TYPE_TLP : {
+      
+      case ( {isTlpMessage(),isTlpRequest(),isTlpCompletion()} ) {
+
+	3'b110 : { // Message Request
+
+	  if (Util.FmtTypeIsMsg(GetFmtType())) {
+	    msgPkt = new( DENALI_PCIE_TL_Msg );
+	  }
+	  if (Util.FmtTypeIsMsgD(GetFmtType())) {
+	    msgPkt = new( DENALI_PCIE_TL_MsgD );
+	  }
+	  CreateDenaliPkt = msgPkt;
+	}
+
+	3'b010 : { // Request
+
+	  // Ensure Request Packet Handles Are Null Before Check At End
+	  memPkt = null;
+	  cfgPkt = null;
+	  ioPkt  = null;
+	  
+	  // Determine Exact Type of Memory/IO/Config Request
+	  case (GetFmtType()) { 
+
+	    // Memory Request Packets
+	    FNX_PCIE_XTR_FMT_TYPE_MRD_32   : memPkt = new( DENALI_PCIE_TL_MRd_32 );
+	    FNX_PCIE_XTR_FMT_TYPE_MRD_64   : memPkt = new( DENALI_PCIE_TL_MRd_64 );
+	    FNX_PCIE_XTR_FMT_TYPE_MRDLK_32 : memPkt = new( DENALI_PCIE_TL_MRdLk_32 );
+	    FNX_PCIE_XTR_FMT_TYPE_MRDLK_64 : memPkt = new( DENALI_PCIE_TL_MRdLk_64 );
+	    FNX_PCIE_XTR_FMT_TYPE_MWR_32   : memPkt = new( DENALI_PCIE_TL_MWr_32 );
+	    FNX_PCIE_XTR_FMT_TYPE_MWR_64   : memPkt = new( DENALI_PCIE_TL_MWr_64 );
+
+	    // IO Request Packets
+	    FNX_PCIE_XTR_FMT_TYPE_IORD : ioPkt = new( DENALI_PCIE_TL_IORd );
+	    FNX_PCIE_XTR_FMT_TYPE_IOWR : ioPkt = new( DENALI_PCIE_TL_IOWr );
+
+	    // Config Request Packets
+	    FNX_PCIE_XTR_FMT_TYPE_CFGRD0 : cfgPkt = new( DENALI_PCIE_TL_CfgRd0 );
+	    FNX_PCIE_XTR_FMT_TYPE_CFGWR0 : cfgPkt = new( DENALI_PCIE_TL_CfgWr0 );
+	    FNX_PCIE_XTR_FMT_TYPE_CFGRD1 : cfgPkt = new( DENALI_PCIE_TL_CfgRd1 );
+	    FNX_PCIE_XTR_FMT_TYPE_CFGWR1 : cfgPkt = new( DENALI_PCIE_TL_CfgWr1 );
+	    
+	    default : PCIEX_QR_ERR( "%s %s -> Hit default case element fmtType=%0h w/ isMsg=0 isReq=1 isCmpl=0",
+				    XactionID.GetSString(), XactorName, GetFmtType() );
+	  }
+	  if ( memPkt !== null )
+	    CreateDenaliPkt = memPkt;
+	  if ( cfgPkt !== null )
+	    CreateDenaliPkt = cfgPkt;
+	  if ( ioPkt !== null )
+	    CreateDenaliPkt = ioPkt;
+	}
+
+	3'b001 : { // Completion
+
+	  case (GetFmtType()) {
+	    FNX_PCIE_XTR_FMT_TYPE_CPL    : cplPkt = new( DENALI_PCIE_TL_Cpl );
+	    FNX_PCIE_XTR_FMT_TYPE_CPLD   : cplPkt = new( DENALI_PCIE_TL_CplD );
+	    FNX_PCIE_XTR_FMT_TYPE_CPLLK  : cplPkt = new( DENALI_PCIE_TL_CplLk );
+	    FNX_PCIE_XTR_FMT_TYPE_CPLDLK : cplPkt = new( DENALI_PCIE_TL_CplDLk );
+	    default : PCIEX_QR_ERR( "%s %s -> Hit default case element fmtType=%0h w/ isMsg=0 isReq=0 isCmpl=1",
+				    XactionID.GetSString(), XactorName, GetFmtType() );
+	  }
+	  CreateDenaliPkt = cplPkt;
+	}
+	
+	default : PCIEX_QR_ERR( "%s %s -> PktType=TLP inconsistent with isMsg=%0b isReq=%0b isCmpl=%0b",
+				XactionID.GetSString(), XactorName, isTlpMessage(), isTlpRequest(), isTlpCompletion() );
+      }
+    }
+
+    FNX_PCIE_XTR_PKT_TYPE_RAW_TLP : {
+
+      rawPkt = new( DENALI_PCIE__RawTlp );
+      CreateDenaliPkt = rawPkt;
+    }
+
+    FNX_PCIE_XTR_PKT_TYPE_DLP : {
+      dlpPkt = new(); // denaliPcieDlpPacket w/ Type==DENALI_PCIE__Dlp
+      CreateDenaliPkt = dlpPkt;
+    }
+
+    FNX_PCIE_XTR_PKT_TYPE_RAW_DLP : {
+      rawDlpPkt = new(); // denaliPcieRawDlpPacket w/ Type=DENALI_PCIE__RawDlp
+      CreateDenaliPkt = rawDlpPkt;
+    }
+
+    FNX_PCIE_XTR_PKT_TYPE_DLLP : {
+      dllpPkt = new( Util.DllpTypeToType(DllpType) );
+      CreateDenaliPkt = dllpPkt;
+    }
+
+    FNX_PCIE_XTR_PKT_TYPE_PLP : {
+      plpPkt = new(); // denaliPciePlPacket w/ Type==DENALI_PCIE__Plp
+      CreateDenaliPkt = plpPkt;
+    }
+
+    FNX_PCIE_XTR_PKT_TYPE_PLLP : {
+      pllpPkt = new(); // denaliPciePlPacket w/ Type==DENALI_PCIE__Pllp
+      CreateDenaliPkt = pllpPkt;
+    }
+
+    FNX_PCIE_XTR_PKT_TYPE_ORDERED_SET : {
+      // [review jbanta 10/06/03]: Pass in OS Type of enum denaliPciePlTypeT
+      ordSetPkt = new( DENALI_PCIE_PL__unknown );
+      CreateDenaliPkt = ordSetPkt;
+    }
+
+    FNX_PCIE_XTR_PKT_TYPE_RAW_DATA : {
+      rawPkt = new( DENALI_PCIE__RawData );
+      CreateDenaliPkt = rawPkt;
+    }
+
+    FNX_PCIE_XTR_PKT_TYPE_TRAINING_SET : {
+      // [review jbanta 10/06/03]: Pass in TS Type of enum denaliPciePlTypeT
+      trnSetPkt = new( DENALI_PCIE_PL__unknown );
+      CreateDenaliPkt = trnSetPkt;
+    }
+
+    default :  {
+      PCIEX_QR_ERR( "%s %s -> Hit default case element PktType=%0h", XactionID.GetSString(), XactorName, PktType );
+      return;
+    }
+  }
+
+  // Ensure Packet's Internal State is Up-to-Date
+  UpdatePktState();
+
+  // Set Fields Present in Base Denali Packet
+  
+  // Error Injection Control
+  // Note: All Packets Use The Relaxed Memory/ReqID Checks Added in 
+  //       Denali Rev pcie,v3.1_11122003 
+  CreateDenaliPkt.setErrInject( PCIE_EI_RELAX_CHK );
+  
+  ///////////////////////////////////////////////////
+  // Begin -> Setup Denali TLP Packet 
+  //
+  if (isTlp()) {
+
+    // cast to type denaliPcieTlpPacket
+    cast_ok = cast_assign( tlpPkt, CreateDenaliPkt, CHECK );
+    if (cast_ok === 0)
+      PCIEX_QR_ERR( "%s %s -> Cast assign to tlpPkt failed.", XactionID.GetSString(), XactorName );
+      
+    // Set Common Header Fields
+    if (TLPHdrPresVec[FNX_PCIE_XTR_CMN_HDR]) {
+
+      // Format & Type Already Set Via Packet Parsing For PktType=TLP
+      tlpPkt.setTrafficClass( CmnTC );
+      tlpPkt.setHasDigest( CmnTD );
+      tlpPkt.setIsPoisoned( CmnEP );
+      tlpPkt.setAttr( { CmnRO, CmnSnoop } );
+      tlpPkt.setLength( CmnLength );
+
+      if (({CmnResv1, CmnResv2, CmnResv3, CmnResv4}) !== 0) {
+	// [review jbanta 10/06/03]: Add Handling For Non-Zero Reserved Fields
+      }
+    }
+
+    // Set Request Header Fields
+    if (TLPHdrPresVec[FNX_PCIE_XTR_REQ_HDR]) {
+      
+      // Create and Set Requester ID
+      reqId = new();
+      reqId.setBusNumber( ReqBusNum );
+      reqId.setDeviceNumber( ReqDeviceNum );
+      reqId.setFunctionNumber( ReqFuncNum );
+      tlpPkt.setRequesterId( reqId );
+      
+      // Set Transaction Tag Generation
+      tlpPkt.setModelGensTag( GenTag );
+      if (GenTag)
+	tlpPkt.setTransactionIdTag( 0 );
+      else
+	tlpPkt.setTransactionIdTag( ReqTag );
+    }
+
+    // Set Byte Enable Header Fields
+    if (TLPHdrPresVec[FNX_PCIE_XTR_BE_HDR]) {
+
+      tlpPkt.setLastBe( BELastDW );
+      tlpPkt.setFirstBe( BEFirstDW );
+    }
+
+    // Set Message Header Fields
+    if (TLPHdrPresVec[FNX_PCIE_XTR_MSG_HDR]) {
+
+      tlpPkt.setMessageType( Util.MsgCodeToType( MsgCode ) );
+      tlpPkt.setVdMsgRouting( Util.MsgRoutingToType( MsgRouting ) );
+      tlpPkt.setVendorId( MsgDW3[15:0] ); 
+      // Create and Set Completer ID
+      cmplId = new();
+      cmplId.setBusNumber( MsgDW3[31:24] );
+      cmplId.setDeviceNumber( MsgDW3[23:19] );
+      cmplId.setFunctionNumber( MsgDW3[18:16] );
+      tlpPkt.setCompleterId( cmplId );
+      // [review jbanta 12/5/03] : Temporary debug message
+      PCIEX_QR_I( "!!! %s -> Printing Denali Packet Contents:", XactorName );
+      tlpPkt.printInfo();
+    }
+
+    // Set Completion Header Fields
+    if (TLPHdrPresVec[FNX_PCIE_XTR_CMPL_HDR]) {
+
+      // Create and Set Completer ID
+      cmplId = new();
+      cmplId.setBusNumber( CmplBusNum );
+      cmplId.setDeviceNumber( CmplDeviceNum );
+      cmplId.setFunctionNumber( CmplFuncNum );
+      cplPkt.setCompleterId( cmplId );
+      
+      cplPkt.setCompletionStatus( CmplStatus );
+      cplPkt.setBcm( CmplBCM );
+      cplPkt.setByteCount( CmplByteCount );
+      cplPkt.setLowAddress( CmplLowerAddr );
+
+      if (CmplResv5 !== 0) {
+	// [review jbanta 10/06/03]: Add Handling For Non-Zero Reserved Fields
+      }
+    }
+
+    // Set Lower Address Header Fields
+    if (TLPHdrPresVec[FNX_PCIE_XTR_LOWER_ADDR_HDR]) {
+
+      tlpPkt.setAddress( AddrLower );
+
+      if (AddrResv6 !== 0) {
+	// [review jbanta 10/06/03]: Add Handling For Non-Zero Reserved Fields
+      }
+    }
+
+    // Set Upper Address Header Fields
+    if (TLPHdrPresVec[FNX_PCIE_XTR_UPPER_ADDR_HDR]) {
+      
+      memPkt.setAddressHigh( AddrUpper);
+    }
+
+    // Set Config Header Fields
+    if (TLPHdrPresVec[FNX_PCIE_XTR_CFG_HDR]) {
+
+      // Create and Set Completer ID
+      cmplId = new();
+      cmplId.setBusNumber( CfgBusNum );
+      cmplId.setDeviceNumber( CfgDeviceNum );
+      cmplId.setFunctionNumber( CfgFuncNum );
+      cfgPkt.setCompleterId( cmplId );
+
+      cfgPkt.setExtRegisterNumber( CfgExtRegNum );
+      cfgPkt.setRegisterNumber( CfgRegNum );
+
+      if ( (CfgResv7 !== 0) || (CfgResv8 !== 0) ) {
+	// [review jbanta 10/06/03]: Add Handling For Non-Zero Reserved Fields
+      }
+    }
+
+    // Set Specified ECRC if Generation is Disabled
+    if (!(GenECRC))
+      tlpPkt.setEcrc( ECRC );
+
+    // Set Payload if Present
+    if ( (PyldPres) && (NumPyldBytes > 0) )
+      tlpPkt.setPayload( Pyld );
+    if( (PyldPres) && (NumPyldBytes === 0) )
+       tlpPkt.setErrInject( PCIE_EI_TLP_NULL_PAYLOAD );// Error condition
+
+    // Set DLL Framing Modifications
+    // [review jbanta 10/6/03]: Implement
+    // [FNX_PCIE_XTR_DLL_FRM_RESV_9_WIDTH-1:0]  DLLFrmResv9;  // reserved
+    // [FNX_PCIE_XTR_DLL_FRM_SEQ_NUM_WIDTH-1:0] DLLFrmSeqNum; // DLL Sequence Number
+    // [FNX_PCIE_XTR_DLL_FRM_LCRC_32_WIDTH-1:0] DLLFrmLCRC32; // 32-bit DLL LCRC
+  }
+  // End -> Setup Denali TLP Packet 
+  ///////////////////////////////////////////////////
+
+  ///////////////////////////////////////////////////
+  // Begin -> Setup Denali DLLP Packet 
+  //
+  if (isDllp()) {
+    
+    // Set Specific LCRC-16 If Not Being Generated By Xactor
+    if (!(GenLCRC16))
+      dllpPkt.setLcrc( DllpLCRC16 );
+    
+    // Set Ack/Nak DLLP Specific Fields
+    if (isDllpAckNak()) {
+      dllpPkt.setSeqNum( AckNakSeqNum );
+    }
+
+    // Set FC DLLP Specific Fields
+    if (isDllpFC()) {
+      dllpPkt.setVc( DllpType[FNX_PCIE_XTR_DLLP_FC_TYPE_VC_INT_SLC] );
+      dllpPkt.setHdrFc( DllpFCHdrFC );
+      dllpPkt.setDataFc( DllpFCDataFC );
+      if (DllpFCResv1 !== 0) {
+	// [review jbanta 10/06/03]: Add Handling For Non-Zero Reserved Fields
+      }
+      if (DllpFCResv2 !== 0) {
+	// [review jbanta 10/06/03]: Add Handling For Non-Zero Reserved Fields
+      }
+    }
+
+    // Set Vendor Defined DLLP Specific Fields
+    if (isDllpVendor()) {
+      dllpPkt.setVendorValue( DllpVendorData );
+    }
+
+    // Set PM DLLP Specific Fields
+    if (isDllpPM()) {
+      if (DllpPMResv !== 0) {
+	// [review jbanta 10/06/03]: Add Handling For Non-Zero Reserved Fields
+      }
+    }
+  }
+
+  // End -> Setup Denali DLLP Packet 
+  ///////////////////////////////////////////////////
+}
+
+function bit [ FNX_PCE_XTR_MAX_RESV_FIELD_WIDTH-1:0 ] FNXPCIEXactorPacket::GetTLPResvFieldVal( integer idx )
+{
+  string MethodName = "GetTLPResvFieldVal";
+  
+  GetTLPResvFieldVal = 0;
+  case (idx) {
+    1 : GetTLPResvFieldVal = CmnResv1;
+    2 : GetTLPResvFieldVal = CmnResv2;
+    3 : GetTLPResvFieldVal = CmnResv3;
+    4 : GetTLPResvFieldVal = CmnResv4;
+    5 : GetTLPResvFieldVal = CmplResv5;
+    6 : GetTLPResvFieldVal = AddrResv6;
+    7 : GetTLPResvFieldVal = CfgResv7;
+    8 : GetTLPResvFieldVal = CfgResv8;
+    9 : GetTLPResvFieldVal = DLLFrmResv9;
+    default : PCIEX_QR_ERR( "%s %s -> Hit default case element idx=%0d", XactionID.GetSString(), XactorName, idx );
+  }
+}
+
+function string FNXPCIEXactorPacket::GetTLPResvFieldsStr()
+{
+  string tmp, nonZeroStr, idStr;
+  integer i;
+
+  // Ensure Packet's Internal State is Up-to-Date
+  UpdatePktState();
+
+  idStr = GetIDStr();
+
+  if (TLPNonZeroResvFieldsPres) {
+    nonZeroStr = "";
+    for (i=FNX_PCIE_XTR_NUM_RESV_FIELDS; i >= 1; i--) {
+      if (NonZeroTLPResvFieldsPresVec[i] ) {
+	nonZeroStr = { psprintf( "Resv%0d=%b  ", i, GetTLPResvFieldVal(i) ), nonZeroStr };
+      } 
+    }
+    sprintf( GetTLPResvFieldsStr, "%s %s NonZeroResvFields:\n",
+	     idStr, GetPktPrefixStr() );
+    sprintf( tmp, "%s %s %s",
+	     idStr, GetPktPrefixStr(), nonZeroStr );
+    GetTLPResvFieldsStr = { GetTLPResvFieldsStr, tmp };
+  }
+  else
+    sprintf( GetTLPResvFieldsStr, "%s %s ResvFields: All-Zero\n",
+	     idStr, GetPktPrefixStr() );
+}
+
+function ReportClass FNXPCIEXactorPacket::CreateReport()
+{
+  CreateReport = MyReport;
+}
+
+function string FNXPCIEXactorPacket::GetPktPrefixStr()
+{
+  sprintf( GetPktPrefixStr, "PCIE_%s_%0d", Util.PktTypeToStr( PktType ), PortNum );
+}
+
+function bit FNXPCIEXactorPacket::isTlp()
+{
+  if (PktType == FNX_PCIE_XTR_PKT_TYPE_TLP) 
+    isTlp = 1;
+  else
+    isTlp = 0;
+}
+
+function bit FNXPCIEXactorPacket::isTlpMessage()
+{
+  if ( (Util.TypeIsMsg(CmnType)) ||
+       (Util.TypeIsMsgD(CmnType)) )
+    isTlpMessage = 1;
+  else
+    isTlpMessage = 0;
+}
+
+function bit FNXPCIEXactorPacket::isTlpVendorMessage()
+{
+  if ( ( isTlpMessage() ) && 
+       ( (MsgCode === FNX_PCIE_XTR_MSG_CODE_VD_TYPE0) ||
+	 (MsgCode === FNX_PCIE_XTR_MSG_CODE_VD_TYPE1) ) )
+    isTlpVendorMessage = 1;
+  else
+    isTlpVendorMessage = 0;
+}
+
+function bit FNXPCIEXactorPacket::isTlpRequest()
+{
+  if (isTlpMessage()) {
+    isTlpRequest = 1;
+  }
+  else { // Not a MSG or MSGD Request Packet
+    
+    case (CmnType) {
+      
+      FNX_PCIE_XTR_TYPE_MRD,
+	FNX_PCIE_XTR_TYPE_MRDLK,
+	FNX_PCIE_XTR_TYPE_MWR,
+	FNX_PCIE_XTR_TYPE_IORD,
+	FNX_PCIE_XTR_TYPE_IOWR,
+	FNX_PCIE_XTR_TYPE_CFGRD0,
+	FNX_PCIE_XTR_TYPE_CFGWR0,
+	FNX_PCIE_XTR_TYPE_CFGRD1,
+	FNX_PCIE_XTR_TYPE_CFGWR1 : isTlpRequest = 1;
+      
+      default : isTlpRequest = 0;
+    }
+  }
+}
+
+function bit FNXPCIEXactorPacket::isTlpIORequest()
+{  
+  case (CmnType) {	
+    FNX_PCIE_XTR_TYPE_IORD,
+      FNX_PCIE_XTR_TYPE_IOWR : isTlpIORequest = 1;
+    default : isTlpIORequest = 0;
+  }
+}
+
+function bit FNXPCIEXactorPacket::isTlpCfgRequest()
+{  
+  case (CmnType) {	
+    FNX_PCIE_XTR_TYPE_CFGRD0,
+      FNX_PCIE_XTR_TYPE_CFGWR0,
+      FNX_PCIE_XTR_TYPE_CFGRD1,
+      FNX_PCIE_XTR_TYPE_CFGWR1 : isTlpCfgRequest = 1;
+    default : isTlpCfgRequest = 0;
+  }
+}
+
+function bit FNXPCIEXactorPacket::isTlpMemRequest32()
+{
+  case (GetFmtType()) {
+    FNX_PCIE_XTR_FMT_TYPE_MRD_32,
+      FNX_PCIE_XTR_FMT_TYPE_MRDLK_32,
+      FNX_PCIE_XTR_FMT_TYPE_MWR_32 : isTlpMemRequest32 = 1;
+    default : isTlpMemRequest32 = 0;
+  }
+}
+
+function bit FNXPCIEXactorPacket::isTlpMemRequest64()
+{
+  case (GetFmtType()) {    
+    FNX_PCIE_XTR_FMT_TYPE_MRD_64,
+      FNX_PCIE_XTR_FMT_TYPE_MRDLK_64,
+      FNX_PCIE_XTR_FMT_TYPE_MWR_64 : isTlpMemRequest64 = 1;
+    default : isTlpMemRequest64 = 0;
+  }
+}
+
+function bit FNXPCIEXactorPacket::isTlpCompletion()
+{
+  case (CmnType) {
+    FNX_PCIE_XTR_TYPE_CPL,
+      FNX_PCIE_XTR_TYPE_CPLD,
+      FNX_PCIE_XTR_TYPE_CPLLK,
+      FNX_PCIE_XTR_TYPE_CPLDLK : isTlpCompletion = 1;
+    default : isTlpCompletion = 0;
+  }
+}
+
+function bit FNXPCIEXactorPacket::isDllp()
+{
+  if (PktType == FNX_PCIE_XTR_PKT_TYPE_DLLP) 
+    isDllp = 1;
+  else
+    isDllp = 0;
+}
+
+function bit FNXPCIEXactorPacket::isDllpAckNak()
+{
+  case (DllpType) {
+    FNX_PCIE_XTR_DLLP_TYPE_ACK,
+      FNX_PCIE_XTR_DLLP_TYPE_NAK : isDllpAckNak = 1;
+    default : isDllpAckNak = 0;
+  }
+}
+
+function bit FNXPCIEXactorPacket::isDllpFC()
+{
+  case (DllpType[FNX_PCIE_XTR_DLLP_FC_TYPE_TYPE_INT_SLC]) {
+    FNX_PCIE_XTR_FC_DLLP_TYPE_INIT_FC1_P,
+      FNX_PCIE_XTR_FC_DLLP_TYPE_INIT_FC1_NP,
+      FNX_PCIE_XTR_FC_DLLP_TYPE_INIT_FC1_CPL,
+      FNX_PCIE_XTR_FC_DLLP_TYPE_INIT_FC2_P,
+      FNX_PCIE_XTR_FC_DLLP_TYPE_INIT_FC2_NP,
+      FNX_PCIE_XTR_FC_DLLP_TYPE_INIT_FC2_CPL,
+      FNX_PCIE_XTR_FC_DLLP_TYPE_UPDATE_FC_P,
+      FNX_PCIE_XTR_FC_DLLP_TYPE_UPDATE_FC_NP,
+      FNX_PCIE_XTR_FC_DLLP_TYPE_UPDATE_FC_CPL : isDllpFC = 1;
+    default : isDllpFC = 0;
+  }
+}
+
+function bit FNXPCIEXactorPacket::isDllpFCUpdate()
+{
+  case (DllpType[FNX_PCIE_XTR_DLLP_FC_TYPE_TYPE_INT_SLC]) {
+      FNX_PCIE_XTR_FC_DLLP_TYPE_UPDATE_FC_P,
+      FNX_PCIE_XTR_FC_DLLP_TYPE_UPDATE_FC_NP,
+      FNX_PCIE_XTR_FC_DLLP_TYPE_UPDATE_FC_CPL : isDllpFCUpdate = 1;
+    default : isDllpFCUpdate = 0;
+  }
+}
+
+function bit FNXPCIEXactorPacket::isDllpVendor()
+{
+  case (DllpType) {
+    FNX_PCIE_XTR_DLLP_TYPE_VENDOR : isDllpVendor = 1;
+    default : isDllpVendor = 0;
+  }
+}
+
+function bit FNXPCIEXactorPacket::isDllpPM()
+{
+  case (DllpType) {
+    FNX_PCIE_XTR_DLLP_TYPE_PM_ENTER_L1,
+      FNX_PCIE_XTR_DLLP_TYPE_PM_ENTER_L23,
+      FNX_PCIE_XTR_DLLP_TYPE_PM_ACTIVE_ST_REQ_L1,
+      FNX_PCIE_XTR_DLLP_TYPE_PM_REQUEST_ACK : isDllpPM = 1;
+    default : isDllpPM = 0;
+  }
+}
+
+task FNXPCIEXactorPacket::SyncDriveStart()
+{
+  sync( ANY, eDriveStart );
+}
+
+task FNXPCIEXactorPacket::TriggerDriveStart()
+{
+  trigger( ONE_BLAST, eDriveStart );
+}
+
+task FNXPCIEXactorPacket::SyncDriveEnd()
+{
+  sync( ANY, eDriveEnd );
+}
+
+task FNXPCIEXactorPacket::TriggerDriveEnd()
+{
+  trigger( ONE_BLAST, eDriveEnd );
+}
+
+task FNXPCIEXactorPacket::SyncReplayEnd()
+{
+  sync( ANY, eReplayEnd );
+}
+
+task FNXPCIEXactorPacket::TriggerReplayEnd()
+{
+  trigger( ONE_BLAST, eReplayEnd );
+}
+
+task FNXPCIEXactorPacket::SetTLPDefaultExpectFields() {
+  PktReset();
+  CmnTC		= { FNX_PCIE_XTR_CMN_TC_WIDTH {1'b0} }; 
+  CmnTD		= { FNX_PCIE_XTR_CMN_TD_WIDTH {1'b0} };
+  CmnEP		= { FNX_PCIE_XTR_CMN_EP_WIDTH {1'b0} };
+  CmnRO		= { FNX_PCIE_XTR_CMN_RO_WIDTH {1'b0} };
+  CmnSnoop	= { FNX_PCIE_XTR_CMN_SNOOP_WIDTH {1'b0} };
+  ReqBusNum	= { FNX_PCIE_XTR_REQ_BUS_NUM_WIDTH {1'b0} };
+  ReqDeviceNum	= { FNX_PCIE_XTR_REQ_DEVICE_NUM_WIDTH {1'b0} };
+  ReqFuncNum	= { FNX_PCIE_XTR_REQ_FUNC_NUM_WIDTH {1'b0} };
+  ReqTag	= { FNX_PCIE_XTR_REQ_TAG_WIDTH {1'bx} };
+}
+
+task FNXPCIEXactorPacket::SetMemTLPDefaultExpectFields() {
+  SetTLPDefaultExpectFields();
+}
+
+task FNXPCIEXactorPacket::SetIOTLPDefaultExpectFields() {
+  SetTLPDefaultExpectFields();
+  CmnLength	= FNX_PCIE_XTR_CMN_LENGTH_WIDTH'b1;
+  BELastDW	= { FNX_PCIE_XTR_BE_LAST_DW_BE_WIDTH {1'b0} };
+}
+
+task FNXPCIEXactorPacket::SetCfgTLPDefaultExpectFields() {
+  SetTLPDefaultExpectFields();
+  CmnLength	= FNX_PCIE_XTR_CMN_LENGTH_WIDTH'b1;
+  BELastDW	= { FNX_PCIE_XTR_BE_LAST_DW_BE_WIDTH {1'b0} };
+}
+
+task FNXPCIEXactorPacket::SetTLPDefaultDriveFields() {
+  //PktReset(); 
+  GenTag        = 0;
+}
+
+task FNXPCIEXactorPacket::SetCplTLPDefaultDriveFields() {
+  SetTLPDefaultDriveFields();
+  '{CmnFmt, CmnType} = FNX_PCIE_XTR_FMT_TYPE_CPL;
+  CmnTC		= { FNX_PCIE_XTR_CMN_TC_WIDTH {1'b0} };
+  CmnLength	= FNX_PCIE_XTR_CMN_LENGTH_WIDTH'b1;
+  CmnTD		= { FNX_PCIE_XTR_CMN_TD_WIDTH {1'b0} };
+  CmnEP		= { FNX_PCIE_XTR_CMN_EP_WIDTH {1'b0} };
+  CmnRO		= { FNX_PCIE_XTR_CMN_RO_WIDTH {1'b0} };
+  CmplStatus    = { FNX_PCIE_XTR_CMPL_CMPL_STATUS_WIDTH {1'b0} };
+  CmplByteCount = 4;
+  CmplLowerAddr = { FNX_PCIE_XTR_CMPL_LOWER_ADDR_WIDTH {1'b0} };
+}
+
+task FNXPCIEXactorPacket::SetCplDTLPDefaultDriveFields() {
+  SetTLPDefaultDriveFields();
+  '{CmnFmt, CmnType} = FNX_PCIE_XTR_FMT_TYPE_CPLD;
+  CmnTC		= { FNX_PCIE_XTR_CMN_TC_WIDTH {1'b0} };
+  CmnTD		= { FNX_PCIE_XTR_CMN_TD_WIDTH {1'b0} };
+  CmnEP		= { FNX_PCIE_XTR_CMN_EP_WIDTH {1'b0} };
+  CmnRO		= { FNX_PCIE_XTR_CMN_RO_WIDTH {1'b0} };
+  CmplStatus    = { FNX_PCIE_XTR_CMPL_CMPL_STATUS_WIDTH {1'b0} };
+  CmplLowerAddr = { FNX_PCIE_XTR_CMPL_LOWER_ADDR_WIDTH {1'b0} };
+}
+
+task FNXPCIEXactorPacket::SetMemTLPDefaultDriveFields() {
+  SetTLPDefaultDriveFields();
+  CmnTC		= { FNX_PCIE_XTR_CMN_TC_WIDTH {1'b0} };
+  CmnTD		= { FNX_PCIE_XTR_CMN_TD_WIDTH {1'b0} };
+  CmnEP		= { FNX_PCIE_XTR_CMN_EP_WIDTH {1'b0} };
+  CmnRO		= { FNX_PCIE_XTR_CMN_RO_WIDTH {1'b0} };
+  CmnSnoop	= { FNX_PCIE_XTR_CMN_SNOOP_WIDTH {1'b0} };
+}
+
+task FNXPCIEXactorPacket::SetReqId( bit [FNX_PCIE_XTR_REQ_REQUESTER_ID_WIDTH-1:0] reqId )
+{
+  ReqBusNum    = reqId[ FNX_PCIE_XTR_REQ_ID_BUS_NUM_INT_SLC ];
+  ReqDeviceNum = reqId[ FNX_PCIE_XTR_REQ_ID_DEVICE_NUM_INT_SLC ];
+  ReqFuncNum   = reqId[ FNX_PCIE_XTR_REQ_ID_FUNC_NUM_INT_SLC ];
+}
+
+function bit [FNX_PCIE_XTR_REQ_REQUESTER_ID_WIDTH-1:0] FNXPCIEXactorPacket::GetReqId()
+{
+  GetReqId[ FNX_PCIE_XTR_REQ_ID_BUS_NUM_INT_SLC ]    = ReqBusNum;
+  GetReqId[ FNX_PCIE_XTR_REQ_ID_DEVICE_NUM_INT_SLC ] = ReqDeviceNum;
+  GetReqId[ FNX_PCIE_XTR_REQ_ID_FUNC_NUM_INT_SLC ]   = ReqFuncNum;
+}
+
+task FNXPCIEXactorPacket::SetCmplId( bit [FNX_PCIE_XTR_CMPL_COMPLETER_ID_WIDTH-1:0] cmplId )
+{
+  CmplBusNum    = cmplId[ FNX_PCIE_XTR_REQ_ID_BUS_NUM_INT_SLC ];
+  CmplDeviceNum = cmplId[ FNX_PCIE_XTR_REQ_ID_DEVICE_NUM_INT_SLC ];
+  CmplFuncNum   = cmplId[ FNX_PCIE_XTR_REQ_ID_FUNC_NUM_INT_SLC ];
+}
+
+function bit [FNX_PCIE_XTR_CMPL_COMPLETER_ID_WIDTH-1:0] FNXPCIEXactorPacket::GetCmplId()
+{
+  GetCmplId[ FNX_PCIE_XTR_REQ_ID_BUS_NUM_INT_SLC ]    = CmplBusNum;
+  GetCmplId[ FNX_PCIE_XTR_REQ_ID_DEVICE_NUM_INT_SLC ] = CmplDeviceNum;
+  GetCmplId[ FNX_PCIE_XTR_REQ_ID_FUNC_NUM_INT_SLC ]   = CmplFuncNum;
+}
+
+task FNXPCIEXactorPacket::SetCfgId( bit [FNX_PCIE_XTR_REQ_REQUESTER_ID_WIDTH-1:0] cfgId )
+{
+  CfgBusNum    = cfgId[ FNX_PCIE_XTR_REQ_ID_BUS_NUM_INT_SLC ];
+  CfgDeviceNum = cfgId[ FNX_PCIE_XTR_REQ_ID_DEVICE_NUM_INT_SLC ];
+  CfgFuncNum   = cfgId[ FNX_PCIE_XTR_REQ_ID_FUNC_NUM_INT_SLC ];
+}
+
+function bit [FNX_PCIE_XTR_REQ_REQUESTER_ID_WIDTH-1:0] FNXPCIEXactorPacket::GetCfgId()
+{
+  GetCfgId[ FNX_PCIE_XTR_REQ_ID_BUS_NUM_INT_SLC ]    = CfgBusNum;
+  GetCfgId[ FNX_PCIE_XTR_REQ_ID_DEVICE_NUM_INT_SLC ] = CfgDeviceNum;
+  GetCfgId[ FNX_PCIE_XTR_REQ_ID_FUNC_NUM_INT_SLC ]   = CfgFuncNum; 
+}
+
+task FNXPCIEXactorPacket::SetFmtType( bit [FNX_PCIE_XTR_CMN_FMT_TYPE_WIDTH-1:0] fmtType )
+{
+  CmnFmt  = fmtType[FNX_PCIE_XTR_FMT_TYPE_FMT_INT_SLC];
+  CmnType = fmtType[FNX_PCIE_XTR_FMT_TYPE_TYPE_INT_SLC];
+}
+
+function bit [FNX_PCIE_XTR_CMN_FMT_TYPE_WIDTH-1:0] FNXPCIEXactorPacket::GetFmtType()
+{
+  GetFmtType[FNX_PCIE_XTR_FMT_TYPE_FMT_INT_SLC]  = CmnFmt;
+  GetFmtType[FNX_PCIE_XTR_FMT_TYPE_TYPE_INT_SLC] = CmnType;
+  if ( (Util.FmtTypeIsMsg(GetFmtType)) || 
+       (Util.FmtTypeIsMsgD(GetFmtType)) ) {
+    GetFmtType[ FNX_PCIE_XTR_FMT_TYPE_MSG_ROUTING_SLC ] = MsgRouting;
+  }
+}
+
+task FNXPCIEXactorPacket::SetAttr( bit [FNX_PCIE_XTR_CMN_ATTR_WIDTH-1:0] attr )
+{
+  CmnRO    = attr[ FNX_PCIE_XTR_ATTR_RO_INT_SLC ];
+  CmnSnoop = attr[ FNX_PCIE_XTR_ATTR_SNOOP_INT_SLC ]; 
+}
+
+function bit [FNX_PCIE_XTR_CMN_ATTR_WIDTH-1:0] FNXPCIEXactorPacket::GetAttr()
+{
+  GetAttr[FNX_PCIE_XTR_ATTR_RO_INT_SLC]    = CmnRO;
+  GetAttr[FNX_PCIE_XTR_ATTR_SNOOP_INT_SLC] = CmnSnoop;
+}
+
+task FNXPCIEXactorPacket::SetDllpFCType( bit [FNX_PCIE_XTR_DLLP_FC_TYPE_WIDTH-1:0] fcType )
+{
+  DllpType[FNX_PCIE_XTR_DLLP_FC_TYPE_TYPE_INT_SLC] = fcType;
+}
+
+function bit [FNX_PCIE_XTR_DLLP_FC_TYPE_WIDTH-1:0] FNXPCIEXactorPacket::GetDllpFCType()
+{
+  GetDllpFCType = DllpType[FNX_PCIE_XTR_DLLP_FC_TYPE_TYPE_INT_SLC];
+}
+
+task FNXPCIEXactorPacket::SetDllpFCVC( bit [FNX_PCIE_XTR_DLLP_FC_VC_WIDTH-1:0] fcVC )
+{
+  DllpType[FNX_PCIE_XTR_DLLP_FC_TYPE_VC_INT_SLC] = fcVC;
+}
+
+function bit [FNX_PCIE_XTR_DLLP_FC_VC_WIDTH-1:0] FNXPCIEXactorPacket::GetDllpFCVC()
+{
+  GetDllpFCVC = DllpType[FNX_PCIE_XTR_DLLP_FC_TYPE_VC_INT_SLC];
+}
+
+// Returns Number of Payload Bytes Being Transferred by The Packet
+function integer FNXPCIEXactorPacket::NumBytes()
+{
+  integer i, numBytesEnabled;
+
+  // If a TLP IO/Cfg Request Account for First(Only) DW Byte Enables
+  if ((isTlpIORequest()) || (isTlpCfgRequest())) {
+    NumBytes = 0;
+    if (CmnLength === 1) {
+      for (i=0; i < FNX_PCIE_XTR_BE_FIRST_DW_BE_WIDTH; i++) {
+	if (BEFirstDW[i] === 1'b1)
+	  NumBytes++;
+      }
+    }
+    return;
+  }
+  
+  // If a TLP Memory Request Determine Bytes from Length and Byte Enables
+  if ((isTlpMemRequest32()) || (isTlpMemRequest64())) {
+
+    // Initially Set Number of Bytes to Length Times Four
+    NumBytes = CmnLength * 4;
+    
+    // Subtract Out Unenabled Bytes in First/Only DW
+    if (NumBytes > 0) {
+      numBytesEnabled = 0;
+      for (i=0; i < FNX_PCIE_XTR_BE_FIRST_DW_BE_WIDTH; i++) {
+	if (BEFirstDW[i] === 1'b1)
+	  numBytesEnabled++;
+      }
+      NumBytes = NumBytes - 4;
+      NumBytes = NumBytes + numBytesEnabled;
+    }
+    
+    // Subtract Out Unenabled Bytes in First DW
+    if (NumBytes > 4) {
+      numBytesEnabled = 0;
+      for (i=0; i < FNX_PCIE_XTR_BE_LAST_DW_BE_WIDTH; i++) {
+	if (BELastDW[i] === 1'b1)
+	  numBytesEnabled++;
+      }
+      NumBytes = NumBytes - 4;
+      NumBytes = NumBytes + numBytesEnabled;
+    }
+    return;
+  }
+
+  // If TLP is a Completion Then Number of Bytes is Length Times Four
+  if (isTlpCompletion()) {
+    NumBytes = CmnLength * 4;
+    return;
+  }
+}

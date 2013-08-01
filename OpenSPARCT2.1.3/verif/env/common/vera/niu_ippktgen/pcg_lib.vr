@@ -1,0 +1,449 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: pcg_lib.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "pcg_defines.vri"
+#include "pcg_types.vri"
+#include "pcg_classes.vrh"
+#include "pack_db.vrh"
+#include "pack_db_tasks.vrh"
+#include "flow_db.vrh"
+#include "flow_db_tasks.vrh"
+#include "mbox_class.vrh"
+#include "get_mbox_id.vrh"
+#include "pg_top_pp.vrh"
+
+extern pack_db_entry   pack_db[];
+// extern flow_db_entry   flow_db[];
+// extern integer         pack_db_index;
+// extern integer         flow_num;
+// extern integer         pack_db_lock;
+// extern integer         flow_db_lock;
+extern mbox_class      mbox_id;
+// extern integer         quiet_on;
+extern flow_desc       flow[];
+extern class           pc;
+
+extern pg   ptr_to_first_pg;
+extern pg   pack_gen[16];
+
+extern pc   pack_check[4];
+
+
+
+
+/*
+extern class pg;
+extern pg   ptr_to_first_pg;
+extern pg   pack_gen[4];
+
+*/
+
+
+task build_frame(integer itoken, byte_array buf, var integer len,(integer header_id=-1),(integer new_crc=0)) {
+   integer n;
+   integer ptr=0;
+   integer tagged = 0;
+   integer my_port, org_port;
+   bit [31:0] tmp32;
+   integer data_len, header_len;
+   integer debug = 0;
+   integer token;
+   integer adj_len=0;
+   integer min,max;
+   bit     [15:0] tx_status;
+
+   tmp32 = itoken;
+   token = tmp32[25:0];
+   //debug = tmp32[31];
+
+   if(debug)
+      printf("DEBUG: build_frame: Started Build-Frame. (Input: Token: %0d, Len: %0d Hdr: %0d, NewCRC: %0d Port: %0d)\n", 
+            token,len,header_id,new_crc,my_port);
+
+   if( assoc_index(CHECK, pack_db, token) == 0 ) {
+      printf("ERROR: PG LIB: build_frame: Token (%0d) is invalid/entry could not be found in packet database.\n",
+			token);
+      len = 0;
+      buf = null;
+      return;
+   }   
+
+   my_port  = pack_db[token].org_port;
+   org_port = pack_db[token].org_port;
+   if(header_id != -1)	my_port = header_id;
+
+
+   if(INTER_FEDX) {
+      buf.val[ptr++] = pack_db[token].ifedx_control[07:0];
+      buf.val[ptr++] = pack_db[token].ifedx_control[15:8];
+      if(debug)	printf("DEBUG: build_frame: Building INTERFEDX packet\n");
+   }
+
+  if(debug)	printf("DEBUG: build_frame: (1)ptr: %0d\n",ptr);
+
+
+   if(header_id==-1) {
+      header_len = pack_db[token].header_len[ pack_db[token].use_hdr ];
+
+      for(n=0;n< header_len ;n++)
+         buf.val[ptr++] = pack_db[token].header[ pack_db[token].use_hdr ].val[n];
+   } else {
+
+      #define out_use_header pack_db[token].out_header[header_id].use_header
+
+      if(  assoc_index(CHECK,pack_db[token].out_header,header_id) &
+           assoc_index(CHECK,pack_db[token].out_header[header_id].header, out_use_header) )  {
+
+         header_len = pack_db[token].out_header[header_id].header_len[ out_use_header ];
+
+         for(n=0; n < header_len ; n++)
+            buf.val[ptr++] =pack_db[token].out_header[header_id].header[out_use_header].val[n];
+      } else {
+         printf("ERROR: PG LIB: build_frame: out header invalid. (Token:%0d, Out header id: %0d).\n",
+         token,header_id);
+         len = 0;
+         buf = null;
+         return;
+      }
+   }
+
+   if(debug)  printf("DEBUG: build_frame: header_len: %0d\n",header_len);
+   if(debug)	printf("DEBUG: build_frame: (2)ptr: %0d\n",ptr);
+
+
+   if(pack_db[token].frame.data_type != DAT_FC_PAUSE)
+      '{buf.val[ptr++], buf.val[ptr++]} = token;  // Store token in payload
+
+
+   if(pack_db[token].org_port<17 & my_port>16)	adj_len += 6;
+   if(pack_db[token].org_port>16 & my_port<17)	adj_len -= 6;
+
+   if(debug)	printf("DEBUG: build_frame: adj_len: %0d\n",adj_len);
+
+
+   if( pack_db[token].frame.frame_type[2] )	tagged = 1;
+
+   if(debug)   printf("DEBUG: build_frame: (3)ptr: DAT_LEN_EXACT: %0d\n",
+                     ptr_to_first_pg.check_option(pack_db[token].frame.data_type, DAT_LEN_EXACT) );
+
+
+   if(pack_db[token].data_length<0) {
+
+      case(pack_db[token].data_length) {
+         -1:  pack_db[token].data_length = 64;
+         -2:  pack_db[token].data_length = 128;
+         -3:  pack_db[token].data_length = 256;
+         -4:  pack_db[token].data_length = 512;
+         -5:  pack_db[token].data_length = 1024;
+         -6:  pack_db[token].data_length = (tagged) ? 1522 : 1518;
+         -7:  {
+//               pack_db[token].data_length = random(pack_db[token].frame.data_seed); // Vera supports only one random
+                                                
+               pack_db[token].data_length = random();
+               min = 64;
+               max = (tagged) ? 1522 : 1518;
+               while(pack_db[token].data_length<min | pack_db[token].data_length>max)
+                  pack_db[token].data_length = random();
+         }
+         -8:  pack_db[token].data_length = 63;
+         -9:  pack_db[token].data_length = 65;
+         -10: pack_db[token].data_length = (tagged) ? 1521 : 1517;
+         -11: pack_db[token].data_length = (tagged) ? 1523 : 1519;
+      }
+
+      pack_db[token].frame.data_type = pack_db[token].frame.data_type | DAT_LEN_EXACT;
+   }
+
+
+   if( ptr_to_first_pg.check_option(pack_db[token].frame.data_type, DAT_LEN_EXACT) ) {
+
+      // Convert exact length to actual data length, clear exact flag and use that data length from now on.
+      //    data_len = pack_db[token].data_length + header_len - pack_db[token].header_len[0] + adj_len;
+
+      data_len = pack_db[token].data_length - header_len - 4;	// data_len - header_len - crc_len
+
+
+      if(INTER_FEDX)	data_len = data_len - 6;
+
+      pack_db[token].data_length = data_len;
+      pack_db[token].frame.data_type = pack_db[token].frame.data_type & DAT_TYPE_MASK;
+   }
+   else
+      data_len = pack_db[token].data_length;
+
+
+   if(debug)	printf("DEBUG: build_frame: (3)ptr: %0d\n",ptr);
+   if(debug)	printf("DEBUG: build_frame: data_len: %0d\n",data_len);
+
+   if( pack_db[token].frame.frame_type[2] )	tagged = 1;
+   pack_gen[my_port].data_gen(	pack_db[token].frame.data_type,
+         pack_db[token].frame.data_seed,
+         data_len,
+         buf, ptr, pack_db[token].options, pack_gen[my_port], tagged, INTER_FEDX);
+
+   if(debug)	printf("DEBUG: build_frame: (4)ptr: %0d\n",ptr);
+
+
+
+   if(INTER_FEDX)
+      tmp32 = pack_gen[my_port].crc_gen(buf, 2, ptr);   // Skip Interfedx Control Word
+   else
+      tmp32 = pack_gen[my_port].crc_gen(buf, 0, ptr);
+
+
+   if( pack_gen[my_port].check_option( pack_db[token].options, O_CRC_ERR) ) 
+      tmp32 = tmp32 ^ pack_gen[my_port].cfg_reg[CFG_CRC_MASK];
+
+
+   if(!new_crc)
+      '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = pack_db[token].pack_crc;
+   else {
+      if ( (org_port==17) | (org_port==18) ) {
+         if(INTER_FEDX)  { 
+            //packets that orginated on ifedx ports cannot be looped to another ifedx, except
+            //   in iom tests.
+                  '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = pack_db[token].pack_crc;
+                 }
+         else {
+            //this pkt orginated on a ifedx port and is being sent out on a ext-port.
+            //  look at the tx_mac status word to decide whether new pkt-crc is required.
+
+            tx_status = pack_db[token].mac.tx_status;
+
+            if(tx_status[14])
+               '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = pack_db[token].pack_crc;
+            else '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = tmp32;
+         }
+      }   //end of if ( (org_port==17) | (org_port==18) )
+      else {
+         if(INTER_FEDX)  
+            '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = pack_db[token].pack_crc;
+         else '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = tmp32;
+      }
+   }
+
+   if(INTER_FEDX) {
+      tmp32 = pack_gen[my_port].crc_gen(buf, 0, ptr);
+      if( pack_gen[my_port].check_option( pack_db[token].options, O_IF_CRC_ERR) )
+      tmp32 = tmp32 ^ pack_gen[my_port].cfg_reg[CFG_CRC_MASK];
+
+      if(new_crc) {
+         '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = tmp32;
+         pack_db[token].ifedx_crc = tmp32;
+      } else
+         '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = pack_db[token].ifedx_crc;
+   }
+
+   if(debug)	printf("DEBUG: build_frame: (5)ptr: %0d\n",ptr);
+   if(debug)	printf("DEBUG: build_frame: Done.\n");
+   len = ptr;
+
+/*
+   if(header_len>66) {
+      printf("ERROR: build_frame: Possibly corrupted header. Header is %0d bytes long !\n",header_len);
+      printf("       Input: Token: %0d, Len: %0d Hdr: %0d, NewCRC: %0d Port: %0d\n",
+         token, len, header_id, new_crc,my_port);
+
+      printf("----------------------------------------- \n");  
+      printf("build_frame: displaying buffer:   \n");  
+      printf("----------------------------------------- \n");  
+      ptr_to_first_pg.display_buf(buf, len, INTER_FEDX);
+   }
+*/
+}
+
+task build_header(integer itoken, byte_array buf, var integer len,(integer header_id=-1),(integer new_crc=0)) {
+
+   
+   integer n;
+   integer ptr=0;
+   integer tagged = 0;
+   integer my_port, org_port;
+   bit [31:0] tmp32;
+   integer data_len, header_len;
+   integer debug = 1;
+   integer token;
+   integer adj_len=0;
+   integer min,max;
+   bit     [15:0] tx_status;
+
+   tmp32 = itoken;
+   token = tmp32[25:0];
+  // debug = tmp32[31];
+
+
+   if(debug)
+      printf("DEBUG: build_header: Started Build-Header (Input: Token: %0d, Len: %0d Hdr: %0d, NewCRC: %0d Port: %0d)\n", 
+            token,len,header_id,new_crc,my_port);
+
+   if( assoc_index(CHECK, pack_db, token) == 0 ) {
+      printf("ERROR: PG LIB: build_frame: Token (%0d) is invalid/entry could not be found in packet database.\n",
+			token);
+      len = 0;
+      buf = null;
+      return;
+   }   
+
+   my_port  = pack_db[token].org_port;
+   org_port = pack_db[token].org_port;
+   if(header_id != -1)	my_port = header_id;
+
+
+   if(INTER_FEDX) {
+      buf.val[ptr++] = pack_db[token].ifedx_control[07:0];
+      buf.val[ptr++] = pack_db[token].ifedx_control[15:8];
+      if(debug)	printf("DEBUG: build_frame: Building INTERFEDX packet\n");
+   }
+
+  if(debug)	printf("DEBUG: build_header: (1)ptr: %0d\n",ptr);
+
+
+   if(header_id==-1) {
+      header_len = pack_db[token].header_len[ pack_db[token].use_hdr ];
+
+      for(n=0;n< header_len ;n++)
+         buf.val[ptr++] = pack_db[token].header[ pack_db[token].use_hdr ].val[n];
+   } else {
+
+      #define out_use_header pack_db[token].out_header[header_id].use_header
+
+      if(  assoc_index(CHECK,pack_db[token].out_header,header_id) &
+           assoc_index(CHECK,pack_db[token].out_header[header_id].header, out_use_header) )  {
+
+         header_len = pack_db[token].out_header[header_id].header_len[ out_use_header ];
+
+         for(n=0; n < header_len ; n++)
+            buf.val[ptr++] =pack_db[token].out_header[header_id].header[out_use_header].val[n];
+      } else {
+         printf("ERROR: PG LIB: build_header: out header invalid. (Token:%0d, Out header id: %0d).\n",
+         token,header_id);
+         len = 0;
+         buf = null;
+         return;
+      }
+   }
+
+   if(debug)  printf("DEBUG: build_header: header_len: %0d\n",header_len);
+   if(debug)	printf("DEBUG: build_header: (2)ptr: %0d\n",ptr);
+
+
+   if(pack_db[token].frame.data_type != DAT_FC_PAUSE)
+      '{buf.val[ptr++], buf.val[ptr++]} = token;  // Store token in payload
+
+/****
+
+   if(header_len>66) {
+      printf("ERROR: build_header: Possibly corrupted header. Header is %0d bytes long !\n",header_len);
+      printf("       Input: Token: %0d, Len: %0d Hdr: %0d, NewCRC: %0d Port: %0d\n",
+         token, len, header_id, new_crc,my_port);
+
+      printf("----------------------------------------- \n");  
+      printf("build_header: displaying buffer:   \n");  
+      printf("----------------------------------------- \n");  
+      ptr_to_first_pg.display_buf(buf, header_len, INTER_FEDX);
+   }
+***/
+}
+
+
+task build_ip_segment ( integer token , var bit[7:0]pkt_data[], integer offset, integer size){
+
+
+  byte_array pkt_buf;
+  integer pkt_length;
+  integer j, k,arr_size ;
+
+  //arr_size = (size -offset) + 1; 
+  arr_size = (size +offset) ; 
+
+  pkt_buf = new;
+  
+  build_frame(token, pkt_buf, pkt_length); 
+  // pack_gen[0].display_buf(pkt_buf, pkt_length);
+  
+ j = 0;
+
+ for (k=offset;k<arr_size;k++){
+   pkt_data[j] = pkt_buf.val[k];
+   j++;
+ }
+  
+  
+}
+
+
+task get_ippkt_size(integer token, var integer ippkt_length){
+
+  ippkt_length = pack_db[token].data_length; 
+
+}
+
+task get_ippkthdr_size(integer token, var integer iphdr_length){
+
+  iphdr_length =  pack_db[token].header_len[ pack_db[token].use_hdr ];
+
+}
+
+task get_ippaylod_size(integer token, var integer ippayload_length){
+
+  ippayload_length = { (pack_db[token].data_length) - 
+                       (pack_db[token].header_len[ pack_db[token].use_hdr ])};
+}
+
+
+
+
+function integer getIpHdrSz (integer token){
+      
+
+getIpHdrSz =  pack_db[token].header_len[ pack_db[token].use_hdr ];
+
+}
+
+function integer getIpPayloadSz (integer token){
+      
+
+  // getIpPayloadSz =  (pack_db[token].data_length) + 4 ; 
+  getIpPayloadSz = { (pack_db[token].data_length) - 
+                       (pack_db[token].header_len[ pack_db[token].use_hdr ]) - 4 };
+
+}
+
+function integer getIpPktSz (integer token){
+
+  // getIpPktSz = pack_db[token].data_length + (pack_db[token].header_len[ pack_db[token].use_hdr ]) + 4; 
+  getIpPktSz = pack_db[token].data_length; 
+
+}

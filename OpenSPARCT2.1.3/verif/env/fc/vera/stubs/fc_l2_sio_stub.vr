@@ -1,0 +1,647 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: fc_l2_sio_stub.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <VeraListProgram.vrh>
+#include <ListMacros.vrh>
+#include <fc_top.if.vrh>
+#include "std_display_class.vrh"
+#include "ios_l2_stub.if.vrh"
+#include "ios_l2_stub_ports_binds.vrh"
+
+// the following is needed by the std_display_defines.vri
+#define STD_DISP dbg
+
+// call to check memory with Riesling
+#ifndef GATESIM
+extern hdl_task mem_check (  bit [39:0]       pa,
+                             bit [(64*8)-1:0] data
+                          );
+#endif
+extern integer fc_peu_dma_cnt;
+
+class fc_peu_dma_mem {
+   bit [31:0] data;
+   bit [39:0] address;
+   bit [4:0]  d_ptr;
+   bit [8:0]  pkt_tag;
+   integer    dma_ptr;
+   bit [3:0]  cl_ptr;
+   integer    dma_dw_idx;
+   string     name = "fc_peu_dma_mem";
+
+   task new  (bit [31:0] data, bit [39:0] address, bit [4:0]  d_ptr, 
+              bit [8:0]  pkt_tag, StandardDisplay dbg, integer dma_ptr, 
+              bit [3:0] cl_ptr, integer dma_dw_idx) 
+   {
+     this.data       = data;
+     this.address    = address;
+     this.d_ptr      = d_ptr;
+     this.pkt_tag    = pkt_tag;
+     this.dma_ptr    = dma_ptr;
+     this.cl_ptr     = cl_ptr;
+     this.dma_dw_idx = dma_dw_idx;
+     
+     PR_INFO(name, MON_INFO, psprintf ("new() Addr %h data %h d_ptr %0h, pkt_tag %h, dma_ptr %0d, cl_ptr %0d, dma_dw_idx %0d", 
+                                       address, data,    d_ptr,     pkt_tag,    dma_ptr,     cl_ptr,     dma_dw_idx ));
+   } 
+	
+   task dis_info (StandardDisplay dbg)
+   {
+     PR_INFO(name, MON_INFO, psprintf ("dis_info() Addr %h data %h d_ptr %0h, pkt_tag %h, dma_ptr %0d, cl_ptr %0d, dma_dw_idx %0d", 
+                                       address, data,    d_ptr,     pkt_tag,    dma_ptr,     cl_ptr,     dma_dw_idx ));
+   }
+}
+
+MakeVeraList(fc_peu_dma_mem);
+
+
+class fc_l2_sio_stub {
+  bit [511:0] rtn_l2_cl[];   // contains data of cache line, index with l2_cl_idx
+  bit [39:0]  req_cl_add[];  // contains address of cache line, index with l2_cl_idx
+  bit [8:0]   rtn_pkt_tag[]; // contain packet cl_sts and pkt_tag of dmc_tag[8] for cl_sts, bit [4:0] for pkt_tag.
+  bit [8:0]   req_pkt_tag[]; // contain packet cl_sts and pkt_tag of dmc_tag[8] for cl_sts, bit [4:0] for pkt_tag.
+  bit [4:0]   l2_cl_idx =0;
+  
+
+//#ifndef GATESIM
+
+  integer     data_semph_id;
+  integer     reqst_semph_id;
+  integer     cl_idx_region_id;
+  
+  VeraList_fc_peu_dma_mem dma_mem_list[];
+  string      name = "fc_l2_sio_stub";
+
+  StandardDisplay dbg;
+
+  task new                  (StandardDisplay dbg );
+  task l2_sio_intf          (string          myname,
+                             fc_l2_sio_port  l2port,
+				fc_l2_sio_port_fcerr  Fcerr_port);
+
+/* task l2_sio_intf_fcerr    (string          myname,
+                             fc_l2_sio_port_fcerr  l2port);*/
+
+
+
+  task l2_sii_intf          (string          myname,
+                             l2_stub_port    l2port );
+  task reassemble_dma_pkt   (string          myname,
+                             integer         length,
+                             bit [63:0]      address,
+                             integer         dma_ptr );
+  task read_mem             (string          myname,
+                             bit [63:0]      address,
+                             var bit [31:0]  data,
+                             integer         dma_ptr ); 
+  task save_data_to_list    (string          myname,
+                             bit [511:0]     data,
+                             bit [8:0]       pkt_tag,
+                             bit [4:0]       d_ptr );
+  task save_add_to_list     (string          myname,
+                             bit [39:0]      add,
+                             bit [8:0]       pkt_tag,
+                             bit [4:0]       d_ptr );
+  task free_data_semaphore  (string          myname,
+                             integer         dma_ptr );
+  task wait_for_dma_rdd     (bit [4:0]       l2_cl_idx,
+                             integer         dma_ptr );
+  task wait_for_l2_rdd_resp (bit [4:0]       l2_cl_idx,
+                             integer         dma_ptr );
+  task get_a_cache_line     (bit [39:0]      address,
+                             integer         index,
+                             bit [ 4:0]      cl_idx,
+                             integer         dma_ptr );
+  
+  function bit [63:0] hashpa (bit [63:0] pa) {
+    if (probe_if.hashing && ~pa[39])
+      hashpa = {pa[63:18], pa[32:28] ^ pa[17:13], pa[19:18] ^ pa[12:11], pa[10:0]};
+    else
+      hashpa = pa;
+  }
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// new()
+// Allocates the data_semph_id semaphore and starts up the monitoring of
+// SIU -> L2 and L2 -> SIU traffic.
+////////////////////////////////////////////////////////////////////////////////
+task fc_l2_sio_stub :: new (StandardDisplay dbg){
+  data_semph_id = alloc(SEMAPHORE, 0, 1,1);
+  reqst_semph_id = alloc(SEMAPHORE, 0, 1,1);
+  cl_idx_region_id = alloc(REGION, 0, 32);
+  this.dbg = dbg;
+  fork
+    l2_sio_intf ("BANK0", fc_l2_sio_bind0,fc_l2_sio_fc_err_bind0);
+    l2_sio_intf ("BANK1", fc_l2_sio_bind1,fc_l2_sio_fc_err_bind1);
+    l2_sio_intf ("BANK2", fc_l2_sio_bind2,fc_l2_sio_fc_err_bind2);
+    l2_sio_intf ("BANK3", fc_l2_sio_bind3,fc_l2_sio_fc_err_bind3);
+    l2_sio_intf ("BANK4", fc_l2_sio_bind4,fc_l2_sio_fc_err_bind4);
+    l2_sio_intf ("BANK5", fc_l2_sio_bind5,fc_l2_sio_fc_err_bind5);
+    l2_sio_intf ("BANK6", fc_l2_sio_bind6,fc_l2_sio_fc_err_bind6);
+    l2_sio_intf ("BANK7", fc_l2_sio_bind7,fc_l2_sio_fc_err_bind7);
+
+    l2_sii_intf ("BANK0", l2_stub_bind0);
+    l2_sii_intf ("BANK1", l2_stub_bind1);
+    l2_sii_intf ("BANK2", l2_stub_bind2);
+    l2_sii_intf ("BANK3", l2_stub_bind3);
+    l2_sii_intf ("BANK4", l2_stub_bind4);
+    l2_sii_intf ("BANK5", l2_stub_bind5);
+    l2_sii_intf ("BANK6", l2_stub_bind6);
+    l2_sii_intf ("BANK7", l2_stub_bind7);
+  join none 	
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// read_mem()
+// 
+// 
+////////////////////////////////////////////////////////////////////////////////
+task fc_l2_sio_stub :: read_mem(string         myname,
+                                bit [63:0]     address,
+                                var bit [31:0] data,
+                                integer        dma_ptr)
+{
+  fc_peu_dma_mem dma_mem;
+
+  if (dma_mem_list[dma_ptr].empty()){
+    PR_ERROR(name, MON_ERR, psprintf ("%s read_mem() dma_mem_list[%0d] is empty\n", myname, dma_ptr));
+  } 
+  dma_mem = dma_mem_list[dma_ptr].front();
+  dma_mem_list[dma_ptr].pop_front();
+  dma_mem.dis_info(dbg);
+  data = dma_mem.data;	
+
+  if (address !== dma_mem.address){
+    PR_ERROR(name, MON_ERR, psprintf ("%s read_mem() Address mismatch! request addr %h, Addr in model %h, dma_ptr %0d\n", 
+                                      myname, address,    dma_mem.address, dma_ptr));
+  }
+  else {
+    PR_INFO(name, MON_INFO, psprintf ("%s read_mem() addr %h, data %h, dma_ptr %0d", myname, address, data, dma_ptr));
+  }
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// reassemble_dma_pkt()
+// 
+// 
+////////////////////////////////////////////////////////////////////////////////
+task fc_l2_sio_stub :: reassemble_dma_pkt (string     myname,
+                                           integer    length,   // in DWs
+                                           bit [63:0] addr,
+                                           integer    dma_ptr)  // unique ID for each dma rd
+{
+  integer     index = 0;
+  bit [ 39:0] address = addr[39:0];
+
+  PR_INFO(name, MON_INFO, psprintf ("reassemble_dma_pkt() Wait for semaphore token. addr %h length %0d dma_ptr %0d", addr, length, dma_ptr ));
+  
+  semaphore_get (WAIT, data_semph_id, 1);
+  dma_mem_list[dma_ptr] = new;
+
+  while ( address < (addr[39:0] + length*4 - 1) ){
+    fork {
+      get_a_cache_line(address, index, l2_cl_idx, dma_ptr);
+    }
+    join none
+    
+    @(posedge fc_l2b0_sio.clk);
+    address = {address[39:6],6'b0} + 64;
+    index = index+16;
+    l2_cl_idx++; 
+  } // while
+  
+  semaphore_put (data_semph_id, 1);
+  PR_INFO(name, MON_INFO, psprintf ("reassemble_dma_pkt() semaphore token is put back, dma_ptr %0d", dma_ptr));
+
+  wait_child(); // wait for all the cachelines to be requested & returned
+  
+  PR_NORMAL(name, MON_NORMAL, psprintf ("reassemble_dma_pkt() all cachelines read, dma_ptr %0d", dma_ptr));
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// get_a_cache_line()
+// 
+// 
+////////////////////////////////////////////////////////////////////////////////
+task fc_l2_sio_stub :: get_a_cache_line ( bit [39:0] address,
+                                          integer    index,
+                                          bit [ 4:0] cl_idx,
+                                          integer    dma_ptr)
+{
+  bit [  4:0] cl_ptr = 0;
+  bit [511:0] tmp_rtn_l2_cl;
+  bit [ 31:0] tmp_data;
+  bit [  8:0] tmp_req_pkt_tag;
+  bit [  8:0] tmp_rtn_pkt_tag;
+  bit [ 39:0] tmp_req_cl_add;
+  bit [ 39:0] tmp_hashpa;
+  bit         tmp_bit;  
+  fc_peu_dma_mem  dma_mem;
+
+  region_enter(WAIT, cl_idx_region_id, cl_idx);
+  
+  wait_for_dma_rdd(cl_idx, dma_ptr);
+  
+  tmp_req_cl_add  =  req_cl_add[cl_idx];
+  tmp_req_pkt_tag =  req_pkt_tag[cl_idx];
+  tmp_bit = assoc_index (DELETE, req_cl_add, cl_idx);
+  tmp_bit = assoc_index (DELETE, req_pkt_tag, cl_idx);
+
+  region_exit(cl_idx_region_id, cl_idx);
+  
+  tmp_hashpa = hashpa(address);
+  if (tmp_req_cl_add[39:6] !== tmp_hashpa[39:6]) {
+    PR_ERROR(name, MON_ERR, psprintf ("get_a_cache_line() SII REQ ADD %h does not belong to DMA! add %h, cl_idx %0d, dma_ptr %0d index %0d \n", tmp_req_cl_add, address, cl_idx, dma_ptr, index));
+  }
+
+  wait_for_l2_rdd_resp(cl_idx, dma_ptr);
+  
+  tmp_rtn_l2_cl = rtn_l2_cl[cl_idx];
+  tmp_rtn_pkt_tag = rtn_pkt_tag[cl_idx];
+
+  tmp_bit = assoc_index (DELETE, rtn_l2_cl,cl_idx);
+  tmp_bit = assoc_index (DELETE, rtn_pkt_tag,cl_idx);
+
+  if (tmp_req_pkt_tag !== tmp_rtn_pkt_tag){
+    PR_ERROR(name, MON_ERR, psprintf ("get_a_cache_line() REQ and RES dmc_tag mismatch!  rtn_pkt_tag %h, req_pkt_tag %0h, cl_idx %0d, dma_ptr %0d\n", tmp_rtn_pkt_tag,  tmp_req_pkt_tag, cl_idx, dma_ptr));
+  } 
+
+  PR_INFO(name, MON_INFO, psprintf ("get_a_cache_line() Data is read from buff: rtn_l2_cl[%0d]  %h , cl_ptr %0d, address %h, index %0d, dma_ptr %0d", cl_idx, tmp_rtn_l2_cl, cl_ptr, address, index, dma_ptr));
+
+#ifndef GATESIM
+  // call Riesling command here
+  mem_check( {address[39:6], 6'b0}, tmp_rtn_l2_cl);
+#endif
+
+  // because cache lines can come back out of order, make sure they
+  // are inserted into the list in the correct order.
+  if (dma_mem_list[dma_ptr].empty()) {
+    for(cl_ptr = address[5:2]; cl_ptr < 16; cl_ptr++) {
+      tmp_data = tmp_rtn_l2_cl[511- 32 * cl_ptr : 512 - 32 * (cl_ptr +1)];
+      dma_mem = new (tmp_data, address, cl_idx, tmp_rtn_pkt_tag, dbg, dma_ptr, cl_ptr, index);
+      dma_mem_list[dma_ptr].push_back(dma_mem);
+
+      PR_INFO(name, MON_INFO, psprintf ("get_a_cache_line() Save data1: Address %h d_ptr %0d data %h, dma_ptr %0d", address, cl_ptr, tmp_data, dma_ptr));
+
+      address = address + 4;
+      index++;
+    }
+  }
+  else {
+    VeraListIterator_fc_peu_dma_mem dma_mem_iter;
+
+    // look thru the list until we reach the end or an element
+    // with an address greater than what we want to insert
+    dma_mem_iter = dma_mem_list[dma_ptr].start();
+    dma_mem = dma_mem_iter.data();
+    while( !dma_mem_iter.eq(dma_mem_list[dma_ptr].finish()) && (dma_mem.address < address) ) {
+      dma_mem_iter.next();
+      dma_mem = dma_mem_iter.data();
+    }
+    
+    for(cl_ptr = address[5:2]; cl_ptr < 16; cl_ptr++) {
+      tmp_data = tmp_rtn_l2_cl[511- 32 * cl_ptr : 512 - 32 * (cl_ptr +1)];
+      dma_mem = new (tmp_data, address, cl_idx, tmp_rtn_pkt_tag, dbg, dma_ptr, cl_ptr, index);
+      dma_mem_list[dma_ptr].insert(dma_mem_iter, dma_mem); // inserts before the element pointed to
+
+      PR_INFO(name, MON_INFO, psprintf ("get_a_cache_line() Save data2: Address %h d_ptr %0d data %h, dma_ptr %0d", address, cl_ptr, tmp_data, dma_ptr));
+
+      address = address + 4;
+      index++;
+    }
+  }
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// wait_for_dma_rdd()
+// 
+// 
+////////////////////////////////////////////////////////////////////////////////
+task fc_l2_sio_stub :: wait_for_dma_rdd (bit [4:0] cl_idx,
+                                         integer   dma_ptr)
+{
+  bit [31:0] timeout = 0;
+
+  PR_INFO(name, MON_INFO, psprintf ("wait_for_dma_rdd() Waiting for SII DMA REQ , cl_idx %0d, dma_ptr %0d", cl_idx, dma_ptr));
+  while (!assoc_index(CHECK, req_cl_add, cl_idx)){
+    @(posedge fc_l2b0_sio.clk);
+    
+    if (timeout > 32'h000fffff){
+      dbg.dispmon(name,  MON_ERR, psprintf ("wait_for_dma_rdd() TIMEOUT for waiting DMA REQ from SII, dma_ptr %0d \n", cl_idx, dma_ptr));
+    }       
+    
+    timeout++;
+  }
+  PR_INFO(name, MON_INFO, psprintf ("wait_for_dma_rdd() Waiting for SII DMA REQ done!, cl_idx %0d, dma_ptr %0d", cl_idx, dma_ptr));
+}
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+// wait_for_l2_rdd_resp()
+// 
+// 
+////////////////////////////////////////////////////////////////////////////////
+task fc_l2_sio_stub :: wait_for_l2_rdd_resp (bit [4:0] cl_idx,
+                                             integer    dma_ptr)
+{
+  bit [31:0] timeout = 0;
+
+  PR_INFO(name, MON_INFO, psprintf ("wait_for_l2_rdd_resp() Waiting for rtn_l2_cl[%0d], dma_ptr %0d", cl_idx, dma_ptr ));
+  timeout = 0;
+  while (!assoc_index(CHECK, rtn_l2_cl, cl_idx))
+  {
+    @(posedge fc_l2b0_sio.clk);
+    if (timeout > 32'h000fffff){
+      PR_ERROR(name, MON_ERR, psprintf ("wait_for_l2_rdd_resp() TIMEOUT for waiting rtn_l2_cl[%0d] addr %h dma_ptr %0d , index %0d, dma_ptr %0d\n", cl_idx, dma_ptr));
+    }
+    timeout++;
+  }
+  PR_INFO(name, MON_INFO, psprintf ("wait_for_l2_rdd_resp() Waiting for rtn_l2_cl[%0d] done, dma_ptr %0d", cl_idx, dma_ptr ));
+}
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+// save_data_to_list()
+// 
+// 
+////////////////////////////////////////////////////////////////////////////////
+task fc_l2_sio_stub :: save_data_to_list  (string      myname,
+                                           bit [511:0] data,
+                                           bit [8:0]   pkt_tag,
+                                           bit [4:0]   d_ptr)
+{
+  bit [31:0] timeout = 0;
+  
+  PR_INFO(name, MON_INFO, psprintf ("%s save_data_to_list() Waiting for rtn_l2_cl[%0d] free starting ", myname, d_ptr));
+
+  while (assoc_index(CHECK, rtn_l2_cl, d_ptr))
+  {
+    @(posedge fc_l2b0_sio.clk);
+    if (timeout > 32'h00000fff){
+      PR_ERROR(name, MON_ERR, psprintf ("%s save_data_to_list() TIMEOUT for waiting rtn_l2_cl[%0d] free \n", myname, d_ptr));
+    }
+    timeout++;
+  }
+  PR_INFO(name, MON_INFO, psprintf ("%s save_data_to_list() Waiting for rtn_l2_cl[%0d] free done ", myname, d_ptr ));
+  rtn_l2_cl[d_ptr] = data;
+  rtn_pkt_tag[d_ptr] = pkt_tag;
+
+  PR_INFO(name, MON_INFO, psprintf ("%s save_data_to_list() Save data to rtn_l2_cl %0h, d_ptr %0d rtn_pkt_tag %h", myname, data, d_ptr, pkt_tag));
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// l2_sio_intf()
+// This is forked by new(), and runs forever. It monitors the L2 -> SIU i/f
+// for dma read returns, and captures the data and tag coming back from the L2.
+//
+// This used to monitor inside the SIU, but this caused problems with the
+// mem_check call for Riesling to compare the data coming out of the cache with
+// its memory model. So now the data is captured inside the l2b just before
+// it gets sent to SIU.
+////////////////////////////////////////////////////////////////////////////////
+task fc_l2_sio_stub :: l2_sio_intf (string          myname,
+                                    fc_l2_sio_port  l2port,
+					fc_l2_sio_port_fcerr  Fcerr_port)
+{
+  bit [511:0] tmp_rtn_l2_cl;
+  bit [  8:0] tmp_pkt_tag;
+  bit [  4:0] d_ptr =0 ;
+  bit siu_mon_l2err = 0;
+    if (get_plus_arg(CHECK,"siu_mon_l2err")){
+       PR_INFO(name, MON_INFO, psprintf("SIU MON For FC err Diags.\n"));
+       siu_mon_l2err = 1;
+    }
+
+if(!siu_mon_l2err) {
+
+
+#ifndef GATESIM
+  integer     data_idx;
+
+  while (1){
+    @(posedge l2port.$clk);
+    
+    if (l2port.$ctag_vld) {
+
+      // collect ctag info
+      if ((l2port.$ctag[23:16] == 8'b10010001) && ~l2port.$ctag[15]) {
+        d_ptr = l2port.$ctag[10:6];
+        tmp_pkt_tag = {l2port.$ctag[0], 3'h0, l2port.$ctag[5:1]};
+        PR_INFO(name, MON_INFO, psprintf ("%s l2_sio_intf() ctag valid : d_ptr %0d rtn_pkt_tag %h", myname, d_ptr, tmp_pkt_tag));
+
+        @(posedge l2port.$clk);  // wait a cycle for data valid
+        
+        // collect data (seperate from ecc bits) if it gets written
+        tmp_rtn_l2_cl = 0;
+        
+        if (l2port.$data_vld) {
+          for (data_idx=0; data_idx < 16; data_idx++) {
+            tmp_rtn_l2_cl[ 512-32*data_idx-1 : 512 - 32*(data_idx+1)    ] =
+              l2port.$data[624-39*data_idx-1 : 624 - 39*(data_idx+1) + 7];
+          }
+        }
+        PR_INFO(name, MON_INFO, psprintf ("%s l2_sio_intf calling save_data_to_list() data %0h  idx %0d", myname, l2port.$data, data_idx));
+
+        fork
+          save_data_to_list (myname, tmp_rtn_l2_cl, tmp_pkt_tag, d_ptr);
+        join none
+      }
+    }
+  }
+#else
+/////  This is the old routine  /////
+/////  Fu: used by non-riseling sim (Gate sim) /////
+  bit [  3:0] data_idx = 0;
+  bit         collect_data_flag =0;
+
+  while (1){
+    @(posedge l2port.$clk);
+    if (collect_data_flag){
+      tmp_rtn_l2_cl[512-32*data_idx-1 : 512 - 32* (data_idx+1)] = l2port.$data;
+      PR_INFO(name, MON_INFO, psprintf ("%s l2_sio_intf calling save_data_to_list() data %0h  idx %0d", myname, l2port.$data, data_idx));
+      if (data_idx == 15){
+        collect_data_flag = 0;
+
+        fork
+          save_data_to_list (myname, tmp_rtn_l2_cl, tmp_pkt_tag, d_ptr);
+        join none
+
+      }
+      data_idx++; 
+    }
+    if (l2port.$ctag_vld && (l2port.$data[23:16] == 8'b10010001) && ~l2port.$data[15]){
+      d_ptr = l2port.$data[10:6];
+      collect_data_flag = 1; 
+      tmp_pkt_tag = {l2port.$data[0], 3'h0, l2port.$data[5:1]};
+      PR_INFO(name, MON_INFO, psprintf ("%s save_data_to_list() ctag valid : d_ptr %0d rtn_pkt_tag %h", myname, d_ptr, tmp_pkt_tag));
+    }	
+  }
+#endif
+} 
+else {
+/////  This is the old routine  /////
+/////  AK: used by Fc RAS Diags /////
+  bit [  3:0] data_idx = 0;
+  bit         collect_data_flag =0;
+
+  while (1){
+    @(posedge Fcerr_port.$clk);
+    if (collect_data_flag){
+      tmp_rtn_l2_cl[512-32*data_idx-1 : 512 - 32* (data_idx+1)] = Fcerr_port.$data;
+      PR_INFO(name, MON_INFO, psprintf ("%s l2_sio_intf calling save_data_to_list() data %0h  idx %0d", myname, Fcerr_port.$data, data_idx));
+      if (data_idx == 15){
+        collect_data_flag = 0;
+
+        fork
+          save_data_to_list (myname, tmp_rtn_l2_cl, tmp_pkt_tag, d_ptr);
+        join none
+
+      }
+      data_idx++;
+    }
+    if (Fcerr_port.$ctag_vld && (Fcerr_port.$data[23:16] == 8'b10010001) && ~Fcerr_port.$data[15]){
+      d_ptr = Fcerr_port.$data[10:6];
+      collect_data_flag = 1;
+      tmp_pkt_tag = {Fcerr_port.$data[0], 3'h0, Fcerr_port.$data[5:1]};
+      PR_INFO(name, MON_INFO, psprintf ("%s save_data_to_list() ctag valid : d_ptr %0d rtn_pkt_tag %h", myname, d_ptr, tmp_pkt_tag));
+    }
+  }
+
+}
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// l2_sii_intf()
+// This is forked by new(), and runs forever. It monitors the SIU -> L2 i/f
+// and captures the address and tag of the request going to the L2.
+////////////////////////////////////////////////////////////////////////////////
+task fc_l2_sio_stub :: l2_sii_intf (string myname, l2_stub_port  l2port)
+{
+  bit [39:0] address=0;
+  bit [ 4:0] d_ptr =0 ;
+  bit        collect_data_flag =0;
+  bit [ 8:0] cl_pkt_tag =0;
+
+  while (1){
+    @(posedge l2port.$clk);
+    if (collect_data_flag){
+      collect_data_flag = 0;
+      address[31:0] = l2port.$req;
+
+      PR_INFO(name, MON_INFO, psprintf ("%s l2_sii_intf() addr %h d_ptr %0d cl_pkt_tag %h", myname, address, d_ptr, cl_pkt_tag));
+      
+      fork
+        save_add_to_list (myname, address, cl_pkt_tag, d_ptr);
+      join none
+    }
+
+    // bits [23:8] are the tag from dmc, [7:0] are upper 8 bits of addr
+    if (l2port.$req_vld && l2port.$req[31:24] == 8'b01001001){
+      if (l2port.$req[23:23] == 1'b0){ // tag[15]==0 is DMA RD
+        collect_data_flag = 1; 
+        cl_pkt_tag[4:0]   = l2port.$req[13:9];
+        cl_pkt_tag[8]     = l2port.$req[8];
+        address[39:32]    = l2port.$req[7:0];
+      }
+      d_ptr      = l2port.$req[18:14];
+    }	
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// save_add_to_list()
+// 
+// 
+////////////////////////////////////////////////////////////////////////////////
+task fc_l2_sio_stub :: save_add_to_list  (string     myname,
+                                          bit [39:0] add,
+                                          bit [8:0]  pkt_tag,
+                                          bit [4:0]  d_ptr)
+{
+  bit [31:0] timeout = 0;
+  
+  PR_INFO(name, MON_INFO, psprintf ("%s save_add_to_list() Waiting for req_cl_add[%0d] free ", myname, d_ptr ));
+  while (assoc_index(CHECK, req_cl_add, d_ptr))
+  {
+    @(posedge fc_l2b0_sio.clk);
+    if (timeout > 32'h0000ffff){
+      PR_ERROR(name, MON_ERR, psprintf ("%s save_add_to_list() TIMEOUT waiting for cache_line[%0d] free \n", myname, d_ptr));
+    }
+    timeout++;
+  }
+  PR_INFO(name, MON_INFO, psprintf ("%s save_add_to_list() Waiting for req_cl_add[%0d] free done", myname, d_ptr ));
+  req_cl_add[d_ptr] = add;
+  req_pkt_tag[d_ptr] = pkt_tag;
+  PR_INFO(name, MON_INFO, psprintf ("%s save_add_to_list() Save add to req_cl_add %0h, d_ptr %0d req_pkt_tag %h, req_pktr_tag %h", myname, add, d_ptr, pkt_tag, req_pkt_tag[d_ptr]));
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// free_data_semaphore()
+// if the process running reassemble_dma_pkt is terminated, then this makes
+// sure that the semaphore is freed.
+////////////////////////////////////////////////////////////////////////////////
+task fc_l2_sio_stub :: free_data_semaphore (string  myname,
+                                            integer dma_ptr)
+{
+  integer cl_idx;
+  
+  integer sema_avail = semaphore_get (NO_WAIT, data_semph_id, 1);
+  semaphore_put (data_semph_id, 1);
+  PR_INFO(name, MON_INFO, psprintf ("%s free_data_semaphore() freed data_semph_id, sema_avail=%0d, d_ptr %0d", myname, sema_avail, dma_ptr));
+
+  // free any regions that are in use
+  for(cl_idx=0; cl_idx<32; cl_idx++) {
+    region_exit(cl_idx_region_id, cl_idx);
+  }
+
+  // clean out the associative arrays
+  assoc_index(DELETE, rtn_l2_cl   );
+  assoc_index(DELETE, req_cl_add  );
+  assoc_index(DELETE, rtn_pkt_tag );
+  assoc_index(DELETE, req_pkt_tag );
+
+  // reset cl ptr
+  l2_cl_idx = 0;
+}

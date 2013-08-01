@@ -1,0 +1,559 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ssi.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "std_display_defines.vri"
+#include "plusArgMacros.vri"
+#include "globals.vri"
+
+#include "std_display_class.vrh"
+#include "memArray.vrh"
+#include "ssi.if.vrh"
+#include "ssi.vrh"
+
+#define CLASSNAME SSI
+#define CLASSNAMEQ "SSI"
+
+class CLASSNAME {
+  
+  local string className = "SSI";
+  local StandardDisplay dbg;
+  local reg ssi_mon;
+  local string dispmonScope = "SSI";
+  ssi_iport ncu;
+  ssi_oport ssi;
+  integer send, send_int, send_parity_error;//Synchronization variables
+  integer ssi_timeout, ssi_parity_error, ssi_side_effect;
+  reg [27:0] ncu_addr;
+  reg [63:0] ncu_data;
+  reg [2:0]  ncu_cmd;
+  reg [63:0] ssi_int_soft, ssi_int_parity, ssi_int_mask, ssi_response_latency;//These are shadow registers
+  task new(StandardDisplay dbgHndl, ssi_iport ncu, ssi_oport ssi);
+  task Rcv();
+  task Send();
+  task Int();
+  task SsiMon();
+  task SsiDem();
+  task pulse_ssi_int_l(integer pulsedelay, integer pulsewidth);
+  task generate_pulse(integer pulsedelay, integer pulsewidth);
+//  task GPIO();
+}
+
+
+task CLASSNAME::new(StandardDisplay dbgHndl, ssi_iport ncu, ssi_oport ssi) {
+  this.ncu = ncu;
+  this.ssi = ssi;
+  this.send = 0;
+  this.send_int = 0;
+  this.send_parity_error = 0;
+  this.ssi_timeout = 0;
+  this.ssi_parity_error = 0;
+  this.ssi_side_effect  = 0;
+  this.dbg = dbgHndl;
+  this.ssi_mon = 0;
+  if (mChkPlusarg(ssi_mon) || mChkPlusarg(SSI_MON)) ssi_mon = 1;
+  fork 
+    ssi.$data = 1'b0;
+    ssi.$int_l = 1'b1;
+    SsiDem();
+  join none
+}
+
+/*
+ * Tasks for SSI user event generation
+ */
+task CLASSNAME::pulse_ssi_int_l(integer pulsedelay, integer pulsewidth) {
+   fork 
+    generate_pulse(pulsedelay, pulsewidth);
+   join none
+}
+
+task CLASSNAME::generate_pulse(integer pulsedelay, integer pulsewidth) {
+   integer i;
+   //breakpoint;
+   for(i=0; i<=pulsedelay; i++) {
+      ssi.$int_l = 1;
+      @(posedge ncu.$clk);
+   }
+
+   for(i=0; i<=pulsewidth; i++) {
+      ssi.$int_l = 0;
+      @(posedge ncu.$clk);
+   }
+
+      ssi.$int_l = 1;
+      @(posedge ncu.$clk);
+}
+
+/*
+ * SSI monitors
+ */
+task CLASSNAME::SsiMon() {
+   while(1) {
+      @(posedge ncu.$clk);
+      printf("SSI_PINS: SSI_INT %x\n", ssi.$int_l);
+   } 
+}
+
+
+/*
+ *Main process control
+ */
+task CLASSNAME::SsiDem() {
+  while(1) {
+    //    wait_var(reset); 
+    //    wait_var(reset); 
+    //    wait_var(reset);
+    //    wait_var(reset);
+    @(posedge ncu.$clk);
+    // wait for reset low
+    // while(ncu.$reset) {
+    //   @(posedge ncu.$clk);
+    // }
+    if (ncu.$reset !== 0) @(negedge ncu.$reset);
+    fork
+      Rcv();
+      Send();
+      Int();
+    join none
+    @(posedge ncu.$clk);
+    // wait for reset high
+    // while(ncu.$reset != 1) {
+    //   @(posedge ncu.$clk);
+    // }
+    if (ncu.$reset !== 1) @(posedge ncu.$reset);
+    terminate;
+  } // while 1
+}
+
+/*
+ * Main Rcv fuction
+ */
+
+task CLASSNAME::Rcv() {
+  integer i, rcv_data_width;
+  reg parity;
+  reg [63:0]  tmp_data;
+
+  while (1) {
+	while (ncu.$data != 1) @(posedge ncu.$clk);
+	//printf ("SSI: %d: NCU requesting data %h\n", get_time(LO), ncu.$data);
+        //breakpoint;
+        ncu_addr = 28'b0;
+        ncu_data = 64'b0;
+        ncu_cmd  = 3'b0;
+	for (i=2; i>=0; i--) {
+	    @(posedge ncu.$clk);
+	    ncu_cmd[i] = ncu.$data;
+            //printf("SSI: MOSI = %h i=%d\n", ncu.$data, i);
+	}
+
+        if (ssi_mon) PR_NORMAL(dispmonScope, MON_NORMAL, psprintf("SSI Rcv: NCU cmd = 0x%h (read = %0d, size = %0d bytes)", ncu_cmd, ncu_cmd[2], 1 << ncu_cmd[1:0]));
+        
+	for (i=27; i>=0; i--) {
+            @(posedge ncu.$clk);
+            ncu_addr[i] = ncu.$data;
+            //printf("SSI: MOSI = %h i=%d\n", ncu.$data, i);
+        }
+
+        //if (ssi_mon) PR_NORMAL(dispmonScope, MON_NORMAL, psprintf("SSI Rcv: ADDR decoded = 0x%x", ncu_addr));
+        
+        //The length of recieved data depends on the byte size
+        case (ncu_cmd[1:0])  {
+           2'b00: rcv_data_width = 7;
+           2'b01: rcv_data_width = 15;
+           2'b10: rcv_data_width = 31;
+           2'b11: rcv_data_width = 63;
+        }
+       
+        if(~ncu_cmd[2]) {
+          for (i=rcv_data_width; i>=0; i--) {
+	    @(posedge ncu.$clk);
+            ncu_data[i] = ncu.$data;
+            //printf("SSI: MOSI = %h i=%d\n", ncu.$data, i);
+          }
+          if (ssi_mon) PR_NORMAL(dispmonScope, MON_NORMAL, psprintf("SSI Rcv: WR cmd rcvd addr=0x%h  dataWidth=%0d  data=0x%x", ncu_addr, rcv_data_width+1, ncu_data));
+
+          //printf("SSI: %d WR cmd rcvd  size=%d  data=0x%x\n", get_time(LO), rcv_data_width, ncu_data, get_time(LO));
+        } else {
+          if (ssi_mon) PR_NORMAL(dispmonScope, MON_NORMAL, psprintf("SSI Rcv: RD cmd rcvd addr=0x%h  dataWidth=%0d  data=0x%x", ncu_addr, rcv_data_width+1, ncu_data));
+          //printf("SSI: RD cmd rcvd  size=%d  data=0x%x\n", rcv_data_width, ncu_data);
+        }
+
+	@(posedge ncu.$clk);
+	parity = ncu.$data;
+        //printf("SSI: MOSI = %h i=%d\n", ncu.$data, i);
+
+	////printf ("The parity calculated is %h\n", ^{1'b1, ncu_cmd, ncu_addr});
+	if (parity != (^{1'b1, ncu_cmd, ncu_addr}))  {
+   	}
+
+        //Decode address to update shadow registers
+        //ssi_int_soft         = ff_fff0_0000
+        //ssi_int_parity       = ff_fff0_0010
+        //ssi_int_mask         = ff_fff0_0020
+        //ssi_response_latency = ff_fff0_0030
+        //ssi_timeout          = ff_fff1_0000
+        //ssi_parity_error     = ff_fff2_0000
+        //ssi_side_effect      = ff_fff3_0000
+        case (ncu_addr[27:16]) {
+            12'hff0: {
+                        //SSI interrupt device
+                        //breakpoint;
+                        case (ncu_addr[7:0]) {
+                           8'h00: ssi_int_soft         = ncu_data;
+                           8'h10: ssi_int_parity       = ncu_data;
+                           8'h20: ssi_int_mask         = ncu_data;
+                           8'h30: ssi_response_latency = ncu_data;
+                        }
+                     }
+            12'hff1: {
+                        //SSI timeout
+                          ssi_timeout = 1'b1;
+                     }
+            12'hff2: {
+                        //SSI parity
+                          ssi_parity_error = 1'b1;
+                     }
+            12'hff3: {
+                          ssi_side_effect  = 1'b1;
+                     }
+//            12'hff4: {
+//                     //GPIO registers
+//                        case([
+//                     }
+        }
+        if (~ssi_timeout) {
+          send = 1;
+        }
+	//printf ("SSI: %d cmd received is %h, addr received is %h, data received is %h, SEND is set\n", get_time(LO),ncu_cmd, ncu_addr, ncu_data);
+        @(posedge ncu.$clk);
+  }
+}
+
+/*
+task CLASSNAME::GPIO() {
+   reg [7:0] gpio_0_latency;
+   reg [7:0] gpio_0_duration;
+   reg       gpio_0_set = 0;
+
+   reg [7:0] gpio_1_latency;
+   reg [7:0] gpio_1_duration;
+   reg       gpio_1_set = 0;
+
+   reg       gpio_2_set = 0;
+   reg       gpio_3_set = 0;
+
+
+fork
+   {
+       while(1) {
+          while(~gpio_0_set) {
+             @(posedge ncu.$clk);
+             gpio_0_set = GPIO_0[16];
+          }
+
+          gpio_0_latency =  GPIO_0[7:0];
+          gpio_0_duration = GPIO_0[15:8];
+
+          while( gpio_0_latency ) {
+             gpio_0_latency = gpio_0_latency - 1;
+             @(posedge ncu.$clk);
+          }
+          
+          gpio_0_out  = 1;
+        
+
+          while( gpio_0_duration ) {
+             gpio_0_duration = gpio_0_duration - 1;
+             @(posedge ncu.$clk);
+          }
+         
+          gpio_0_out  = 0;
+        }
+   }
+
+
+   {
+       while(1) {
+          while(~gpio_1_set) {
+             @(posedge ncu.$clk);
+             gpio_1_set = GPIO_1[16];
+          }
+
+          gpio_1_latency =  GPIO_1[7:0];
+          gpio_1_duration = GPIO_1[15:8];
+
+          while( gpio_1_latency ) {
+             gpio_1_latency = gpio_1_latency - 1;
+             @(posedge ncu.$clk);
+          }
+          
+          gpio_1_out  = 1;
+        
+
+          while( gpio_0_duration ) {
+             gpio_1_duration = gpio_1_duration - 1;
+             @(posedge ncu.$clk);
+          }
+         
+          gpio_1_out  = 0;
+        }
+   }
+
+   {
+      while(1) {
+         gpio_2_out = gpio_2_reg;
+         gpio_3_out = gpio_3_reg;
+         @(posedge ncu.$clk);
+      }
+
+   }
+
+join
+
+}
+*/
+
+task CLASSNAME::Int() {
+   reg [7:0] int_latency;
+   reg       post_int, cyc, post_cyc, randcyc;
+   reg       parity_int, parity_detect_enable;
+   reg       soft_enable, parity_enable;
+   integer   i = 0;
+   post_int  = 0; cyc=0; post_cyc=1'b1; randcyc=0; int_latency=8'b0;
+   ssi_int_soft = 64'b0;
+   
+   while (ncu.$reset) { 
+     while( ~(post_int | cyc) ) {
+       @(posedge ncu.$clk);
+       post_int = ssi_int_soft[8];
+       cyc = ssi_int_soft[9];
+       //printf("SSI: ssi_int_soft = 0x%x\n", ssi_int_soft);
+     }
+     
+     while (post_int | cyc) {
+       //printf("Entered post Int\n");
+       int_latency    = ssi_int_soft[7:0];
+       post_int       = ssi_int_soft[8];
+       cyc            = ssi_int_soft[9];
+       post_cyc       = ssi_int_soft[10];
+       randcyc        = ssi_int_soft[11];
+       //if their is a latency set then interrupt
+       //after that
+       //breakpoint;
+       if (post_int) {
+         while(int_latency != 8'h00) {
+           int_latency = int_latency - 1;
+           @(posedge ncu.$clk);
+         }
+       }
+       ssi.$int_l = 0;
+       while (cyc) { 
+         //interrupt after int_latency cycles
+         //printf("SSI: CYC interrupt set\n");
+         //breakpoint;
+         while(int_latency != 8'h00) {
+           int_latency = int_latency - 1;
+           @(posedge ncu.$clk);
+         }
+         cyc            = ssi_int_soft[9];
+         int_latency    = ssi_int_soft[7:0];
+         //pulse the iterrupt for 8 SSI 
+         for (i=7; i>=0; i--) {
+           ssi.$int_l = 0; 
+           @(posedge ncu.$clk);
+         }
+         ssi.$int_l = 1;
+         @(posedge ncu.$clk);
+       }
+     }
+     @(posedge ncu.$clk);
+     ssi.$int_l = 1;
+     //printf("SSI: Deassert post_int\n");
+     
+   } // while not in reset
+   
+}
+
+// read and/or write gMem
+task CLASSNAME::Send() {
+  reg [39:0] tmpAddr;
+  integer i, trans_data_width;
+  reg [63:0] read_data, transmit_data, tmp_data;
+  reg [63:0] send_data;
+  reg        send_parity;
+
+  while (1) {
+    @(posedge ssi.$clk);     // wait for Rcv() to set send true
+    if (send == 1) {
+      //printf ("SSI: %d send set to 1\n", get_time(LO));
+      tmpAddr = {12'hfff, ncu_addr};
+      read_data = gMem.read_mem({tmpAddr[39:3], 3'b0});
+      //printf ("SSI: READ from GLOBAL tmpAddr=0x%h data=0x%h\n", tmpAddr, read_data);
+      /*
+       *Switch byte order
+       */
+      //                tmp_data = {ncu_data[7:0], ncu_data[15:8], ncu_data[23:16], ncu_data[31:24], ncu_data[39:32], ncu_data[47:40], ncu_data[55:48], ncu_data[63:56]};
+      //                ncu_data =  tmp_data;
+      //printf ("SSI: %d Read made from global memory ncu_cmd=0x%x\n", get_time(LO), ncu_cmd); 
+      //rd request   
+      //breakpoint;
+      if (ncu_cmd[2] == 1'b1) {
+        if (ssi_mon) PR_NORMAL(dispmonScope, MON_NORMAL, psprintf("SSI Send: RD request addr = 0x%h", ncu_addr));
+        //printf("SSI: RD request made\n");
+        case (ncu_cmd[1:0]) {
+          2'b00:  {
+            case (ncu_addr[2:0]) {
+              3'b000: transmit_data = {read_data[7:0]};
+              3'b001: transmit_data = {read_data[15:8]};
+              3'b010: transmit_data = {read_data[23:16]};
+              3'b011: transmit_data = {read_data[31:24]};
+              3'b100: transmit_data = {read_data[39:32]};
+              3'b101: transmit_data = {read_data[47:40]};
+              3'b110: transmit_data = {read_data[55:48]};
+              3'b111: transmit_data = {read_data[63:56]};
+            }
+            if (ssi_mon) PR_NORMAL(dispmonScope, MON_NORMAL, psprintf("SSI Send: BYTE RD req addr=0x%x data=0x%x", ncu_addr, transmit_data));
+            trans_data_width = 7;
+          }
+          2'b01:  {
+            case  (ncu_addr[2:1]) {
+              2'b00: transmit_data = {read_data[15:0]}; 
+              2'b01: transmit_data = {read_data[31:16]}; 
+              2'b10: transmit_data = {read_data[47:32]}; 
+              2'b11: transmit_data = {read_data[63:48]}; 
+            }
+            trans_data_width = 15;                               
+            if (ssi_mon) PR_NORMAL(dispmonScope, MON_NORMAL, psprintf("SSI Send: HALF WORD RD req addr=0x%x data=0x%x", ncu_addr, transmit_data));
+          }
+          2'b10:  {
+            transmit_data = tmpAddr[2] == 1'b1 ? read_data[31:0] : read_data[63:32];
+            trans_data_width = 31;                               
+            if (ssi_mon) PR_NORMAL(dispmonScope, MON_NORMAL, psprintf("SSI Send: WORD RD req addr=0x%x data=0x%x", ncu_addr, transmit_data));
+          }
+          2'b11: {
+            transmit_data = read_data[63:0];
+            trans_data_width = 63;                               
+            if (ssi_mon) PR_NORMAL(dispmonScope, MON_NORMAL, psprintf("SSI Send: DOUBLE WORD RD req addr=0x%x data=0x%x", ncu_addr, transmit_data));
+          }
+        } 
+        ////printf ("data read is %h, data to send is %h\n", read_data, send_data);
+      } else {
+        //write requested
+        //printf("SSI: WRITE command recieved\n");
+        //if (ssi_mon) PR_NORMAL(dispmonScope, MON_NORMAL, psprintf("SSI Send: WR request addr = 0x%h", ncu_addr));
+        case (ncu_cmd[1:0]) {
+          2'b00:  {
+            case (ncu_addr[2:0]) {
+              3'b000: transmit_data = {read_data[63:8], ncu_data[7:0]};
+              3'b001: transmit_data = {read_data[63:16], ncu_data[7:0], read_data[7:0]};
+              3'b010: transmit_data = {read_data[63:24], ncu_data[7:0], read_data[15:0]};
+              3'b011: transmit_data = {read_data[63:32], ncu_data[7:0], read_data[23:0]};
+              3'b100: transmit_data = {read_data[63:40], ncu_data[7:0], read_data[31:0]};
+              3'b101: transmit_data = {read_data[63:48], ncu_data[7:0], read_data[39:0]};
+              3'b110: transmit_data = {read_data[63:56], ncu_data[7:0], read_data[47:0]};
+              3'b111: transmit_data = { ncu_data[7:0], read_data[55:0]};
+            }
+            trans_data_width = 7;
+            if (ssi_mon) PR_NORMAL(dispmonScope, MON_NORMAL, psprintf("SSI Send: WR Byte req done  addr=0x%x data=0x%h mergedData=0x%h", ncu_addr, ncu_data[7:0], transmit_data));
+          }
+          2'b01:  {
+            case  (ncu_addr[2:1]) {
+              2'b00: transmit_data = {read_data[63:16], ncu_data[15:0]}; 
+              2'b01: transmit_data = {read_data[63:32], ncu_data[15:0], read_data[15:0]}; 
+              2'b10: transmit_data = {read_data[63:48], ncu_data[15:0], read_data[31:0]}; 
+              2'b11: transmit_data = { ncu_data[15:0], read_data[47:0]}; 
+            }
+            trans_data_width = 15; 
+            if (ssi_mon) PR_NORMAL(dispmonScope, MON_NORMAL, psprintf("SSI Send: WR HALF req done  addr=0x%x data=0x%h mergedData=0x%h", ncu_addr, ncu_data[15:0], transmit_data));
+          }
+          2'b10:  {
+            transmit_data = tmpAddr[2] == 1'b1 ? {read_data[63:32], ncu_data[31:0]} : {ncu_data[31:0], read_data[31:0]};
+            trans_data_width = 31;                               
+            if (ssi_mon) PR_NORMAL(dispmonScope, MON_NORMAL, psprintf("SSI Send: WR WORD req done  addr=0x%x data=0x%h mergedData=0x%h", ncu_addr, ncu_data[31:0], transmit_data));
+          }
+          2'b11: {
+            transmit_data = ncu_data[63:0];
+            trans_data_width = 63;                               
+            if (ssi_mon) PR_NORMAL(dispmonScope, MON_NORMAL, psprintf("SSI Send: WR DOUBLE req done  addr=0x%x data=0x%h mergedData=0x%h", ncu_addr, ncu_data, transmit_data));
+          }
+          
+        }
+
+        gMem.write_mem({tmpAddr[39:3], 3'b0}, transmit_data); 
+        //printf("SSI: Did a write to the global memmory\n");
+      } // write
+
+     /*
+      * Added one cycle latency
+     */
+
+      ssi.$data = 1'b0;
+      @(posedge ssi.$clk);
+      
+      /*
+       * Starting response to master
+       */
+
+      ssi.$data = 1'b1;
+      @(posedge ssi.$clk);
+      send_parity = 1'b0;
+
+      // if a read
+      if( ncu_cmd[2] ) { 
+        for (i=trans_data_width; i>=0; i--) {
+          ssi.$data = transmit_data[i];
+          send_parity = send_parity ^ transmit_data[i];
+          @(posedge ssi.$clk);         
+        }
+        if (ssi_parity_error) {                
+           send_parity = send_parity^1;
+        }
+        ssi.$data = ^{1'b1, send_parity};
+        @(posedge ssi.$clk);
+        ssi.$data = 1'b0;
+      } else { // else write
+        ssi.$data = 1'b1;
+        if(ssi_parity_error) {
+          ssi.$data = 1'b0;
+        }
+        @(posedge ssi.$clk);
+        ssi.$data = 1'b0;
+      }
+      // done
+      send = 0;
+    } // if send
+  } // while 1
+}

@@ -1,0 +1,523 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ncu_rtl_cov.vrpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "plusArgMacros.vri"
+#include "std_display_class.vrh"
+#include "std_display_defines.vri"
+#include "ncu_cov.if.vrh"
+#include "ncu_cov_ports_binds.vrh"
+
+
+class ncu_rtl_cov {
+
+string myname;
+StandardDisplay dbg;
+
+
+#include "ncu_rtl_cov_ver_defines.vrh"
+  reg [1:0] cpu_niu_acc_intman =0;
+
+  #ifndef NCU_INTF_COV
+  coverage_group ncu_intman_tbl_cov
+  {
+     const_sample_reference = 1; // ref. to sample vars. is constant
+     sample_event           = sync (ANY, intman_sample_evnt_trig );
+     sample intman_tbl_waddr  { m_state ADD (0:127) if (intman_tbl_wr); }
+     sample intman_tbl_raddr  { m_state ADD (0:127) if (intman_tbl_rd); }
+     sample intman_tbl_wr_b2b { state b2b (1) if (intman_tbl_wr); }
+     sample intman_tbl_rd_b2b { m_state b2b (1:2) if (intman_tbl_rd); }
+     sample intman_tbl_rd_b2b_same_add { m_state b2b_same_add (1:2) if (intman_tbl_rd); }
+
+     sample cpu_niu_acc_intman {
+	 wildcard state cpu_niu_read_same_add_of_intman (2'bx1) if (ncu_cov_ios.int_vld && ncu_cov_ios.lhs_intman_acc);
+	 wildcard state cpu_niu_read_diff_add_of_intman (2'b1x) if (ncu_cov_ios.int_vld && ncu_cov_ios.lhs_intman_acc);
+     }
+  }
+
+
+  coverage_group ncu_cpu_buf_cov
+  {
+     const_sample_reference = 1; // ref. to sample vars. is constant
+     sample_event           = sync (ANY, cpu_buf_sample_evnt_trig );
+     sample cpu_buf_waddr  { m_state ADD (0:31) if (cpu_buf_wr); 
+				trans   ADD_TRAN (31->0->1) if (cpu_buf_wr);
+			   }
+     sample cpu_buf_raddr  { m_state ADD (0:31) if (cpu_buf_rd); 
+				trans   ADD_TRAN (31->0->1) if (cpu_buf_rd);
+			   }
+     sample cpu_buf_wr_b2b { m_state b2b (1:2) if (cpu_buf_wr); }
+     sample cpu_buf_rd_b2b { m_state b2b (1:2) if (cpu_buf_rd); }
+  }
+  #endif
+
+  coverage_group ncu_io_buf_cov
+  {
+     const_sample_reference = 1; // ref. to sample vars. is constant
+     sample_event           = sync (ANY, io_buf_sample_evnt_trig );
+     #ifndef NCU_INTF_COV
+     sample io_buf_wr_b2b { m_state b2b (1:2) if (io_buf_wr); }
+     sample io_buf_rd_b2b { m_state b2b (1:2) if (io_buf_rd); }
+     #endif
+     sample io_buf_waddr  { m_state ADD (0:31) if (io_buf_wr);
+                                trans   ADD_TRAN (31->0->1) if (io_buf_wr);
+                           }
+     sample io_buf_raddr  { m_state ADD (0:31) if (io_buf_rd);
+                                trans   ADD_TRAN (31->0->1) if (io_buf_rd);
+                           }
+  }
+
+  coverage_group ncu_int_buf_cov
+  {
+     const_sample_reference = 1; // ref. to sample vars. is constant
+     sample_event           = sync (ANY, int_buf_sample_evnt_trig );
+     #ifndef NCU_INTF_COV
+     sample int_buf_wr_b2b { m_state b2b (1:2) if (int_buf_wr); }
+     sample int_buf_rd_b2b { m_state b2b (1:2) if (int_buf_rd); }
+     #endif
+     sample int_buf_waddr  { m_state ADD (0:31) if (int_buf_wr);
+                                trans   ADD_TRAN (31->0->1) if (int_buf_wr);
+                           }
+     sample int_buf_raddr  { m_state ADD (0:31) if (int_buf_rd);
+                                trans   ADD_TRAN (31->0->1) if (int_buf_rd);
+                           }
+  }
+
+  coverage_group ncu_mondo_data_tbl_cov
+  {
+     const_sample_reference = 1; // ref. to sample vars. is constant
+     sample_event           = sync (ANY, mondo_data_tbl_sample_evnt_trig );
+     #ifndef NCU_INTF_COV
+     sample mondo_data1_tbl_waddr  { m_state ADD (0:63) if (mondo_data1_tbl_wr); }
+     sample mondo_data0_tbl_wr_b2b { m_state b2b (1:2) if (mondo_data0_tbl_wr); }
+     sample mondo_data1_tbl_wr_b2b { m_state b2b (1:2) if (mondo_data1_tbl_wr); }
+     sample mondo_data_tbl_rd_b2b { m_state b2b (1:2) if (mondo_data_tbl_rd); }
+     sample mondo_data_tbl_rd_b2b_same_add { m_state b2b_same_add (0:1) if (mondo_data_tbl_rd); }
+     #endif
+     sample mondo_data0_tbl_waddr  { m_state ADD (0:63) if (mondo_data0_tbl_wr); }
+     sample mondo_data_tbl_raddr  { m_state ADD (0:63) if (mondo_data_tbl_rd); }
+  }
+  task new(string myname, StandardDisplay dbg);
+  task set_intman_tbl_point(string myname); 
+  task set_mondo_tbl_point(string myname); 
+  task set_cpu_buf_point(string myname); 
+  task set_io_buf_point(string myname); 
+  task set_int_buf_point(string myname); 
+}
+task ncu_rtl_cov :: new(string myname, StandardDisplay dbg){
+   this.myname = myname;
+   this.dbg = dbg;
+   fork
+	set_intman_tbl_point(myname);
+	set_mondo_tbl_point(myname);
+	set_cpu_buf_point(myname);
+	set_io_buf_point(myname);
+	set_int_buf_point(myname);
+   join none
+}
+task ncu_rtl_cov :: set_io_buf_point(string myname)
+{
+
+  myname = {myname, ".set_io_buf_point"};
+  io_buf_wr_b2b = 0;
+  io_buf_rd_b2b = 0;
+  
+fork
+  while (1) {
+	@(posedge ncu_rtl_ccx_cov.clk);
+  	io_buf_rd = ncu_rtl_ccx_cov.io_buf_rd; 
+	if ( io_buf_rd ){
+	     io_buf_rd_b2b++;	
+	      io_buf_raddr = ncu_rtl_ccx_cov.io_buf_raddr;
+	
+    	      dbg.dispmon(myname, MON_INFO, psprintf("IOBUFFERR  read triggered. io_buf_raddr %0d, io_buf_rd_b2b %0d\n",io_buf_raddr, io_buf_rd_b2b));
+		trigger (io_buf_sample_evnt_trig);
+	} else {
+	   io_buf_rd_b2b = 0;
+	}
+  }
+  while (1){
+	@(posedge ncu_rtl_io_cov.clk);
+	io_buf_wr = ncu_rtl_io_cov.io_buf_wr;
+	if (io_buf_wr){
+	   io_buf_waddr = ncu_rtl_io_cov.io_buf_waddr;
+	   io_buf_wr_b2b++;
+    	   dbg.dispmon(myname, MON_INFO, psprintf("IOBUFFERR  Write triggered. io_buf_wr %0d, io_buf_wr_b2b %0d\n",io_buf_wr, io_buf_wr_b2b));
+	   trigger (io_buf_sample_evnt_trig);
+	} else {
+	   io_buf_wr_b2b = 0;
+	}
+  }
+ join 
+ 
+}
+task ncu_rtl_cov :: set_cpu_buf_point(string myname)
+{
+
+  myname = {myname, ".set_cpu_buf_point"};
+  cpu_buf_wr_b2b = 0;
+  cpu_buf_rd_b2b = 0;
+  
+fork
+  while (1) {
+	@(posedge ncu_rtl_io_cov.clk);
+	cpu_buf_rd = ncu_rtl_io_cov.cpu_buf_rd && ncu_rtl_io_cov.cpu_buf_rd_sel;
+	if ( cpu_buf_rd ){
+	   cpu_buf_rd_b2b++;	
+	   cpu_buf_raddr = ncu_rtl_io_cov.cpu_buf_raddr;
+    	      dbg.dispmon(myname, MON_INFO, psprintf("CPU BUFFER  read triggered. cpu_buf_raddr %0d, cpu_buf_rd_b2b %0d\n",cpu_buf_raddr, cpu_buf_rd_b2b));
+	   trigger (cpu_buf_sample_evnt_trig);
+	} else {
+	   cpu_buf_rd_b2b = 0;
+	}
+  }
+  while (1){
+	@(posedge ncu_rtl_ccx_cov.clk);
+	cpu_buf_wr = ncu_rtl_ccx_cov.cpu_buf_wr;
+	if (cpu_buf_wr){
+	   cpu_buf_waddr = ncu_rtl_ccx_cov.cpu_buf_waddr;
+	   cpu_buf_wr_b2b++;
+    	   dbg.dispmon(myname, MON_INFO, psprintf("CPU BUFFER Write triggered. cpu_buf_wr %0d, cpu_buf_wr_b2b %0d\n",cpu_buf_wr, cpu_buf_wr_b2b));
+	   trigger (cpu_buf_sample_evnt_trig);
+	} else {
+	   cpu_buf_wr_b2b = 0;
+	}
+  }
+ join 
+ 
+  
+}
+
+task ncu_rtl_cov :: set_mondo_tbl_point(string myname)
+{
+
+  myname = {myname, ".set_mondo_tbl_point"};
+  mondo_data0_tbl_wr_b2b = 0;
+  mondo_data1_tbl_wr_b2b = 0;
+  mondo_data_tbl_rd_b2b = 0;
+  
+  while (1){
+	@(posedge ncu_rtl_ccx_cov.clk);
+	mondo_data_tbl_rd = ncu_rtl_ccx_cov.mondo_data_tbl_rd ;
+	mondo_data0_tbl_wr = ncu_rtl_ccx_cov.mondo_data0_tbl_wr ;
+	mondo_data1_tbl_wr = ncu_rtl_ccx_cov.mondo_data1_tbl_wr ;
+	mondo_data0_tbl_waddr = ncu_rtl_ccx_cov.mondo_data_tbl_waddr;
+	mondo_data1_tbl_waddr = ncu_rtl_ccx_cov.mondo_data_tbl_waddr;
+	if (mondo_data0_tbl_wr){
+	   mondo_data0_tbl_wr_b2b++;
+	} else {
+	   mondo_data0_tbl_wr_b2b = 0;
+	   mondo_data0_tbl_waddr = 0;
+	}
+	if (mondo_data1_tbl_wr){
+	   mondo_data1_tbl_wr_b2b++;
+	} else {
+	   mondo_data1_tbl_wr_b2b = 0;
+	   mondo_data1_tbl_waddr = 0;
+	}
+
+	if ( mondo_data_tbl_rd ){
+	   if (mondo_data_tbl_raddr === ncu_rtl_ccx_cov.mondo_data_tbl_raddr){
+		mondo_data_tbl_rd_b2b_same_add++;
+	   }
+	   mondo_data_tbl_rd_b2b++;	
+	   mondo_data_tbl_raddr = ncu_rtl_ccx_cov.mondo_data_tbl_raddr;
+	} else {
+	   mondo_data_tbl_rd_b2b = 0;
+	   mondo_data_tbl_raddr = 0;
+	   mondo_data_tbl_rd_b2b_same_add=0;
+	}
+ 	
+	if (mondo_data0_tbl_wr || mondo_data0_tbl_wr || mondo_data_tbl_rd){
+		trigger (mondo_data_tbl_sample_evnt_trig);
+//		printf ("222222 wadd %h radd %h b2b %0d b2b_same %0d\n", mondo_data_tbl_waddr,mondo_data_tbl_raddr,intman_tbl_rd_b2b,intman_tbl_rd_b2b_same_add);
+	}
+  }
+ 
+  
+}
+
+task ncu_rtl_cov :: set_int_buf_point(string myname)
+{
+
+  myname = {myname, ".set_int_buf_point"};
+  int_buf_wr_b2b = 0;
+  int_buf_rd_b2b = 0;
+  
+  while (1){
+	@(posedge ncu_rtl_ccx_cov.clk);
+	int_buf_rd = ncu_rtl_ccx_cov.int_buf_rd_sel ;
+	int_buf_wr = ncu_rtl_ccx_cov.int_buf_wr;
+	if (int_buf_wr){
+	   int_buf_waddr = ncu_rtl_ccx_cov.int_buf_waddr;
+	   int_buf_wr_b2b++;
+	} else {
+	   int_buf_wr_b2b = 0;
+	}
+
+	if ( int_buf_rd ){
+	   int_buf_rd_b2b++;	
+	   int_buf_raddr = ncu_rtl_ccx_cov.int_buf_raddr;
+	} else {
+	   int_buf_rd_b2b = 0;
+	}
+ 	
+	if (int_buf_wr || int_buf_rd){
+		trigger (int_buf_sample_evnt_trig);
+//		printf ("222222 wadd %h radd %h b2b %0d b2b_same %0d\n", int_buf_waddr,int_buf_raddr,int_buf_rd_b2b,int_buf_rd_b2b_same_add);
+	}
+  }
+ 
+  
+}
+
+task ncu_rtl_cov :: set_intman_tbl_point(string myname)
+{
+
+  myname = {myname, ".set_intman_point"};
+  intman_tbl_wr_b2b = 0;
+  intman_tbl_rd_b2b = 0;
+  
+  while (1){
+	@(posedge ncu_rtl_io_cov.clk);
+	//intman_tbl_rd = ncu_rtl_io_cov.intman_tbl_rd && (|ncu_rtl_io_cov.int_sel);
+	intman_tbl_rd = ncu_rtl_io_cov.intman_tbl_rd; 
+	intman_tbl_wr = ncu_rtl_io_cov.intman_tbl_wr;
+	if (intman_tbl_wr){
+	   intman_tbl_waddr = ncu_rtl_io_cov.intman_tbl_waddr;
+	   intman_tbl_wr_b2b++;
+	} else {
+	   intman_tbl_wr_b2b = 0;
+	   intman_tbl_waddr = 0;
+	}
+
+	if ( intman_tbl_rd ){
+	   if (intman_tbl_raddr === ncu_rtl_io_cov.intman_tbl_raddr){
+		intman_tbl_rd_b2b_same_add++;
+	   }
+	   intman_tbl_rd_b2b++;	
+	  
+	   intman_tbl_raddr = ncu_rtl_io_cov.intman_tbl_raddr;
+	} else {
+	   intman_tbl_rd_b2b = 0;
+	   intman_tbl_raddr = 0;
+	   intman_tbl_rd_b2b_same_add=0;
+	}
+
+	if  (ncu_cov_ios.int_vld && ncu_cov_ios.lhs_intman_acc && (ncu_cov_ios.lhs_intman_addr != ncu_cov_ios.io_intman_addr)) 
+	{
+	   cpu_niu_acc_intman[1] = 1;
+		trigger (intman_sample_evnt_trig);
+	} 
+	else if  (ncu_cov_ios.int_vld && ncu_cov_ios.lhs_intman_acc && (ncu_cov_ios.lhs_intman_addr == ncu_cov_ios.io_intman_addr))
+	{
+	   cpu_niu_acc_intman[0] = 1;
+		trigger (intman_sample_evnt_trig);
+	}
+	
+	
+ 	
+	if (intman_tbl_wr || intman_tbl_rd){
+		trigger (intman_sample_evnt_trig);
+//		printf ("222222 wadd %h radd %h b2b %0d b2b_same %0d\n", intman_tbl_waddr,intman_tbl_raddr,intman_tbl_rd_b2b,intman_tbl_rd_b2b_same_add);
+	}
+  }
+ 
+  
+}
+
+
+/****************************************************************/
+/* Coverage Objects for FC  MAQ:				*/
+/****************************************************************/
+class fc_ncu_internal_coverage
+{
+  // for dispmon
+  StandardDisplay dbg;
+  local string    myname;
+
+        reg [5:0] cpx_to_ncu_fifo_cpu_buf_count = 6'd0;
+        reg [5:0] ncu_to_cpx_fifo_iobuf_count = 6'd0;
+        reg [5:0] ncu_to_cpx_fifo_intbuf_count = 6'd0;
+        reg [5:0] old_rd_adr = 6'd0;
+        reg [5:0] old_wr_adr = 6'd0;
+
+  // ----------- coverage_group ----------------
+        coverage_group ncu_in_cpubuf_coverage_group
+        {
+          const_sample_reference = 1;  // ref. to sample vars. is constant
+          sample_event = @(negedge cpx_to_ncu_fifo_cpu_buf.wrclk );
+          sample ncu_in_cpubuf_filled  (cpx_to_ncu_fifo_cpu_buf_count) // cpx_to_ncu_fifo_cpu_buf_count
+          {
+                m_state fifo_filled (0:31); 
+          }
+        }
+
+  // ----------- coverage_group ----------------
+        coverage_group ncu_out_iobuf_coverage_group
+        {
+          const_sample_reference = 1;  // ref. to sample vars. is constant
+          sample_event = @(posedge ncu_to_cpx_fifo_iobuf.rdclk );
+          sample ncu_out_iobuf_filled  (ncu_to_cpx_fifo_iobuf_count) // ncu_to_cpx_fifo_iobuf_count
+          {
+                m_state fifo_filled (0:31); 
+          }
+        }
+
+  // ----------- coverage_group ----------------
+        coverage_group ncu_out_intbuf_coverage_group
+        {
+          const_sample_reference = 1;  // ref. to sample vars. is constant
+          sample_event = @(negedge ncu_to_cpx_fifo_intbuf.rdclk);
+          sample ncu_out_intbuf_filled (ncu_to_cpx_fifo_intbuf_count)  // ncu_to_cpx_fifo_intbuf_count
+          {
+                m_state fifo_filled (0:31); 
+          }
+        }
+
+  task new(StandardDisplay dbg);
+  task set_cov_cond_bits ();
+  task cpx_to_ncu_fifo_cpubuf();
+  task cpx_to_ncu_fifo_iobuffer();
+  task cpx_to_ncu_fifo_intbuffer();
+} //class fc_ncu_internal_coverage
+
+task fc_ncu_internal_coverage::new(StandardDisplay dbg)
+{
+  bit coverage_on = 0;
+  integer j;
+
+  // for dispmon
+  myname = "fc_ncu_internal_coverage";
+  this.dbg = dbg;
+
+  if (mChkPlusarg(fc_ncu_internal_coverage) || mChkPlusarg(coverage_on)) {
+    coverage_on = 1;
+//    printf("MAQ-Debug: CPU Internal Coverage Turned On \n");
+  }
+
+  if (coverage_on) {
+    dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Internal Coverage turned on for NCU objects\n\n", get_time(LO)));
+
+    ncu_in_cpubuf_coverage_group = new();
+    ncu_out_iobuf_coverage_group = new();
+    ncu_out_intbuf_coverage_group = new();
+
+    set_cov_cond_bits ();
+  } // if coverage_on
+} // fc_ncu_internal_coverage::new()
+///////////////////////////////////////////////////////////////////////////
+// This task is a psuedo coverage object that combines a few conditions
+// so that the actual coverage objects' state space doesn't get too big
+//////////////////////////////////////////////////////////////////////////
+
+task fc_ncu_internal_coverage:: set_cov_cond_bits ()
+{
+
+fork
+        cpx_to_ncu_fifo_cpubuf();
+        cpx_to_ncu_fifo_iobuffer();
+        cpx_to_ncu_fifo_intbuffer();
+
+join none
+
+} // task fc_ncu_internal_coverage:: set_cov_cond_bits
+
+task fc_ncu_internal_coverage::cpx_to_ncu_fifo_cpubuf()
+{
+
+    while(1)
+    {
+        @(negedge cpx_to_ncu_fifo_cpu_buf.wrclk);
+        if(cpx_to_ncu_fifo_cpu_buf.wr_en == 1)
+        {
+                cpx_to_ncu_fifo_cpu_buf_count = cpx_to_ncu_fifo_cpu_buf_count + 1;
+                dbg.dispmon(myname, MON_INFO, psprintf("\n %d :MAQ-Debug cpx_to_ncu_fifo_cpu_buf.wr_en Seen \n", get_time(LO)));
+        }
+        if(cpx_to_ncu_fifo_cpu_buf.rd_en == 1)
+        {
+          if (cpx_to_ncu_fifo_cpu_buf.rd_adr != old_rd_adr)
+          {
+                dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :B4-Coverage-count for cpx_to_ncu_fifo_cpu_buf_count = %d\n\n", get_time(LO), cpx_to_ncu_fifo_cpu_buf_count));
+                cpx_to_ncu_fifo_cpu_buf_count = cpx_to_ncu_fifo_cpu_buf_count - 1;
+                dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :AFter Coverage-count for cpx_to_ncu_fifo_cpu_buf_count = %d\n\n", get_time(LO), cpx_to_ncu_fifo_cpu_buf_count));
+          }
+          old_rd_adr = cpx_to_ncu_fifo_cpu_buf.rd_adr;
+        }
+    } // while
+}
+task fc_ncu_internal_coverage::cpx_to_ncu_fifo_iobuffer()
+{
+    while(1)
+    {
+        @(negedge ncu_to_cpx_fifo_iobuf.rdclk);
+        {
+                if (ncu_to_cpx_fifo_iobuf.wr_adr != old_wr_adr)
+                {
+                        dbg.dispmon(myname, MON_INFO, psprintf("\n %d :MAQ-Debug ncu_to_cpx_fifo_iobuf.wr_en Seen \n", get_time(LO)));
+                        ncu_to_cpx_fifo_iobuf_count = ncu_to_cpx_fifo_iobuf_count + 1;
+                }
+                old_wr_adr = ncu_to_cpx_fifo_iobuf.wr_adr;
+
+                if(ncu_to_cpx_fifo_iobuf.rd_en == 1)
+                {
+                        dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :B4-Coverage-count for ncu_to_cpx_fifo_iobuf_count = %d\n\n", get_time(LO), ncu_to_cpx_fifo_iobuf_count));
+                        @(negedge ncu_to_cpx_fifo_iobuf.rdclk);
+                        ncu_to_cpx_fifo_iobuf_count = ncu_to_cpx_fifo_iobuf_count - 1;
+                        dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Coverage-count for ncu_to_cpx_fifo_iobuf_count = %d\n\n", get_time(LO), ncu_to_cpx_fifo_iobuf_count));
+                }
+        } // @posedge
+    } // while
+}
+
+task fc_ncu_internal_coverage::cpx_to_ncu_fifo_intbuffer()
+{
+    while(1)
+    {
+        @(negedge ncu_to_cpx_fifo_intbuf.rdclk);
+        {
+                if(ncu_to_cpx_fifo_intbuf.wr_en == 1)
+                        ncu_to_cpx_fifo_intbuf_count = ncu_to_cpx_fifo_intbuf_count + 1;
+
+                if(ncu_to_cpx_fifo_intbuf.rd_en == 1)
+                {
+                        ncu_to_cpx_fifo_intbuf_count = ncu_to_cpx_fifo_intbuf_count - 1;
+                        dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Coverage-count for ncu_to_cpx_fifo_intbuf_count = %d\n\n", get_time(LO), ncu_to_cpx_fifo_intbuf_count));
+                }
+        } // @posedge
+    } // while
+}
+
+/****************************************************************/

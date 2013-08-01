@@ -1,0 +1,377 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: fflp_db.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#define FFLP_DB 
+
+extern class fflp_fwd_dec_cl;
+
+class fflp_fwd_dec_cl
+ {
+  bit         multicast        = 1'b0;
+  bit [2:0]   l2_option        = 3'b0;
+  bit [1:0]   l3_version       = 2'b00;
+  bit [1:0]   l4_protocol      = 2'b00;
+  bit [3:0]   tcp_hdr_len      = 4'b0000;
+  bit         push_bit         = 1'b0;
+
+  bit [31:0]  seq_num          = 32'h0000_0000;
+  bit [15:0]  translation_table_index = 16'b0000; // = translation_table_index for protocol = TCP
+                                                  // = SEC_index               for protocol = IP_SEC
+  bit         drop_pkt         = 1'b0;
+  bit [1:0]   pkt_dest         = 2'b00;
+  bit [1:0]   pkt_mode         = 2'b00;
+  bit         def_vlan_en      = 1'b0;
+  bit         vlan_table_match = 1'b0;
+  bit [2:0]   priority         = 3'b000;
+  bit [7:0]   qp_num           = 8'h00;
+  bit         cam_match        = 1'b0;
+ }
+
+
+class fflp_db {
+	// The following are passed by the fake ipp to the fflp
+
+  bit          null_packet                = 1'b0;
+        
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@   FFLP Header related parameters                   @
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+  bit          raw_cam_key_mode           = 1'b0;      
+  bit          req_fifo_full              = 1'b0;      
+  bit          token_active               = 1'b0;      
+  bit          chksum_error               = 1'b0;      
+  bit          ad_drop_pkt                = 1'b0;      
+  bit          fflp_bypass                = 1'b0;      
+  integer      class_value                = 0;
+  integer      token_box_index            = 0;
+  integer      token_array_ptr            = 0;
+  bit [15:0]   type                       = 16'h0;      
+  bit          cfi                        = 1'b0;      
+  bit          tagged                     = 1'b0;      
+  bit          llc_snap                   = 1'b0;      
+  bit [15:0]   tpid                       = 12'hxxx;      
+  bit [11:0]   vlan                       = 12'hxxx;      
+  bit [2:0]    priority                   = 3'hx;      
+  bit [12:0]   frag                       = 13'hx;      
+  bit [3:0]    hdr_len                    = 4'hx;      
+  bit [15:0]   total_len                  = 16'hxxxx;      
+  bit [3:0]    tcp_hdr_len                = 4'hx;      
+  bit [2:0]    ip_flags                   = 3'hx;      
+  bit [4:0]    header_type                = 5'hx;      
+  bit [4:0]    hdr_type                   = 5'hx;      
+  bit [7:0]    tcp_flags                  = 8'hxx;      
+  bit [7:0]    protocol                   = 8'hxx;      
+  bit          pkt_tcp                    = 1'b0;      
+  bit [7:0]    next_hdr                   = 8'hxx;      
+  bit [4:0]    region_key_class_match     = 5'bxxxxx;
+  bit [5:0]    prefix_index               = 6'h0;
+  bit          ipv6_prefix_addr_matched   = 1'bx;
+  bit [5:0]    exp_class_value            = 6'hx;
+  bit [111:0]  gen_expect_class           = 112'hx;
+  bit          perfect_match              = 0;
+  integer      ipp_ffl_hdr_cycles         = 0;
+  bit [2:0]    ipp_ffl_mac_port           = 3'h0;
+  bit [127:0]  ipp_ffl_data_wrd1          = 128'hx;
+  bit [127:0]  ipp_ffl_data_wrd2          = 128'hx;
+  bit [127:0]  ipp_ffl_data_wrd3          = 128'hx;
+  bit [127:0]  ipp_ffl_data_wrd4          = 128'hx;
+  bit [127:0]  ipp_ffl_data_wrd5          = 128'hx;
+  bit [127:0]  ipp_ffl_data_wrd6          = 128'hx;
+  bit [7:0]    ipp_ffl_mac_index          = 8'h0;
+  bit [11:0]   ipp_ffl_mac_default        = 12'h0;
+  bit          fwd_dec_collected          = 0;
+  bit          collected_mac_ctrl_wrd     = 0;
+  bit [7:0]    mac_addr_index             = 0;
+  bit [2:0]    mac_port                   = 0;
+  bit [3:0]    version                    = 4'hx;
+  bit          no_port                    = 1'bx;
+  bit [31:0]   ipv4_dst_addr              = 32'hx;
+  bit [31:0]   ipv4_src_addr              = 32'hx;
+  bit [15:0]   dst_port_num               = 16'hx;
+  bit [15:0]   src_port_num               = 16'hx;
+  bit [127:0]  ipv6_dst_addr              = 128'hx;
+  bit [127:0]  ipv6_src_addr              = 128'hx;
+  bit [31:0]   seq_num                    = 32'hx;
+  bit [31:0]   sec_param_index            = 32'h0;
+
+  bit [287:0]  cam_raw_key                = 288'h0;
+
+  bit [7:0]    user_class_b0              = 8'hx;
+  bit [7:0]    user_class_b1              = 8'hx;
+  bit [7:0]    user_class_b2              = 8'hx;
+  bit [7:0]    user_class_b3              = 8'hx;
+  bit [7:0]    user_class_b4              = 8'hx;
+  bit [7:0]    user_class_b5              = 8'hx;
+  bit [7:0]    user_class_b6              = 8'hx;
+  bit [7:0]    user_class_b7              = 8'hx;
+  bit [7:0]    user_class_b8              = 8'hx;
+  bit [7:0]    user_class_b9              = 8'hx;
+  bit [7:0]    user_class_b10             = 8'hx;
+  bit [7:0]    user_class_b11             = 8'hx;
+  bit [7:0]    user_class_b12             = 8'hx;
+  bit [7:0]    user_class_b13             = 8'hx;
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@   FFLP_CAM related parameters                      @
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+  bit         do_raw_cam_key             =   1'b0; 
+  bit         cur_lb_cycles_collected    =   1'b0; 
+  bit [287:0] obs_cam_key                = 288'h0; 
+  bit [287:0] exp_cam_key                = 288'h0; 
+  bit [287:0] lb_obs_cam_key             = 288'h0; 
+  bit [287:0] lb_exp_cam_key             = 288'h0; 
+  bit         expected_cam_key_type      =   1'bx; 
+  bit [3:0]   cam_inst                   =   4'hx;
+  bit [2:0]   cam_ltin                   =   3'hx;
+  bit [2:0]   lb_cam_ltin                =   3'hx;
+  bit [3:0]   cam_segsel                 =   3'hx;
+  bit [5:0]   cam_gmask                  =   3'hx;
+  bit         cam_crb_cmp                =   1'bx;
+  bit         cam_crb_rslt               =   1'bx;
+  bit         cam_matchout               =   1'bx;
+  bit [23:0]  cam_index                  =  24'hxx_xxxx;
+  bit         cam_match                  = 1'bx;
+  bit         cam_burst_                 = 1'bx;
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@   FFLP_ZBT SRAM related parameters                 @
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+  bit        vcam_parity                 = 1'b0;
+  bit        vram_parity                 = 1'b0;
+  bit        vlan_mmatch                 = 1'b0;
+  bit        ad_skip_bmc_transaction     = 1'b0;
+  bit        expect_fflp_bmc_trans       = 1'b0;
+  bit [14:0] ad_backlog                  = 15'hx;
+  bit [6:0]  ad_cur_wght0                = 7'hx;
+  bit [6:0]  ad_cur_wght1                = 7'hx;
+  bit        ad_backlog_val              = 1'bx;
+  bit        ad_cur_wght0_val            = 1'bx;
+  bit        ad_cur_wght1_val            = 1'bx;
+  bit        pkt_fin                     = 1'bx;
+  bit        pkt_sync                    = 1'bx;
+  bit        pkt_rst                     = 1'bx;
+  bit        pkt_psh                     = 1'bx;
+  bit        pkt_ack                     = 1'bx;
+  bit        pkt_urg                     = 1'bx;
+  bit        ad_sync                     = 1'bx;
+  bit        ad_map                      = 1'bx;          
+  bit        ad_mode                     = 1'bx;
+  bit        ad_spawn                    = 1'bx;
+  bit        ad_cur_wght_used            = 1'bx;
+  bit [1:0]  ad_lmask_sel                = 2'hx;
+  bit [15:0] ad_cam_index                = 16'hxxxx;
+  bit [16:0] no_spawn_cam_index          = 17'hx_xxxx;
+  bit [16:0] nfa_144_index               = 17'hx_xxxx;
+  bit [16:0] nfa_288_index               = 17'hx_xxxx;
+
+  fflp_fwd_dec_cl      expected_fwd_dec;
+  fflp_fwd_dec_cl      collected_fwd_dec;
+
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    //@   Default Entry Associative Data                   @
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+  bit [35:0]      zbtsram_rd_asdata_region1_c1 = 36'hx_xxxx_xxxx; 
+  bit [35:0]      zbtsram_rd_asdata_region1_c2 = 36'hx_xxxx_xxxx; 
+  bit [35:0]      zbtsram_rd_asdata_region1_c3 = 36'hx_xxxx_xxxx; 
+  bit [35:0]      zbtsram_wr_asdata_region1_c4 = 36'hx_xxxx_xxxx; 
+  bit [35:0]      asdata_with_chksum_region1_c1 = 36'hx_xxxx_xxxx; 
+  bit [35:0]      asdata_with_chksum_region1_c2 = 36'hx_xxxx_xxxx; 
+  bit [35:0]      asdata_with_chksum_region1_c3 = 36'hx_xxxx_xxxx; 
+
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    //@   Default Entry Associative Data                   @
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+  bit [35:0]      zbtsram_rd_asdata_region2_c1 = 36'hx_xxxx_xxxx; 
+  bit [35:0]      zbtsram_rd_asdata_region2_c2 = 36'hx_xxxx_xxxx; 
+  bit [35:0]      zbtsram_rd_asdata_region2_c3 = 36'hx_xxxx_xxxx; 
+  bit [35:0]      zbtsram_wr_asdata_region2_c4 = 36'hx_xxxx_xxxx; 
+  bit [35:0]      asdata_with_chksum_region2_c1 = 36'hx_xxxx_xxxx; 
+  bit [35:0]      asdata_with_chksum_region2_c2 = 36'hx_xxxx_xxxx; 
+  bit [35:0]      asdata_with_chksum_region2_c3 = 36'hx_xxxx_xxxx; 
+
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    //@   Default Entry Associative Data(load balancing)   @
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+  bit [35:0]   lb_zbtsram_wr_asdata_region1_c1 = 36'hx_xxxx_xxxx; 
+  bit [35:0]   lb_zbtsram_wr_asdata_region1_c2 = 36'hx_xxxx_xxxx; 
+  bit [35:0]   lb_zbtsram_wr_asdata_region1_c3 = 36'hx_xxxx_xxxx; 
+  bit [35:0]   lb_asdata_with_chksum_region1_c1 = 36'hx_xxxx_xxxx; 
+  bit [35:0]   lb_asdata_with_chksum_region1_c2 = 36'hx_xxxx_xxxx; 
+  bit [35:0]   lb_asdata_with_chksum_region1_c3 = 36'hx_xxxx_xxxx; 
+
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    //@   Default Entry Associative Data(load balancing)   @
+    //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+  bit [35:0]   lb_zbtsram_wr_asdata_region2_c1 = 36'hx_xxxx_xxxx; 
+  bit [35:0]   lb_zbtsram_wr_asdata_region2_c2 = 36'hx_xxxx_xxxx; 
+  bit [35:0]   lb_zbtsram_wr_asdata_region2_c3 = 36'hx_xxxx_xxxx; 
+  bit [35:0]   lb_asdata_with_chksum_region2_c1 = 36'hx_xxxx_xxxx; 
+  bit [35:0]   lb_asdata_with_chksum_region2_c2 = 36'hx_xxxx_xxxx; 
+  bit [35:0]   lb_asdata_with_chksum_region2_c3 = 36'hx_xxxx_xxxx; 
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@   FFLP_BMC related parameters                      @
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+  bit          ecc_reported_rd2           = 1'b0;      
+  bit          read2                      = 1'b0;      
+  bit          fflp_bmc_busy              = 1'b1;      
+  bit          fflp_lb_cam_busy           = 1'b1;      
+  bit          fflp_lb_cam_update_busy    = 1'b1;      
+  bit          double_fflp_bmc_rd         = 1'b0;      
+  bit [15:0]   lb_grp_ptr                 = 16'h0;
+
+  bit [16:0]   cam_index_wildcard_update       = 17'h0;
+  bit [1:0]    cam_access_type_wildcard_update = 2'h0;
+  bit [3:0]    cam_inst_update                 = 4'h0;
+  bit [2:0]    cam_ltin_update                 = 3'h0;
+  bit [3:0]    cam_segsel_update               = 4'h0;
+  bit [5:0]    cam_gmask_update                = 6'h0;
+  
+  bit [20:0]   exp_fflp_bmc_rd1_addr1;
+  bit [20:0]   exp_fflp_bmc_rd1_addr2;
+  bit [20:0]   exp_fflp_bmc_rd2_addr1;
+  bit [20:0]   exp_fflp_bmc_rd2_addr2;
+  
+  bit [20:0]   obs_fflp_bmc_rd1_addr1;
+  bit [20:0]   obs_fflp_bmc_rd1_addr2;
+  bit [20:0]   obs_fflp_bmc_rd2_addr1;
+  bit [20:0]   obs_fflp_bmc_rd2_addr2;
+  
+  bit [127:0]  obs_fflp_bmc_rd1_data0;
+  bit [127:0]  obs_fflp_bmc_rd1_data1;
+  bit [127:0]  obs_fflp_bmc_rd1_data2;
+  bit [127:0]  obs_fflp_bmc_rd1_data3;
+
+  bit [127:0]  obs_fflp_bmc_rd2_data0;
+  bit [127:0]  obs_fflp_bmc_rd2_data1;
+  bit [127:0]  obs_fflp_bmc_rd2_data2;
+  bit [127:0]  obs_fflp_bmc_rd2_data3;
+  
+  bit [127:0]  obs_fflp_bmc_wr1_data;
+  bit [127:0]  obs_fflp_bmc_wr2_data;
+  
+  bit          valid_qp_num;    
+  bit [7:0]    lb_tbl_qp_num;    
+  bit [6:0]    lb_tbl_init_weight;    
+  bit [3:0]    next_lb_tbl_qp_ptr;    
+  bit [11:0]   next_lb_tbl_bank_ptr;    
+  
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@   FFLP_RTL related parameters                      @
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+  bit          lb_fifo_full_pulse  = 1'b0;
+	//
+	// Initialize all variables to zero
+	task new() {
+	  integer n;
+
+          expected_fwd_dec   = new;
+          collected_fwd_dec  = new;
+/*
+	  pkt_hdrs          = new;
+	  fflp_fwd_dec  = new;
+	  usr_def_results   = new;
+        //
+        // The folowiing intailizes the expected results to be X's
+        // forwarding decision cycle 1
+             usr_def_results.sa_replace        = 1'bx;
+             usr_def_results.new_da            = 1'bx;
+             usr_def_results.header_only       = 1'bx;
+             usr_def_results.dist_flow         = 1'bx;
+             usr_def_results.output_ports_mask = 20'hx_xxxx;
+      
+        //
+        // forwarding decision cycle 2
+             usr_def_results.tagged       = 1'bx;
+             usr_def_results.use_new_vid  = 1'bx;
+             usr_def_results.ttl_offset   = 1'bx;
+             usr_def_results.priority     = 2'bxx;
+             usr_def_results.force_beq    = 19'hx_xxxx;
+      
+        //
+        // forwarding decision cycle 3
+             usr_def_results.new_priority = 3'bxxx;
+             usr_def_results.cfi          = 1'bx;
+             usr_def_results.new_vid      = 12'hxxx;
+             usr_def_results.mirror       = 1'bx;
+             usr_def_results.dont_lb      = 1'bx;
+             usr_def_results.nat_addr     = 1'bx;
+             usr_def_results.nat_port     = 1'bx;
+             usr_def_results.prot_eq_tcp  = 1'bx;
+             usr_def_results.prot_eq_udp  = 1'bx;
+             usr_def_results.not_used     = 1'bx; 
+             usr_def_results.flow_matched = 1'bx;
+
+      
+        //
+        // forwarding decision cycle 4
+             usr_def_results.not_used_4       =  8'hxx;
+             usr_def_results.tcp_udp_port_num = 16'hxx_xxxx;
+*/
+        //
+        // The folowiing intailizes the expected results to be X's
+            expected_fwd_dec.multicast         = 1'b0;          // fwd_dec_c1[0]
+            expected_fwd_dec.l2_option         = 3'b000;        // fwd_dec_c1[3:1]
+            expected_fwd_dec.l3_version        = 2'b00;         // fwd_dec_c1[5:4]
+            expected_fwd_dec.l4_protocol       = 2'b00;         // fwd_dec_c1[7:6]
+            expected_fwd_dec.tcp_hdr_len       = 4'b0000;       // fwd_dec_c1[11:8]
+            expected_fwd_dec.push_bit          = 1'b0;          // fwd_dec_c1[12]
+            expected_fwd_dec.seq_num           = 32'h0000_0000; // {fwd_dec_c2[18:0],fwd_dec_c1[25:13]}
+            expected_fwd_dec.translation_table_index = 16'h0000;      // {fwd_dec_c2[25:19],fwd_dec_c3[25:17]}
+            expected_fwd_dec.drop_pkt          = 1'b0;          // fwd_dec_c3[0]
+            expected_fwd_dec.pkt_dest          = 2'b00;         // fwd_dec_c3[2:1]
+            expected_fwd_dec.pkt_mode          = 2'b00;         // fwd_dec_c3[4:3]
+            expected_fwd_dec.def_vlan_en       = 1'b0;          // fwd_dec_c3[6]
+            expected_fwd_dec.vlan_table_match  = 1'b0;          // fwd_dec_c3[5]
+            expected_fwd_dec.qp_num            = 8'h00;         // fwd_dec_c3[15:8]
+            expected_fwd_dec.cam_match         = 1'b0;          // fwd_dec_c3[16]
+        //
+        // The folowiing intailizes the collected results to be X's
+            collected_fwd_dec.multicast         = 1'b0;          // fwd_dec_c1[0]
+            collected_fwd_dec.l2_option         = 3'b000;        // fwd_dec_c1[3:1]
+            collected_fwd_dec.l3_version        = 2'b00;         // fwd_dec_c1[5:4]
+            collected_fwd_dec.l4_protocol       = 2'b00;         // fwd_dec_c1[7:6]
+            collected_fwd_dec.tcp_hdr_len       = 4'b0000;       // fwd_dec_c1[11:8]
+            collected_fwd_dec.push_bit          = 1'b0;          // fwd_dec_c1[12]
+            collected_fwd_dec.seq_num           = 32'h0000_0000; // {fwd_dec_c2[18:0],fwd_dec_c1[25:13]}
+            collected_fwd_dec.translation_table_index = 16'h0000;      // {fwd_dec_c2[25:19],fwd_dec_c3[25:17]}
+            collected_fwd_dec.drop_pkt          = 1'b0;          // fwd_dec_c3[0]
+            collected_fwd_dec.pkt_dest          = 2'b00;         // fwd_dec_c3[2:1]
+            collected_fwd_dec.pkt_mode          = 2'b00;         // fwd_dec_c3[4:3]
+            collected_fwd_dec.def_vlan_en       = 1'b0;          // fwd_dec_c3[6]
+            collected_fwd_dec.vlan_table_match  = 1'b0;          // fwd_dec_c3[5]
+            collected_fwd_dec.qp_num            = 8'h00;         // fwd_dec_c3[15:8]
+            collected_fwd_dec.cam_match         = 1'b0;          // fwd_dec_c3[16]
+      
+	} // end of task new
+ 
+   } // end of class fflp_db 

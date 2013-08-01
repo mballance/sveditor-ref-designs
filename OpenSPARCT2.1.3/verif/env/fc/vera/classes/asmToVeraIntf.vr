@@ -1,0 +1,4676 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: asmToVeraIntf.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "globals.vri"
+#include "std_display_defines.vri"
+#include "std_display_class.vrh"
+#include "baseUtilsClass.vrh"
+#include "sparcBenchUtils.vrh"
+#include "utilsClass.vrh"
+#include "memArray.vrh"
+#include "baseAsmToVeraIntf.vrh"
+#include "generic_ev_packet.vrh"
+
+#include "pcg_defines.vri"
+//#include "pcg_types.vri"
+// added this to remove NIU for OpenSparc T2
+#ifndef FC_NO_NIU_T2
+#include "pack_db.vrh"
+#include "flow_db.vrh"
+#include "flow_db_tasks.vrh"
+#include "pg_top_pp.vrh"
+#include "pc_top_pp.vrh"
+#include "niu_tx_descp.vrh"
+#include "pcg_token.vrh"
+
+#ifndef FC_NO_PEU_VERA
+#include "Testbench.vrh"
+#endif
+#include "niu_tx_descp.vrh"
+#include "niu_tx_port.vrh"
+#include "pio_driver.vrh"
+#include "mac_pio_class.vrh"
+#include "bmac_util.vrh"
+#include "fflp_util.vrh"
+#include "niu_rxdmc.vrh"
+#include "pktConfig.vrh"
+#endif
+
+// #include <VeraListProgram.vrh>
+#include <ListMacros.vrh>
+
+//ras
+
+#include "ios_injerr.vrh"
+#include "ios_err_packet.vrh"
+#ifndef FC_NO_NIU_T2
+#include "sioniu_err_mon.vrh"
+#endif
+#include "siodmu_err_mon.vrh"
+#ifndef GATESIM
+#include "ios_err_interrupt.vrh"
+#endif
+
+// for JTAG - L2 access
+#include "tcu_siu_packet.vrh"
+extern tcu_siu_packet tcu_siu_pkt;
+extern reg [39:0] jtagDoneMemAddr;
+extern event e_StartJtag;
+
+
+// THE INTENT OF THIS FILE IS TO BE A BRIDGE TO OTHER CLASSES THAT
+// ACTUALLY DO THE TESTING. THIS FILE IS NOT THE PLACE TO TEST ANYTHING.
+// THE CODE IN HERE SHOULD BE MINIMAL AND SHOULD SIMPLY MAKE A ZERO TIME
+// CALL INTO THE CLASS THAT DOES THE REAL WORK.
+
+#ifndef FC_NO_NIU_T2
+extern CpktConfig pktConfig;
+extern RxDMAChannel rx_dma[32];
+extern CRDMC rdmc;
+#endif
+// extern class BaseAsmToVeraIntf;
+extern integer config_mb;
+extern integer config0_mb;
+extern integer config1_mb;
+extern integer flow_mb;
+//extern pg pack_gen[16];
+
+#ifndef FC_NO_PEU_VERA
+extern event e_StartPEUTest;
+extern integer asm2peu_mbox;
+#endif
+
+extern ios_ras_inj ras_injector;
+// extern ios_err_packet err_pkt;
+
+#ifndef GATESIM
+extern ios_err_interrupt_mon ras_interrupt;
+#endif
+
+#include "ssi.vrh"
+extern SSI bootrom;
+
+ExternVeraList(ios_err_packet);
+
+extern integer generic_ev_mbox; // mailbox for generic asm-to-vera user event 'generic_ev'
+
+
+
+class AsmToVeraIntf extends BaseAsmToVeraIntf {
+
+integer inj_result;
+integer p0_dma_chnl[];
+integer p1_dma_chnl[];
+
+
+#ifndef FC_NO_NIU_T2
+CMacTxPort  MacTxPort[2]; 
+flow_desc flow_p0[];
+flow_desc flow_p1[];
+#endif
+  task new();  
+  
+  // generic user event
+  task generic_ev(
+    string     arg1_str,
+    reg [63:0] arg2_64bits,
+    reg [63:0] arg3_64bits
+  );
+  // trig_pc_d(kind, 64'h1234567812345678) -> intp(tid, type, vector) hex, w/no 64'h
+  // trig_pc_d(kind, 64'h1234567812345678) -> intp(tid, type, vector, src, wait)    
+  task intp(reg [5:0] tid = 0,
+            reg [63:0] type = 0,
+            reg [63:0] vec = 0,
+            integer src = 16, // 0-16 are ccx ports. 16 = NCU
+            integer wait = 0);
+
+  // dump actual RAM contents
+  // trig_pc_d(1,expr(@VA(.MAIN.T1_ext_intr_200), 16, 16)) -> dump_mem(addr, amount)
+  task dump_mem(reg [63:0] addr=0,
+                integer amount = 8);
+  
+  // trig_pc_d(1,expr(@VA(.MAIN.T1_ext_intr_200), 16, 16)) -> extint(wait/delay)
+  task extint(integer wait = 0, integer width = 0);
+  
+  task warmrst(integer wait = 0);
+   
+  // SPC BFM will do a store. Pick correct port w/ BFM!!!
+  // trig_pc_d(1,...) -> store(cpu/ccxPort, addr, data)
+  task store(reg [7:0] ccxPortMask = 0,
+             reg [63:0] addr=0,
+             reg [63:0] data=0);
+
+task IosErrInj (string errtype, bit [15:0] ctag, bit [39:0] pa);
+task IosRandErrInj (string errtype, integer num_errs, integer weight);
+
+task jtagRdWrL2 (
+    reg [63:0] paAddr,
+    reg [63:0] data,
+    reg [63:0] jtagDoneAddrMem,
+    reg rdwr // =0 asm->VERA,  =1 VERA->asm
+);
+
+
+#ifndef FC_NO_NIU_T2
+task pktGenConfig (
+    integer mac_port,
+    integer frame_type,
+    integer frame_class,
+    integer data_length,
+    (integer tx_multi_port = 0, integer data_length_p1 = -1)
+);
+
+task NIU_AddTxChannels (
+    integer mac_port, 
+    integer dma_no,
+    (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0)
+);
+
+task NIU_SetTxMaxBurst (
+    integer mac_port, 
+    integer dma_no, 
+    integer SetTxMaxBurst_Data,
+    (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0)
+);
+
+task NIU_TxDMAActivate (
+    integer mac_port, 
+    integer dma_activelist,
+    (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0)
+);
+
+task NIU_InitTxDma (
+    integer mac_port, 
+    integer dma_no,
+    bit Xlate,
+    (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0)
+);
+
+task NIU_EXIT_chk (
+    integer mac_port
+);
+
+task NIU_SetTxRingKick (
+    integer mac_port,
+    integer dma_no,
+    (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0)
+);
+
+task TxPktGen (
+    integer mac_port,
+    integer dmaport,
+    integer numofpacket,
+    (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0)
+);
+
+task TxPktGen_int (
+    integer mac_port,
+    integer dmaport,
+    integer numofpacket,
+    (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0)
+);
+
+task NIU_InitRxDma (
+    integer RxDmaChnlNo, 
+    integer RxDescRingLen, 
+    bit [39:0] RxRingStartAddr, 
+    bit [63:0] RbrConfData, 
+    integer RxInitKick,
+    bit Xlate,
+    (bit [15:0] rx_multi_dma = 16'h0)
+);
+
+task NIU_RxPktConf (
+    integer RxPktCnt,
+    (integer iport = 0)
+);
+
+task NIU_RxGenPkt (
+    integer mac_port, 
+    integer RxDmaChnlNo, 
+    integer RxPktCnt, 
+    integer RxPktLen,
+    (integer rx_multi_PORT = 0, bit [15:0] rx_multi_DMA = 16'h0)
+);
+
+task NIU_internalrx (
+    integer mac_port, 
+    integer RxDmaChnlNo, 
+    integer RxPktCnt, 
+    integer RxPktLen,
+    (integer rx_multi_port = 0, bit [15:0] rx_multi_dma = 16'h0)
+);
+#endif
+
+
+task marker(
+  string what,
+  reg [5:0] fromTid,
+  reg [63:0] pc
+);
+ // trig_pc_d(1,expr(@VA(.MAIN.lable) -> L2ErrTrapCount(register with trap count)
+  //task for fc random error injection in data array of L2
+  task L2ErrTrapCount(reg [8:0] count=0);
+
+task reset_now(
+  string what
+);
+
+#ifndef FC_NO_PEU_VERA
+task set_StartPEUTest ();
+task EnablePCIeEgCmd (string      cmdType,
+                      bit [63:0]  addr,
+                      bit [31:0]  txLen,
+                      bit [31:0]  startData,
+                      string      err);
+
+task EnablePCIeIgCmd (string      cmdType,
+                      bit [63:0]  StartAddr,
+                      bit [63:0]  EndAddr,
+                      string      txLen,
+                      bit [31:0]  NumCmds,
+                      string      err);
+#endif
+
+
+  
+}
+
+
+task AsmToVeraIntf::new() {
+  probe_if.gOutOfBoot <= 64'h0;
+  random_rst_if.POR_from_UserEvent <= 0;
+  random_rst_if.PB_RST_from_UserEvent <= 0;
+}
+
+// generic user event
+task AsmToVeraIntf::generic_ev(string     arg1_str,
+                reg [63:0] arg2_64bits,
+                reg [63:0] arg3_64bits)
+{
+  Generic_ev_packet pkt = new();
+  pkt.arg1_str = arg1_str;
+  pkt.arg2_64bits = arg2_64bits;
+  pkt.arg3_64bits = arg3_64bits;
+  mailbox_put (generic_ev_mbox, pkt);
+}
+// trig_pc_d(kind, 64'h1234567812345678) -> intp(tid, type, vector) hex, w/no 64'h
+// trig_pc_d(kind, 64'h1234567812345678) -> intp(tid, type, vector, src, wait)    
+task AsmToVeraIntf::intp(reg [5:0] tid = 0,
+                         reg [63:0] type = 0,
+                         reg [63:0] vec = 0,
+                         integer src = DEV_NCU, // 0-16 are ccx ports. 16 = NCU
+                         integer wait = 0)
+{
+
+   error("AsmToVeraIntf::intp is not coded yet for NCU RTL!!!\n");
+
+  fork {
+    repeat (wait) @(posedge CLOCK);
+    gUtil.sendIntr(tid,type,vec,src);
+  }
+  join none
+}
+
+// dump actual RAM contents
+// trig_pc_d(1,expr(@VA(.MAIN.T1_ext_intr_200), 16, 16)) -> dump_mem(addr, amount)
+task AsmToVeraIntf::dump_mem(reg [63:0] addr=0,
+                             integer amount = 8)
+{
+  gMem.dumpMem(addr,amount); 
+}
+
+// trig_pc_d(1,expr(@VA(.MAIN.T1_ext_intr_200), 16, 16)) -> extint(wait/delay)
+task AsmToVeraIntf::extint(integer wait = 0, integer width = 0)
+{
+//  error("AsmToVeraIntf::extint is not coded yet\n");
+  bootrom.pulse_ssi_int_l(wait, width);
+}
+
+task AsmToVeraIntf::warmrst(integer wait = 0)
+{
+  error("AsmToVeraIntf::warmrst is not coded yet\n");
+}
+
+
+// SPC BFM will do a store. Pick correct port w/ BFM!!!
+// trig_pc_d(1,...) -> store(cpu/ccxPort, addr, data)
+task AsmToVeraIntf::store(reg [7:0] ccxPortMask = 0,
+                          reg [63:0] addr=0,
+                          reg [63:0] data=0)
+{
+  error("AsmToVeraIntf::store is not coded yet\n");
+}
+
+// ***********************************************************************************
+// JTAG Read/Write L2 Task
+// ***********************************************************************************
+task AsmToVeraIntf::jtagRdWrL2 (reg [63:0] paAddr=0,
+                                reg [63:0] data=0,
+                                reg [63:0] jtagDoneAddrMem=0,
+                                reg rdwr=0) // rd=0 asm->VERA, wr=1 VERA->asm
+{
+  reg [63:0] header;
+
+  printf ("\n In jtagRdWr... setting StartJtag\n");
+  if (rdwr) { // VERA -> asm
+    header = {24'h820000, paAddr[39:0]};  // write operation
+    // save to share packet
+    tcu_siu_pkt.header = header;
+    tcu_siu_pkt.payload = data;
+    tcu_siu_pkt.type = JTAG_WR;
+  }
+  else { // asm -> VERA
+    header = {24'h810000, paAddr[39:0]};  // read operation
+    // save to share packet
+    tcu_siu_pkt.header = header;
+    tcu_siu_pkt.payload = data;
+    tcu_siu_pkt.type = JTAG_RD;
+  }
+  jtagDoneMemAddr = jtagDoneAddrMem[39:0];  // only 40 bits of PA are used
+  trigger (ON, e_StartJtag);
+}
+
+#ifndef FC_NO_NIU_T2
+// ***********************************************************************************
+// NIU Tx Tasks
+// ***********************************************************************************
+task AsmToVeraIntf::pktGenConfig (integer mac_port, 
+                                  integer frame_type, 
+                                  integer frame_class, 
+                                  integer data_length,
+                                  (integer tx_multi_port = 0, integer data_length_p1 = -1))
+{
+//integer data_length;
+integer pkt_length;
+integer byte_incr;
+integer mark_bit;
+flow_desc flow0;
+flow_desc flow1;
+//TxPacketGenConfig config;
+TxPacketGenConfig config0;
+TxPacketGenConfig config1;
+
+if (tx_multi_port == 0)
+  {
+   if (mac_port == 0)
+    {
+     PR_INFO("fc_niu_asm_event", MON_INFO,
+             psprintf("KHH-TX Debug : Configuring TX PKTGEN for Port %0d", mac_port));
+     flow0= new;
+   
+     flow0.frame.frame_type = frame_type;			// 072105 flow0.frame.frame_type = 2;
+     flow0.frame.frame_class = frame_class; 		// 072105 flow0.frame.frame_class = CL_IP;
+     flow0.frame.type = -1;
+     flow0.frame.class_mask = 0;
+     flow0.frame.class_funct = CLF_SRC;
+     flow0.frame.data_type = DAT_SEQ|DAT_LEN_EXACT  ;
+     flow0.frame.data_seed = 0;
+
+     flow0.src_node.l2_addr = 48'h00_a5_5a_a5_5a_a5; 		// flow0.src_node.l2_addr = 48'haaaa_1111_0000;
+     flow0.src_node.tci     = random(); 				// flow0.src_node.tci     = 16'hcb00;
+     flow0.src_node.ip_addr = random();			// IPv4 address of this substation 	// flow0.src_node.ip_addr = 32'hcccc_0000;
+     flow0.src_node.ipv6_addr = random();
+							//  flow0.src_node.src_port = 20'h00001;
+
+
+
+     flow0.dst_node.l2_addr = 48'h00_55_55_55_55_55; 		// flow0.dst_node.l2_addr = 48'hdddd_bbbb_0000;
+     flow0.dst_node.tci     = random(); 				// flow0.dst_node.tci     = 16'hcb00;
+     flow0.dst_node.ip_addr = random(); 			// flow0.dst_node.ip_addr = 32'h8888_0000;
+     flow0.dst_node.ipv6_addr = random();
+							// flow0.dst_node.src_port = 20'h00001;
+
+     flow0.tup.src_tcp_udp_port = random();		// Source TCP/UDP Port	//  flow0.tup.src_tcp_udp_port = 16'h1234;
+     flow0.tup.dst_tcp_udp_port = random();		// Destination TCP/UDP Port //  flow0.tup.dst_tcp_udp_port = 16'hABCD;
+
+     flow0.rx_param.rcv_isn = 32'h1357_abef; 		// flow0.rx_param.rcv_isn = 32'hA5A5_F5F5;
+
+     flow0.fl_state.tcp_flags = 6'b00_0010;
+
+     flow0.flow_no = 0;
+
+     flow0.partial_chksum = 1;
+
+     flow0.psu_hdr[0] = 8'hdc;
+     flow0.psu_hdr[1] = 8'h92;
+
+
+//  if (get_plus_arg (CHECK, "TX_PKT_LEN"))
+//    data_length = get_plus_arg (NUM, "TX_PKT_LEN");
+//  else
+//    data_length = 52; 	//MAQ: 020905 data_length = 64;
+
+      if( get_plus_arg (CHECK, "TX_PKT_SIZE_SWEEP")) {
+           byte_incr = get_plus_arg (NUM, "TX_PKT_INCR");
+      } else byte_incr = 0;
+
+     config0 = new();
+     config0.mac_id = mac_port;
+     config0.flow = flow0;
+
+     if (get_plus_arg (CHECK, "TX_INT_MARK"))
+       mark_bit = get_plus_arg (NUM, "TX_INT_MARK");
+     else
+       mark_bit = 0; 
+
+     config0.mark_bit = mark_bit;
+
+//072005   pkt_length = data_length;
+//072005   if(pkt_length > 1500)
+//072005    pkt_length = data_length ;
+//072005   config.data_length = pkt_length;
+
+     config0.data_length = data_length;
+     if (get_plus_arg (CHECK, "TX_GATHER"))
+   	config0.g_mode = 1;
+     else
+   	config0.g_mode = 0;
+
+      mailbox_put (config0_mb, config0);
+    }
+   else if (mac_port == 1)
+    {
+     PR_INFO("fc_niu_asm_event", MON_INFO,
+             psprintf("KHH-TX Debug : Configuring TX PKTGEN for Port %0d", mac_port));
+     flow1= new;
+   
+     flow1.frame.frame_type = frame_type;			// 072105 flow1.frame.frame_type = 2;
+     flow1.frame.frame_class = frame_class; 		// 072105 flow1.frame.frame_class = CL_IP;
+     flow1.frame.type = -1;
+     flow1.frame.class_mask = 0;
+     flow1.frame.class_funct = CLF_SRC;
+     flow1.frame.data_type = DAT_SEQ|DAT_LEN_EXACT  ;
+     flow1.frame.data_seed = 0;
+
+     flow1.src_node.l2_addr = 48'h00_b5_b6_b7_b8_b9; 		// flow1.src_node.l2_addr = 48'haaaa_1111_0000;
+     flow1.src_node.tci     = random(); 				// flow1.src_node.tci     = 16'hcb00;
+     flow1.src_node.ip_addr = random();			// IPv4 address of this substation 	// flow1.src_node.ip_addr = 32'hcccc_0000;
+     flow1.src_node.ipv6_addr = random();
+							//  flow1.src_node.src_port = 20'h00001;
+
+     flow1.dst_node.l2_addr = 48'h00_65_66_67_68_69; 		// flow1.dst_node.l2_addr = 48'hdddd_bbbb_0000;
+     flow1.dst_node.tci     = random(); 				// flow1.dst_node.tci     = 16'hcb00;
+     flow1.dst_node.ip_addr = random(); 			// flow1.dst_node.ip_addr = 32'h8888_0000;
+     flow1.dst_node.ipv6_addr = random();
+							// flow1.dst_node.src_port = 20'h00001;
+
+     flow1.tup.src_tcp_udp_port = random();		// Source TCP/UDP Port	//  flow1.tup.src_tcp_udp_port = 16'h1234;
+     flow1.tup.dst_tcp_udp_port = random();		// Destination TCP/UDP Port //  flow1.tup.dst_tcp_udp_port = 16'hABCD;
+
+     flow1.rx_param.rcv_isn = 32'h1213_1415; 		// flow1.rx_param.rcv_isn = 32'hA5A5_F5F5;
+
+     flow1.fl_state.tcp_flags = 6'b00_0010;
+
+     flow1.flow_no = 0;
+
+     flow1.partial_chksum = 1;
+
+     flow1.psu_hdr[0] = 8'hab;
+     flow1.psu_hdr[1] = 8'hcd;
+
+
+//  if (get_plus_arg (CHECK, "TX_PKT_LEN"))
+//    data_length = get_plus_arg (NUM, "TX_PKT_LEN");
+//  else
+//    data_length = 52; 	//MAQ: 020905 data_length = 64;
+
+      if( get_plus_arg (CHECK, "TX_PKT_SIZE_SWEEP")) {
+           byte_incr = get_plus_arg (NUM, "TX_PKT_INCR");
+      } else byte_incr = 0;
+
+     config1 = new();
+     config1.mac_id = mac_port;
+     config1.flow = flow1;
+
+     if (get_plus_arg (CHECK, "TX_INT_MARK"))
+       mark_bit = get_plus_arg (NUM, "TX_INT_MARK");
+     else
+       mark_bit = 0; 
+   
+     config1.mark_bit = mark_bit;
+
+//072005   pkt_length = data_length;
+//072005   if(pkt_length > 1500)
+//072005    pkt_length = data_length ;
+//072005   config.data_length = pkt_length;
+
+     config1.data_length = data_length;
+     if (get_plus_arg (CHECK, "TX_GATHER"))
+   	config1.g_mode = 1;
+     else
+   	config1.g_mode = 0;
+   
+      mailbox_put (config1_mb, config1);
+    }
+   else
+    {
+     PR_ERROR("fc_niu_asm_event", MON_ERROR,
+              psprintf("pktGenConfig: Unexpected TX Port Value %0d", mac_port));
+    }
+  }
+else
+  {
+   mac_port = 0;
+     PR_INFO("fc_niu_asm_event", MON_INFO,
+             psprintf("KHH-TX Debug : Configuring TX PKTGEN for Port %0d", mac_port));
+     flow0= new;
+   
+     flow0.frame.frame_type = frame_type;			// 072105 flow0.frame.frame_type = 2;
+     flow0.frame.frame_class = frame_class; 		// 072105 flow0.frame.frame_class = CL_IP;
+     flow0.frame.type = -1;
+     flow0.frame.class_mask = 0;
+     flow0.frame.class_funct = CLF_SRC;
+     flow0.frame.data_type = DAT_SEQ|DAT_LEN_EXACT  ;
+     flow0.frame.data_seed = 0;
+
+     flow0.src_node.l2_addr = 48'h00_a5_5a_a5_5a_a5; 		// flow0.src_node.l2_addr = 48'haaaa_1111_0000;
+     flow0.src_node.tci     = random(); 				// flow0.src_node.tci     = 16'hcb00;
+     flow0.src_node.ip_addr = random();			// IPv4 address of this substation 	// flow0.src_node.ip_addr = 32'hcccc_0000;
+     flow0.src_node.ipv6_addr = random();
+							//  flow0.src_node.src_port = 20'h00001;
+
+     flow0.dst_node.l2_addr = 48'h00_55_55_55_55_55; 		// flow0.dst_node.l2_addr = 48'hdddd_bbbb_0000;
+     flow0.dst_node.tci     = random(); 				// flow0.dst_node.tci     = 16'hcb00;
+     flow0.dst_node.ip_addr = random(); 			// flow0.dst_node.ip_addr = 32'h8888_0000;
+     flow0.dst_node.ipv6_addr = random();
+							// flow0.dst_node.src_port = 20'h00001;
+
+     flow0.tup.src_tcp_udp_port = random();		// Source TCP/UDP Port	//  flow0.tup.src_tcp_udp_port = 16'h1234;
+     flow0.tup.dst_tcp_udp_port = random();		// Destination TCP/UDP Port //  flow0.tup.dst_tcp_udp_port = 16'hABCD;
+
+     flow0.rx_param.rcv_isn = 32'h1357_abef; 		// flow0.rx_param.rcv_isn = 32'hA5A5_F5F5;
+
+     flow0.fl_state.tcp_flags = 6'b00_0010;
+
+     flow0.flow_no = 0;
+
+     flow0.partial_chksum = 1;
+
+     flow0.psu_hdr[0] = 8'hdc;
+     flow0.psu_hdr[1] = 8'h92;
+
+
+//  if (get_plus_arg (CHECK, "TX_PKT_LEN"))
+//    data_length = get_plus_arg (NUM, "TX_PKT_LEN");
+//  else
+//    data_length = 52; 	//MAQ: 020905 data_length = 64;
+
+      if( get_plus_arg (CHECK, "TX_PKT_SIZE_SWEEP")) {
+           byte_incr = get_plus_arg (NUM, "TX_PKT_INCR");
+      } else byte_incr = 0;
+
+     config0 = new();
+     config0.mac_id = mac_port;
+     config0.flow = flow0;
+
+     if (get_plus_arg (CHECK, "TX_INT_MARK"))
+       mark_bit = get_plus_arg (NUM, "TX_INT_MARK");
+     else
+       mark_bit = 0; 
+
+     config0.mark_bit = mark_bit;
+
+//072005   pkt_length = data_length;
+//072005   if(pkt_length > 1500)
+//072005    pkt_length = data_length ;
+//072005   config.data_length = pkt_length;
+
+     config0.data_length = data_length;
+     if (get_plus_arg (CHECK, "TX_GATHER"))
+   	config0.g_mode = 1;
+     else
+   	config0.g_mode = 0;
+
+      mailbox_put (config0_mb, config0);
+     
+   mac_port = 1;
+     
+     PR_INFO("fc_niu_asm_event", MON_INFO,
+             psprintf("KHH-TX Debug : Configuring TX PKTGEN for Port %0d", mac_port));
+     flow1= new;
+   
+     flow1.frame.frame_type = frame_type;			// 072105 flow1.frame.frame_type = 2;
+     flow1.frame.frame_class = frame_class; 		// 072105 flow1.frame.frame_class = CL_IP;
+     flow1.frame.type = -1;
+     flow1.frame.class_mask = 0;
+     flow1.frame.class_funct = CLF_SRC;
+     flow1.frame.data_type = DAT_SEQ|DAT_LEN_EXACT  ;
+     flow1.frame.data_seed = 0;
+
+     flow1.src_node.l2_addr = 48'h00_b5_b6_b7_b8_b9; 		// flow1.src_node.l2_addr = 48'haaaa_1111_0000;
+     flow1.src_node.tci     = random(); 				// flow1.src_node.tci     = 16'hcb00;
+     flow1.src_node.ip_addr = random();			// IPv4 address of this substation 	// flow1.src_node.ip_addr = 32'hcccc_0000;
+     flow1.src_node.ipv6_addr = random();
+							//  flow1.src_node.src_port = 20'h00001;
+
+     flow1.dst_node.l2_addr = 48'h00_65_66_67_68_69; 		// flow1.dst_node.l2_addr = 48'hdddd_bbbb_0000;
+     flow1.dst_node.tci     = random(); 				// flow1.dst_node.tci     = 16'hcb00;
+     flow1.dst_node.ip_addr = random(); 			// flow1.dst_node.ip_addr = 32'h8888_0000;
+     flow1.dst_node.ipv6_addr = random();
+							// flow1.dst_node.src_port = 20'h00001;
+
+     flow1.tup.src_tcp_udp_port = random();		// Source TCP/UDP Port	//  flow1.tup.src_tcp_udp_port = 16'h1234;
+     flow1.tup.dst_tcp_udp_port = random();		// Destination TCP/UDP Port //  flow1.tup.dst_tcp_udp_port = 16'hABCD;
+
+     flow1.rx_param.rcv_isn = 32'h1213_1415; 		// flow1.rx_param.rcv_isn = 32'hA5A5_F5F5;
+
+     flow1.fl_state.tcp_flags = 6'b00_0010;
+
+     flow1.flow_no = 0;
+
+     flow1.partial_chksum = 1;
+
+     flow1.psu_hdr[0] = 8'hab;
+     flow1.psu_hdr[1] = 8'hcd;
+
+
+//  if (get_plus_arg (CHECK, "TX_PKT_LEN"))
+//    data_length = get_plus_arg (NUM, "TX_PKT_LEN");
+//  else
+//    data_length = 52; 	//MAQ: 020905 data_length = 64;
+
+      if( get_plus_arg (CHECK, "TX_PKT_SIZE_SWEEP")) {
+           byte_incr = get_plus_arg (NUM, "TX_PKT_INCR");
+      } else byte_incr = 0;
+
+     config1 = new();
+     config1.mac_id = mac_port;
+     config1.flow = flow1;
+
+     if (get_plus_arg (CHECK, "TX_INT_MARK"))
+       mark_bit = get_plus_arg (NUM, "TX_INT_MARK");
+     else
+       mark_bit = 0; 
+   
+     config1.mark_bit = mark_bit;
+
+//072005   pkt_length = data_length;
+//072005   if(pkt_length > 1500)
+//072005    pkt_length = data_length ;
+//072005   config.data_length = pkt_length;
+
+     if (data_length_p1 == -1)
+       {
+        data_length_p1 = 80;
+       }
+     config1.data_length = data_length_p1;
+     if (get_plus_arg (CHECK, "TX_GATHER"))
+   	config1.g_mode = 1;
+     else
+   	config1.g_mode = 0;
+   
+      mailbox_put (config1_mb, config1);
+  }
+}
+
+// ***********************************************************************************
+task AsmToVeraIntf::NIU_SetTxRingKick (integer mac_port, integer dma_no,
+                                       (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0))
+{
+
+ PR_INFO("fc_niu_asm_event", MON_INFO,
+         psprintf("KHH-TX Debug : B4 FOR NIU_SetTxRingKick, NIU_TX_MULTI_PORT = %0d, NIU_TX_MULTI_DMA_P0 = 0x%h, NIU_TX_MULTI_DMA_P1 = 0x%h", tx_multi_port, tx_multi_dma_p0, tx_multi_dma_p1));
+ if (get_plus_arg (CHECK, "NIU_TX_MULTI_DMA_P0="))
+   {
+    tx_multi_dma_p0 = get_plus_arg( HNUM, "NIU_TX_MULTI_DMA_P0=");
+   }
+ PR_INFO("fc_niu_asm_event", MON_INFO,
+         psprintf("KHH-TX Debug : AF FOR NIU_SetTxRingKick, NIU_TX_MULTI_PORT = %0d & NIU_TX_MULTI_DMA_P0 = %h MODE", tx_multi_port, tx_multi_dma_p0));
+ if (get_plus_arg (CHECK, "NIU_TX_MULTI_DMA_P1="))
+   {
+    tx_multi_dma_p1 = get_plus_arg( HNUM, "NIU_TX_MULTI_DMA_P1=");
+   }
+ PR_INFO("fc_niu_asm_event", MON_INFO,
+         psprintf("KHH-TX Debug : AF FOR NIU_SetTxRingKick, NIU_TX_MULTI_PORT = %0d & NIU_TX_MULTI_DMA_P1 = %h MODE", tx_multi_port, tx_multi_dma_p1));
+
+ if (tx_multi_dma_p1[15:0]  & tx_multi_dma_p0[15:0])
+   {
+    PR_ERROR("fc_niu_asm_event", MON_ERROR,
+             psprintf("NIU_SetTxRingKick: Same DMA assigned to multiple ports: TX_MULTI_DMA_P0 = 0x%h, TX_MULTI_DMA_P1 = 0x%h", tx_multi_dma_p0, tx_multi_dma_p1));
+   }
+
+ if (tx_multi_port == 0 && tx_multi_dma_p0 == 16'h0 && tx_multi_dma_p1 == 16'h0)
+   {
+    PR_INFO("fc_niu_asm_event", MON_INFO,
+            psprintf("MAQ-Debug : B4 setTxRingKick ring_current_addr = %h", MacTxPort[mac_port].dma[dma_no].desc_ring.ring_current_addr));
+    MacTxPort[mac_port].dma[dma_no].setTxRingKick(MacTxPort[mac_port].dma[dma_no].desc_ring.ring_current_addr);
+    PR_INFO("fc_niu_asm_event", MON_INFO,
+            "MAQ-Debug : After setTxRingKick");
+   }
+ else if (tx_multi_port == 0 && (tx_multi_dma_p0 > 16'h0 || tx_multi_dma_p1 > 16'h0))
+   {
+    PR_INFO("fc_niu_asm_event", MON_INFO,
+            psprintf("KHH-TX Debug : FOR NIU_SetTxRingKick, NIU_TX_MULTI_PORT = %0d, NIU_TX_MULTI_DMA_P0 = %h, NIU_TX_MULTI_DMA_P1 = %h, MAC_PORT = %0d, DMA_NO = 0x%h", tx_multi_port, tx_multi_dma_p0, tx_multi_dma_p1, mac_port, dma_no));
+    PR_INFO("fc_niu_asm_event", MON_INFO,
+            psprintf("KHH-Debug : P0 TX_DMA0 setTxRingKick ring_current_addr = %h", MacTxPort[mac_port].dma[dma_no].desc_ring.ring_current_addr));
+          MacTxPort[mac_port].dma[dma_no].setTxRingKick(MacTxPort[mac_port].dma[dma_no].desc_ring.ring_current_addr); 
+   }
+ else if (tx_multi_port == 1 && (tx_multi_dma_p1[15:0]  == 16'h0 || tx_multi_dma_p0[15:0] == 16'h0))
+   {
+    PR_ERROR("fc_niu_asm_event", MON_ERROR,
+            psprintf("NIU_SetTxRingKick: For NIU_TX_MULTI_PORT, NIU_TX_MULTI_DMA_P0 = %h, NIU_TX_MULTI_DMA_P1 = %h", tx_multi_dma_p0, tx_multi_dma_p1));
+   }
+ else if (tx_multi_port == 1 && tx_multi_dma_p1[15:0]  > 16'h0 && tx_multi_dma_p0[15:0] > 16'h0)
+   {
+    PR_INFO("fc_niu_asm_event", MON_INFO,
+            psprintf("KHH-TX Debug : FOR NIU_SetTxRingKick, NIU_TX_MULTI_PORT = %0d, NIU_TX_MULTI_DMA_P0 = 0x%h, NIU_TX_MULTI_DMA_P1 = 0x%h, MAC_PORT = %0d & DMA_NO = 0x%h", tx_multi_port, tx_multi_dma_p0, tx_multi_dma_p1, mac_port, dma_no));
+    PR_INFO("fc_niu_asm_event", MON_INFO,
+            psprintf("KHH-Debug : P0 TX_DMA0 setTxRingKick ring_current_addr = %h", MacTxPort[mac_port].dma[dma_no].desc_ring.ring_current_addr));
+          MacTxPort[mac_port].dma[dma_no].setTxRingKick(MacTxPort[mac_port].dma[dma_no].desc_ring.ring_current_addr); 
+   }
+ else
+   {
+    PR_ERROR("fc_niu_asm_event", MON_ERROR,
+             psprintf("NIU_SetTxRingKick: Invalid combination for NIU_TX_MULTI_PORT, NIU_TX_MULTI_DMA_P0 = 0x%h, NIU_TX_MULTI_DMA_P1 = 0x%h", tx_multi_port, tx_multi_dma_p0, tx_multi_dma_p1));
+   }
+}
+
+// ***********************************************************************************
+task AsmToVeraIntf::NIU_AddTxChannels (integer mac_port, integer dma_no,
+                                       (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0))
+{
+
+ PR_INFO("fc_niu_asm_event", MON_INFO,
+         psprintf("KHH-TX Debug : FOR NIU_AddTxChannels, NIU_TX_MULTI_PORT = %0d, NIU_TX_MULTI_DMA_P0 = %h, NIU_TX_MULTI_DMA_P1 = %h", tx_multi_port, tx_multi_dma_p0, tx_multi_dma_p1));
+ if (get_plus_arg (CHECK, "NIU_TX_MULTI_DMA_P0="))
+   {
+    tx_multi_dma_p0 = get_plus_arg( HNUM, "NIU_TX_MULTI_DMA_P0=");
+   }
+ if (get_plus_arg (CHECK, "NIU_TX_MULTI_DMA_P1="))
+   {
+    tx_multi_dma_p1 = get_plus_arg( HNUM, "NIU_TX_MULTI_DMA_P1=");
+   }
+/*
+ if (tx_multi_dma_p1[15:0]  & tx_multi_dma_p0[15:0])
+   {
+    printf("ERROR : NIU_AddTxChannels, FOR TX_MULTI_DMA_P0 = %h, same dma assigned to multiple ports.\n", tx_multi_dma_p0);
+    printf("ERROR : NIU_AddTxChannels, FOR TX_MULTI_DMA_P1 = %h, same dma assigned to multiple ports.\n", tx_multi_dma_p1);
+   }
+ else
+   {
+    if (tx_multi_port == 0 && tx_multi_dma_p0 == 16'h0 && tx_multi_dma_p1 == 16'h0)
+      {
+       printf("KHH-TX Debug : FOR NIU_AddTxChannels, MAC_PORT = %d & DMA_NO = %d.\n", mac_port, dma_no);
+       MacTxPort[mac_port].add_channels(dma_no);
+      }
+    else if (tx_multi_port == 0 && (tx_multi_dma_p0 > 16'h0 || tx_multi_dma_p1 > 16'h0))
+      {
+       printf("KHH-TX Debug : FOR NIU_AddTxChannels, NIU_TX_MULTI_PORT = %d & NIU_TX_MULTI_DMA_P0 = %h MODE.\n", tx_multi_port, tx_multi_dma_p0);
+       printf("KHH-TX Debug : FOR NIU_AddTxChannels, NIU_TX_MULTI_PORT = %d & NIU_TX_MULTI_DMA_P1 = %h MODE.\n", tx_multi_port, tx_multi_dma_p1);
+       if (mac_port == 0)
+         {
+          if (tx_multi_dma_p0[0] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(0);
+            }
+          if (tx_multi_dma_p0[1] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(1);
+            }
+          if (tx_multi_dma_p0[2] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(2);
+            }
+          if (tx_multi_dma_p0[3] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(3);
+            }
+          if (tx_multi_dma_p0[4] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(4);
+            }
+          if (tx_multi_dma_p0[5] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(5);
+            }
+          if (tx_multi_dma_p0[6] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(6);
+            }
+          if (tx_multi_dma_p0[7] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(7);
+            }
+          if (tx_multi_dma_p0[8] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(8);
+            }
+          if (tx_multi_dma_p0[9] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(9);
+            }
+          if (tx_multi_dma_p0[10] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(10);
+            }
+          if (tx_multi_dma_p0[11] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(11);
+            }
+          if (tx_multi_dma_p0[12] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(12);
+            }
+          if (tx_multi_dma_p0[13] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(13);
+            }
+          if (tx_multi_dma_p0[14] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(14);
+            }
+          if (tx_multi_dma_p0[15] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(15);
+            }
+         }
+       else if (mac_port == 1)
+         {
+          if (tx_multi_dma_p1[0] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(0);
+            }
+          if (tx_multi_dma_p1[1] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(1);
+            }
+          if (tx_multi_dma_p1[2] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(2);
+            }
+          if (tx_multi_dma_p1[3] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(3);
+            }
+          if (tx_multi_dma_p1[4] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(4);
+            }
+          if (tx_multi_dma_p1[5] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(5);
+            }
+          if (tx_multi_dma_p1[6] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(6);
+            }
+          if (tx_multi_dma_p1[7] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(7);
+            }
+          if (tx_multi_dma_p1[8] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(8);
+            }
+          if (tx_multi_dma_p1[9] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(9);
+            }
+          if (tx_multi_dma_p1[10] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(10);
+            }
+          if (tx_multi_dma_p1[11] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(11);
+            }
+          if (tx_multi_dma_p1[12] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(12);
+            }
+          if (tx_multi_dma_p1[13] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(13);
+            }
+          if (tx_multi_dma_p1[14] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(14);
+            }
+          if (tx_multi_dma_p1[15] == 1'b1)
+            {
+             MacTxPort[mac_port].add_channels(15);
+            }
+         }
+       else
+       {
+        printf("KHH-TX ERROR : FOR NIU_AddTxChannels, Unexpected TX Port Value %d.\n", mac_port);
+       }
+      }
+    else if (tx_multi_port == 1 && (tx_multi_dma_p0[15:0] == 16'h0 || tx_multi_dma_p1[15:0] == 16'h0))
+      {
+       printf("KHH-TX ERROR : FOR NIU_AddTxChannels, FOR NIU_TX_MULTI_PORT, NIU_TX_MULTI_DMA_P0 = %h.\n", tx_multi_dma_p0);
+       printf("KHH-TX ERROR : FOR NIU_AddTxChannels, FOR NIU_TX_MULTI_PORT, NIU_TX_MULTI_DMA_P1 = %h.\n", tx_multi_dma_p1);
+      }
+    else if (tx_multi_port == 1 && tx_multi_dma_p0[15:0] > 16'h0 && tx_multi_dma_p1[15:0] > 16'h0)
+      {
+       printf("KHH-TX Debug : FOR NIU_AddTxChannels, NIU_TX_MULTI_PORT = %d & NIU_TX_MULTI_DMA_P0 = %h MODE.\n", tx_multi_port, tx_multi_dma_p0);
+       printf("KHH-TX Debug : FOR NIU_AddTxChannels, NIU_TX_MULTI_PORT = %d & NIU_TX_MULTI_DMA_P1 = %h MODE.\n", tx_multi_port, tx_multi_dma_p1);
+       mac_port = 0;
+          if (tx_multi_dma_p0[0] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA0 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(0);
+            }
+          if (tx_multi_dma_p0[1] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA1 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(1);
+            }
+          if (tx_multi_dma_p0[2] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA2 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(2);
+            }
+          if (tx_multi_dma_p0[3] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA3 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(3);
+            }
+          if (tx_multi_dma_p0[4] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA4 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(4);
+            }
+          if (tx_multi_dma_p0[5] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA5 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(5);
+            }
+          if (tx_multi_dma_p0[6] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA6 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(6);
+            }
+          if (tx_multi_dma_p0[7] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA7 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(7);
+            }
+          if (tx_multi_dma_p0[8] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA8 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(8);
+            }
+          if (tx_multi_dma_p0[9] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA9 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(9);
+            }
+          if (tx_multi_dma_p0[10] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA10 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(10);
+            }
+          if (tx_multi_dma_p0[11] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA11 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(11);
+            }
+          if (tx_multi_dma_p0[12] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA12 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(12);
+            }
+          if (tx_multi_dma_p0[13] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA13 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(13);
+            }
+          if (tx_multi_dma_p0[14] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA14 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(14);
+            }
+          if (tx_multi_dma_p0[15] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA15 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(15);
+            }
+       mac_port = 1;
+          if (tx_multi_dma_p1[0] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA0 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(0);
+            }
+          if (tx_multi_dma_p1[1] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA1 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(1);
+            }
+          if (tx_multi_dma_p1[2] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA2 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(2);
+            }
+          if (tx_multi_dma_p1[3] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA3 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(3);
+            }
+          if (tx_multi_dma_p1[4] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA4 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(4);
+            }
+          if (tx_multi_dma_p1[5] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA5 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(5);
+            }
+          if (tx_multi_dma_p1[6] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA6 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(6);
+            }
+          if (tx_multi_dma_p1[7] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA7 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(7);
+            }
+          if (tx_multi_dma_p1[8] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA8 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(8);
+            }
+          if (tx_multi_dma_p1[9] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA9 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(9);
+            }
+          if (tx_multi_dma_p1[10] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA10 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(10);
+            }
+          if (tx_multi_dma_p1[11] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA11 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(11);
+            }
+          if (tx_multi_dma_p1[12] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA12 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(12);
+            }
+          if (tx_multi_dma_p1[13] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA13 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(13);
+            }
+          if (tx_multi_dma_p1[14] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA14 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(14);
+            }
+          if (tx_multi_dma_p1[15] == 1'b1)
+            {
+             printf("KHH-TX Debug : FOR DMA15 NIU_AddTxChannels FOR PORT %d.\n", mac_port);
+             MacTxPort[mac_port].add_channels(15);
+            }
+        }
+       else
+       {
+        printf("KHH-TX ERROR : FOR NIU_AddTxChannels, INVALID COMBINATION FOR NIU_TX_MULTI_PORT, NIU_TX_MULTI_DMA_P0 = %h.\n",tx_multi_port, tx_multi_dma_p0);
+        printf("KHH-TX ERROR : FOR NIU_AddTxChannels, INVALID COMBINATION FOR NIU_TX_MULTI_PORT, NIU_TX_MULTI_DMA_P1 = %h.\n",tx_multi_port, tx_multi_dma_p1);
+       }
+   }
+*/
+}
+
+// ***********************************************************************************
+task AsmToVeraIntf::NIU_SetTxMaxBurst (integer mac_port, integer dma_no, integer SetTxMaxBurst_Data, 
+                                       (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0))
+{
+integer mac_id = mac_port;     
+
+ if (get_plus_arg (CHECK, "NIU_TX_MULTI_DMA_P0="))
+   {
+    tx_multi_dma_p0 = get_plus_arg( HNUM, "NIU_TX_MULTI_DMA_P0=");
+   }
+ if (get_plus_arg (CHECK, "NIU_TX_MULTI_DMA_P1="))
+   {
+    tx_multi_dma_p1 = get_plus_arg( HNUM, "NIU_TX_MULTI_DMA_P1=");
+   }
+
+ if (tx_multi_port == 0 && tx_multi_dma_p0 == 16'h0 && tx_multi_dma_p1 == 16'h0)
+   {
+    PR_INFO("fc_niu_asm_event", MON_INFO,
+            psprintf("KHH-TX Debug : FOR NIU_SetTxMaxBurst, MAC_ID = %0d & DMA_NO = %0d", mac_id, dma_no));
+    MacTxPort[mac_id].dma[dma_no].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+   }
+ else if (tx_multi_port == 0 && (tx_multi_dma_p0 > 16'h0 || tx_multi_dma_p1 > 16'h0))
+   {
+    PR_INFO("fc_niu_asm_event", MON_INFO,
+            psprintf("KHH-TX Debug : FOR NIU_SetTxMaxBurst, NIU_TX_MULTI_PORT = %0d, NIU_TX_MULTI_DMA_P0 = %h, NIU_TX_MULTI_DMA_P1 = %h", tx_multi_port, tx_multi_dma_p0, tx_multi_dma_p1));
+    if (mac_id == 0)
+      {
+       if (tx_multi_dma_p0[0] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[0].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[1] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[1].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[2] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[2].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[3] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[3].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[4] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[4].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[5] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[5].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[6] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[6].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[7] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[7].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[8] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[8].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[9] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[9].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[10] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[10].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[11] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[11].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[12] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[12].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[13] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[13].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[14] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[14].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[15] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[15].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+      }
+    else if (mac_id == 1)
+      {
+       if (tx_multi_dma_p1[0] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[0].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[1] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[1].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[2] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[2].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[3] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[3].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[4] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[4].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[5] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[5].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[6] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[6].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[7] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[7].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[8] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[8].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[9] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[9].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[10] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[10].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[11] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[11].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[12] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[12].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[13] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[13].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[14] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[14].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[15] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[15].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+      }
+    else
+      {
+        PR_ERROR("fc_niu_asm_event", MON_ERROR,
+                 psprintf("NIU_SetTxMaxBurst: Unexpected TX Port Value %0d", mac_port));
+      }
+   }
+ else if (tx_multi_port == 1 && (tx_multi_dma_p0[15:0] == 16'h0 || tx_multi_dma_p1[15:0] == 16'h0))
+   {
+    PR_ERROR("fc_niu_asm_event", MON_ERROR,
+             psprintf("NIU_SetTxMaxBurst: NIU_TX_MULTI_PORT, NIU_TX_MULTI_DMA_P0 = %h, NIU_TX_MULTI_DMA_P1 = %h", tx_multi_dma_p0, tx_multi_dma_p1));
+   }
+ else if (tx_multi_port == 1 && tx_multi_dma_p0[15:0] > 16'h0 && tx_multi_dma_p1[15:0] > 16'h0)
+   {
+    if (tx_multi_dma_p1[15:0]  & tx_multi_dma_p0[15:0])
+      {
+       PR_ERROR("fc_niu_asm_event", MON_ERROR,
+                psprintf("NIU_SetTxMaxBurst: Same DMA assigned to multiple ports: TX_MULTI_DMA_P0 = 0x%h, TX_MULTI_DMA_P1 = 0x%h", tx_multi_dma_p0, tx_multi_dma_p1));
+      }
+    else
+      {
+       PR_INFO("fc_niu_asm_event", MON_INFO,
+               psprintf("KHH-TX Debug : FOR NIU_SetTxMaxBurst, NIU_TX_MULTI_PORT = %0d, NIU_TX_MULTI_DMA_P0 = %h, NIU_TX_MULTI_DMA_P1 = %h", tx_multi_port, tx_multi_dma_p0, tx_multi_dma_p1));
+       mac_id = 0;
+       if (tx_multi_dma_p0[0] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[0].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[1] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[1].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[2] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[2].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[3] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[3].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[4] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[4].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[5] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[5].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[6] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[6].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[7] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[7].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[8] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[8].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[9] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[9].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[10] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[10].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[11] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[11].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[12] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[12].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[13] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[13].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[14] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[14].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p0[15] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[15].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       mac_id = 1;
+       if (tx_multi_dma_p1[0] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[0].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[1] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[1].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[2] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[2].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[3] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[3].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[4] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[4].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[5] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[5].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[6] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[6].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[7] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[7].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[8] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[8].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[9] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[9].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[10] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[10].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[11] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[11].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[12] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[12].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[13] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[13].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[14] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[14].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+       if (tx_multi_dma_p1[15] == 1'b1)
+         {
+          MacTxPort[mac_id].dma[15].SetTxMaxBurst(SetTxMaxBurst_Data); 	// MacTxPort[mac_id].dma[j].SetTxMaxBurst(32'd500);
+         }
+      }
+   }
+ else
+   {
+    PR_ERROR("fc_niu_asm_event", MON_ERROR,
+             psprintf("NIU_SetTxMaxBurst: Invalid combination for NIU_TX_MULTI_PORT, NIU_TX_MULTI_DMA_P0 = 0x%h, NIU_TX_MULTI_DMA_P1 = 0x%h", tx_multi_port, tx_multi_dma_p0, tx_multi_dma_p1));
+   }
+}
+
+// ***********************************************************************************
+task AsmToVeraIntf::NIU_TxDMAActivate (integer mac_port, integer dma_activelist, 
+                                       (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0))
+/*@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+    MacTxPort[mac_id].SetActive(dma_activelist);
+
+  dma_activelist is a 32 bit parameter which each bit signifies a dma value as shown below:
+
+      b15   b14   b13   b12   b11   b10   b9    b8    b7    b6    b5    b4    b3    b2    b1    b0
+     dma15 dma14 dma13 dma12 dma11 dma10 dma9  dma8  dma7  dma6  dma5  dma4  dma3  dma2  dma1  dma0
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@*/
+{
+integer mac_id = mac_port;     
+integer tx_multi_dma_p0_list = 0;     
+integer tx_multi_dma_p1_list = 0;     
+bit [31:0] dma_no = 32'h0;
+
+integer mac_id_0 = 0;     
+integer mac_id_1 = 0;     
+
+ if (get_plus_arg (CHECK, "NIU_TX_MULTI_DMA_P0="))
+   {
+    tx_multi_dma_p0 = get_plus_arg( HNUM, "NIU_TX_MULTI_DMA_P0=");
+   }
+ if (get_plus_arg (CHECK, "NIU_TX_MULTI_DMA_P1="))
+   {
+    tx_multi_dma_p1 = get_plus_arg( HNUM, "NIU_TX_MULTI_DMA_P1=");
+   }
+
+dma_no = dma_activelist;
+
+ PR_INFO("fc_niu_asm_event", MON_INFO,
+         psprintf("KHH-TX Debug : FOR NIU_TxDMAActivate, MAC_ID = %0d DMA_ACTIVELIST = %0d DMA_NO = %0d", mac_id, dma_activelist, dma_no));
+
+
+tx_multi_dma_p0_list = {16'h0,tx_multi_dma_p0[15:0]};
+tx_multi_dma_p1_list = {16'h0,tx_multi_dma_p1[15:0]};
+
+ if (tx_multi_port == 0 && tx_multi_dma_p0 == 16'h0 && tx_multi_dma_p1 == 16'h0)
+   {
+    MacTxPort[mac_id] = new(mac_id);
+     if (dma_no[0])
+       {
+        MacTxPort[mac_id].add_channels(0);
+       }
+     else if (dma_no[1])
+       {
+        MacTxPort[mac_id].add_channels(1);
+       }
+     else if (dma_no[2])
+       {
+        MacTxPort[mac_id].add_channels(2);
+       }
+     else if (dma_no[3])
+       {
+        MacTxPort[mac_id].add_channels(3);
+       }
+     else if (dma_no[4])
+       {
+        MacTxPort[mac_id].add_channels(4);
+       }
+     else if (dma_no[5])
+       {
+        MacTxPort[mac_id].add_channels(5);
+       }
+     else if (dma_no[6])
+       {
+        MacTxPort[mac_id].add_channels(6);
+       }
+     else if (dma_no[7])
+       {
+        MacTxPort[mac_id].add_channels(7);
+       }
+     else if (dma_no[8])
+       {
+        MacTxPort[mac_id].add_channels(8);
+       }
+     else if (dma_no[9])
+       {
+        MacTxPort[mac_id].add_channels(9);
+       }
+     else if (dma_no[10])
+       {
+        MacTxPort[mac_id].add_channels(10);
+       }
+     else if (dma_no[11])
+       {
+        MacTxPort[mac_id].add_channels(11);
+       }
+     else if (dma_no[12])
+       {
+        MacTxPort[mac_id].add_channels(12);
+       }
+     else if (dma_no[13])
+       {
+        MacTxPort[mac_id].add_channels(13);
+       }
+     else if (dma_no[14])
+       {
+        MacTxPort[mac_id].add_channels(14);
+       }
+     else if (dma_no[15])
+       {
+        MacTxPort[mac_id].add_channels(15);
+       }
+     else
+       {
+        PR_ERROR("fc_niu_asm_event", MON_ERROR,
+                 psprintf("NIU_TxDMAActivate: Unexpected DMA value of 0x%h", dma_no));
+       }
+        
+    MacTxPort[mac_id].SetActive(dma_activelist);
+   }
+ else if (tx_multi_port == 0 && (tx_multi_dma_p0 > 16'h0 || tx_multi_dma_p1 > 16'h0))
+   {
+    PR_INFO("fc_niu_asm_event", MON_INFO,
+            psprintf("KHH-TX Debug : FOR NIU_TxDMAActivate, NIU_TX_MULTI_PORT = %0d, NIU_TX_MULTI_DMA_P0 = %h, NIU_TX_MULTI_DMA_P1 = %h", tx_multi_port, tx_multi_dma_p0, tx_multi_dma_p1));
+    if (mac_id == 0)
+      {
+       MacTxPort[mac_id] = new(mac_id);
+
+        //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+        //@@ Add requested dma channels for port 0                @@
+        //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+          if (tx_multi_dma_p0[0] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(0);
+            }
+          if (tx_multi_dma_p0[1] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(1);
+            }
+          if (tx_multi_dma_p0[2] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(2);
+            }
+          if (tx_multi_dma_p0[3] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(3);
+            }
+          if (tx_multi_dma_p0[4] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(4);
+            }
+          if (tx_multi_dma_p0[5] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(5);
+            }
+          if (tx_multi_dma_p0[6] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(6);
+            }
+          if (tx_multi_dma_p0[7] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(7);
+            }
+          if (tx_multi_dma_p0[8] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(8);
+            }
+          if (tx_multi_dma_p0[9] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(9);
+            }
+          if (tx_multi_dma_p0[10] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(10);
+            }
+          if (tx_multi_dma_p0[11] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(11);
+            }
+          if (tx_multi_dma_p0[12] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(12);
+            }
+          if (tx_multi_dma_p0[13] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(13);
+            }
+          if (tx_multi_dma_p0[14] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(14);
+            }
+          if (tx_multi_dma_p0[15] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(15);
+            }
+       MacTxPort[mac_id].SetActive(tx_multi_dma_p0_list);
+      }
+    else if (mac_id == 1)
+      {
+       MacTxPort[mac_id] = new(mac_id);
+
+        //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+        //@@ Add requested dma channels for port 1                @@
+        //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+          if (tx_multi_dma_p1[0] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(0);
+            }
+          if (tx_multi_dma_p1[1] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(1);
+            }
+          if (tx_multi_dma_p1[2] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(2);
+            }
+          if (tx_multi_dma_p1[3] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(3);
+            }
+          if (tx_multi_dma_p1[4] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(4);
+            }
+          if (tx_multi_dma_p1[5] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(5);
+            }
+          if (tx_multi_dma_p1[6] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(6);
+            }
+          if (tx_multi_dma_p1[7] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(7);
+            }
+          if (tx_multi_dma_p1[8] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(8);
+            }
+          if (tx_multi_dma_p1[9] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(9);
+            }
+          if (tx_multi_dma_p1[10] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(10);
+            }
+          if (tx_multi_dma_p1[11] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(11);
+            }
+          if (tx_multi_dma_p1[12] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(12);
+            }
+          if (tx_multi_dma_p1[13] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(13);
+            }
+          if (tx_multi_dma_p1[14] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(14);
+            }
+          if (tx_multi_dma_p1[15] == 1'b1)
+            {
+             MacTxPort[mac_id].add_channels(15);
+            }
+       MacTxPort[mac_id].SetActive(tx_multi_dma_p1_list);
+      }
+    else
+      {
+       PR_ERROR("fc_niu_asm_event", MON_ERROR,
+                psprintf("NIU_TxDMAActivate: Unexpected TX Port Value %0d", mac_port));
+      }
+   }
+ else if (tx_multi_port == 1 && (tx_multi_dma_p0[15:0] == 16'h0 || tx_multi_dma_p1[15:0]  == 16'h0))
+   {
+    PR_ERROR("fc_niu_asm_event", MON_ERROR,
+             psprintf("NIU_TxDMAActivate: NIU_TX_MULTI_PORT, NIU_TX_MULTI_DMA_P0 = 0x%h, NIU_TX_MULTI_DMA_P1 = 0x%h", tx_multi_dma_p0, tx_multi_dma_p1));
+   }
+ else if (tx_multi_port == 1 && tx_multi_dma_p0[15:0] > 16'h0 && tx_multi_dma_p1[15:0]  > 16'h0)
+   {
+    PR_INFO("fc_niu_asm_event", MON_INFO,
+            psprintf("KHH-TX Debug : FOR NIU_TxDMAActivate, NIU_TX_MULTI_PORT = %0d, NIU_TX_MULTI_DMA_P0 = %h, NIU_TX_MULTI_DMA_P1 = %h", tx_multi_port, tx_multi_dma_p0, tx_multi_dma_p1));
+
+    if (tx_multi_dma_p1[15:0]  & tx_multi_dma_p0[15:0])
+      {
+       PR_ERROR("fc_niu_asm_event", MON_ERROR,
+                psprintf("NIU_TxDMAActivate: Same DMA assigned to multiple ports: TX_MULTI_DMA_P0 = 0x%h, TX_MULTI_DMA_P1 = 0x%h", tx_multi_dma_p0, tx_multi_dma_p1));
+      }
+    else
+      {
+
+//  KHOSROW    1<<tx_multi_dma_p0
+//  Shifting method should be implemented when we get a chance
+
+       mac_id_0 = 0;
+       MacTxPort[mac_id_0] = new(mac_id_0);
+
+        //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+        //@@ Add requested dma channels for port 0                @@
+        //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+          if (tx_multi_dma_p0[0] == 1'b1)
+            {
+             MacTxPort[mac_id_0].add_channels(0);
+            }
+          if (tx_multi_dma_p0[1] == 1'b1)
+            {
+             MacTxPort[mac_id_0].add_channels(1);
+            }
+          if (tx_multi_dma_p0[2] == 1'b1)
+            {
+             MacTxPort[mac_id_0].add_channels(2);
+            }
+          if (tx_multi_dma_p0[3] == 1'b1)
+            {
+             MacTxPort[mac_id_0].add_channels(3);
+            }
+          if (tx_multi_dma_p0[4] == 1'b1)
+            {
+             MacTxPort[mac_id_0].add_channels(4);
+            }
+          if (tx_multi_dma_p0[5] == 1'b1)
+            {
+             MacTxPort[mac_id_0].add_channels(5);
+            }
+          if (tx_multi_dma_p0[6] == 1'b1)
+            {
+             MacTxPort[mac_id_0].add_channels(6);
+            }
+          if (tx_multi_dma_p0[7] == 1'b1)
+            {
+             MacTxPort[mac_id_0].add_channels(7);
+            }
+          if (tx_multi_dma_p0[8] == 1'b1)
+            {
+             MacTxPort[mac_id_0].add_channels(8);
+            }
+          if (tx_multi_dma_p0[9] == 1'b1)
+            {
+             MacTxPort[mac_id_0].add_channels(9);
+            }
+          if (tx_multi_dma_p0[10] == 1'b1)
+            {
+             MacTxPort[mac_id_0].add_channels(10);
+            }
+          if (tx_multi_dma_p0[11] == 1'b1)
+            {
+             MacTxPort[mac_id_0].add_channels(11);
+            }
+          if (tx_multi_dma_p0[12] == 1'b1)
+            {
+             MacTxPort[mac_id_0].add_channels(12);
+            }
+          if (tx_multi_dma_p0[13] == 1'b1)
+            {
+             MacTxPort[mac_id_0].add_channels(13);
+            }
+          if (tx_multi_dma_p0[14] == 1'b1)
+            {
+             MacTxPort[mac_id_0].add_channels(14);
+            }
+          if (tx_multi_dma_p0[15] == 1'b1)
+            {
+             MacTxPort[mac_id_0].add_channels(15);
+            }
+       MacTxPort[mac_id_0].SetActive(tx_multi_dma_p0_list);
+       mac_id_1 = 1;
+       MacTxPort[mac_id_1] = new(mac_id_1);
+
+        //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+        //@@ Add requested dma channels for port 1                @@
+        //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+          if (tx_multi_dma_p1[0] == 1'b1)
+            {
+             MacTxPort[mac_id_1].add_channels(0);
+            }
+          if (tx_multi_dma_p1[1] == 1'b1)
+            {
+             MacTxPort[mac_id_1].add_channels(1);
+            }
+          if (tx_multi_dma_p1[2] == 1'b1)
+            {
+             MacTxPort[mac_id_1].add_channels(2);
+            }
+          if (tx_multi_dma_p1[3] == 1'b1)
+            {
+             MacTxPort[mac_id_1].add_channels(3);
+            }
+          if (tx_multi_dma_p1[4] == 1'b1)
+            {
+             MacTxPort[mac_id_1].add_channels(4);
+            }
+          if (tx_multi_dma_p1[5] == 1'b1)
+            {
+             MacTxPort[mac_id_1].add_channels(5);
+            }
+          if (tx_multi_dma_p1[6] == 1'b1)
+            {
+             MacTxPort[mac_id_1].add_channels(6);
+            }
+          if (tx_multi_dma_p1[7] == 1'b1)
+            {
+             MacTxPort[mac_id_1].add_channels(7);
+            }
+          if (tx_multi_dma_p1[8] == 1'b1)
+            {
+             MacTxPort[mac_id_1].add_channels(8);
+            }
+          if (tx_multi_dma_p1[9] == 1'b1)
+            {
+             MacTxPort[mac_id_1].add_channels(9);
+            }
+          if (tx_multi_dma_p1[10] == 1'b1)
+            {
+             MacTxPort[mac_id_1].add_channels(10);
+            }
+          if (tx_multi_dma_p1[11] == 1'b1)
+            {
+             MacTxPort[mac_id_1].add_channels(11);
+            }
+          if (tx_multi_dma_p1[12] == 1'b1)
+            {
+             MacTxPort[mac_id_1].add_channels(12);
+            }
+          if (tx_multi_dma_p1[13] == 1'b1)
+            {
+             MacTxPort[mac_id_1].add_channels(13);
+            }
+          if (tx_multi_dma_p1[14] == 1'b1)
+            {
+             MacTxPort[mac_id_1].add_channels(14);
+            }
+          if (tx_multi_dma_p1[15] == 1'b1)
+            {
+             MacTxPort[mac_id_1].add_channels(15);
+            }
+       MacTxPort[mac_id_1].SetActive(tx_multi_dma_p1_list);
+      }
+   }
+ else
+   {
+    PR_ERROR("fc_niu_asm_event", MON_ERROR,
+             psprintf("NIU_TxDMAActivate: Invalid combination for NIU_TX_MULTI_PORT, NIU_TX_MULTI_DMA_P0 = 0x%h, NIU_TX_MULTI_DMA_P1 = 0x%h",tx_multi_port, tx_multi_dma_p0, tx_multi_dma_p1));
+   }
+}
+
+// ***********************************************************************************
+task AsmToVeraIntf::NIU_InitTxDma (integer mac_port, integer dma_no, bit Xlate,
+                                   (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0))
+{
+bit [39:0] rng_st_addr;
+integer mac_id = mac_port;     
+bit[12:0] length;
+bit [5:0] rand_num;
+bit [63:0] config_data;
+
+ if (get_plus_arg (CHECK, "NIU_TX_MULTI_DMA_P0="))
+   {
+    tx_multi_dma_p0 = get_plus_arg( HNUM, "NIU_TX_MULTI_DMA_P0=");
+   }
+ if (get_plus_arg (CHECK, "NIU_TX_MULTI_DMA_P1="))
+   {
+    tx_multi_dma_p1 = get_plus_arg( HNUM, "NIU_TX_MULTI_DMA_P1=");
+   }
+
+ if (tx_multi_port == 0 && tx_multi_dma_p0 == 16'h0 && tx_multi_dma_p1 == 16'h0)
+   {
+    PR_INFO("fc_niu_asm_event", MON_INFO,
+            psprintf("KHH-TX Debug : FOR NIU_InitTxDma, MAC_ID = %0d & DMA_NO = %0d", mac_id, dma_no));
+    MacTxPort[mac_id].dma[dma_no].xlate_on = Xlate;
+    MacTxPort[mac_id].dma[dma_no].InitTXDMA(256,rng_st_addr); // 20 is ring-size, changed to 32
+   }
+ else if (tx_multi_port == 0 && (tx_multi_dma_p0 > 16'h0 || tx_multi_dma_p1 > 16'h0))
+   {
+    PR_INFO("fc_niu_asm_event", MON_INFO,
+            psprintf("KHH-TX Debug : FOR NIU_InitTxDma, NIU_TX_MULTI_PORT = %0d, MAC_PORT = %0d, DMA_NO = %0h, NIU_TX_MULTI_DMA_P0 = %h, NIU_TX_MULTI_DMA_P1 = %h", tx_multi_port, mac_port, dma_no, tx_multi_dma_p0, tx_multi_dma_p1));
+          MacTxPort[mac_id].dma[dma_no].xlate_on = Xlate;
+          MacTxPort[mac_id].dma[dma_no].InitTXDMA(256,rng_st_addr); // 20 is ring-size, changed to 32
+   }
+ else if (tx_multi_port == 1 && (tx_multi_dma_p0[15:0] == 16'h0 || tx_multi_dma_p1[15:0]  == 16'h0))
+   {
+    PR_ERROR("fc_niu_asm_event", MON_ERROR,
+             psprintf("NIU_InitTxDma: NIU_TX_MULTI_PORT, NIU_TX_MULTI_DMA_P0 = %h, NIU_TX_MULTI_DMA_P1 = %h", tx_multi_dma_p0, tx_multi_dma_p1));
+   }
+ else if (tx_multi_port == 1 && tx_multi_dma_p0[15:0] > 16'h0 && tx_multi_dma_p1[15:0]  > 16'h0)
+   {
+    if (tx_multi_dma_p1[15:0]  & tx_multi_dma_p0[15:0])
+      {
+       PR_ERROR("fc_niu_asm_event", MON_ERROR,
+                psprintf("NIU_InitTxDma: Same DMA assigned to multiple ports: TX_MULTI_DMA_P0 = 0x%h, TX_MULTI_DMA_P1 = 0x%h", tx_multi_dma_p0, tx_multi_dma_p1));
+      }
+    else
+      {
+       PR_INFO("fc_niu_asm_event", MON_INFO,
+               psprintf("KHH-TX Debug : FOR NIU_InitTxDma, NIU_TX_MULTI_PORT = %0d, MAC_PORT = %0d, DMA_NO = %0h, NIU_TX_MULTI_DMA_P0 = %h, NIU_TX_MULTI_DMA_P1 = %h", tx_multi_port, mac_port, dma_no, tx_multi_dma_p0, tx_multi_dma_p1));
+       MacTxPort[mac_id].dma[dma_no].xlate_on = Xlate;
+       MacTxPort[mac_id].dma[dma_no].InitTXDMA(256,rng_st_addr); // 20 is ring-size, changed to 32
+      }
+   }
+ else
+   {
+    PR_ERROR("fc_niu_asm_event", MON_ERROR,
+             psprintf("NIU_InitTxDma: Invalid combination for NIU_TX_MULTI_PORT, NIU_TX_MULTI_DMA_P0 = 0x%h, NIU_TX_MULTI_DMA_P1 = 0x%h", tx_multi_port, tx_multi_dma_p0, tx_multi_dma_p1));
+   }
+
+
+/*
+length = 13'h0fff;
+rand_num = random()%64;
+
+   MacTxPort[mac_id].dma[dma_no].SetTxLPValid(64'h3);
+   MacTxPort[mac_id].dma[dma_no].SetTxLPMask1(64'h0);
+   MacTxPort[mac_id].dma[dma_no].SetTxLPMask2(64'h0);
+   MacTxPort[mac_id].dma[dma_no].ring_start_addr = 44'h000  + dma_no*44'h0_0001_0000;
+   MacTxPort[mac_id].dma[dma_no].ring_current_addr = 44'h000  + dma_no*44'h0_0001_0000;
+
+  if (get_plus_arg (CHECK, "TX_GATHER"))
+    MacTxPort[mac_id].dma[dma_no].gather_mode = 1;
+  else
+    MacTxPort[mac_id].dma[dma_no].gather_mode = 0;
+
+
+ config_data = {3'h0,length,4'h0,4'h0,MacTxPort[mac_id].dma[dma_no].ring_start_addr[39:6],rand_num};
+// config_data = {16'h0FFF,4'h0,MacTxPort[mac_id].dma[0].ring_start_addr[43:0]};
+ MacTxPort[mac_id].dma[dma_no].setTxRingConfig(config_data);
+*/
+}
+
+// ***********************************************************************************
+task AsmToVeraIntf::NIU_EXIT_chk (integer mac_port)
+{
+integer mac_id = mac_port;     // port 0 hardcoded; MAQ
+
+  MacTxPort[mac_id].check_exit_status();
+}
+
+// ***********************************************************************************
+task AsmToVeraIntf::TxPktGen (integer mac_port, integer dmaport, integer numofpacket,
+                              (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0))
+{
+
+ if (get_plus_arg (CHECK, "NIU_TX_MULTI_DMA_P0="))
+   {
+    tx_multi_dma_p0 = get_plus_arg( HNUM, "NIU_TX_MULTI_DMA_P0=");
+   }
+ if (get_plus_arg (CHECK, "NIU_TX_MULTI_DMA_P1="))
+   {
+    tx_multi_dma_p1 = get_plus_arg( HNUM, "NIU_TX_MULTI_DMA_P1=");
+   }
+ fork
+ {
+   TxPktGen_int(mac_port, dmaport, numofpacket,
+                tx_multi_port, tx_multi_dma_p0, tx_multi_dma_p1);
+ }
+ join none
+}
+
+// ***********************************************************************************
+task AsmToVeraIntf::TxPktGen_int (integer mac_port, integer dmaport, integer numofpacket,
+                                  (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0))
+{
+
+//static TxPacketGenConfig PktGenConfig;
+static TxPacketGenConfig PktGenConfig0;
+static TxPacketGenConfig PktGenConfig1;
+//TxPacketGenConfig config;
+TxPacketGenConfig config0;
+TxPacketGenConfig config1;
+integer i, j;
+
+bit interrupt_last_packet = 1'b0;
+
+integer mac_id = mac_port;
+
+    PR_INFO("fc_niu_asm_event", MON_INFO,
+            psprintf("TxPktGen_int:  mac_port = %0d, dmaport = %0d, numofpacket = %0d, tx_multi_port = %0d, tx_multi_dma_p0 = %0d, tx_multi_dma_p1 = %0d", mac_port, dmaport, numofpacket, tx_multi_port, tx_multi_dma_p0, tx_multi_dma_p1));
+
+PktGenConfig0 = new;
+PktGenConfig1 = new;
+
+ if (get_plus_arg (CHECK, "NIU_TX_MULTI_DMA_P0="))
+   {
+    tx_multi_dma_p0 = get_plus_arg( HNUM, "NIU_TX_MULTI_DMA_P0=");
+   }
+ if (get_plus_arg (CHECK, "NIU_TX_MULTI_DMA_P1="))
+   {
+    tx_multi_dma_p1 = get_plus_arg( HNUM, "NIU_TX_MULTI_DMA_P1=");
+   }
+
+ if (get_plus_arg (CHECK, "NIU_TX_MARK_LAST_PACKET_FOR_INTERRUPT"))
+   {
+    interrupt_last_packet = 1'b1;
+   }
+
+// printf("MAQ-Debug : After  Initia desc_ring.ring_current_addr = %h \n", MacTxPort[mac_id].dma[dmaport].desc_ring.ring_current_addr);
+// printf("MAQ-Debug : After  Initia dma.ring_current_addr = %h \n", MacTxPort[mac_id].dma[dmaport].ring_current_addr);
+
+//if (mailbox_get(NO_WAIT, config_mb, config))
+//    PktGenConfig = config;
+
+//  for (i=0; i<numofpacket; i++){
+//        MacTxPort[mac_id].dma[dmaport].gen_txpacket(i, PktGenConfig);
+// 	printf("MAQ-Debug : Inloop  desc_ring.ring_current_addr = %h \n", MacTxPort[mac_id].dma[dmaport].desc_ring.ring_current_addr);
+// 	printf("MAQ-Debug : Inloop  dma.ring_current_addr = %h \n", MacTxPort[mac_id].dma[dmaport].ring_current_addr);
+//  }
+
+ if (tx_multi_port == 0 && tx_multi_dma_p0 == 16'h0 && tx_multi_dma_p1 == 16'h0)
+   {
+    if (mac_id == 0)
+      {
+       if (mailbox_get(NO_WAIT, config0_mb, config0))
+           PktGenConfig0 = config0;
+
+         for (i=0; i<numofpacket; i++){
+           if (interrupt_last_packet && i == numofpacket-1)
+             PktGenConfig0.mark_bit = 1;
+           PR_INFO("fc_niu_asm_event", MON_INFO,
+                   psprintf("KHH-TX Debug : FOR TxPktGen_int, FOR PORT0 I = %0d, MARK_BIT = %0d", i, PktGenConfig0.mark_bit));
+               MacTxPort[mac_id].dma[dmaport].gen_txpacket(i, PktGenConfig0);
+         }
+      }
+    else if (mac_id == 1)
+      {
+       if (mailbox_get(NO_WAIT, config1_mb, config1))
+           PktGenConfig1 = config1;
+
+         for (i=0; i<numofpacket; i++){
+           if (interrupt_last_packet && i == numofpacket-1)
+             PktGenConfig1.mark_bit = 1;
+           PR_INFO("fc_niu_asm_event", MON_INFO,
+                   psprintf("KHH-TX Debug : FOR TxPktGen_int, FOR PORT1 I = %0d, MARK_BIT = %0d", i, PktGenConfig1.mark_bit));
+               MacTxPort[mac_id].dma[dmaport].gen_txpacket(i, PktGenConfig1);
+         }
+      }
+    else
+      {
+       PR_ERROR("fc_niu_asm_event", MON_ERROR,
+                psprintf("TxPktGen_int: Invalid MAC port = %0d", mac_id));
+      }
+   }
+ else if (tx_multi_port == 0 && (tx_multi_dma_p0 > 16'h0 || tx_multi_dma_p1 > 16'h0))
+   {
+    PR_INFO("fc_niu_asm_event", MON_INFO,
+            psprintf("KHH-TX Debug : FOR TxPktGen_int, NIU_TX_MULTI_PORT = %0d, NIU_TX_MULTI_DMA_P0 = %h, NIU_TX_MULTI_DMA_P1", tx_multi_port, tx_multi_dma_p0, tx_multi_dma_p1));
+    if (mac_id == 0)
+      {
+       if (mailbox_get(NO_WAIT, config0_mb, config0))
+           PktGenConfig0 = config0;
+
+       for (i=0; i<numofpacket; i++)
+          {
+           j = 0;
+           if (tx_multi_dma_p0[0] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[0].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p0[0]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[1] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[1].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p0[1]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[2] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[2].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p0[2]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[3] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[3].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p0[3]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[4] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[4].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p0[4]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[5] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[5].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p0[5]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[6] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[6].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p0[6]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[7] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[7].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p0[7]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[8] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[8].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p0[8]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[9] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[9].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p0[9]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[10] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[10].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p0[10]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[11] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[11].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p0[11]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[12] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[12].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p0[12]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[13] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[13].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p0[13]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[14] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[14].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p0[14]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[15] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[15].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p0[15]));
+              j = j + 1;
+             }
+
+           if (j>1)
+             {
+              i = i + (j-1);
+             }
+          }
+      }
+    else if (mac_id == 1)
+      {
+       if (mailbox_get(NO_WAIT, config1_mb, config1))
+           PktGenConfig1 = config1;
+
+       for (i=0; i<numofpacket; i++)
+          {
+           j = 0;
+           if (tx_multi_dma_p1[0] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[0].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p1[0]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[1] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[1].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p1[1]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[2] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[2].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p1[2]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[3] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[3].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p1[3]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[4] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[4].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p1[4]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[5] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[5].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p1[5]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[6] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[6].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p1[6]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[7] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[7].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p1[7]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[8] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[8].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p1[8]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[9] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[9].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p1[9]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[10] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[10].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p1[10]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[11] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[11].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p1[11]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[12] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[12].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p1[12]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[13] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[13].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p1[13]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[14] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[14].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p1[14]));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[15] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[15].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = %0d", numofpacket,i,mac_id,tx_multi_dma_p1[15]));
+              j = j + 1;
+             }
+
+           if (j>1)
+             {
+              i = i + (j-1);
+             }
+          }
+      }
+    else
+    {
+     PR_ERROR("fc_niu_asm_event", MON_ERROR,
+              psprintf("TxPktGen_int: Unexpected TX Port Value %0d", mac_id));
+    }
+   }
+ else if (tx_multi_port == 1 && (tx_multi_dma_p0[15:0] == 16'h0 && tx_multi_dma_p1[15:0]  == 16'h0))
+   {
+    PR_ERROR("fc_niu_asm_event", MON_ERROR,
+             psprintf("TxPktGen_int: For NIU_TX_MULTI_PORT, NIU_TX_MULTI_DMA_P0 = 0x%h, NIU_TX_MULTI_DMA_P1 = 0x%h", tx_multi_dma_p0, tx_multi_dma_p1));
+   }
+ else if (tx_multi_port == 1 && tx_multi_dma_p0[15:0] > 16'h0 && tx_multi_dma_p1[15:0]  > 16'h0)
+   {
+    PR_INFO("fc_niu_asm_event", MON_INFO,
+            psprintf("KHH-TX Debug : FOR TxPktGen_int, NIU_TX_MULTI_PORT = %0d, NIU_TX_MULTI_DMA_P0 = %h, NIU_TX_MULTI_DMA_P1 = %h", tx_multi_port, tx_multi_dma_p0, tx_multi_dma_p1));
+    mac_id = 0;
+       if (mailbox_get(NO_WAIT, config0_mb, config0))
+           PktGenConfig0 = config0;
+
+       for (i=0; i<numofpacket/2; i++)
+          {
+           j = 0;
+           if (tx_multi_dma_p0[0] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[0].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 0", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[1] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[1].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 1", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[2] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[2].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 2", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[3] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[3].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 3", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[4] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[4].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 4", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[5] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[5].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 5", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[6] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[6].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 6", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[7] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[7].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 7", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[8] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[0].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 8", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[9] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[1].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 9", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[10] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[2].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 10", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[11] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[3].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 11", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[12] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[4].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 12", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[13] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[5].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 13", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[14] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[6].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 14", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p0[15] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[7].gen_txpacket(i, PktGenConfig0);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 15", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+
+           if (j>1)
+             {
+              i = i + (j-1);
+             }
+          }
+    mac_id = 1;
+       if (mailbox_get(NO_WAIT, config1_mb, config1))
+           PktGenConfig1 = config1;
+
+//     for (i=0; i<numofpacket/2; i++)
+       for (i=numofpacket/2; i<numofpacket; i++)
+          {
+           j = 0;
+           if (tx_multi_dma_p1[0] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[0].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 0", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[1] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[1].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 1", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[2] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[2].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 2", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[3] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[3].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 3", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[4] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[4].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 4", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[5] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[5].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 5", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[6] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[6].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 6", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[7] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[7].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 7", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[8] == 1'b1)
+             {
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : B4 FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 8", numofpacket,i,mac_id));
+              MacTxPort[mac_id].dma[8].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : AF FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 8", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[9] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[9].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 9", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[10] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[10].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 10", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[11] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[11].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 11", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[12] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[12].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 12", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[13] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[13].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 13", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[14] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[14].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 14", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+           if (tx_multi_dma_p1[15] == 1'b1)
+             {
+              MacTxPort[mac_id].dma[15].gen_txpacket(i, PktGenConfig1);
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("KHH-TX Debug : FOR PKT_CNT = %0d, SENT PKT = %0d TO TX_PORT = %0d TO DMA = 15", numofpacket,i,mac_id));
+              j = j + 1;
+             }
+
+           if (j>1)
+             {
+              i = i + (j-1);
+             }
+          }
+   }
+ else
+   {
+    PR_ERROR("fc_niu_asm_event", MON_ERROR,
+             psprintf("TxPktGen_int: Invalid combination for NIU_TX_MULTI_PORT = %0d, NIU_TX_MULTI_DMA_P0 = 0x%h, NIU_TX_MULTI_DMA_P1 = 0x%h", tx_multi_port, tx_multi_dma_p0, tx_multi_dma_p1));
+   }
+}
+
+// ***********************************************************************************
+// NIU Rx Tasks
+// ***********************************************************************************
+task AsmToVeraIntf::NIU_InitRxDma (integer RxDmaChnlNo, 
+                                   integer RxDescRingLen, 
+                                   bit [39:0] RxRingStartAddr, 
+                                   bit [63:0] RbrConfData, 
+                                   integer RxInitKick, 
+                                   bit Xlate, 
+                                   (bit [15:0] rx_multi_dma= 16'h0))
+{
+       bit [39:0] ring_start_address;
+       bit [15:0] initial_kick;
+       bit [15:0] desc_ring_length;
+       bit [63:0] rbr_config_B_data;
+       integer dma_chnl;
+//       bit xlate = 1;
+
+        // One single function to initialize the whole RXDMA channel
+        // This function should be called for each RXDMA channel you want to initialize
+	dma_chnl = RxDmaChnlNo;
+        desc_ring_length = RxDescRingLen;
+        ring_start_address = RxRingStartAddr;
+        initial_kick = RxInitKick;
+	rbr_config_B_data = RbrConfData;
+        fork
+        {
+        rdmc.InitRXDMA(dma_chnl, desc_ring_length, ring_start_address, rbr_config_B_data, initial_kick, Xlate);
+        }
+        join none
+        PR_INFO("fc_niu_asm_event", MON_INFO,
+                "MAQ-DEBUG: NIU_InitRxDma Done");
+
+}
+
+// ***********************************************************************************
+task AsmToVeraIntf::NIU_RxPktConf (integer RxPktCnt, (integer iport = 0))
+{
+integer n;
+ bit [12:0] ii = 12'h0;
+ bit [7:0] DA_L = 8'h0;
+
+/*
+     for(n = 0; n< RxPktCnt; n++) {
+        
+        flow[n] = new;
+        flow[n].src_node.l2_addr =  48'hde_f0_72_94_38_15;
+        flow[n].src_node.tos     =  8'hf5;
+        flow[n].src_node.tci     = 16'hcb00;
+        flow[n].src_node.ip_addr = 32'hcccc_0000;
+        flow[n].src_node.src_port = 20'h00001;
+                
+        flow[n].dst_node.l2_addr = 48'h12_34_56_78_9a_bc;
+        flow[n].dst_node.tci     = 16'hcb00;
+        flow[n].dst_node.ip_addr = 32'h8888_0000;
+        flow[n].dst_node.src_port = 20'h00001;
+                
+        flow[n].tup.src_tcp_udp_port = 16'h1234;
+        flow[n].tup.dst_tcp_udp_port = 16'hABCD;
+        flow[n].frame.frame_type = 5'b00010;
+        flow[n].frame.frame_class = CL_IP;
+        flow[n].frame.type = -1;
+        flow[n].frame.class_mask = 0;
+        flow[n].frame.class_funct = CLF_SRC;
+        flow[n].frame.data_type = DAT_SEQ |DAT_LEN_EXACT;
+        flow[n].frame.data_seed = 128;
+        flow[n].rx_param.rcv_isn = 32'hA5A5_F5F5;
+        flow[n].fl_state.tcp_flags = 6'b00_0010;
+        flow[n].flow_no = 0;
+      }
+	printf("MAQ-DEBUG: NIU_RxPktConf Done  Time: %0d.\n", {get_time(HI),get_time(LO)});
+
+// 	mailbox_put (flow_mb, rxflow);
+*/
+  DA_L = 8'h0;
+  if (iport === 0)
+    {
+     for(n = 0; n< RxPktCnt; n++) {
+
+        flow_p0[n] = new;
+        flow_p0[n].frame.frame_type     = 5'b00010;
+        flow_p0[n].frame.frame_class    = CL_IP;
+        flow_p0[n].src_node.l2_addr     =  48'hde_f0_72_a0_a0_a0;
+        flow_p0[n].src_node.tos         =  8'hf5;
+        flow_p0[n].src_node.tci         = {ii[3:0],ii};
+        flow_p0[n].src_node.ip_addr     = 32'hcccc_a0a0;
+        flow_p0[n].src_node.src_port    = 20'h000a0;
+
+        flow_p0[n].dst_node.l2_addr     = {40'h12_34_56_a0_a0,DA_L};
+        flow_p0[n].dst_node.tci         = 16'hcb00;
+        flow_p0[n].dst_node.ip_addr     = 32'h8888_b0b0;
+        flow_p0[n].dst_node.src_port    = 20'h000b0;
+
+        flow_p0[n].tup.src_tcp_udp_port = 16'h12a0;
+        flow_p0[n].tup.dst_tcp_udp_port = 16'habb0;
+        flow_p0[n].frame.type           = -1;
+        flow_p0[n].frame.class_mask     = 0;
+        flow_p0[n].frame.class_funct    = CLF_SRC;
+        flow_p0[n].frame.data_type      = DAT_SEQ |DAT_LEN_EXACT;
+        flow_p0[n].frame.data_seed      = 128;
+        flow_p0[n].rx_param.rcv_isn     = 32'hA5A5_a0a0;
+        flow_p0[n].fl_state.tcp_flags   = 6'b00_0010;
+        flow_p0[n].flow_no = 0;
+        ii = ii +1;
+        if (DA_L == 8'h07)
+          {
+           DA_L = 8'h00;
+          }
+        else
+          {
+           DA_L = DA_L + 1;
+          }
+      }
+        PR_INFO("fc_niu_asm_event", MON_INFO,
+                psprintf("MAQ-DEBUG: NIU_RxPktConf Done for IPORT %0d", iport));
+    }
+  else if (iport === 1)
+    {
+     for(n = 0; n< RxPktCnt; n++) {
+
+        flow_p1[n] = new;
+        flow_p1[n].frame.frame_type     = 5'b00010;
+        flow_p1[n].frame.frame_class    = CL_IP;
+        flow_p1[n].src_node.l2_addr     =  48'hde_f0_72_a1_a1_a1;
+        flow_p1[n].src_node.tos         =  8'hf5;
+        flow_p1[n].src_node.tci         = {ii[3:0],ii};
+        flow_p1[n].src_node.ip_addr     = 32'hcccc_a1a1;
+        flow_p1[n].src_node.src_port    = 20'h000a1;
+
+        flow_p1[n].dst_node.l2_addr     = 48'h12_34_56_b1_b1_b1;
+        flow_p1[n].dst_node.tci         = 16'hcb00;
+        flow_p1[n].dst_node.ip_addr     = 32'h8888_b1b1;
+        flow_p1[n].dst_node.src_port    = 20'h000b1;
+
+        flow_p1[n].tup.src_tcp_udp_port = 16'h12a1;
+        flow_p1[n].tup.dst_tcp_udp_port = 16'habb1;
+        flow_p1[n].frame.type           = -1;
+        flow_p1[n].frame.class_mask     = 0;
+        flow_p1[n].frame.class_funct    = CLF_SRC;
+        flow_p1[n].frame.data_type      = DAT_SEQ |DAT_LEN_EXACT;
+        flow_p1[n].frame.data_seed      = 128;
+        flow_p1[n].rx_param.rcv_isn     = 32'hA5A5_a1a1;
+        flow_p1[n].fl_state.tcp_flags   = 6'b00_0010;
+        flow_p1[n].flow_no = 0;
+        ii = ii +1;
+      }
+        PR_INFO("fc_niu_asm_event", MON_INFO,
+                psprintf("MAQ-DEBUG: NIU_RxPktConf Done for IPORT %0d", iport));
+    }
+  else
+    {
+     PR_ERROR("fc_niu_asm_event", MON_ERROR,
+              psprintf("NIU_RxPktConf does not support MAC port %0d", iport));
+    }
+
+}
+
+// ***********************************************************************************
+task AsmToVeraIntf::NIU_RxGenPkt (integer mac_port, 
+                                  integer RxDmaChnlNo, 
+                                  integer RxPktCnt, 
+                                  integer RxPktLen,
+                                  (integer rx_multi_PORT=0,
+                                  bit [15:0] rx_multi_DMA= 16'h0))
+{
+integer portid;
+integer chnlid;
+integer pktcnt;
+integer pktlen;
+integer rx_multi_port;
+bit [15:0] rx_multi_dma;
+
+portid = mac_port;
+chnlid = RxDmaChnlNo;
+pktcnt = RxPktCnt;
+pktlen = RxPktLen;
+rx_multi_port = rx_multi_PORT;
+rx_multi_dma  = rx_multi_DMA;
+
+  fork
+  {
+   NIU_internalrx(portid, chnlid, pktcnt, pktlen, rx_multi_port, rx_multi_dma);
+  }
+  join none
+}
+task AsmToVeraIntf::NIU_internalrx(integer mac_port,
+                                   integer RxDmaChnlNo,
+                                   integer RxPktCnt,
+                                   integer RxPktLen,
+                                   (integer rx_multi_port=0,
+                                   bit [15:0] rx_multi_dma= 16'h0))
+{
+shadow integer n;
+integer data_length;
+shadow integer no_of_pkts;
+integer last_packet;
+integer sweep;
+shadow integer mac_id;
+integer dma_chnl;
+bit[47:0] mac_addr;
+
+        PR_INFO("fc_niu_asm_event", MON_INFO,
+                psprintf("KH-DEBUG: NIU_internalrx MAC_PORT = %0d, MULTI_PORT = %0d, MULTI_DMA = 0x%h", mac_port, rx_multi_port, rx_multi_dma));
+
+	sweep = 0;
+	mac_id = mac_port;
+	dma_chnl = RxDmaChnlNo;
+	data_length = RxPktLen;
+
+       if (rx_multi_port == 1'b1)
+          {
+	   no_of_pkts = RxPktCnt/2;
+           PR_INFO("fc_niu_asm_event", MON_INFO,
+                   psprintf("KH-DEBUG: NIU_internalrx MULTI-PORT NO_OF_PKTS = %0d", no_of_pkts));
+          }
+        else
+          {
+	   no_of_pkts = RxPktCnt;
+           PR_INFO("fc_niu_asm_event", MON_INFO,
+                   psprintf("KH-DEBUG: NIU_internalrx SINGLE-PORT NO_OF_PKTS = %0d", no_of_pkts));
+          }
+/*
+      for(n = 0; n< no_of_pkts; n++) {
+      if ( mac_id ==0 | mac_id==1 ) {
+           case(n%4) {
+                         0:{ mac_addr = 48'h0100_FFFF_0001;
+                flow[n].dst_node.l2_addr = mac_addr;
+                           }
+                         1:{ mac_addr = 48'h1111_FFFF_0003;
+                flow[n].dst_node.l2_addr = mac_addr;
+                           }
+                         2:{ mac_addr = 48'h2722_FFFF_0005;
+                flow[n].dst_node.l2_addr = mac_addr;
+                           }
+                         3:{ mac_addr = 48'h3333_FFFF_0007;
+                flow[n].dst_node.l2_addr = mac_addr;
+                           }
+                   default  :{ mac_addr = 48'h2722_FFFF_0005;
+            }
+          }
+        }
+      }
+
+       for(n = 0; n< no_of_pkts; n++) {
+              printf("DEBUG: niu_rx_template_test: Sending frame to MAC[%0d]. Sequence: %0d, Frame Length: %0d, Time: %0d.\n",
+                 mac_id,n,data_length, {get_time(HI),get_time(LO)});
+          // Generate and send the packet
+          last_packet = (n==(no_of_pkts-1));
+          pktConfig.gen_rxPacket(flow[n], data_length,dma_chnl,mac_id,last_packet);
+
+         case (sweep){
+           1: data_length = data_length + 1;
+           2: data_length = data_length + 2;
+           3: data_length = data_length + 3;
+           4: data_length = data_length + 4;
+            default : data_length = data_length;
+          }
+       }
+	printf("MAQ-DEBUG: NIU_RxGenPkt Done  Time: %0d.\n", {get_time(HI),get_time(LO)});
+*/
+  if (rx_multi_port == 0 && mac_id == 0 && rx_multi_dma == 16'h0)
+    {
+      for(n = 0; n< no_of_pkts; n++) {
+           case(n%4) {
+                         0:{ mac_addr = 48'h0100_FFFF_0001;
+                flow_p0[n].dst_node.l2_addr = mac_addr;
+                           }
+                         1:{ mac_addr = 48'h1111_FFFF_0003;
+                flow_p0[n].dst_node.l2_addr = mac_addr;
+                           }
+                         2:{ mac_addr = 48'h2722_FFFF_0005;
+                flow_p0[n].dst_node.l2_addr = mac_addr;
+                           }
+                         3:{ mac_addr = 48'h3333_FFFF_0007;
+                flow_p0[n].dst_node.l2_addr = mac_addr;
+                           }
+                   default  :{ mac_addr = 48'h2722_FFFF_0005;
+            }
+          }
+      }
+
+       for(n = 0; n< no_of_pkts; n++) {
+          PR_INFO("fc_niu_asm_event", MON_INFO,
+                  psprintf("DEBUG: niu_rx_template_test: Sending frame to MAC[%0d]. Sequence: %0d, Frame Length: %0d",
+                 mac_id, n, data_length));
+          // Generate and send the packet
+          last_packet = (n==(no_of_pkts-1));
+          pktConfig.gen_rxPacket(flow_p0[n], data_length,dma_chnl,mac_id,last_packet);
+
+         case (sweep){
+           1: data_length = data_length + 1;
+           2: data_length = data_length + 2;
+           3: data_length = data_length + 3;
+           4: data_length = data_length + 4;
+            default : data_length = data_length;
+          }
+       }
+        PR_INFO("fc_niu_asm_event", MON_INFO,
+                psprintf("MAQ-DEBUG: NIU_RxGenPkt Done FOR IPORT %0d", mac_id));
+    }
+  else if (rx_multi_port == 0 && mac_id == 0 && rx_multi_dma[7:0] > 0)
+    {
+      for(n = 0; n< no_of_pkts; n++) {
+            case (rx_multi_dma[7:0])
+                {
+                 8'h0:{
+                       PR_ERROR("fc_niu_asm_event", MON_ERROR,
+                                psprintf("NIU_RxGenPkt: Expected MULTI_DMA[3:0] = 'h%h to be greater than 8'h0", rx_multi_dma[3:0]));
+                      }
+                 8'h1:{
+                       mac_addr = 48'h1234_56a0_a000;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 0;
+                      }
+                 8'h2:{
+                       mac_addr = 48'h1234_56a0_a001;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 1;
+                      }
+                 8'h3:{
+                       mac_addr = 48'h1234_56a0_a000;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 0;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a001;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 1;
+                         }
+                      }
+                 8'h4:{
+                       mac_addr = 48'h1234_56a0_a002;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 2;
+                      }
+                 8'h5:{
+                       mac_addr = 48'h1234_56a0_a000;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 0;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a002;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 2;
+                         }
+                      }
+                 8'h6:{
+                       mac_addr = 48'h1234_56a0_a001;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 1;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a002;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 2;
+                         }
+                      }
+                 8'h7:{
+                       mac_addr = 48'h1234_56a0_a000;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 0;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a001;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 1;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a002;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 2;
+                         }
+                      }
+                 8'h8:{
+                       mac_addr = 48'h1234_56a0_a003;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 3;
+                      }
+                 8'h9:{
+                       mac_addr = 48'h1234_56a0_a000;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 0;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a003;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 3;
+                         }
+                      }
+                 8'ha:{
+                       mac_addr = 48'h1234_56a0_a001;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 1;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a003;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 3;
+                         }
+                      }
+                 8'hb:{
+                       mac_addr = 48'h1234_56a0_a000;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 0;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a001;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 1;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a003;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 3;
+                         }
+                      }
+                 8'hc:{
+                       mac_addr = 48'h1234_56a0_a002;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 2;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a003;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 3;
+                         }
+                      }
+                 8'hd:{
+                       mac_addr = 48'h1234_56a0_a000;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 0;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a002;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 2;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a003;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 3;
+                         }
+                      }
+                 8'he:{
+                       mac_addr = 48'h1234_56a0_a001;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 1;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a002;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 2;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a003;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 3;
+                         }
+                      }
+                 8'hf:{
+                       mac_addr = 48'h1234_56a0_a000;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 0;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a001;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 1;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a002;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 2;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a003;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 3;
+                         }
+                      }
+                 8'h10:{
+                       mac_addr = 48'h1234_56a0_a004;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 4;
+                      }
+                 8'h20:{
+                       mac_addr = 48'h1234_56a0_a005;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 5;
+                      }
+                 8'h40:{
+                       mac_addr = 48'h1234_56a0_a006;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 6;
+                      }
+                 8'h80:{
+                       mac_addr = 48'h1234_56a0_a007;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 7;
+                      }
+                 8'ha0:{
+                       mac_addr = 48'h1234_56a0_a005;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 5;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a007;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 7;
+                         }
+                      }
+                 8'hb0:{
+                       mac_addr = 48'h1234_56a0_a004;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 4;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a005;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 5;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a007;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 7;
+                         }
+                      }
+                 8'hc0:{
+                       mac_addr = 48'h1234_56a0_a006;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 6;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a007;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 7;
+                         }
+                      }
+                 8'hd0:{
+                       mac_addr = 48'h1234_56a0_a004;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 4;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a006;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 6;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a007;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 7;
+                         }
+                      }
+                 8'he0:{
+                       mac_addr = 48'h1234_56a0_a005;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 5;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a006;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 6;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a007;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 7;
+                         }
+                      }
+                 8'hf0:{
+                       mac_addr = 48'h1234_56a0_a004;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 4;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a005;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 5;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a006;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 6;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a007;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 7;
+                         }
+                      }
+                   default  :{ mac_addr = 48'h2722_FFFF_0005;
+                       PR_ERROR("fc_niu_asm_event", MON_ERROR,
+                                psprintf("NIU_RxGenPkt: UN-Expected MULTI_DMA[7:0] = 0x%h assignment for MAC_ID = %0d", rx_multi_dma[7:0], mac_id));
+            }
+          }
+      }
+
+       for(n = 0; n< no_of_pkts; n++) {
+              PR_INFO("fc_niu_asm_event", MON_INFO,
+                      psprintf("DEBUG: niu_rx_template_test: Sending frame to MAC[%0d]. Sequence: %0d, Frame Length: %0d",
+                               mac_id,n,data_length));
+          // Generate and send the packet
+          last_packet = (n==(no_of_pkts-1));
+          pktConfig.gen_rxPacket(flow_p0[n], data_length,p0_dma_chnl[n],mac_id,last_packet);
+
+         case (sweep){
+           1: data_length = data_length + 1;
+           2: data_length = data_length + 2;
+           3: data_length = data_length + 3;
+           4: data_length = data_length + 4;
+            default : data_length = data_length;
+          }
+       }
+        PR_INFO("fc_niu_asm_event", MON_INFO,
+                psprintf("MAQ-DEBUG: NIU_RxGenPkt Done FOR IPORT %0d",mac_id));
+    }
+ else if (rx_multi_port == 0 && mac_id == 1 && rx_multi_dma[15:8] > 0)
+    {
+      for(n = 0; n< no_of_pkts; n++) {
+            case (rx_multi_dma[15:8])
+                {
+                 8'h0:{
+                       PR_ERROR("fc_niu_asm_event", MON_ERROR,
+                                psprintf("NIU_RxGenPkt: Expected MULTI_DMA[15:8] = 'h%h to be greater than 8'h0",rx_multi_dma[15:8]));
+                      }
+                 8'h1:{
+                       mac_addr = 48'h1234_56b0_b000;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 7;
+                      }
+                 8'h2:{
+                       mac_addr = 48'h1234_56b0_b001;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 6;
+                      }
+                 8'h3:{
+                       mac_addr = 48'h1234_56b0_b000;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 7;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b001;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 6;
+                         }
+                      }
+                 8'h4:{
+                       mac_addr = 48'h1234_56b0_b002;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 5;
+                      }
+                 8'h5:{
+                       mac_addr = 48'h1234_56b0_b000;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 7;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b002;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 5;
+                         }
+                      }
+                 8'h6:{
+                       mac_addr = 48'h1234_56b0_b001;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 6;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b002;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 5;
+                         }
+                      }
+                 8'h7:{
+                       mac_addr = 48'h1234_56b0_b000;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 7;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b001;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 6;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b002;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 5;
+                         }
+                      }
+                 8'h8:{
+                       mac_addr = 48'h1234_56b0_b003;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 4;
+                      }
+                 8'h9:{
+                       mac_addr = 48'h1234_56b0_b000;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 7;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b003;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 4;
+                         }
+                      }
+                 8'ha:{
+                       mac_addr = 48'h1234_56b0_b001;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 6;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b003;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 4;
+                         }
+                      }
+                 8'hb:{
+                       mac_addr = 48'h1234_56b0_b000;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 7;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b001;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 6;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b003;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 4;
+                         }
+                      }
+                 8'hc:{
+                       mac_addr = 48'h1234_56b0_b002;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 5;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b003;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 4;
+                         }
+                      }
+                 8'hd:{
+                       mac_addr = 48'h1234_56b0_b000;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 7;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b002;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 5;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b003;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 4;
+                         }
+                      }
+                 8'he:{
+                       mac_addr = 48'h1234_56b0_b001;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 6;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b002;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 5;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b003;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 4;
+                         }
+                      }
+                 8'hf:{
+                       mac_addr = 48'h1234_56b0_b000;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 7;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b001;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 6;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b002;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 5;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b003;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 4;
+                         }
+                      }
+                 8'h10:{
+                       mac_addr = 48'h1234_56b0_b004;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 3;
+                      }
+                 8'h20:{
+                       mac_addr = 48'h1234_56b0_b005;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 2;
+                      }
+                 8'h40:{
+                       mac_addr = 48'h1234_56b0_b006;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 1;
+                      }
+                 8'h80:{
+                       mac_addr = 48'h1234_56b0_b007;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 0;
+                      }
+                 8'ha0:{
+                       mac_addr = 48'h1234_56b0_b005;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 2;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b007;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 0;
+                         }
+                      }
+                 8'hb0:{
+                       mac_addr = 48'h1234_56b0_b004;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 3;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b005;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 2;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b007;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 0;
+                         }
+                      }
+                 8'hc0:{
+                       mac_addr = 48'h1234_56b0_b006;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 1;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b007;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 0;
+                         }
+                      }
+                 8'hd0:{
+                       mac_addr = 48'h1234_56b0_b004;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 3;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b006;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 1;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b007;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 0;
+                         }
+                      }
+                 8'he0:{
+                       mac_addr = 48'h1234_56b0_b005;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 2;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b006;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 1;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b007;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 0;
+                         }
+                      }
+                 8'hf0:{
+                       mac_addr = 48'h1234_56b0_b004;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 3;
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b005;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 2;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b006;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 1;
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b007;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 0;
+                         }
+                      }
+                   default  :
+                      {
+                       PR_ERROR("fc_niu_asm_event", MON_ERROR,
+                                psprintf("NIU_RxGenPkt: UN-Expected MULTI_DMA[15:8] = 0x%h assignment for MAC_ID = %0d",rx_multi_dma[15:8],mac_id));
+                      }
+          }
+      }
+
+       for(n = 0; n< no_of_pkts; n++) {
+          PR_INFO("fc_niu_asm_event", MON_INFO,
+                  psprintf("DEBUG: niu_rx_template_test: Sending frame to MAC[%0d]. Sequence: %0d, Frame Length: %0d",
+                           mac_id,n,data_length));
+          // Generate and send the packet
+          last_packet = (n==(no_of_pkts-1));
+          pktConfig.gen_rxPacket(flow_p1[n], data_length,p1_dma_chnl[n],mac_id,last_packet);
+
+         case (sweep){
+           1: data_length = data_length + 1;
+           2: data_length = data_length + 2;
+           3: data_length = data_length + 3;
+           4: data_length = data_length + 4;
+            default : data_length = data_length;
+          }
+       }
+        PR_INFO("fc_niu_asm_event", MON_INFO,
+                psprintf("MAQ-DEBUG: NIU_RxGenPkt Done FOR IPORT %0d", mac_id));
+    }
+  else if (rx_multi_port == 0 && mac_id == 1 && rx_multi_dma == 16'h0)
+//else if (rx_multi_port == 0 && mac_id == 1)
+    {
+      for(n = 0; n< no_of_pkts; n++) {
+           case(n%4) {
+                         0:{ mac_addr = 48'h0100_FFFF_0001;
+                flow_p1[n].dst_node.l2_addr = mac_addr;
+                           }
+                         1:{ mac_addr = 48'h1111_FFFF_0003;
+                flow_p1[n].dst_node.l2_addr = mac_addr;
+                           }
+                         2:{ mac_addr = 48'h2722_FFFF_0005;
+                flow_p1[n].dst_node.l2_addr = mac_addr;
+                           }
+                         3:{ mac_addr = 48'h3333_FFFF_0007;
+                flow_p1[n].dst_node.l2_addr = mac_addr;
+                           }
+                   default  :{ mac_addr = 48'h2722_FFFF_0005;
+            }
+          }
+      }
+
+       for(n = 0; n< no_of_pkts; n++) {
+          PR_INFO("fc_niu_asm_event", MON_INFO,
+                  psprintf("DEBUG: niu_rx_template_test: Sending frame to MAC[%0d]. Sequence: %0d, Frame Length: %0d",
+                           mac_id,n,data_length));
+          // Generate and send the packet
+          last_packet = (n==(no_of_pkts-1));
+          pktConfig.gen_rxPacket(flow_p1[n], data_length,dma_chnl,mac_id,last_packet);
+
+         case (sweep){
+           1: data_length = data_length + 1;
+           2: data_length = data_length + 2;
+           3: data_length = data_length + 3;
+           4: data_length = data_length + 4;
+            default : data_length = data_length;
+          }
+       }
+        PR_INFO("fc_niu_asm_event", MON_INFO,
+                psprintf("MAQ-DEBUG: NIU_RxGenPkt Done FOR IPORT %0d", mac_id));
+    }
+  else if (rx_multi_port == 1 && (rx_multi_dma[3:0] > 0 || rx_multi_dma[7:4] > 0))
+//else if (rx_multi_port == 1)
+    {
+     PR_INFO("fc_niu_asm_event", MON_INFO,
+             "KH-DEBUG: NIU_RxGenPkt Sending Packets to both IPORT 0 & IPORT 1");
+     PR_INFO("fc_niu_asm_event", MON_INFO,
+             psprintf("KH-DEBUG: B4FORK MULTI_PORT = %0d, MULTI_DMA =%h", rx_multi_port, rx_multi_dma));
+     fork
+      {
+        mac_id = 0;
+       PR_INFO("fc_niu_asm_event", MON_INFO,
+               "KH-DEBUG: NIU_RxGenPkt START Sending Packets to both IPORT 0 in MULTI_PORT MODE");
+       PR_INFO("fc_niu_asm_event", MON_INFO,
+               psprintf("KH-DEBUG: MULTI_PORT = %0d, MULTI_DMA =%h", rx_multi_port,rx_multi_dma));
+       for(n = 0; n< no_of_pkts; n++) {
+            case (rx_multi_dma[3:0])
+                {
+                 4'h0:{
+                       PR_ERROR("fc_niu_asm_event", MON_ERROR,
+                                psprintf("NIU_RxGenPkt: Expected MULTI_DMA[3:0] = 'h%h to be greater than 4'h0",rx_multi_dma[3:0]));
+                      }
+                 4'h1:{
+                       mac_addr = 48'h1234_56a0_a000;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 0;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-10: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                      }
+                 4'h2:{
+                       mac_addr = 48'h1234_56a0_a001;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 2;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-20: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                      }
+                 4'h3:{
+                       mac_addr = 48'h1234_56a0_a000;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 0;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-30: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a001;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 2;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-31: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                         }
+                      }
+                 4'h4:{
+                       mac_addr = 48'h1234_56a0_a002;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 4;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-40: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                      }
+                 4'h5:{
+                       mac_addr = 48'h1234_56a0_a000;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 0;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-50: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a002;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 4;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-51: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                         }
+                      }
+                 4'h6:{
+                       mac_addr = 48'h1234_56a0_a001;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 2;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-60: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a002;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 4;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-61: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                         }
+                      }
+                 4'h7:{
+                       mac_addr = 48'h1234_56a0_a000;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 0;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-70: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a001;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 2;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-71: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a002;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 4;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-72: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                         }
+                      }
+                 4'h8:{
+                       mac_addr = 48'h1234_56a0_a003;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 6;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-80: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                      }
+                 4'h9:{
+                       mac_addr = 48'h1234_56a0_a000;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 0;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-90: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a003;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 6;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-91: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                         }
+                      }
+                 4'ha:{
+                       mac_addr = 48'h1234_56a0_a001;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 2;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-A0: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a003;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 6;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-A1: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                         }
+                      }
+                 4'hb:{
+                       mac_addr = 48'h1234_56a0_a000;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 0;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-B0: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a001;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 2;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-B1: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a003;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 6;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-B2: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                         }
+                      }
+                 4'hc:{
+                       mac_addr = 48'h1234_56a0_a002;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 4;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-C0: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a003;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 6;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-C1: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                         }
+                      }
+                 4'hd:{
+                       mac_addr = 48'h1234_56a0_a000;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 0;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-D0: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a002;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 4;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-D1: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a003;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 6;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-D2: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                         }
+                      }
+                 4'he:{
+                       mac_addr = 48'h1234_56a0_a001;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 2;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-E0: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a002;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 4;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-E1: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a003;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 6;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-E2: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                         }
+                      }
+                 4'hf:{
+                       mac_addr = 48'h1234_56a0_a000;
+                       flow_p0[n].dst_node.l2_addr = mac_addr;
+                       p0_dma_chnl[n] = 0;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-F0: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a001;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 2;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-F1: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a002;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 4;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-F2: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56a0_a003;
+                          flow_p0[n].dst_node.l2_addr = mac_addr;
+                          p0_dma_chnl[n] = 6;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-F3: FOR FLOW_P0[%0d], DMA_CHNL[%0d] = %0d",n,n,p0_dma_chnl[n]));
+                         }
+                      }
+                   default  :
+                      {mac_addr = 48'h2722_FFFF_0005;
+                       PR_ERROR("fc_niu_asm_event", MON_ERROR,
+                                psprintf("NIU_RxGenPkt: UN-Expected MULTI_DMA[3:0] = 'h%h assignment for MAC_ID = %0d",rx_multi_dma[3:0],mac_id));
+                      }
+                }
+       }
+//      mac_id = 0;
+        for(n = 0; n< no_of_pkts; n++) {
+           PR_INFO("fc_niu_asm_event", MON_INFO,
+                   psprintf("DEBUG: niu_rx_template_test: Sending frame to MAC[%0d]. Sequence: %0d, Frame Length: %0d",
+                            mac_id,n,data_length));
+           // Generate and send the packet
+           last_packet = (n==(no_of_pkts-1));
+           pktConfig.gen_rxPacket(flow_p0[n], data_length,p0_dma_chnl[n],mac_id,last_packet);
+
+          case (sweep){
+            1: data_length = data_length + 1;
+            2: data_length = data_length + 2;
+            3: data_length = data_length + 3;
+            4: data_length = data_length + 4;
+             default : data_length = data_length;
+           }
+        }
+        PR_INFO("fc_niu_asm_event", MON_INFO,
+                psprintf("MAQ-DEBUG: NIU_RxGenPkt Done FOR IPORT %0d", mac_id));
+      }
+      {
+       mac_id = 1;
+       for(n = 0; n< no_of_pkts; n++) {
+            case (rx_multi_dma[7:4])
+                {
+                 4'h0:{
+                       PR_ERROR("fc_niu_asm_event", MON_ERROR,
+                                psprintf("NIU_RxGenPkt: Expected MULTI_DMA[7:4] = 'h%h to be greater than 4'h0",rx_multi_dma[7:4]));
+                      }
+                 4'h1:{
+                       mac_addr = 48'h1234_56b0_b000;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 1;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-10: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                      }
+                 4'h2:{
+                       mac_addr = 48'h1234_56b0_b001;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 3;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-20: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                      }
+                 4'h3:{
+                       mac_addr = 48'h1234_56b0_b000;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 1;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-30: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b001;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 3;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-31: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                         }
+                      }
+                 4'h4:{
+                       mac_addr = 48'h1234_56b0_b002;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 5;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-40: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                      }
+                 4'h5:{
+                       mac_addr = 48'h1234_56b0_b000;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 1;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-50: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b002;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 5;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-51: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                         }
+                      }
+                 4'h6:{
+                       mac_addr = 48'h1234_56b0_b001;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 3;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-60: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b002;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 5;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-61: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                         }
+                      }
+                 4'h7:{
+                       mac_addr = 48'h1234_56b0_b000;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 1;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-70: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b001;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 3;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-71: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b002;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 5;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-72: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                         }
+                      }
+                 4'h8:{
+                       mac_addr = 48'h1234_56b0_b003;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 7;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-80: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                      }
+                 4'h9:{
+                       mac_addr = 48'h1234_56b0_b000;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 1;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-90: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b003;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 7;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-91: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                         }
+                      }
+                 4'ha:{
+                       mac_addr = 48'h1234_56b0_b001;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 3;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-A0: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b003;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 7;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-A1: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                         }
+                      }
+                 4'hb:{
+                       mac_addr = 48'h1234_56b0_b000;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 1;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-B0: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b001;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 3;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-B1: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b003;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 7;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-B2: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                         }
+                      }
+                 4'hc:{
+                       mac_addr = 48'h1234_56b0_b002;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 5;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-C0: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b003;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 7;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-C1: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                         }
+                      }
+                 4'hd:{
+                       mac_addr = 48'h1234_56b0_b000;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 1;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-D0: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b002;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 5;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-D1: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b003;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 7;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-D2: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                         }
+                      }
+                 4'he:{
+                       mac_addr = 48'h1234_56b0_b001;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 3;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-E0: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b002;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 5;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-E1: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b003;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 7;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-E2: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                         }
+                      }
+                 4'hf:{
+                       mac_addr = 48'h1234_56b0_b000;
+                       flow_p1[n].dst_node.l2_addr = mac_addr;
+                       p1_dma_chnl[n] = 1;
+                       PR_INFO("fc_niu_asm_event", MON_INFO,
+                               psprintf("KHH-INFO-F0: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b001;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 3;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-F1: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b002;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 5;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-F2: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                         }
+
+                       n++;
+                       if (n<no_of_pkts)
+                         {
+                          mac_addr = 48'h1234_56b0_b003;
+                          flow_p1[n].dst_node.l2_addr = mac_addr;
+                          p1_dma_chnl[n] = 7;
+                          PR_INFO("fc_niu_asm_event", MON_INFO,
+                                  psprintf("KHH-INFO-F3: FOR FLOW_P1[%0d], DMA_CHNL[%0d] = %0d",n,n,p1_dma_chnl[n]));
+                         }
+                      }
+                   default  :
+                      {
+                       PR_ERROR("fc_niu_asm_event", MON_ERROR,
+                                psprintf("NIU_RxGenPkt: UN-Expected MULTI_DMA[7:4] = 'h%h assignment for MAC_ID = %0d",rx_multi_dma[7:4],mac_id));
+                      }
+                  }
+          }
+//      mac_id = 1;
+        for(n = 0; n< no_of_pkts; n++) {
+           PR_INFO("fc_niu_asm_event", MON_INFO,
+                   psprintf("DEBUG: niu_rx_template_test: Sending frame to MAC[%0d]. Sequence: %0d, Frame Length: %0d",
+                            mac_id,n,data_length));
+           // Generate and send the packet
+           last_packet = (n==(no_of_pkts-1));
+           pktConfig.gen_rxPacket(flow_p1[n], data_length,p1_dma_chnl[n],mac_id,last_packet);
+
+          case (sweep){
+            1: data_length = data_length + 1;
+            2: data_length = data_length + 2;
+            3: data_length = data_length + 3;
+            4: data_length = data_length + 4;
+             default : data_length = data_length;
+           }
+        }
+        PR_INFO("fc_niu_asm_event", MON_INFO,
+                psprintf("MAQ-DEBUG: NIU_RxGenPkt Done FOR IPORT %0d", mac_id));
+      }
+     join none
+    }
+  else
+    {
+     PR_ERROR("fc_niu_asm_event", MON_ERROR,
+              psprintf("NIU_RxGenPkt: Not Valid Value for rx_multi_port = %0d",rx_multi_port));
+    }
+}
+#endif
+
+
+
+// ***********************************************************************************
+
+
+#ifndef FC_NO_PEU_VERA
+task AsmToVeraIntf::set_StartPEUTest () {
+
+  printf ("\n In set_StartPEUTest... setting StartPEUTest\n");
+  trigger (ON, e_StartPEUTest);
+}
+
+
+//----------------------------------------------------------------
+// Enable PCIe endpoint to expect a request from N2.
+// This routine, called from the Assembly via a user event,
+// triggers 1 Egress Command from N2.
+// Since the Denali end-point errors on un-expected packets,
+// it must be notified everytime N2 sends it a packet.
+//
+// cmdType:  Type of command to transmit
+//             CFGRD0  = Config Read  Type 0
+//             CFGRD1  = Config Read  Type 1
+//             CFGWR0  = Config Write Type 0
+//             CFGWR1  = Config Write Type 1
+//             IORD    = I/O Read
+//             IOWR    = I/O Write
+//             MRD     = Memory Read
+//             MWR     = Memory Write
+//
+// addr: Request Address
+//
+// txLen: Request length in bytes.
+//
+// startData: Soon to be obsolete.
+//
+// error: currently undefined.
+//----------------------------------------------------------------
+
+task AsmToVeraIntf::EnablePCIeEgCmd (string      cmdType,
+                                     bit [63:0]  addr,
+                                     bit [31:0]  txLen,
+                                     bit [31:0]  startData,
+                                     string      err) {
+
+  N2fcPEUparams PEUparams = new ();
+
+  PEUparams.cmdType       = cmdType;
+  PEUparams.addr          = addr;
+  PEUparams.txLen         = txLen;
+  PEUparams.startData     = startData;
+  PEUparams.err           = err;
+
+  mailbox_put (asm2peu_mbox, PEUparams);
+  
+}
+
+//----------------------------------------------------------------
+// Enable PCIe endpoint to transmit a DMA command to N2.
+// This routine, called from the Assembly via a user event,
+// triggers multple Ingress DMA commands to N2.
+//
+// cmdType:  Type of command to transmit
+//             DMAWR  = Memory Write only
+//             DMARD  = Memory Read only
+//             RANDOM = Random Memory R/W
+//
+// StartAddr and EndAddr together define the range of addresses
+// within which Vera is allowed to randomize.
+//
+// TxLen: Request length in bytes. Converted from string to
+//        hex in N2fcCtx.vr routine. Valid values
+//        RANDOM  = Random Size
+//        1       = 1 byte
+//        2       = 2 bytes, and so on upto PCIe max size.
+//
+// NumCmds: Number of commands to transmit
+//
+// error: currently undefined.
+//----------------------------------------------------------------
+
+task AsmToVeraIntf::EnablePCIeIgCmd (string      cmdType,
+                                     bit [63:0]  StartAddr,
+                                     bit [63:0]  EndAddr,
+                                     string      txLen,
+                                     bit [31:0]  NumCmds,
+                                     string      err) {
+
+  N2fcPEUparams PEUparams = new ();
+
+  PEUparams.cmdType       = cmdType;
+  PEUparams.StartAddr     = StartAddr;
+  PEUparams.EndAddr       = EndAddr;
+  PEUparams.DMATxLen      = txLen;
+  PEUparams.NumCmds       = NumCmds;
+  PEUparams.err           = err;
+
+  mailbox_put (asm2peu_mbox, PEUparams);
+  
+}
+#endif
+
+task AsmToVeraIntf::IosErrInj (string errtype, bit [15:0] ctag, bit [39:0] pa) {
+
+   integer inj_result;
+   integer errt =1;
+
+   ios_err_packet err_pkt;
+
+//   ios_ras_inj ras_injector;
+
+   SocErr_Type err_type;
+
+#ifndef GATESIM
+   ras_interrupt.monitor_err_interrupt(ras_injector, 4000);
+#endif
+
+/*   ras_injector = new(niu_sii_inj_bind, dmu_sii_inj_bind, sio_niu_inj_bind, sio_dmu_inj_bind,
+                 l2_0_sio_inj_bind, l2_1_sio_inj_bind, l2_2_sio_inj_bind, l2_3_sio_inj_bind,
+                 l2_4_sio_inj_bind, l2_5_sio_inj_bind, l2_6_sio_inj_bind, l2_7_sio_inj_bind,
+                 sii_ncu_inj_bind, dbg);
+*/
+
+   case (errtype) {
+#ifndef FC_NO_NIU_T2
+      "NIUSII_CUE": err_type = NIUSII_CUE;
+      "NIUSII_CCE": err_type = NIUSII_CCE;
+      "NIUSII_AP":  err_type = NIUSII_AP;
+      "NIUSII_DP":  err_type = NIUSII_DP;
+      "NIUSII_CMDP": err_type = NIUSII_CMDP;
+      "NIUSII_IOAE": err_type = NIUSII_IOAE;
+      "NIUSII_IOUE": err_type = NIUSII_IOUE;
+      "SIONIU_DP":  err_type = SIONIU_DP;
+      "SIONIU_CUE": err_type = SIONIU_CUE;
+      "SIONIU_CCE": err_type = SIONIU_CCE;
+#endif
+      "DMUSII_CUE": err_type = DMUSII_CUE;
+      "DMUSII_CCE": err_type = DMUSII_CCE;
+      "DMUSII_AP":  err_type = DMUSII_AP;
+      "DMUSII_DP":  err_type = DMUSII_DP;
+      "DMUSII_BEP": err_type = DMUSII_BEP;
+      "DMUSII_CMDP": err_type = DMUSII_CMDP;
+      "DMUSII_TOUT": err_type = DMUSII_TOUT;
+      "DMUSII_IOAE": err_type = DMUSII_IOAE;
+      "DMUSII_IOUE": err_type = DMUSII_IOUE;
+      "SIODMU_DP":  err_type = SIODMU_DP;
+      "SIODMU_CUE": err_type = SIODMU_CUE;
+      "SIODMU_CCE": err_type = SIODMU_CCE;
+      "L2SIO_DP":   err_type = L2SIO_DP;
+      "L2SIO_EBIT": err_type = L2SIO_EBIT;	
+      "L2SIO_CUE":  err_type = L2SIO_CUE;
+      "L2SIO_CCE":  err_type = L2SIO_CCE;
+      "SIINCU_DP":  err_type = SIINCU_DP;
+      "SIINCU_CUE": err_type = SIINCU_CUE;
+      "SIINCU_CCE": err_type = SIINCU_CCE;
+      "DMUNCU_WRACK_P": err_type = DMUNCU_WRACK_P;
+      "NCUDMU_MONDO_IDP": err_type = NCUDMU_MONDO_IDP;
+      "SIIDMU_WRACK_P": err_type  = SIIDMU_WRACK_P; 
+      default: errt = 0;
+   }
+
+   err_pkt = new(err_type, ctag, pa);
+ 
+   inj_result = ras_injector.inj_err_packet(err_pkt);
+ 
+   // printf ("\n IOS Error Injector end\n");
+}
+
+
+task AsmToVeraIntf::L2ErrTrapCount(reg [8:0] count=0)
+{
+//  DAtrap DATrp = new();
+  gUtil.l2_trap_count(count);
+  printf("In L2 Trap Counting task");
+}
+
+task AsmToVeraIntf::IosRandErrInj (string errtype, integer num_errs, integer weight) {
+
+   integer inj_result;
+   integer errt =1;
+
+   ios_err_packet err_pkt;
+
+   SocErr_Type err_type;
+
+#ifndef GATESIM
+   ras_interrupt.monitor_err_interrupt(ras_injector, 4000);
+#endif
+
+   case (errtype) {
+#ifndef FC_NO_NIU_T2
+      "NIUSII_CUE": err_type = NIUSII_CUE;
+      "NIUSII_CCE": err_type = NIUSII_CCE;
+      "NIUSII_AP":  err_type = NIUSII_AP;
+      "NIUSII_DP":  err_type = NIUSII_DP;
+      "SIONIU_DP":  err_type = SIONIU_DP;
+      "SIONIU_CUE": err_type = SIONIU_CUE;
+      "SIONIU_CCE": err_type = SIONIU_CCE;
+#endif
+      "DMUSII_CUE": err_type = DMUSII_CUE;
+      "DMUSII_CCE": err_type = DMUSII_CCE;
+      "DMUSII_AP":  err_type = DMUSII_AP;
+      "DMUSII_DP":  err_type = DMUSII_DP;
+      "SIODMU_DP":  err_type = SIODMU_DP;
+      "SIODMU_CUE": err_type = SIODMU_CUE;
+      "SIODMU_CCE": err_type = SIODMU_CCE;
+      "L2SIO_DP":   err_type = L2SIO_DP;
+      "L2SIO_CUE":  err_type = L2SIO_CUE;
+      "L2SIO_CCE":  err_type = L2SIO_CCE;
+      "SIINCU_DP":  err_type = SIINCU_DP;
+      "SIINCU_CCE": err_type = SIINCU_CCE;
+      "SIINCU_CUE": err_type = SIINCU_CUE;
+      default: errt = 0;
+   }
+
+// needed?   err_pkt = new(err_type, ctag, pa);
+
+   inj_result = ras_injector.inj_rand_err(err_type, num_errs, weight);
+
+   // printf ("\n IOS Random Error Injector end\n");
+}
+
+
+// Use this to mark progress or a location in code. Any action can be
+// performed based on the string passed in. This is very flexible if all
+// you need is tid and pc.
+task AsmToVeraIntf::marker(string what, reg [5:0] fromTid, reg [63:0] pc)
+{
+  case (what) {
+    "bootEnd": {       
+      // gOutOfBoot works with User Events to show asm diag progress.
+      // Function gUtil.getRunStatus will tell you which threads are running.
+      // (so will top_if.core_running_status)
+      // Function gUtil.getThreadEnables will tell you what +thread was.
+      // (so will top_if.th_check_enable)
+      //
+      // for SW thread startup, you will not know what threads are supposed
+      // to start so it will be hard to wait for all to start in that case!
+      //
+      // Here is how you could use gOutOfBoot if +thread is used:
+      // while (top_if.th_check_enable !== gOutOfBoot) wait_var(gOutOfBoot);
+      gOutOfBoot[fromTid] = 1;
+      probe_if.gOutOfBoot[fromTid] <= gOutOfBoot[fromTid];
+    }
+    "bootStart": {
+      // see comments for bootEnd above. This will clear bits in gOutOfBoot
+      // when that thread starts boot code execution after a reset.
+      // 
+      // Here is how you could use gOutOfBoot if +thread is used, once you
+      // detect a warm reset has started.
+
+      // Any thread has started boot code after this line of code
+      // while (top_if.th_check_enable === gOutOfBoot) wait_var(gOutOfBoot);
+      
+      // All threads have started boot code after this line of code.
+      // With the large staggering of 64 threads, gOutOfBoot may NEVER
+      // be zero!!!
+      // while (gOutOfBoot) wait_var(gOutOfBoot);
+      
+      // All threads have finished boot code after this line of code
+      // while (top_if.th_check_enable !== gOutOfBoot) wait_var(gOutOfBoot);
+      gOutOfBoot[fromTid] = 0;
+      probe_if.gOutOfBoot[fromTid] <= gOutOfBoot[fromTid];
+    }
+    default: error("AsmToVeraIntf::marker got unknown string (%s)!\n", what);
+  } // case
+
+}
+task AsmToVeraIntf::reset_now(string what)
+{
+  case (what) {
+    "PWRON_RST": {
+      random_rst_if.POR_from_UserEvent <= 1;
+    }
+    "PB_RST": {
+      random_rst_if.PB_RST_from_UserEvent <= 1;
+    }
+    default: error("AsmToVeraIntf::reset_now got unknown string (%s)!\n", what);
+  } // case
+
+}

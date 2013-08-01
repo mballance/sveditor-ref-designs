@@ -1,0 +1,83 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: fc_tcu_clkstop.diaglist
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+<sys(jtag_debug)>
+
+<fc_tcu_clkstop name=fc_tcu_clkstop>
+
+<runargs -vcs_run_args=+BYPASS_AMB_DRAM_INIT>   // required since "-config_cpp_args=-DIDT_AMB" is specified in build args
+<runargs -nosas -fast_boot -midas_args=-DPART_0_BASE=0x200000000 -midas_args=-DL2_REG_PROG>
+<runargs -midas_args=-DCMP_THREAD_START=0x1 -finish_mask=1>
+<runargs -midas_args=-DRESET_STAT_CHECK>       // required when do WMR in assembly diag
+<runargs -vcs_run_args=+mcu_errmon_disable -vcs_run_args=+mcu_fmon_disable -vcs_run_args=+mcuesr_mon_disable>
+<runargs -vcs_run_args=+l2esr_mon_off -vcs_run_args=+l2cpx_errmon_off  -vcs_run_args=+l2esr_mon_DEBUG_off>
+<runargs -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+ios_ras_interrupt_chk_off>
+<runargs -vcs_run_args=+socras_mon_off -vcs_run_args=+sio_dmu_ras_chk_off -vcs_run_args=+sio_niu_ras_chk_off>
+<runargs -tg_seed=1>
+
+ <runargs -midas_args=-DPREWMR_VERA_PROG_DEL=5000 -rtl_timeout=200000 -vcs_run_args=+skt_timeout=200000>
+    fc_clkstp_rstcntr_parallel  tcu_clkstp_clkstretch_1.s fc_tcu_clkstp_rstcntr.vr -vcs_run_args=+parallel_stop -vcs_run_args=+clkstp_del=9 -vcs_run_args=+partialCoreBank
+    fc_clkstp_rstcntr_serial    tcu_clkstp_clkstretch_1.s fc_tcu_clkstp_rstcntr.vr -vcs_run_args=+serial_stop   -vcs_run_args=+clkstp_del=9
+    fc_clkstp_rstcntr_mixed     tcu_clkstp_clkstretch_1.s fc_tcu_clkstp_rstcntr.vr -vcs_run_args=+mixed_stop    -vcs_run_args=+clkstp_del=9
+    fc_trigout_rstcntr          tcu_clkstp_clkstretch_1.s fc_tcu_clkstp_rstcntr_trigout.vr 
+ </runargs>
+
+ <runargs -midas_args=-DPOSTWMR_VERA_PROG_DEL=5000 -rtl_timeout=200000 -vcs_run_args=+skt_timeout=200000>
+    fc_clkstp_tap_hstop_parallel tcu_clkstp_clkstretch_1.s fc_tcu_clkstp_tap_hstop.vr -vcs_run_args=+parallel_stop -vcs_run_args=+clkstp_del=9
+    fc_clkstp_tap_hstop_serial   tcu_clkstp_clkstretch_1.s fc_tcu_clkstp_tap_hstop.vr -vcs_run_args=+serial_stop   -vcs_run_args=+clkstp_del=9
+    fc_clkstp_tap_hstop_mixed    tcu_clkstp_clkstretch_1.s fc_tcu_clkstp_tap_hstop.vr -vcs_run_args=+mixed_stop    -vcs_run_args=+clkstp_del=9
+   <runargs -vcs_run_args=+nowait_asmdiag_done>
+     fc_clkstp_socdbgevent   tcu_clkstp_socdbgevent.s  fc_tcu_clkstp_socdbgevent.vr -midas_args=-DMCU0 -vcs_run_args=+clkstp_del=9
+     fc_trigout_socdbgevent  tcu_clkstp_socdbgevent.s  fc_tcu_clkstp_socdbgevent_trigout.vr -midas_args=-DMCU0 -midas_args=-DSOC_TRIGOUT 
+   </runargs>
+ </runargs>
+
+ <runargs -midas_args=-DPOSTWMR_VERA_PROG_DEL=1000 -rtl_timeout=200000 -vcs_run_args=+skt_timeout=200000>
+    fc_clkstp_trigin   tcu_clkstp_clkstretch_1.s  fc_tcu_clkstp_trigin.vr  -vcs_run_args=+clkstp_del=9
+ </runargs>
+
+ fc_trigout_tcu_trigout_reg   tcu_trigout_reg.s  fc_tcu_clkstp_tcu_trigout_reg.vr -nosas
+
+</runargs>
+</runargs>
+</runargs>
+</runargs>
+</runargs>
+</runargs>
+</runargs>
+</runargs>
+</runargs>
+
+</fc_tcu_clkstop>
+</sys(jtag_debug)>

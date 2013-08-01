@@ -1,0 +1,199 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: N2fcDMAPEUCtx.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class N2fcDMAPEUCtx extends PEUCtxBase {
+
+
+  public bit [31:0]             DWLen;
+  public bit [63:0]             SAddr;
+  public bit [63:0]             EAddr;
+
+  public string f_mode;				// To allow non 'random' noise
+   integer f_index;
+   bit[3:0] f_first;
+   bit[3:0] f_last;
+  local bit[2:0] f_rc;
+  local integer f_len;
+
+  integer f_rdWeight;				// Relative # of memory-reads
+  integer f_wrWeight;				// Relative # of memory-writes
+  integer f_msgWeight;				// Relative # of messages
+  integer f_poisonPct;				// % of memory-reads w bad data
+  integer f_maxPayloadPct;			// % of memory-writes w max data
+  
+
+  task new( string a_name, PEUTestEnv a_env, string a_mode );
+  task Execute();
+  public function CTStrategyBase ProvideStrategy();
+  public function CTStrategyBase FinalizeParms( CTStrategyBase a_strategy );
+
+}
+
+
+task N2fcDMAPEUCtx::new( string a_name, PEUTestEnv a_env, string a_mode ) {
+  super.new(a_name,a_env);
+  f_mode = a_mode;
+  f_index = 0;
+  f_first = 0;
+  f_last = 0;
+  f_len = 0;
+  f_rc = 0;
+  f_rdWeight = 0;
+  f_wrWeight = 0;
+  f_msgWeight = 0;
+  f_poisonPct = 0;
+  f_maxPayloadPct = -1;
+
+  ////  printf ("\n UDEBUG : N2fcDMAPEUCtx::new called \n");
+}
+
+
+
+task N2fcDMAPEUCtx::Execute() {
+  super.Execute();
+  printf ("\n UDEBUG : N2fcDMAPEUCtx::Execute called \n");
+}
+
+function CTStrategyBase N2fcDMAPEUCtx::ProvideStrategy() {
+  PEUStrBase        nullStr;
+  N2fcDmaWrPEUStr   dmaWr;
+  DmaRdPEUStr       dmaRd;
+  DmaMsgPEUStr      dmaMsg;
+  
+  integer           dwbe;
+  integer           maxLen;
+  integer           NumCmds;
+
+  
+  // If the "StratStop" (within the base
+  // context class) has been set, then
+  // just return a base context which
+  // does nothing.
+  if ( this.StratStop ) 
+  {
+    printf ("N2fcDMAPEUCtx::ProvideStrategy StratStop set \n");
+    nullStr = new( f_env );
+    ProvideStrategy = nullStr;
+  }
+
+  // The directed (memory) write test
+  // does every possible DWBE.  That's
+  // any "firstDWBE" for 1-DW payloads
+  // (including zero), and any non-zero
+  // DWBE (first and last) for 2-DWs on
+  // a quad-word boundary, and any of the
+  // four contiguous DWBE values for all
+  // other payloads.
+  else if ( f_mode == "write" )
+  {
+    dmaWr = new( f_env );
+
+    dmaWr.SetAddrBndy( 0 );
+    dmaWr.SetLen(DWLen);
+    dmaWr.SetFirstDWBE(4'hf);
+    dmaWr.SetLastDWBE(4'hf);
+
+    dmaWr.N2fcSetAddr (SAddr, EAddr);
+    printf ("UDEBUG : N2fcDMAPEUCtx::write: A = %0h %0h, Len = 'd%0d\n",
+            SAddr, EAddr, DWLen);
+    
+    ProvideStrategy = dmaWr;
+
+
+    // If we fell through, then anything will do.
+  }
+
+					// The "bulk write" test makes sure that
+					// the lengths up to the maximum are
+					// supported, and that the ILU can
+					// handle cases where the IDB wraps.
+    else if ( f_mode == "bulk write" )
+      {
+      dmaWr = new( f_env );
+      maxLen = f_env.getMaxPayloadSize();
+      printf ("\n UDEBUG : N2fcDMAPEUCtx::bulk_write called f_index = 'd%0d, maxLen = 'd%0d\n", f_index, maxLen);
+
+      ////      f_index = f_index + 1;
+      if ( f_index*4 < maxLen )
+        dmaWr.SetLen( f_index );
+
+//      f_index = f_index + 1;
+//      if ( f_index*4 < maxLen )
+//        dmaWr.SetLen( f_index + 1 );
+
+      ProvideStrategy = dmaWr;
+      }
+
+					// The "bulk read" test makes sure that
+					// the ILU wraps around the DOU.
+    else if ( f_mode == "bulk read" )
+      {
+      printf ("\n UDEBUG : N2fcDMAPEUCtx::bulk_read called \n");
+      dmaRd = new( f_env );
+      maxLen = f_env.getMaxPayloadSize();
+
+					// The first strategy will perform a
+					// 2DW read which crosses the DOU
+					// block boundary (or RCB).
+      f_index = f_index + 1;
+      if ( f_index == 1 )
+        {
+        dmaRd.SetLen( f_index + 1 );
+        /* Oops! Don't know how to force the DOU to wrap! */ /*???*/
+        }
+
+					// Try every request-size up to the max.
+      else if ( f_index == 2 )
+        dmaRd.SetLen( f_env.getMaxRequestSize() / 4 );
+      else if ( f_index < 64 && f_index*4 < maxLen )
+        dmaRd.SetLen( f_index + 1 );
+      else 
+        dmaRd.SetLen( maxLen/4 - f_index%8 );
+
+      ProvideStrategy = dmaRd;
+      }
+    else {
+      printf ("\n UDEBUG : N2fcDMAPEUCtx::ProvideStrategy : Unknown command called \n");
+    }
+  
+} /* end ProvideStrategy */
+
+
+
+
+function CTStrategyBase N2fcDMAPEUCtx::FinalizeParms( CTStrategyBase a_strategy ) {
+  FinalizeParms = a_strategy;
+}
+
+

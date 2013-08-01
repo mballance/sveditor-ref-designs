@@ -1,0 +1,129 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_memcbmgr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "niu_cb_events.vri"
+
+/* A generic call back class to be used for Memory */
+#include "niu_cbclass.vrh"
+
+
+class CcbManager {
+
+  integer no_of_cbs;
+  CcbMem  cbMem[];
+  string whoami;
+  task new(string s) {
+    no_of_cbs = 0;
+    whoami = s;
+  } 
+
+  task setCallBack ( CcbMem cbMem) ;
+  function integer checkCallBack ( bit [63:0] attr, (integer req=0) );
+  local task docb( CcbMem cb);
+}
+
+task CcbManager::setCallBack ( CcbMem cb)  {
+bit[95:0] hash_in;
+
+ if(cb.eventdfn == READ_REQUEST) {
+   hash_in = {READ_REQUEST,cb.attr};
+ } else {
+   hash_in = {cb.attr};
+ }
+
+  if ( assoc_index(CHECK,this.cbMem,hash_in)) {
+    printf("%s: CcbManager::setCallBack:  CallBack already set  for address - %x Ignoring this request-- \n",whoami,cb.attr);
+    return;
+  } else {
+   cbMem[hash_in] = new cb;
+   no_of_cbs ++;
+   printf("%s: CcbManager::setCallBack: MEM CB DEBUG- Callback Set for address - %x , NoofActiveCBS - %d \n",whoami,cb.attr,no_of_cbs);
+  }
+}
+
+function integer CcbManager::checkCallBack ( bit [63:0] attr, (integer req=0) ) {
+  CcbMem cb;
+  integer status;
+  bit[95:0] hash_in;
+  
+
+  if(req == 1) {
+    hash_in = {READ_REQUEST,attr};
+  } else {
+    hash_in = {attr};
+  }
+
+
+ if(assoc_index(CHECK,this.cbMem,hash_in)) {
+  printf("%s: Found the entry in the cb mem- \n",whoami);
+  // do the appropriate action and return the status
+  checkCallBack = 1;
+  cb = new this.cbMem[hash_in];
+  if(req==0) {
+   status = assoc_index(DELETE,this.cbMem,hash_in);
+  }
+  docb(cb);
+ }
+  else checkCallBack = 0;
+
+}
+
+task CcbManager::docb( CcbMem cb) {
+
+   // Parse the events and do appropriate-
+   // cb.eventdfn == 
+
+  if(cb.eventdfn == -1) {
+   printf("%s:  CcbManager::docb:  ERROR Illegal CallBack event set!! FIX IT \n",whoami);
+   return;
+  }
+
+   if(cb.semId!=-1) {
+     semaphore_put(cb.semId,1);
+     no_of_cbs --;
+     if(cb.eventdfn == GOOD_PACKET) {
+       printf("%s:  CcbManager::docb:  MEM CB DEBUG- CallBack Success  - Address - %x \n",whoami,cb.attr);
+     } else if(cb.eventdfn == DROP_PACKET) {
+       printf("%s:  CcbManager::docb:  ERROR- CallBack Success - Packet Written to address - %x : Packet expected to be dropped \n",whoami,cb.attr);
+
+     } else if( cb.eventdfn == CR_WAIT_FOR_ACK) {
+       printf("%s:  CcbManager::docb:  - CallBack Success - Sending Write Ack for  address - %x : \n",whoami,cb.attr);
+     } else if( cb.eventdfn == READ_REQUEST) {
+       printf("%s:  CcbManager::docb:  - CallBack Success - Read Request for address - %x : \n",whoami,cb.attr);
+     }
+
+   }
+}

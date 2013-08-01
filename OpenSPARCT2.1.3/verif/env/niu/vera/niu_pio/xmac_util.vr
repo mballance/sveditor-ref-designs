@@ -1,0 +1,1507 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: xmac_util.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "mac_defines.vri"
+#include "xmac_memory_map.vri"
+#include "pio_driver.vrh"
+#include "mac_pio_class.vrh"
+#include "mif_memory_map.vri"
+#include "esr_ctl_memory_map.vri"
+
+extern mac_pio_cl mac_pio_class;
+
+class mac_util_class {
+  task new();
+  function bit check_cmd(bit [63:0]cmd, bit [63:0] opt);
+  task get_mac_debug_level(var integer  mac_debug, var integer mac_quick,var integer mac_verbose );
+  task xmii_init ( integer iport, bit[63:0] cmd);
+  task mac_loopback_init();
+  task mac_init(integer iport, bit [63:0] cmd);
+  task mac_init_sub(integer iport, bit [63:0] cmd); 
+  task tx_mac_reset(integer iport, bit [39:0] base_addr, integer MAC_INIT_DEBUG);
+  task rx_mac_reset(integer iport, bit [39:0] base_addr, integer MAC_INIT_DEBUG);
+  task init_all_reg(integer iport ); 
+  task setup_reg(integer iport, bit[63:0] cmd, bit [39:0] addr, bit [31:0] data,bit [31:0] verify_mask);
+  task mac_pci_rd(bit [39:0] addr, var bit [31:0] exp_value);
+  task mac_pci_rd_cmp(bit [39:0] addr, bit [31:0] exp__value, bit [31:0] data_mask);
+  function bit[39:0] get_mac_reg_base(integer iport);
+  function bit[(16*20)-1:0]  get_xmac_reg_name(integer id);
+  function bit[32:0] get_xmac_reg_adr(integer id);
+  function bit[32:0] xmac_reg_addr (integer sel);
+  function bit[31:0] xmac_reg_mask (integer sel);
+  function bit[31:0] xmac_reg_default (integer sel);
+  task wr_ipp_xmac_reg(integer mac_id,bit[39:0] addr, bit[31:0]wr_data);
+  task rd_ipp_xmac_reg(integer mac_id,bit[39:0] addr, var bit[31:0]rd_data, bit compare );
+  task ipp_shadow_rd (bit[39:0] addr, var bit[31:0] rd_data, var bit[31:0] data_mask, var bit data_valid);
+  task poll_serdes_rdy();
+}
+
+task mac_util_class :: new(){ }
+
+// task to poll serdes_rdy signals
+task mac_util_class :: poll_serdes_rdy() {
+  integer count = 0;
+  integer rdy_detected = 0;
+  bit [31:0] r_data;
+  
+  while(!rdy_detected) {
+    if(count != 0) 
+      repeat (1000) @(posedge CLOCK);
+    mac_pio_class.xmac_pio_rd(ESER_INTERNAL_SIGNALS,r_data,1'b0);
+    if(r_data[29] || r_data[27]) {
+      count = 0;
+      rdy_detected = 1;
+      printf("INFO : serdes_rdy high\n");
+    } else {
+      count++;
+      if(count > 20) {
+        printf("ERROR : serdes_rdy didn't go high after 20000 clocks\n");
+        rdy_detected = 1;
+      } else rdy_detected = 0;
+    }
+  }
+  
+}
+
+function bit  mac_util_class :: check_cmd(bit [63:0]cmd, bit [63:0] opt){
+  if((cmd & opt) > 0)	check_cmd=1;
+  else			check_cmd=0;	
+}
+
+task mac_util_class::get_mac_debug_level(var integer mac_debug, var integer mac_quick, var integer mac_verbose) {
+  mac_debug = 0;
+  if( get_plus_arg( CHECK, "MAC_TEST_DEBUG") ) {
+    mac_debug = get_plus_arg(NUM, "MAC_TEST_DEBUG" );
+  }
+  mac_quick = get_plus_arg( CHECK, "MAC_QUICK_TEST");
+  mac_verbose = get_plus_arg( CHECK, "MAC_VERBOSE_TEST");
+}
+
+
+task mac_util_class::xmii_init(integer iport, bit[63:0] cmd) {
+  integer mac_debug,mac_quick,mac_verbose;
+  integer MAC_INIT_DEBUG;
+  bit [39:0] base_addr;
+  bit [31:0] data;
+
+  get_mac_debug_level(mac_debug,mac_quick,mac_verbose);
+  mac_verbose = get_plus_arg( CHECK, "MAC_VERBOSE_TEST");
+  printf("xmac_init: xmii_init MAC%0d time=%0d\n", iport, get_time(LO));
+
+  base_addr = get_mac_reg_base(iport);
+  if (get_plus_arg(CHECK, "ATCA_MODE")) {
+    mac_pio_class.xmac_pio_wr(MIF_CONFIG, 32'h0001_0000);    //atca mode = 1
+    mac_pio_class.xmac_pio_wr(ESER_SERDES_RESET, 32'h0000_0003);   //reset the serdes
+    mac_pio_class.xmac_pio_wr(ESER_SER0_PLL_CONFIG, 32'h0000_0079); //configure to 1G
+    mac_pio_class.xmac_pio_wr(ESER_SER1_PLL_CONFIG, 32'h0000_0079); //configure to 1G
+    mac_pio_class.xmac_pio_wr(ESER_SERDES_RESET, 32'h0000_0000);    //release the serdes
+ }
+  
+  //mac_pio_class.xmac_pio_wr(base_addr + XTxMAC_SW_RST, 32'h03); //reset
+  //repeat(10) @(CLOCK);
+  //mac_pio_class.xmac_pio_wr(base_addr + XRxMAC_SW_RST, 32'h03); //reset
+  //repeat(10) @(CLOCK);
+  //tx_mac_reset(iport, base_addr, MAC_INIT_DEBUG); //reset
+  //rx_mac_reset(iport, base_addr, MAC_INIT_DEBUG); //reset
+
+  if(check_cmd(cmd, MAC_CONF_10000)) data = 32'h0100_0604;
+  if(check_cmd(cmd, MAC_CONF_1000)) {
+    if(get_plus_arg(CHECK, "PCS_SERDES")) data = 32'h0d00_0603;
+    else                                  data = 32'h6D00_0603;
+  }
+  if(check_cmd(cmd, MAC_CONF_100))   data = 32'hd500_0703; //D180_0703
+  if(check_cmd(cmd, MAC_CONF_10))    data = 32'h5500_0703; //5080_0703
+
+  data[11] = get_plus_arg(CHECK, "MAC_ER_CK_DIS") ? 0 : 1;
+  data[18] = get_plus_arg(CHECK, "RX_DROP_PKT_CHECK"); // mac2ipp_pkt_cnt_en
+
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_CONFIG, data); //first wr to config
+
+  tx_mac_reset(iport, base_addr, MAC_INIT_DEBUG); //reset
+  rx_mac_reset(iport, base_addr, MAC_INIT_DEBUG); //reset
+  repeat(2) @(CLOCK);
+  mac_pio_class.xmac_pio_rd(base_addr + XMAC_CONFIG, data, 1'b0);
+  //data[0]=1;
+  //data[8]=1;
+  printf("xmac_init:MAC%0d Writing XMAC_CONFIG Reg=0x%0h time=%0d\n", iport, data, get_time(LO));
+  //mac_pio_class.xmac_pio_wr(base_addr + XMAC_CONFIG, data); //sec wr to config
+  //tx_mac_reset(iport, base_addr, MAC_INIT_DEBUG); //reset
+  //rx_mac_reset(iport, base_addr, MAC_INIT_DEBUG); //reset
+
+  if(get_plus_arg(CHECK,"JUMBO_FRAME_EN"))
+    mac_pio_class.xmac_pio_wr(base_addr + XMAC_MAX, 32'h0000_3FFF);
+  printf("xmac_init: Setting up MAC to support JUMBO_FRAMES, XMAC_MAX=0x3FFF\n");
+
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_HIST_CNT1, 32'h0);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_HIST_CNT2, 32'h0);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_HIST_CNT3, 32'h0);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_HIST_CNT4, 32'h0);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_HIST_CNT5, 32'h0);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_HIST_CNT6, 32'h0);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_HIST_CNT7, 32'h0);
+  data[0] = 1'b1;
+  data[8] = 1'b1;
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_CONFIG, data); //3rd wr to confignn
+
+// initialize these counters to 0 for proper exit check
+if (get_plus_arg(CHECK, "ENABLE_RX_EXIT_ROUTINE")) {
+  mac_pio_class.xmac_pio_wr(base_addr + MAC_CRC_ER_CNT, 32'h0);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_MPSZER_CNT, 32'h0);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_FRAG_CNT, 32'h0);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_BC_FRM_CNT, 32'h0);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_MC_FRM_CNT, 32'h0);
+  mac_pio_class.xmac_pio_wr(base_addr + MAC_CD_VIO_CNT, 32'h0);
+}
+
+}
+
+
+//This task program the MAC to enter into loopback mode at xmac levle -- Babu
+task mac_util_class :: mac_loopback_init() {
+  bit [3:0]   MAC_LOOP_BACK_MODE;
+  string     init_loopback,temp_port;
+  bit [31:0] loopback;
+  bit[39:0]  base_addr;
+  bit [31:0] rd_data, wr_data;
+  integer    j;
+
+  MAC_LOOP_BACK_MODE = 0; 
+
+  if( get_plus_arg( CHECK, "MAC_LOOP_BACK=")) {
+    loopback = get_plus_arg( STR, "MAC_LOOP_BACK=");
+    init_loopback.bittostr(loopback);
+    for (j=0; j<init_loopback.len();j++)
+    {
+      temp_port =init_loopback.substr(j,j);
+      MAC_LOOP_BACK_MODE = MAC_LOOP_BACK_MODE | ( 1<<temp_port.atoi());
+    }
+  }
+  else MAC_LOOP_BACK_MODE = 0;
+
+
+  if(MAC_LOOP_BACK_MODE[0]) {
+    base_addr = get_mac_reg_base(0);
+    mac_pio_class.xmac_pio_rd(base_addr + XMAC_CONFIG, rd_data,1'b0);
+    wr_data = rd_data | 32'h0200_0000;
+    mac_pio_class.xmac_pio_wr(base_addr + XMAC_CONFIG, wr_data);
+    printf("xmac_init:mac_loopback_init port 0 addr = %x  wr_data = %x \n", base_addr + XMAC_CONFIG,  wr_data);
+  }
+
+  if(MAC_LOOP_BACK_MODE[1]) {
+    base_addr = get_mac_reg_base(1);
+    mac_pio_class.xmac_pio_rd(base_addr + XMAC_CONFIG, rd_data,1'b0);
+    wr_data = rd_data | 32'h0200_0000;
+    mac_pio_class.xmac_pio_wr(base_addr + XMAC_CONFIG, wr_data);
+    printf("xmac_init:mac_loopback_init port 1 addr = %x  wr_data = %x \n", base_addr + XMAC_CONFIG,  wr_data);
+  }
+
+  if(MAC_LOOP_BACK_MODE[2]) {
+    base_addr = get_mac_reg_base(2);
+    mac_pio_class.xmac_pio_rd(base_addr + MAC_XIF_CONFIG , rd_data,1'b0);
+    wr_data = rd_data | 32'h0000_001B;
+    mac_pio_class.xmac_pio_wr(base_addr + MAC_XIF_CONFIG, wr_data);
+    printf("xmac_init:mac_loopback_init port 2 addr = %x  wr_data = %x \n", base_addr + MAC_XIF_CONFIG,  wr_data);
+  }
+
+  if(MAC_LOOP_BACK_MODE[3]) {
+    base_addr = get_mac_reg_base(3);
+    mac_pio_class.xmac_pio_rd(base_addr + MAC_XIF_CONFIG, rd_data,1'b0);
+    wr_data = rd_data | 32'h0000_001B;
+    mac_pio_class.xmac_pio_wr(base_addr + MAC_XIF_CONFIG, wr_data);
+    printf("xmac_init:mac_loopback_init port 3 addr = %x  wr_data = %x \n", base_addr + MAC_XIF_CONFIG,  wr_data);
+  }
+}
+
+task mac_util_class::mac_init(integer iport, bit [63:0] cmd) {
+  bit [31:0] data;
+  bit [39:0] base_addr;
+
+  printf("xmac_init: Setting up registers for MAC%0d time=%0d\n", iport, get_time(LO));
+  cmd[0] = 0;	// RX_MAC_RESET
+  cmd[1] = 0;	// TX_MAC_RESET
+
+  if( check_cmd(cmd,MAC_CONF_10000) ) xmii_init(iport,MAC_CONF_10000); 
+  else {
+    base_addr = get_mac_reg_base(iport);
+    mac_init_sub(iport,RX_MAC_RESET | TX_MAC_RESET | cmd);
+    mac_init_sub(iport,RX_MAC_RESET | TX_MAC_RESET | cmd);
+    mac_init_sub(iport,RX_MAC_RESET | TX_MAC_RESET | cmd);
+    printf("xmac_init: DONE time=%0d\n", iport, get_time(LO));
+  }
+}
+
+
+task mac_util_class :: mac_init_sub(integer iport, bit [63:0] cmd) {
+  bit [39:0] base_addr;
+  bit [31:0] data, data2, rx_data, tx_data;
+  integer MAC_INIT_DEBUG;
+  integer mac_debug,mac_quick,mac_verbose;
+
+  get_mac_debug_level(mac_debug,mac_quick,mac_verbose);
+  base_addr = get_mac_reg_base(iport);
+  MAC_INIT_DEBUG = check_cmd(cmd,MI_DEBUG) | mac_debug;
+
+  fork
+    if(check_cmd(cmd,TX_MAC_RESET)) tx_mac_reset(iport,base_addr,MAC_INIT_DEBUG);
+    if(check_cmd(cmd,RX_MAC_RESET)) rx_mac_reset(iport,base_addr,MAC_INIT_DEBUG);
+  join all
+
+  if( check_cmd(cmd,MAC_INIT_ALL_REG) ) init_all_reg(iport );
+
+  // MAC CONFIG CODE
+  if( check_cmd(cmd,MAC_CONF_10) | check_cmd(cmd,MAC_CONF_100) | check_cmd(cmd,MAC_CONF_1000) ) {
+    bit [47:0] tmp48;
+
+    // Disable both rx and tx mac
+    data = 0;
+
+    // Config register is cleared to all zero's. Both (rx & tx) macs are disabled.
+    // The only bit that must be set correctly is bit 27. Otherwise the mac might
+    // not be able to recover.
+
+    data[28] = check_cmd(cmd, MAC_NOT_MUXED)	? 0 : 1;
+    if( iport>14 | check_cmd(cmd, MAC_CONF_1000) ) {        // After bit[28] default modification
+      data[28] = 0;
+      data[27] = 1;
+    }
+    else    data[27] = 0;
+    data = 32'h0000_0007;
+
+    setup_reg(iport, cmd, base_addr + TxMAC_CONFIG,data, 32'hffff_fff8);
+
+    printf("xmac_init:Waiting for MAC[%0d] Disable to complete ...\n",iport);
+    mac_pio_class.xmac_pio_rd(base_addr + TxMAC_CONFIG, data,1'b1);
+    while(data[0] == 1  ) {
+      repeat(10) @(CLOCK);
+      mac_pio_class.xmac_pio_rd(base_addr + TxMAC_CONFIG, data,1'b1);
+    }
+
+    data = 32'h0000_0009;
+
+    if(get_plus_arg( CHECK, "RX_DROP_PKT_CHECK"))
+      data[18] = 1'b1; // mac2ipp_pkt_cnt_en design/niu/mac/xmac/rtl/xmac_slv.v line:1966
+    
+    setup_reg(iport, cmd, base_addr + RxMAC_CONFIG, data,32'hffff_fff6);
+
+
+    mac_pio_class.xmac_pio_rd(base_addr + RxMAC_CONFIG, data,1'b1);
+    while(data[0] == 1  ) {
+      repeat(10) @(CLOCK);
+      mac_pio_class.xmac_pio_rd(base_addr + RxMAC_CONFIG, data,1'b1);
+    }
+
+    //data = 32'h0000_0019;
+    //setup_reg(iport, cmd, base_addr + XIF_CONFIG,  data,32'hffff_ffe6);
+    printf("xmac_init:MAC[%0d] Disable completed.\n",iport);
+
+    // Wait for both macs to finish enable
+    printf("xmac_init:Waiting for MAC[%0d] Enable to complete ...\n",iport);
+    mac_pio_class.xmac_pio_rd(base_addr + XMAC_CONFIG, data,1'b1);
+    //while(data[0] == 0 | data[8] == 0) {
+    //	repeat(10) @(CLOCK);
+    //	mac_pci_rd(base_addr + MAC_CONFIG, data);
+    //  }
+    printf("xmac_init:MAC[%0d] Enable completed.\n",iport);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// mac reset Tasks
+////////////////////////////////////////////////////////////////////////////////
+
+task mac_util_class::tx_mac_reset(integer iport, bit[39:0] base_addr, integer MAC_INIT_DEBUG) {
+  bit [31:0] tx_data;
+  integer count = 0;
+
+  // Assert Reset on TX
+  mac_pio_class.xmac_pio_wr(base_addr + XTxMAC_SW_RST, 32'h01);
+  printf("xmac_init:MAC%0d Writing XTxMAC_SW_RST=1 (%h).\n", iport, base_addr+XTxMAC_SW_RST);
+
+  repeat(10) @(CLOCK);
+  printf("xmac_init:Waiting for TX MAC%0d to reset ...\n",iport);
+
+  // Wait for Reset on TX Mac to complete
+  mac_pio_class.mac_pio_rd(base_addr + XTxMAC_SW_RST, tx_data);
+  while(tx_data != 0) {
+    repeat(5) @(CLOCK);
+    mac_pio_class.mac_pio_rd(base_addr + XTxMAC_SW_RST, tx_data);
+    count ++;
+    if(count > 100) {
+      tx_data = 32'h0;
+      printf("ERROR : MACTX_SWRST FAILED\n");
+    }
+  }
+
+  printf("xmac_init:TX MAC%0d reset complete ...\n",iport);
+  repeat(10) @(CLOCK);
+}
+
+
+task mac_util_class :: rx_mac_reset(integer iport, bit [39:0] base_addr, integer MAC_INIT_DEBUG) {
+  bit [31:0] rx_data;
+  integer count = 0;
+
+  // Assert Reset on RX Mac
+  mac_pio_class.xmac_pio_wr(base_addr + XRxMAC_SW_RST, 32'h01);
+  printf("xmac_init:MAC%0d Writing XRxMAC_SW_RST=1 (%h).\n", iport, base_addr+XRxMAC_SW_RST);
+
+  repeat(10) @(CLOCK);
+  printf("xmac_init: Waiting for RX MAC%0d to reset ...\n",iport);
+
+  // Wait for Reset on RX Mac to complete
+  mac_pio_class.mac_pio_rd(base_addr + XRxMAC_SW_RST, rx_data);
+  while(rx_data != 0) {
+    repeat(5) @(CLOCK);
+    mac_pio_class.mac_pio_rd(base_addr + XRxMAC_SW_RST, rx_data);
+    count ++;
+    if(count > 100) {
+      rx_data = 32'h0;
+      printf("ERROR : MACRX_SWRST FAILED\n");
+    } 
+  }
+
+  printf("xmac_init: RX MAC%0d reset complete ...\n",iport);
+  repeat(10) @(CLOCK);
+}
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// init_all_reg Task
+//
+////////////////////////////////////////////////////////////////////////////////
+
+task mac_util_class :: init_all_reg(integer iport ) {
+  bit [47:0] tmp48;
+
+  bit [39:0] base_addr;
+  bit [31:0] data;
+  bit [31:0] rd_data;
+  base_addr = get_mac_reg_base(iport);
+
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_BT_CNT, 32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_BT_CNT, 32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_BC_FRM_CNT,	32'h0000_0000);	
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_MC_FRM_CNT,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_FRAG_CNT,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_HIST_CNT1,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_HIST_CNT2,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_HIST_CNT3,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_HIST_CNT4,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_HIST_CNT5,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_HIST_CNT6,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_HIST_CNT7,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + RxMAC_MPSZER_CNT,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + MAC_CRC_ER_CNT,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + MAC_CD_VIO_CNT,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + MAC_AL_ER_CNT,	32'h0000_0000);
+
+  mac_pio_class.xmac_pio_wr(base_addr + TxMAC_FRM_CNT,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + TxMAC_BYTE_CNT,	32'h0000_0000);
+
+
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR0,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR1,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR2,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR3,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR4,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR5,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR6,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR7,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR8,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR9,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR10,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR11,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR12,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR13,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR14,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR15,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR16,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR17,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR18,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR19,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR20,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR21,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR22,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR23,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR24,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR25,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR26,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR27,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR28,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR29,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR30,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR31,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR32,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR33,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR34,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR35,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR36,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR37,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR38,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR39,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR40,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR41,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR42,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR43,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR44,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR45,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR46,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR47,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR48,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR49,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR50,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR51,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR52,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR53,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR54,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR55,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR56,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR57,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR58,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR59,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR60,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR61,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR62,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR63,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR64,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR65,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR66,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR67,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR68,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR69,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR70,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR71,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR72,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR73,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR74,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR75,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR76,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR77,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR78,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR79,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR80,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR81,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR82,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR83,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR84,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR85,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR86,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR87,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR88,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR89,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR90,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR91,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR92,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR93,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR94,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR95,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR96,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR97,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR98,	32'h0000_0000);
+
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADD_FILT0,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADD_FILT1,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADD_FILT2,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADD_FILT12_MASK,32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADD_FILT00_MASK,32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADD_FILT00_MASK,32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR_CMPEN_LSB,32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_ADDR_CMPEN_MSB,32'h0000_0000);
+  
+
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO0,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO1,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO2,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO3,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO4,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO5,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO6,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO7,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO8,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO9,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO10,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO11,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO12,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO13,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO14,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO15,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO16,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO17,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO18,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO19,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO20,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO21,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO22,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO23,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO24,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO25,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO26,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO27,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO28,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO29,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO30,	32'h0000_0000);
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_HOST_INFO31,	32'h0000_0000);
+
+
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// setup_res Task
+//
+////////////////////////////////////////////////////////////////////////////////
+
+task mac_util_class :: setup_reg(integer iport, bit[63:0] cmd, bit [39:0] addr, bit [31:0] data, bit [31:0] verify_mask) {
+  bit [31:0] data2;
+
+  if(check_cmd(cmd,MI_DEBUG))
+    printf("xmac_init:MAC%0d Writing %s Reg=0x%0h (%h).\n", iport, get_xmac_reg_name(addr[7:0]), data, addr);
+
+  mac_pio_class.xmac_pio_wr(addr, data);
+
+  if(check_cmd(cmd,MAC_REG_VERIFY)) {	// This is just for basic SANITY testing
+    mac_pio_class.mac_pio_rd(addr, data2);
+    if((data & verify_mask) != (data2 & verify_mask))
+      printf("Error: xmac_init: Register Write Verify: Register %s (%h), Wrote: %h Read: %h Mask: %h\n",
+             get_xmac_reg_name(addr[7:0]),addr,data,data2,verify_mask);
+  }
+}
+
+task mac_util_class :: wr_ipp_xmac_reg(integer mac_id, bit[39:0] addr, bit[31:0] wr_data) {
+  bit [32:0] base_addr;
+  base_addr = get_mac_reg_base(mac_id);
+
+  mac_pio_class.xmac_pio_wr(base_addr + addr, wr_data);
+}
+
+task mac_util_class :: rd_ipp_xmac_reg(integer mac_id,bit[39:0] addr, \
+                                       var bit[31:0]rd_data, bit compare) {
+  bit [32:0] base_addr;
+  base_addr = get_mac_reg_base(mac_id);
+
+  mac_pio_class.xmac_pio_rd(base_addr + addr, rd_data,compare);
+}
+
+task mac_util_class :: ipp_shadow_rd (bit[39:0] addr, var bit[31:0] rd_data,\
+                                      var  bit[31:0] data_mask, var bit data_valid) {
+  integer port_id;
+  case(addr[19:12])
+  {
+    8'h80:port_id = 0;
+    8'h82:port_id = 0;
+    8'h86:port_id = 1;
+    8'h88:port_id = 1;
+    8'h8c:port_id = 2;
+    8'h90:port_id = 3;
+  }
+  mac_pio_class.xmac_shadow_class[port_id].get_data(addr,rd_data,data_mask,data_valid);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// mac_pci_rd Task
+//
+////////////////////////////////////////////////////////////////////////////////
+
+task mac_util_class :: mac_pci_rd(bit [39:0] addr, var bit [31:0] exp_value) {
+  semaphore_get(WAIT, mac_pio_class.pio_drv_mac.pio_access, 1);
+  mac_pio_class.pio_drv_mac.address    = addr;
+  mac_pio_class.pio_drv_mac.rd_wr      = 1'b1;
+  mac_pio_class.pio_drv_mac.cfg_access = 1'b0;
+  //pio_driver.exp_data   = exp_value;
+  //pio_driver.data_mask  = 0;
+  //pio_driver.data_mask  = 32'hffff_ffff;
+  //pio_driver.exp_data_valid = 1'b1;
+  trigger(ONE_SHOT, mac_pio_class.pio_drv_mac.pio_start);
+  sync(ALL, mac_pio_class.pio_drv_mac.pio_complete);
+  exp_value = mac_pio_class.pio_drv_mac.rd_data;
+  semaphore_put(mac_pio_class.pio_drv_mac.pio_access, 1);
+}
+
+
+
+task mac_util_class :: mac_pci_rd_cmp(bit [39:0] addr, bit [31:0] exp_value, bit [31:0] data_mask) {
+  semaphore_get(WAIT, mac_pio_class.pio_drv_mac.pio_access, 1);
+  mac_pio_class.pio_drv_mac.address    = addr;
+  mac_pio_class.pio_drv_mac.rd_wr      = 1'b1;
+  mac_pio_class.pio_drv_mac.cfg_access = 1'b0;
+  //pio_driver.exp_data   = exp_value;
+  //pio_driver.data_mask  = data_mask;
+  //pio_driver.exp_data_valid = 1'b1;
+  trigger(ONE_SHOT, mac_pio_class.pio_drv_mac.pio_start);
+  sync(ALL, mac_pio_class.pio_drv_mac.pio_complete);
+
+  /*****
+        if ((pio_driver.rd_data & pio_driver.data_mask) !== (pio_driver.exp_data & pio_driver.data_mask)) {
+        printf("Error: Register %s (%h) data mismatch: \n",get_xmac_reg_name(addr[7:0]),addr);
+        printf("       Expected: %h  Got: %h  Mask: %h\n",pio_driver.exp_data,
+        pio_driver.rd_data, pio_driver.data_mask);
+        printf("\n");
+        }
+  ****/
+
+  semaphore_put(mac_pio_class.pio_drv_mac.pio_access, 1);
+}
+
+
+function bit[39:0] mac_util_class :: get_mac_reg_base(integer iport) {
+
+  case(iport) {
+    0: get_mac_reg_base = MAC0_BASE;
+    1: get_mac_reg_base = MAC1_BASE;
+    2: get_mac_reg_base = MAC2_BASE;
+    3: get_mac_reg_base = MAC3_BASE;
+    default: error("Error: Invalid PORT (%0d) for get_mac_reg_base task.\n",iport);
+  }
+
+}
+
+
+
+function bit[(16*20)-1:0] mac_util_class :: get_xmac_reg_name(integer id) {
+  case(id) {
+
+    XTxMAC_SW_RST:          get_xmac_reg_name = "XTxMAC_SW_RST"; 
+    XRxMAC_SW_RST:          get_xmac_reg_name = "XRxMAC_SW_RST"; 
+    XTxMAC_STATUS:          get_xmac_reg_name = "XTxMAC_STATUS"; 
+    XRxMAC_STATUS:          get_xmac_reg_name = "XRxMAC_STATUS"; 
+    XMAC_CTRL_STAT:         get_xmac_reg_name = "XMAC_CTRL_STAT"; 
+    XTxMAC_STAT_MSK:        get_xmac_reg_name = "XTxMAC_STAT_MSK"; 
+    XRxMAC_STAT_MSK:        get_xmac_reg_name = "XRxMAC_STAT_MSK"; 
+    XMAC_C_S_MSK:           get_xmac_reg_name = "XMAC_C_S_MSK"; 
+    XMAC_CONFIG:            get_xmac_reg_name = "XMAC_CONFIG"; 
+    XMAC_IPG:               get_xmac_reg_name = "XMAC_IPG"; 
+    XMAC_MIN:               get_xmac_reg_name = "XMAC_MIN"; 
+    XMAC_MAX:               get_xmac_reg_name = "XMAC_MAX"; 
+    RxMAC_BT_CNT:           get_xmac_reg_name = "RxMAC_BT_CNT";
+    RxMAC_BC_FRM_CNT:       get_xmac_reg_name = "RxMAC_BC_FRM_CNT";
+    RxMAC_MC_FRM_CNT:       get_xmac_reg_name = "RxMAC_MC_FRM_CNT";
+    RxMAC_FRAG_CNT:         get_xmac_reg_name = "RxMAC_FRAG_CNT";
+    RxMAC_HIST_CNT1:        get_xmac_reg_name = "RxMAC_HIST_CNT1";
+    RxMAC_HIST_CNT2:        get_xmac_reg_name = "RxMAC_HIST_CNT2";
+    RxMAC_HIST_CNT3:        get_xmac_reg_name = "RxMAC_HIST_CNT3";
+    RxMAC_HIST_CNT4:        get_xmac_reg_name = "RxMAC_HIST_CNT4";
+    RxMAC_HIST_CNT5:        get_xmac_reg_name = "RxMAC_HIST_CNT5";
+    RxMAC_HIST_CNT6:        get_xmac_reg_name = "RxMAC_HIST_CNT6";
+    RxMAC_MPSZER_CNT:       get_xmac_reg_name = "RxMAC_MPSZER_CNT";
+    MAC_CRC_ER_CNT:         get_xmac_reg_name = "MAC_CRC_ER_CNT";
+    MAC_CD_VIO_CNT:         get_xmac_reg_name = "MAC_CD_VIO_CNT";
+    MAC_AL_ER_CNT:          get_xmac_reg_name = "MAC_AL_ER_CNT";
+    TxMAC_FRM_CNT:          get_xmac_reg_name = "TxMAC_FRM_CNT";
+    TxMAC_BYTE_CNT:         get_xmac_reg_name = "TxMAC_BYTE_CNT";
+    XMAC_SM_REG:            get_xmac_reg_name = "XMAC_SM_REG";
+    XMAC_ADDR_CMPEN_LSB:    get_xmac_reg_name  = "XMAC_ADDR_CMPEN_LSB";
+    XMAC_ADDR_CMPEN_MSB:    get_xmac_reg_name  = "XMAC_ADDR_CMPEN_MSB";
+    XMAC_ADDR0:             get_xmac_reg_name = "XMAC_ADDR0"; 
+    XMAC_ADDR1:             get_xmac_reg_name = "XMAC_ADDR1"; 
+    XMAC_ADDR2:             get_xmac_reg_name = "XMAC_ADDR2"; 
+    XMAC_ADDR3:           get_xmac_reg_name  = "XMAC_ADDR3";         
+    XMAC_ADDR4:           get_xmac_reg_name  = "XMAC_ADDR4";         
+    XMAC_ADDR5:           get_xmac_reg_name  = "XMAC_ADDR5";         
+    XMAC_ADDR6:           get_xmac_reg_name  = "XMAC_ADDR6";         
+    XMAC_ADDR7:           get_xmac_reg_name  = "XMAC_ADDR7";         
+    XMAC_ADDR8:           get_xmac_reg_name  = "XMAC_ADDR8";         
+    XMAC_ADDR9:           get_xmac_reg_name  = "XMAC_ADDR9";         
+    XMAC_ADDR10:          get_xmac_reg_name  = "XMAC_ADDR10";         
+    XMAC_ADDR11:          get_xmac_reg_name  = "XMAC_ADDR11";         
+    XMAC_ADDR12:          get_xmac_reg_name  = "XMAC_ADDR12";         
+    XMAC_ADDR13:          get_xmac_reg_name  = "XMAC_ADDR13";         
+    XMAC_ADDR14:          get_xmac_reg_name  = "XMAC_ADDR14";         
+    XMAC_ADDR15:          get_xmac_reg_name  = "XMAC_ADDR15";         
+    XMAC_ADDR16:          get_xmac_reg_name  = "XMAC_ADDR16";         
+    XMAC_ADDR17:          get_xmac_reg_name  = "XMAC_ADDR17";         
+    XMAC_ADDR18:          get_xmac_reg_name  = "XMAC_ADDR18";         
+    XMAC_ADDR19:          get_xmac_reg_name  = "XMAC_ADDR19";         
+    XMAC_ADDR20:          get_xmac_reg_name  = "XMAC_ADDR20";         
+    XMAC_ADDR21:          get_xmac_reg_name  = "XMAC_ADDR21";         
+    XMAC_ADDR22:          get_xmac_reg_name  = "XMAC_ADDR22";         
+    XMAC_ADDR23:          get_xmac_reg_name  = "XMAC_ADDR23";         
+    XMAC_ADDR24:          get_xmac_reg_name  = "XMAC_ADDR24";         
+    XMAC_ADDR25:          get_xmac_reg_name  = "XMAC_ADDR25";         
+    XMAC_ADDR26:          get_xmac_reg_name  = "XMAC_ADDR26";         
+    XMAC_ADDR27:          get_xmac_reg_name  = "XMAC_ADDR27";         
+    XMAC_ADDR28:          get_xmac_reg_name  = "XMAC_ADDR28";         
+    XMAC_ADDR29:          get_xmac_reg_name  = "XMAC_ADDR29";         
+    XMAC_ADDR30:          get_xmac_reg_name  = "XMAC_ADDR30";         
+    XMAC_ADDR31:          get_xmac_reg_name  = "XMAC_ADDR31";         
+    XMAC_ADDR32:          get_xmac_reg_name  = "XMAC_ADDR32";         
+    XMAC_ADDR33:          get_xmac_reg_name  = "XMAC_ADDR33";         
+    XMAC_ADDR34:          get_xmac_reg_name  = "XMAC_ADDR34";         
+    XMAC_ADDR35:          get_xmac_reg_name  = "XMAC_ADDR35";         
+    XMAC_ADDR36:          get_xmac_reg_name  = "XMAC_ADDR36";         
+    XMAC_ADDR37:          get_xmac_reg_name  = "XMAC_ADDR37";         
+    XMAC_ADDR38:          get_xmac_reg_name  = "XMAC_ADDR38";         
+    XMAC_ADDR39:          get_xmac_reg_name  = "XMAC_ADDR39";         
+    XMAC_ADDR40:          get_xmac_reg_name  = "XMAC_ADDR40";         
+    XMAC_ADDR41:          get_xmac_reg_name  = "XMAC_ADDR41";         
+    XMAC_ADDR42:          get_xmac_reg_name  = "XMAC_ADDR42";         
+    XMAC_ADDR43:          get_xmac_reg_name  = "XMAC_ADDR43";         
+    XMAC_ADDR44:          get_xmac_reg_name  = "XMAC_ADDR44";         
+    XMAC_ADDR45:          get_xmac_reg_name  = "XMAC_ADDR45";         
+    XMAC_ADDR46:          get_xmac_reg_name  = "XMAC_ADDR46";         
+    XMAC_ADDR47:          get_xmac_reg_name  = "XMAC_ADDR47";         
+    XMAC_ADDR48:          get_xmac_reg_name  = "XMAC_ADDR48";         
+    XMAC_ADDR49:          get_xmac_reg_name  = "XMAC_ADDR49";         
+    XMAC_ADDR50:          get_xmac_reg_name  = "XMAC_ADDR50";         
+
+    XMAC_ADDR51:          get_xmac_reg_name  = "XMAC_ADDR51";         
+    XMAC_ADDR52:          get_xmac_reg_name  = "XMAC_ADDR52";         
+    XMAC_ADDR53:          get_xmac_reg_name  = "XMAC_ADDR53";         
+    XMAC_ADDR54:          get_xmac_reg_name  = "XMAC_ADDR54";         
+    XMAC_ADDR55:          get_xmac_reg_name  = "XMAC_ADDR55";         
+    XMAC_ADDR56:          get_xmac_reg_name  = "XMAC_ADDR56";         
+    XMAC_ADDR57:          get_xmac_reg_name  = "XMAC_ADDR57";         
+    XMAC_ADDR58:          get_xmac_reg_name  = "XMAC_ADDR58";         
+    XMAC_ADDR59:          get_xmac_reg_name  = "XMAC_ADDR59";         
+    XMAC_ADDR60:          get_xmac_reg_name  = "XMAC_ADDR60";         
+    XMAC_ADDR61:          get_xmac_reg_name  = "XMAC_ADDR61";         
+    XMAC_ADDR62:          get_xmac_reg_name  = "XMAC_ADDR62";         
+    XMAC_ADDR63:          get_xmac_reg_name  = "XMAC_ADDR63";         
+    XMAC_ADDR64:          get_xmac_reg_name  = "XMAC_ADDR64";         
+    XMAC_ADDR65:          get_xmac_reg_name  = "XMAC_ADDR65";         
+    XMAC_ADDR66:          get_xmac_reg_name  = "XMAC_ADDR66";         
+    XMAC_ADDR67:          get_xmac_reg_name  = "XMAC_ADDR67";         
+    XMAC_ADDR68:          get_xmac_reg_name  = "XMAC_ADDR68";         
+    XMAC_ADDR69:          get_xmac_reg_name  = "XMAC_ADDR69";         
+    XMAC_ADDR70:          get_xmac_reg_name  = "XMAC_ADDR70";         
+    XMAC_ADDR71:          get_xmac_reg_name  = "XMAC_ADDR71";         
+    XMAC_ADDR72:          get_xmac_reg_name  = "XMAC_ADDR72";         
+    XMAC_ADDR73:          get_xmac_reg_name  = "XMAC_ADDR73";         
+    XMAC_ADDR74:          get_xmac_reg_name  = "XMAC_ADDR74";         
+    XMAC_ADDR75:          get_xmac_reg_name  = "XMAC_ADDR75";         
+    XMAC_ADDR76:          get_xmac_reg_name  = "XMAC_ADDR76";         
+    XMAC_ADDR77:          get_xmac_reg_name  = "XMAC_ADDR77";         
+    XMAC_ADDR78:          get_xmac_reg_name  = "XMAC_ADDR78";         
+    XMAC_ADDR79:          get_xmac_reg_name  = "XMAC_ADDR79";         
+    XMAC_ADDR80:          get_xmac_reg_name  = "XMAC_ADDR80";         
+    XMAC_ADDR81:          get_xmac_reg_name  = "XMAC_ADDR81";         
+    XMAC_ADDR82:          get_xmac_reg_name  = "XMAC_ADDR82";         
+    XMAC_ADDR83:          get_xmac_reg_name  = "XMAC_ADDR83";         
+    XMAC_ADDR84:          get_xmac_reg_name  = "XMAC_ADDR84";         
+    XMAC_ADDR85:          get_xmac_reg_name  = "XMAC_ADDR85";         
+    XMAC_ADDR86:          get_xmac_reg_name  = "XMAC_ADDR86";         
+    XMAC_ADDR87:          get_xmac_reg_name  = "XMAC_ADDR87";         
+    XMAC_ADDR88:          get_xmac_reg_name  = "XMAC_ADDR88";         
+    XMAC_ADDR89:          get_xmac_reg_name  = "XMAC_ADDR89";         
+    XMAC_ADDR90:          get_xmac_reg_name  = "XMAC_ADDR90";         
+    XMAC_ADDR91:          get_xmac_reg_name  = "XMAC_ADDR91";         
+    XMAC_ADDR92:          get_xmac_reg_name  = "XMAC_ADDR92";         
+    XMAC_ADDR93:          get_xmac_reg_name  = "XMAC_ADDR93";         
+    XMAC_ADDR94:          get_xmac_reg_name  = "XMAC_ADDR94";         
+    XMAC_ADDR95:          get_xmac_reg_name  = "XMAC_ADDR95";         
+    XMAC_ADDR96:          get_xmac_reg_name  = "XMAC_ADDR96";         
+    XMAC_ADDR97:          get_xmac_reg_name  = "XMAC_ADDR97";         
+    XMAC_ADDR98:          get_xmac_reg_name  = "XMAC_ADDR98";         
+
+
+
+    XMAC_FC_ADDR0:           get_xmac_reg_name = "XMAC_FC_ADDR0"; 
+    XMAC_FC_ADDR1:           get_xmac_reg_name = "XMAC_FC_ADDR1"; 
+    XMAC_FC_ADDR2:           get_xmac_reg_name = "XMAC_FC_ADDR2"; 
+
+    XMAC_ADD_FILT0:          get_xmac_reg_name = "XMAC_ADD_FILT0"; 
+    XMAC_ADD_FILT1:          get_xmac_reg_name = "XMAC_ADD_FILT1"; 
+    XMAC_ADD_FILT2:          get_xmac_reg_name = "XMAC_ADD_FILT2"; 
+    XMAC_ADD_FILT12_MASK:    get_xmac_reg_name = "XMAC_ADD_FILT12_MASK"; 
+    XMAC_ADD_FILT00_MASK:    get_xmac_reg_name = "XMAC_ADD_FILT00_MASK"; 
+
+    XMAC_HASH_TBL0:          get_xmac_reg_name = "XMAC_HASH_TBL0"; 
+    XMAC_HASH_TBL1:          get_xmac_reg_name = "XMAC_HASH_TBL1"; 
+    XMAC_HASH_TBL2:          get_xmac_reg_name = "XMAC_HASH_TBL2"; 
+    XMAC_HASH_TBL3:          get_xmac_reg_name = "XMAC_HASH_TBL3"; 
+    XMAC_HASH_TBL4:          get_xmac_reg_name = "XMAC_HASH_TBL4"; 
+    XMAC_HASH_TBL5:          get_xmac_reg_name = "XMAC_HASH_TBL5"; 
+    XMAC_HASH_TBL6:          get_xmac_reg_name = "XMAC_HASH_TBL6"; 
+    XMAC_HASH_TBL7:          get_xmac_reg_name = "XMAC_HASH_TBL7"; 
+    XMAC_HASH_TBL8:          get_xmac_reg_name = "XMAC_HASH_TBL8"; 
+    XMAC_HASH_TBL9:          get_xmac_reg_name = "XMAC_HASH_TBL9"; 
+    XMAC_HASH_TBL10:         get_xmac_reg_name = "XMAC_HASH_TBL10"; 
+    XMAC_HASH_TBL11:         get_xmac_reg_name = "XMAC_HASH_TBL11"; 
+    XMAC_HASH_TBL12:         get_xmac_reg_name = "XMAC_HASH_TBL12"; 
+    XMAC_HASH_TBL13:         get_xmac_reg_name = "XMAC_HASH_TBL13"; 
+    XMAC_HASH_TBL14:         get_xmac_reg_name = "XMAC_HASH_TBL14"; 
+    XMAC_HASH_TBL15:         get_xmac_reg_name = "XMAC_HASH_TBL15"; 
+
+
+    XMAC_HOST_INFO0:          get_xmac_reg_name =  "XMAC_HOST_INFO0";
+    XMAC_HOST_INFO1:          get_xmac_reg_name =  "XMAC_HOST_INFO1";
+    XMAC_HOST_INFO2:          get_xmac_reg_name =  "XMAC_HOST_INFO2";
+    XMAC_HOST_INFO3:          get_xmac_reg_name =  "XMAC_HOST_INFO3";
+    XMAC_HOST_INFO4:          get_xmac_reg_name =  "XMAC_HOST_INFO4";
+    XMAC_HOST_INFO5:          get_xmac_reg_name =  "XMAC_HOST_INFO5";
+    XMAC_HOST_INFO6:          get_xmac_reg_name =  "XMAC_HOST_INFO6";
+    XMAC_HOST_INFO7:          get_xmac_reg_name =  "XMAC_HOST_INFO7";
+    XMAC_HOST_INFO8:          get_xmac_reg_name =  "XMAC_HOST_INFO8";
+    XMAC_HOST_INFO9:          get_xmac_reg_name =  "XMAC_HOST_INFO9";
+    XMAC_HOST_INFO10:          get_xmac_reg_name =  "XMAC_HOST_INFO10";
+    XMAC_HOST_INFO11:          get_xmac_reg_name =  "XMAC_HOST_INFO11";
+    XMAC_HOST_INFO12:          get_xmac_reg_name =  "XMAC_HOST_INFO12";
+    XMAC_HOST_INFO13:          get_xmac_reg_name =  "XMAC_HOST_INFO13";
+    XMAC_HOST_INFO14:          get_xmac_reg_name =  "XMAC_HOST_INFO14";
+    XMAC_HOST_INFO15:          get_xmac_reg_name =  "XMAC_HOST_INFO15";
+    XMAC_HOST_INFO16:          get_xmac_reg_name =  "XMAC_HOST_INFO16";
+    XMAC_HOST_INFO17:          get_xmac_reg_name =  "XMAC_HOST_INFO17";
+    XMAC_HOST_INFO18:          get_xmac_reg_name =  "XMAC_HOST_INFO18";
+    XMAC_HOST_INFO19:          get_xmac_reg_name =  "XMAC_HOST_INFO19";
+    XMAC_HOST_INFO20:          get_xmac_reg_name =  "XMAC_HOST_INFO20";
+    XMAC_HOST_INFO21:          get_xmac_reg_name =  "XMAC_HOST_INFO21";
+    XMAC_HOST_INFO22:          get_xmac_reg_name =  "XMAC_HOST_INFO22";
+    XMAC_HOST_INFO23:          get_xmac_reg_name =  "XMAC_HOST_INFO23";
+    XMAC_HOST_INFO24:          get_xmac_reg_name =  "XMAC_HOST_INFO24";
+    XMAC_HOST_INFO25:          get_xmac_reg_name =  "XMAC_HOST_INFO25";
+    XMAC_HOST_INFO26:          get_xmac_reg_name =  "XMAC_HOST_INFO26";
+    XMAC_HOST_INFO27:          get_xmac_reg_name =  "XMAC_HOST_INFO27";
+    XMAC_HOST_INFO28:          get_xmac_reg_name =  "XMAC_HOST_INFO28";
+    XMAC_HOST_INFO29:          get_xmac_reg_name =  "XMAC_HOST_INFO29";
+    XMAC_HOST_INFO30:          get_xmac_reg_name =  "XMAC_HOST_INFO30";
+    XMAC_HOST_INFO31:          get_xmac_reg_name =  "XMAC_HOST_INFO31";
+
+
+
+  }
+}
+
+function bit[32:0] mac_util_class :: get_xmac_reg_adr(integer id) {
+  case(id) {
+    0: get_xmac_reg_adr = XTxMAC_SW_RST;
+    1: get_xmac_reg_adr = XRxMAC_SW_RST;
+    2: get_xmac_reg_adr = XTxMAC_STATUS;
+    3: get_xmac_reg_adr = XRxMAC_STATUS;
+    4: get_xmac_reg_adr = XMAC_CTRL_STAT;
+    5: get_xmac_reg_adr = XTxMAC_STAT_MSK;
+    6: get_xmac_reg_adr = XRxMAC_STAT_MSK;
+    7: get_xmac_reg_adr = XMAC_C_S_MSK;
+    8: get_xmac_reg_adr = XMAC_CONFIG;
+    9: get_xmac_reg_adr = XMAC_IPG;
+    10: get_xmac_reg_adr = XMAC_MIN;
+    11: get_xmac_reg_adr = XMAC_MAX;
+    12: get_xmac_reg_adr = RxMAC_BT_CNT;
+    13: get_xmac_reg_adr = RxMAC_BC_FRM_CNT;
+    14: get_xmac_reg_adr = RxMAC_MC_FRM_CNT;
+    15: get_xmac_reg_adr = RxMAC_FRAG_CNT;
+    16: get_xmac_reg_adr = RxMAC_HIST_CNT1;
+    17: get_xmac_reg_adr = RxMAC_HIST_CNT2;
+    18: get_xmac_reg_adr = RxMAC_HIST_CNT3;
+    19: get_xmac_reg_adr = RxMAC_HIST_CNT4;
+    20: get_xmac_reg_adr = RxMAC_HIST_CNT5;
+    21: get_xmac_reg_adr = RxMAC_HIST_CNT6;
+    22: get_xmac_reg_adr = RxMAC_MPSZER_CNT;
+    23: get_xmac_reg_adr = MAC_CRC_ER_CNT;
+    24: get_xmac_reg_adr = MAC_CD_VIO_CNT;
+    25: get_xmac_reg_adr = MAC_AL_ER_CNT;
+    26: get_xmac_reg_adr = TxMAC_FRM_CNT;
+    27: get_xmac_reg_adr = TxMAC_BYTE_CNT;
+    28: get_xmac_reg_adr = XMAC_SM_REG;
+    29: get_xmac_reg_adr = XMAC_ADDR0;
+    30: get_xmac_reg_adr = XMAC_ADDR1;
+    31: get_xmac_reg_adr = XMAC_ADDR2;
+    32: get_xmac_reg_adr = XMAC_ADDR_CMPEN_LSB;
+    33: get_xmac_reg_adr = XMAC_ADDR_CMPEN_MSB;
+    34: get_xmac_reg_adr = XMAC_ADDR3;
+    35: get_xmac_reg_adr = XMAC_ADDR4;
+    36: get_xmac_reg_adr = XMAC_ADDR5;
+    37: get_xmac_reg_adr = XMAC_ADDR6;
+    38: get_xmac_reg_adr = XMAC_ADDR7;
+    39: get_xmac_reg_adr = XMAC_ADDR8;
+    40: get_xmac_reg_adr = XMAC_ADDR9;
+    41: get_xmac_reg_adr = XMAC_ADDR10;
+    42: get_xmac_reg_adr = XMAC_ADDR11;
+    43: get_xmac_reg_adr = XMAC_ADDR12;
+    44: get_xmac_reg_adr = XMAC_ADDR13;
+    45: get_xmac_reg_adr = XMAC_ADDR14;
+    46: get_xmac_reg_adr = XMAC_ADDR15;
+    47: get_xmac_reg_adr = XMAC_ADDR16;
+    48: get_xmac_reg_adr = XMAC_ADDR17;
+    49: get_xmac_reg_adr = XMAC_ADDR18;
+    50: get_xmac_reg_adr = XMAC_ADDR19;
+    51: get_xmac_reg_adr = XMAC_ADDR20;
+    52: get_xmac_reg_adr = XMAC_ADDR21;
+    53: get_xmac_reg_adr = XMAC_ADDR22;
+    54: get_xmac_reg_adr = XMAC_ADDR23;
+    55: get_xmac_reg_adr = XMAC_ADDR24;
+    56: get_xmac_reg_adr = XMAC_ADDR25;
+    57: get_xmac_reg_adr = XMAC_ADDR26;
+    58: get_xmac_reg_adr = XMAC_ADDR27;
+    59: get_xmac_reg_adr = XMAC_ADDR28;
+    60: get_xmac_reg_adr = XMAC_ADDR29;
+    61: get_xmac_reg_adr = XMAC_ADDR30;
+    62: get_xmac_reg_adr = XMAC_ADDR31;
+    63: get_xmac_reg_adr = XMAC_ADDR32;
+    64: get_xmac_reg_adr = XMAC_ADDR33;
+    65: get_xmac_reg_adr = XMAC_ADDR34;
+    66: get_xmac_reg_adr = XMAC_ADDR35;
+    67: get_xmac_reg_adr = XMAC_ADDR36;
+    68: get_xmac_reg_adr = XMAC_ADDR37;
+    69: get_xmac_reg_adr = XMAC_ADDR38;
+    70: get_xmac_reg_adr = XMAC_ADDR39;
+    71: get_xmac_reg_adr = XMAC_ADDR40;
+    72: get_xmac_reg_adr = XMAC_ADDR41;
+    73: get_xmac_reg_adr = XMAC_ADDR42;
+    74: get_xmac_reg_adr = XMAC_ADDR43;
+    75: get_xmac_reg_adr = XMAC_ADDR44;
+    76: get_xmac_reg_adr = XMAC_ADDR45;
+    77: get_xmac_reg_adr = XMAC_ADDR46;
+    78: get_xmac_reg_adr = XMAC_ADDR47;
+    79: get_xmac_reg_adr = XMAC_ADDR48;
+    80: get_xmac_reg_adr = XMAC_ADDR49;
+    81: get_xmac_reg_adr = XMAC_ADDR50;
+    82: get_xmac_reg_adr = XMAC_ADDR51;
+    83: get_xmac_reg_adr = XMAC_ADDR52;
+    84: get_xmac_reg_adr = XMAC_ADDR53;
+    85: get_xmac_reg_adr = XMAC_ADDR54;
+    86: get_xmac_reg_adr = XMAC_ADDR55;
+    87: get_xmac_reg_adr = XMAC_ADDR56;
+    88: get_xmac_reg_adr = XMAC_ADDR57;
+    89: get_xmac_reg_adr = XMAC_ADDR58;
+    90: get_xmac_reg_adr = XMAC_ADDR59;
+    91: get_xmac_reg_adr = XMAC_ADDR60;
+    92: get_xmac_reg_adr = XMAC_ADDR61;
+    93: get_xmac_reg_adr = XMAC_ADDR62;
+    94: get_xmac_reg_adr = XMAC_ADDR63;
+    95: get_xmac_reg_adr = XMAC_ADDR64;
+    96: get_xmac_reg_adr = XMAC_ADDR65;
+    97: get_xmac_reg_adr = XMAC_ADDR66;
+    98: get_xmac_reg_adr = XMAC_ADDR67;
+    99: get_xmac_reg_adr = XMAC_ADDR68;
+    100: get_xmac_reg_adr = XMAC_ADDR69;
+    101: get_xmac_reg_adr = XMAC_ADDR70;
+    102: get_xmac_reg_adr = XMAC_ADDR71;
+    103: get_xmac_reg_adr = XMAC_ADDR72;
+    104: get_xmac_reg_adr = XMAC_ADDR73;
+    105: get_xmac_reg_adr = XMAC_ADDR74;
+    106: get_xmac_reg_adr = XMAC_ADDR75;
+    107: get_xmac_reg_adr = XMAC_ADDR76;
+    108: get_xmac_reg_adr = XMAC_ADDR77;
+    109: get_xmac_reg_adr = XMAC_ADDR78;
+    110: get_xmac_reg_adr = XMAC_ADDR79;
+    111: get_xmac_reg_adr = XMAC_ADDR80;
+    112: get_xmac_reg_adr = XMAC_ADDR81;
+    113: get_xmac_reg_adr = XMAC_ADDR82;
+    114: get_xmac_reg_adr = XMAC_ADDR83;
+    115: get_xmac_reg_adr = XMAC_ADDR84;
+    116: get_xmac_reg_adr = XMAC_ADDR85;
+    117: get_xmac_reg_adr = XMAC_ADDR86;
+    118: get_xmac_reg_adr = XMAC_ADDR87;
+    119: get_xmac_reg_adr = XMAC_ADDR88;
+    120: get_xmac_reg_adr = XMAC_ADDR89;
+    121: get_xmac_reg_adr = XMAC_ADDR90;
+    122: get_xmac_reg_adr = XMAC_ADDR91;
+    123: get_xmac_reg_adr = XMAC_ADDR92;
+    124: get_xmac_reg_adr = XMAC_ADDR93;
+    125: get_xmac_reg_adr = XMAC_ADDR94;
+    126: get_xmac_reg_adr = XMAC_ADDR95;
+    127: get_xmac_reg_adr = XMAC_ADDR96;
+    128: get_xmac_reg_adr = XMAC_ADDR97;
+    129: get_xmac_reg_adr = XMAC_ADDR98;
+    223: get_xmac_reg_adr = XMAC_FC_ADDR0;
+    224: get_xmac_reg_adr = XMAC_FC_ADDR1;
+    225: get_xmac_reg_adr = XMAC_FC_ADDR2;
+    226: get_xmac_reg_adr = XMAC_ADD_FILT0;
+    227: get_xmac_reg_adr = XMAC_ADD_FILT1;
+    228: get_xmac_reg_adr = XMAC_ADD_FILT2;
+    229: get_xmac_reg_adr = XMAC_ADD_FILT12_MASK;
+    230: get_xmac_reg_adr = XMAC_ADD_FILT00_MASK;
+    231: get_xmac_reg_adr = XMAC_HASH_TBL0;
+    232: get_xmac_reg_adr = XMAC_HASH_TBL1;
+    233: get_xmac_reg_adr = XMAC_HASH_TBL2;
+    234: get_xmac_reg_adr = XMAC_HASH_TBL3;
+    235: get_xmac_reg_adr = XMAC_HASH_TBL4;
+    236: get_xmac_reg_adr = XMAC_HASH_TBL5;
+    237: get_xmac_reg_adr = XMAC_HASH_TBL6;
+    238: get_xmac_reg_adr = XMAC_HASH_TBL7;
+    239: get_xmac_reg_adr = XMAC_HASH_TBL8;
+    240: get_xmac_reg_adr = XMAC_HASH_TBL9;
+    241: get_xmac_reg_adr = XMAC_HASH_TBL10;
+    242: get_xmac_reg_adr = XMAC_HASH_TBL11;
+    243: get_xmac_reg_adr = XMAC_HASH_TBL12;
+    244: get_xmac_reg_adr = XMAC_HASH_TBL13;
+    245: get_xmac_reg_adr = XMAC_HASH_TBL14;
+    246: get_xmac_reg_adr = XMAC_HASH_TBL15;
+    247: get_xmac_reg_adr = XMAC_HOST_INFO0;
+    248: get_xmac_reg_adr = XMAC_HOST_INFO1;
+    249: get_xmac_reg_adr = XMAC_HOST_INFO2;
+    250: get_xmac_reg_adr = XMAC_HOST_INFO3;
+    251: get_xmac_reg_adr = XMAC_HOST_INFO4;
+    252: get_xmac_reg_adr = XMAC_HOST_INFO5;
+    253: get_xmac_reg_adr = XMAC_HOST_INFO6;
+    254: get_xmac_reg_adr = XMAC_HOST_INFO7;
+    255: get_xmac_reg_adr = XMAC_HOST_INFO8;
+    256: get_xmac_reg_adr = XMAC_HOST_INFO9;
+    257: get_xmac_reg_adr = XMAC_HOST_INFO10;
+    258: get_xmac_reg_adr = XMAC_HOST_INFO11;
+    259: get_xmac_reg_adr = XMAC_HOST_INFO12;
+    260: get_xmac_reg_adr = XMAC_HOST_INFO13;
+    261: get_xmac_reg_adr = XMAC_HOST_INFO14;
+    262: get_xmac_reg_adr = XMAC_HOST_INFO15;
+    263: get_xmac_reg_adr = XMAC_HOST_INFO16;
+    264: get_xmac_reg_adr = XMAC_HOST_INFO17;
+    265: get_xmac_reg_adr = XMAC_HOST_INFO18;
+    266: get_xmac_reg_adr = XMAC_HOST_INFO19;
+    267: get_xmac_reg_adr = XMAC_HOST_INFO20;
+    268: get_xmac_reg_adr = XMAC_HOST_INFO21;
+    269: get_xmac_reg_adr = XMAC_HOST_INFO22;
+    270: get_xmac_reg_adr = XMAC_HOST_INFO23;
+    271: get_xmac_reg_adr = XMAC_HOST_INFO24;
+    272: get_xmac_reg_adr = XMAC_HOST_INFO25;
+    273: get_xmac_reg_adr = XMAC_HOST_INFO26;
+    274: get_xmac_reg_adr = XMAC_HOST_INFO27;
+    275: get_xmac_reg_adr = XMAC_HOST_INFO28;
+    276: get_xmac_reg_adr = XMAC_HOST_INFO29;
+    277: get_xmac_reg_adr = XMAC_HOST_INFO30;
+    278: get_xmac_reg_adr = XMAC_HOST_INFO31;
+    279: get_xmac_reg_adr = RxMAC_HIST_CNT7;
+    default: error("Error: Invalid register ID (%0d) for get_bmac_reg_adr.\n",id);
+  }
+}
+
+
+
+
+
+
+function bit[32:0] mac_util_class :: xmac_reg_addr (integer sel) {
+  integer n,m;
+  bit [32:0] base_addr;
+
+  n = sel%XMAC_TOTAL_REGS;
+  m = (sel-n) / XMAC_TOTAL_REGS;
+
+  base_addr = get_mac_reg_base(m);
+  xmac_reg_addr = base_addr + get_xmac_reg_adr(n);
+}
+
+
+
+
+function bit[31:0]  mac_util_class :: xmac_reg_mask (integer sel) {
+  integer n;
+
+  n = sel%XMAC_TOTAL_REGS;
+
+  case(n) {
+
+    0: xmac_reg_mask = XTxMAC_SW_RST_MASK;
+    1: xmac_reg_mask = XRxMAC_SW_RST_MASK;
+    2: xmac_reg_mask = XTxMAC_STATUS_MASK;
+    3: xmac_reg_mask = XRxMAC_STATUS_MASK;
+    4: xmac_reg_mask = XMAC_CTRL_STAT_MASK;
+    5: xmac_reg_mask = XTxMAC_STAT_MSK_MASK;
+    6: xmac_reg_mask = XRxMAC_STAT_MSK_MASK;
+    7: xmac_reg_mask = XMAC_C_S_MSK_MASK;
+    8: xmac_reg_mask = XMAC_CONFIG_MASK;
+    9: xmac_reg_mask = XMAC_IPG_MASK;
+    10: xmac_reg_mask = XMAC_MIN_MASK;
+    11: xmac_reg_mask = XMAC_MAX_MASK;
+    12: xmac_reg_mask = RxMAC_BT_CNT_MASK;
+    13: xmac_reg_mask = RxMAC_BC_FRM_CNT_MASK;
+    14: xmac_reg_mask = RxMAC_MC_FRM_CNT_MASK;
+    15: xmac_reg_mask = RxMAC_FRAG_CNT_MASK;
+    16: xmac_reg_mask = RxMAC_HIST_CNT1_MASK;
+    17: xmac_reg_mask = RxMAC_HIST_CNT2_MASK;
+    18: xmac_reg_mask = RxMAC_HIST_CNT3_MASK;
+    19: xmac_reg_mask = RxMAC_HIST_CNT4_MASK;
+    20: xmac_reg_mask = RxMAC_HIST_CNT5_MASK;
+    21: xmac_reg_mask = RxMAC_HIST_CNT6_MASK;
+    22: xmac_reg_mask = RxMAC_MPSZER_CNT_MASK;
+    23: xmac_reg_mask = MAC_CRC_ER_CNT_MASK;
+    24: xmac_reg_mask = MAC_CD_VIO_CNT_MASK;
+    25: xmac_reg_mask = MAC_AL_ER_CNT_MASK;
+    26: xmac_reg_mask = TxMAC_FRM_CNT_MASK;
+    27: xmac_reg_mask = TxMAC_BYTE_CNT_MASK;
+    28: xmac_reg_mask = XMAC_SM_REG_MASK;
+    29: xmac_reg_mask = XMAC_ADDR0_MASK;
+    30: xmac_reg_mask = XMAC_ADDR1_MASK;
+    31: xmac_reg_mask = XMAC_ADDR2_MASK;
+    32: xmac_reg_mask = XMAC_ADDR_CMPEN_LSB_MASK;
+    33: xmac_reg_mask = XMAC_ADDR_CMPEN_MSB_MASK;
+    34: xmac_reg_mask = XMAC_ADDR3_MASK;
+    35: xmac_reg_mask = XMAC_ADDR4_MASK;
+    36: xmac_reg_mask = XMAC_ADDR5_MASK;
+    37: xmac_reg_mask = XMAC_ADDR6_MASK;
+    38: xmac_reg_mask = XMAC_ADDR7_MASK;
+    39: xmac_reg_mask = XMAC_ADDR8_MASK;
+    40: xmac_reg_mask = XMAC_ADDR9_MASK;
+    41: xmac_reg_mask = XMAC_ADDR10_MASK;
+    42: xmac_reg_mask = XMAC_ADDR11_MASK;
+    43: xmac_reg_mask = XMAC_ADDR12_MASK;
+    44: xmac_reg_mask = XMAC_ADDR13_MASK;
+    45: xmac_reg_mask = XMAC_ADDR14_MASK;
+    46: xmac_reg_mask = XMAC_ADDR15_MASK;
+    47: xmac_reg_mask = XMAC_ADDR16_MASK;
+    48: xmac_reg_mask = XMAC_ADDR17_MASK;
+    49: xmac_reg_mask = XMAC_ADDR18_MASK;
+    50: xmac_reg_mask = XMAC_ADDR19_MASK;
+    51: xmac_reg_mask = XMAC_ADDR20_MASK;
+    52: xmac_reg_mask = XMAC_ADDR21_MASK;
+    53: xmac_reg_mask = XMAC_ADDR22_MASK;
+    54: xmac_reg_mask = XMAC_ADDR23_MASK;
+    55: xmac_reg_mask = XMAC_ADDR24_MASK;
+    56: xmac_reg_mask = XMAC_ADDR25_MASK;
+    57: xmac_reg_mask = XMAC_ADDR26_MASK;
+    58: xmac_reg_mask = XMAC_ADDR27_MASK;
+    59: xmac_reg_mask = XMAC_ADDR28_MASK;
+    60: xmac_reg_mask = XMAC_ADDR29_MASK;
+    61: xmac_reg_mask = XMAC_ADDR30_MASK;
+    62: xmac_reg_mask = XMAC_ADDR31_MASK;
+    63: xmac_reg_mask = XMAC_ADDR32_MASK;
+    64: xmac_reg_mask = XMAC_ADDR33_MASK;
+    65: xmac_reg_mask = XMAC_ADDR34_MASK;
+    66: xmac_reg_mask = XMAC_ADDR35_MASK;
+    67: xmac_reg_mask = XMAC_ADDR36_MASK;
+    68: xmac_reg_mask = XMAC_ADDR37_MASK;
+    69: xmac_reg_mask = XMAC_ADDR38_MASK;
+    70: xmac_reg_mask = XMAC_ADDR39_MASK;
+    71: xmac_reg_mask = XMAC_ADDR40_MASK;
+    72: xmac_reg_mask = XMAC_ADDR41_MASK;
+    73: xmac_reg_mask = XMAC_ADDR42_MASK;
+    74: xmac_reg_mask = XMAC_ADDR43_MASK;
+    75: xmac_reg_mask = XMAC_ADDR44_MASK;
+    76: xmac_reg_mask = XMAC_ADDR45_MASK;
+    77: xmac_reg_mask = XMAC_ADDR46_MASK;
+    78: xmac_reg_mask = XMAC_ADDR47_MASK;
+    79: xmac_reg_mask = XMAC_ADDR48_MASK;
+    80: xmac_reg_mask = XMAC_ADDR49_MASK;
+    81: xmac_reg_mask = XMAC_ADDR50_MASK;
+    82: xmac_reg_mask = XMAC_ADDR51_MASK;
+    83: xmac_reg_mask = XMAC_ADDR52_MASK;
+    84: xmac_reg_mask = XMAC_ADDR53_MASK;
+    85: xmac_reg_mask = XMAC_ADDR54_MASK;
+    86: xmac_reg_mask = XMAC_ADDR55_MASK;
+    87: xmac_reg_mask = XMAC_ADDR56_MASK;
+    88: xmac_reg_mask = XMAC_ADDR57_MASK;
+    89: xmac_reg_mask = XMAC_ADDR58_MASK;
+    90: xmac_reg_mask = XMAC_ADDR59_MASK;
+    91: xmac_reg_mask = XMAC_ADDR60_MASK;
+    92: xmac_reg_mask = XMAC_ADDR61_MASK;
+    93: xmac_reg_mask = XMAC_ADDR62_MASK;
+    94: xmac_reg_mask = XMAC_ADDR63_MASK;
+    95: xmac_reg_mask = XMAC_ADDR64_MASK;
+    96: xmac_reg_mask = XMAC_ADDR65_MASK;
+    97: xmac_reg_mask = XMAC_ADDR66_MASK;
+    98: xmac_reg_mask = XMAC_ADDR67_MASK;
+    99: xmac_reg_mask = XMAC_ADDR68_MASK;
+    100: xmac_reg_mask = XMAC_ADDR69_MASK;
+    101: xmac_reg_mask = XMAC_ADDR70_MASK;
+    102: xmac_reg_mask = XMAC_ADDR71_MASK;
+    103: xmac_reg_mask = XMAC_ADDR72_MASK;
+    104: xmac_reg_mask = XMAC_ADDR73_MASK;
+    105: xmac_reg_mask = XMAC_ADDR74_MASK;
+    106: xmac_reg_mask = XMAC_ADDR75_MASK;
+    107: xmac_reg_mask = XMAC_ADDR76_MASK;
+    108: xmac_reg_mask = XMAC_ADDR77_MASK;
+    109: xmac_reg_mask = XMAC_ADDR78_MASK;
+    110: xmac_reg_mask = XMAC_ADDR79_MASK;
+    111: xmac_reg_mask = XMAC_ADDR80_MASK;
+    112: xmac_reg_mask = XMAC_ADDR81_MASK;
+    113: xmac_reg_mask = XMAC_ADDR82_MASK;
+    114: xmac_reg_mask = XMAC_ADDR83_MASK;
+    115: xmac_reg_mask = XMAC_ADDR84_MASK;
+    116: xmac_reg_mask = XMAC_ADDR85_MASK;
+    117: xmac_reg_mask = XMAC_ADDR86_MASK;
+    118: xmac_reg_mask = XMAC_ADDR87_MASK;
+    119: xmac_reg_mask = XMAC_ADDR88_MASK;
+    120: xmac_reg_mask = XMAC_ADDR89_MASK;
+    121: xmac_reg_mask = XMAC_ADDR90_MASK;
+    122: xmac_reg_mask = XMAC_ADDR91_MASK;
+    123: xmac_reg_mask = XMAC_ADDR92_MASK;
+    124: xmac_reg_mask = XMAC_ADDR93_MASK;
+    125: xmac_reg_mask = XMAC_ADDR94_MASK;
+    126: xmac_reg_mask = XMAC_ADDR95_MASK;
+    127: xmac_reg_mask = XMAC_ADDR96_MASK;
+    128: xmac_reg_mask = XMAC_ADDR97_MASK;
+    129: xmac_reg_mask = XMAC_ADDR98_MASK;
+    223: xmac_reg_mask = XMAC_FC_ADDR0_MASK;
+    224: xmac_reg_mask = XMAC_FC_ADDR1_MASK;
+    225: xmac_reg_mask = XMAC_FC_ADDR2_MASK;
+    226: xmac_reg_mask = XMAC_ADD_FILT0_MASK;
+    227: xmac_reg_mask = XMAC_ADD_FILT1_MASK;
+    228: xmac_reg_mask = XMAC_ADD_FILT2_MASK;
+    229: xmac_reg_mask = XMAC_ADD_FILT12_MASK_MASK;
+    230: xmac_reg_mask = XMAC_ADD_FILT00_MASK_MASK;
+    231: xmac_reg_mask = XMAC_HASH_TBL0_MASK;
+    232: xmac_reg_mask = XMAC_HASH_TBL1_MASK;
+    233: xmac_reg_mask = XMAC_HASH_TBL2_MASK;
+    234: xmac_reg_mask = XMAC_HASH_TBL3_MASK;
+    235: xmac_reg_mask = XMAC_HASH_TBL4_MASK;
+    236: xmac_reg_mask = XMAC_HASH_TBL5_MASK;
+    237: xmac_reg_mask = XMAC_HASH_TBL6_MASK;
+    238: xmac_reg_mask = XMAC_HASH_TBL7_MASK;
+    239: xmac_reg_mask = XMAC_HASH_TBL8_MASK;
+    240: xmac_reg_mask = XMAC_HASH_TBL9_MASK;
+    241: xmac_reg_mask = XMAC_HASH_TBL10_MASK;
+    242: xmac_reg_mask = XMAC_HASH_TBL11_MASK;
+    243: xmac_reg_mask = XMAC_HASH_TBL12_MASK;
+    244: xmac_reg_mask = XMAC_HASH_TBL13_MASK;
+    245: xmac_reg_mask = XMAC_HASH_TBL14_MASK;
+    246: xmac_reg_mask = XMAC_HASH_TBL15_MASK;
+    247: xmac_reg_mask = XMAC_HOST_INFO0_MASK;
+    248: xmac_reg_mask = XMAC_HOST_INFO1_MASK;
+    249: xmac_reg_mask = XMAC_HOST_INFO2_MASK;
+    250: xmac_reg_mask = XMAC_HOST_INFO3_MASK;
+    251: xmac_reg_mask = XMAC_HOST_INFO4_MASK;
+    252: xmac_reg_mask = XMAC_HOST_INFO5_MASK;
+    253: xmac_reg_mask = XMAC_HOST_INFO6_MASK;
+    254: xmac_reg_mask = XMAC_HOST_INFO7_MASK;
+    255: xmac_reg_mask = XMAC_HOST_INFO8_MASK;
+    256: xmac_reg_mask = XMAC_HOST_INFO9_MASK;
+    257: xmac_reg_mask = XMAC_HOST_INFO10_MASK;
+    258: xmac_reg_mask = XMAC_HOST_INFO11_MASK;
+    259: xmac_reg_mask = XMAC_HOST_INFO12_MASK;
+    260: xmac_reg_mask = XMAC_HOST_INFO13_MASK;
+    261: xmac_reg_mask = XMAC_HOST_INFO14_MASK;
+    262: xmac_reg_mask = XMAC_HOST_INFO15_MASK;
+    263: xmac_reg_mask = XMAC_HOST_INFO16_MASK;
+    264: xmac_reg_mask = XMAC_HOST_INFO17_MASK;
+    265: xmac_reg_mask = XMAC_HOST_INFO18_MASK;
+    266: xmac_reg_mask = XMAC_HOST_INFO19_MASK;
+    267: xmac_reg_mask = XMAC_HOST_INFO20_MASK;
+    268: xmac_reg_mask = XMAC_HOST_INFO21_MASK;
+    269: xmac_reg_mask = XMAC_HOST_INFO22_MASK;
+    270: xmac_reg_mask = XMAC_HOST_INFO23_MASK;
+    271: xmac_reg_mask = XMAC_HOST_INFO24_MASK;
+    272: xmac_reg_mask = XMAC_HOST_INFO25_MASK;
+    273: xmac_reg_mask = XMAC_HOST_INFO26_MASK;
+    274: xmac_reg_mask = XMAC_HOST_INFO27_MASK;
+    275: xmac_reg_mask = XMAC_HOST_INFO28_MASK;
+    276: xmac_reg_mask = XMAC_HOST_INFO29_MASK;
+    277: xmac_reg_mask = XMAC_HOST_INFO30_MASK;
+    278: xmac_reg_mask = XMAC_HOST_INFO31_MASK;
+
+
+  }
+}
+
+function bit[31:0] mac_util_class :: xmac_reg_default (integer sel) {
+  integer n;
+
+  n = sel%XMAC_TOTAL_REGS;
+
+  case(n) {
+
+    0: xmac_reg_default = XTxMAC_SW_RST_DEFAULT;
+    1: xmac_reg_default = XRxMAC_SW_RST_DEFAULT;
+    2: xmac_reg_default = XTxMAC_STATUS_DEFAULT;
+    3: xmac_reg_default = XRxMAC_STATUS_DEFAULT;
+    4: xmac_reg_default = XMAC_CTRL_STAT_DEFAULT;
+    5: xmac_reg_default = XTxMAC_STAT_MSK_DEFAULT;
+    6: xmac_reg_default = XRxMAC_STAT_MSK_DEFAULT;
+    7: xmac_reg_default = XMAC_C_S_MSK_DEFAULT;
+    8: xmac_reg_default = XMAC_CONFIG_DEFAULT;
+    9: xmac_reg_default = XMAC_IPG_DEFAULT;
+    10: xmac_reg_default = XMAC_MIN_DEFAULT;
+    11: xmac_reg_default = XMAC_MAX_DEFAULT;
+    12: xmac_reg_default = RxMAC_BT_CNT_DEFAULT;
+    13: xmac_reg_default = RxMAC_BC_FRM_CNT_DEFAULT;
+    14: xmac_reg_default = RxMAC_MC_FRM_CNT_DEFAULT;
+    15: xmac_reg_default = RxMAC_FRAG_CNT_DEFAULT;
+    16: xmac_reg_default = RxMAC_HIST_CNT1_DEFAULT;
+    17: xmac_reg_default = RxMAC_HIST_CNT2_DEFAULT;
+    18: xmac_reg_default = RxMAC_HIST_CNT3_DEFAULT;
+    19: xmac_reg_default = RxMAC_HIST_CNT4_DEFAULT;
+    20: xmac_reg_default = RxMAC_HIST_CNT5_DEFAULT;
+    21: xmac_reg_default = RxMAC_HIST_CNT6_DEFAULT;
+    22: xmac_reg_default = RxMAC_MPSZER_CNT_DEFAULT;
+    23: xmac_reg_default = MAC_CRC_ER_CNT_DEFAULT;
+    24: xmac_reg_default = MAC_CD_VIO_CNT_DEFAULT;
+    25: xmac_reg_default = MAC_AL_ER_CNT_DEFAULT;
+    26: xmac_reg_default = TxMAC_FRM_CNT_DEFAULT;
+    27: xmac_reg_default = TxMAC_BYTE_CNT_DEFAULT;
+    28: xmac_reg_default = XMAC_SM_REG_DEFAULT;
+    29: xmac_reg_default = XMAC_ADDR0_DEFAULT;
+    30: xmac_reg_default = XMAC_ADDR1_DEFAULT;
+    31: xmac_reg_default = XMAC_ADDR2_DEFAULT;
+    32: xmac_reg_default = XMAC_ADDR_CMPEN_LSB_DEFAULT;
+    33: xmac_reg_default = XMAC_ADDR_CMPEN_MSB_DEFAULT;
+    34: xmac_reg_default = XMAC_ADDR3_DEFAULT;
+    35: xmac_reg_default = XMAC_ADDR4_DEFAULT;
+    36: xmac_reg_default = XMAC_ADDR5_DEFAULT;
+    37: xmac_reg_default = XMAC_ADDR6_DEFAULT;
+    38: xmac_reg_default = XMAC_ADDR7_DEFAULT;
+    39: xmac_reg_default = XMAC_ADDR8_DEFAULT;
+    40: xmac_reg_default = XMAC_ADDR9_DEFAULT;
+    41: xmac_reg_default = XMAC_ADDR10_DEFAULT;
+    42: xmac_reg_default = XMAC_ADDR11_DEFAULT;
+    43: xmac_reg_default = XMAC_ADDR12_DEFAULT;
+    44: xmac_reg_default = XMAC_ADDR13_DEFAULT;
+    45: xmac_reg_default = XMAC_ADDR14_DEFAULT;
+    46: xmac_reg_default = XMAC_ADDR15_DEFAULT;
+    47: xmac_reg_default = XMAC_ADDR16_DEFAULT;
+    48: xmac_reg_default = XMAC_ADDR17_DEFAULT;
+    49: xmac_reg_default = XMAC_ADDR18_DEFAULT;
+    50: xmac_reg_default = XMAC_ADDR19_DEFAULT;
+    51: xmac_reg_default = XMAC_ADDR20_DEFAULT;
+    52: xmac_reg_default = XMAC_ADDR21_DEFAULT;
+    53: xmac_reg_default = XMAC_ADDR22_DEFAULT;
+    54: xmac_reg_default = XMAC_ADDR23_DEFAULT;
+    55: xmac_reg_default = XMAC_ADDR24_DEFAULT;
+    56: xmac_reg_default = XMAC_ADDR25_DEFAULT;
+    57: xmac_reg_default = XMAC_ADDR26_DEFAULT;
+    58: xmac_reg_default = XMAC_ADDR27_DEFAULT;
+    59: xmac_reg_default = XMAC_ADDR28_DEFAULT;
+    60: xmac_reg_default = XMAC_ADDR29_DEFAULT;
+    61: xmac_reg_default = XMAC_ADDR30_DEFAULT;
+    62: xmac_reg_default = XMAC_ADDR31_DEFAULT;
+    63: xmac_reg_default = XMAC_ADDR32_DEFAULT;
+    64: xmac_reg_default = XMAC_ADDR33_DEFAULT;
+    65: xmac_reg_default = XMAC_ADDR34_DEFAULT;
+    66: xmac_reg_default = XMAC_ADDR35_DEFAULT;
+    67: xmac_reg_default = XMAC_ADDR36_DEFAULT;
+    68: xmac_reg_default = XMAC_ADDR37_DEFAULT;
+    69: xmac_reg_default = XMAC_ADDR38_DEFAULT;
+    70: xmac_reg_default = XMAC_ADDR39_DEFAULT;
+    71: xmac_reg_default = XMAC_ADDR40_DEFAULT;
+    72: xmac_reg_default = XMAC_ADDR41_DEFAULT;
+    73: xmac_reg_default = XMAC_ADDR42_DEFAULT;
+    74: xmac_reg_default = XMAC_ADDR43_DEFAULT;
+    75: xmac_reg_default = XMAC_ADDR44_DEFAULT;
+    76: xmac_reg_default = XMAC_ADDR45_DEFAULT;
+    77: xmac_reg_default = XMAC_ADDR46_DEFAULT;
+    78: xmac_reg_default = XMAC_ADDR47_DEFAULT;
+    79: xmac_reg_default = XMAC_ADDR48_DEFAULT;
+    80: xmac_reg_default = XMAC_ADDR49_DEFAULT;
+    81: xmac_reg_default = XMAC_ADDR50_DEFAULT;
+    82: xmac_reg_default = XMAC_ADDR51_DEFAULT;
+    83: xmac_reg_default = XMAC_ADDR52_DEFAULT;
+    84: xmac_reg_default = XMAC_ADDR53_DEFAULT;
+    85: xmac_reg_default = XMAC_ADDR54_DEFAULT;
+    86: xmac_reg_default = XMAC_ADDR55_DEFAULT;
+    87: xmac_reg_default = XMAC_ADDR56_DEFAULT;
+    88: xmac_reg_default = XMAC_ADDR57_DEFAULT;
+    89: xmac_reg_default = XMAC_ADDR58_DEFAULT;
+    90: xmac_reg_default = XMAC_ADDR59_DEFAULT;
+    91: xmac_reg_default = XMAC_ADDR60_DEFAULT;
+    92: xmac_reg_default = XMAC_ADDR61_DEFAULT;
+    93: xmac_reg_default = XMAC_ADDR62_DEFAULT;
+    94: xmac_reg_default = XMAC_ADDR63_DEFAULT;
+    95: xmac_reg_default = XMAC_ADDR64_DEFAULT;
+    96: xmac_reg_default = XMAC_ADDR65_DEFAULT;
+    97: xmac_reg_default = XMAC_ADDR66_DEFAULT;
+    98: xmac_reg_default = XMAC_ADDR67_DEFAULT;
+    99: xmac_reg_default = XMAC_ADDR68_DEFAULT;
+    100: xmac_reg_default = XMAC_ADDR69_DEFAULT;
+    101: xmac_reg_default = XMAC_ADDR70_DEFAULT;
+    102: xmac_reg_default = XMAC_ADDR71_DEFAULT;
+    103: xmac_reg_default = XMAC_ADDR72_DEFAULT;
+    104: xmac_reg_default = XMAC_ADDR73_DEFAULT;
+    105: xmac_reg_default = XMAC_ADDR74_DEFAULT;
+    106: xmac_reg_default = XMAC_ADDR75_DEFAULT;
+    107: xmac_reg_default = XMAC_ADDR76_DEFAULT;
+    108: xmac_reg_default = XMAC_ADDR77_DEFAULT;
+    109: xmac_reg_default = XMAC_ADDR78_DEFAULT;
+    110: xmac_reg_default = XMAC_ADDR79_DEFAULT;
+    111: xmac_reg_default = XMAC_ADDR80_DEFAULT;
+    112: xmac_reg_default = XMAC_ADDR81_DEFAULT;
+    113: xmac_reg_default = XMAC_ADDR82_DEFAULT;
+    114: xmac_reg_default = XMAC_ADDR83_DEFAULT;
+    115: xmac_reg_default = XMAC_ADDR84_DEFAULT;
+    116: xmac_reg_default = XMAC_ADDR85_DEFAULT;
+    117: xmac_reg_default = XMAC_ADDR86_DEFAULT;
+    118: xmac_reg_default = XMAC_ADDR87_DEFAULT;
+    119: xmac_reg_default = XMAC_ADDR88_DEFAULT;
+    120: xmac_reg_default = XMAC_ADDR89_DEFAULT;
+    121: xmac_reg_default = XMAC_ADDR90_DEFAULT;
+    122: xmac_reg_default = XMAC_ADDR91_DEFAULT;
+    123: xmac_reg_default = XMAC_ADDR92_DEFAULT;
+    124: xmac_reg_default = XMAC_ADDR93_DEFAULT;
+    125: xmac_reg_default = XMAC_ADDR94_DEFAULT;
+    126: xmac_reg_default = XMAC_ADDR95_DEFAULT;
+    127: xmac_reg_default = XMAC_ADDR96_DEFAULT;
+    128: xmac_reg_default = XMAC_ADDR97_DEFAULT;
+    129: xmac_reg_default = XMAC_ADDR98_DEFAULT;
+    223: xmac_reg_default = XMAC_FC_ADDR0_DEFAULT;
+    224: xmac_reg_default = XMAC_FC_ADDR1_DEFAULT;
+    225: xmac_reg_default = XMAC_FC_ADDR2_DEFAULT;
+    226: xmac_reg_default = XMAC_ADD_FILT0_DEFAULT;
+    227: xmac_reg_default = XMAC_ADD_FILT1_DEFAULT;
+    228: xmac_reg_default = XMAC_ADD_FILT2_DEFAULT;
+    229: xmac_reg_default = XMAC_ADD_FILT12_MASK_DEFAULT;
+    230: xmac_reg_default = XMAC_ADD_FILT00_MASK_DEFAULT;
+    231: xmac_reg_default = XMAC_HASH_TBL0_DEFAULT;
+    232: xmac_reg_default = XMAC_HASH_TBL1_DEFAULT;
+    233: xmac_reg_default = XMAC_HASH_TBL2_DEFAULT;
+    234: xmac_reg_default = XMAC_HASH_TBL3_DEFAULT;
+    235: xmac_reg_default = XMAC_HASH_TBL4_DEFAULT;
+    236: xmac_reg_default = XMAC_HASH_TBL5_DEFAULT;
+    237: xmac_reg_default = XMAC_HASH_TBL6_DEFAULT;
+    238: xmac_reg_default = XMAC_HASH_TBL7_DEFAULT;
+    239: xmac_reg_default = XMAC_HASH_TBL8_DEFAULT;
+    240: xmac_reg_default = XMAC_HASH_TBL9_DEFAULT;
+    241: xmac_reg_default = XMAC_HASH_TBL10_DEFAULT;
+    242: xmac_reg_default = XMAC_HASH_TBL11_DEFAULT;
+    243: xmac_reg_default = XMAC_HASH_TBL12_DEFAULT;
+    244: xmac_reg_default = XMAC_HASH_TBL13_DEFAULT;
+    245: xmac_reg_default = XMAC_HASH_TBL14_DEFAULT;
+    246: xmac_reg_default = XMAC_HASH_TBL15_DEFAULT;
+    247: xmac_reg_default = XMAC_HOST_INFO0_DEFAULT;
+    248: xmac_reg_default = XMAC_HOST_INFO1_DEFAULT;
+    249: xmac_reg_default = XMAC_HOST_INFO2_DEFAULT;
+    250: xmac_reg_default = XMAC_HOST_INFO3_DEFAULT;
+    251: xmac_reg_default = XMAC_HOST_INFO4_DEFAULT;
+    252: xmac_reg_default = XMAC_HOST_INFO5_DEFAULT;
+    253: xmac_reg_default = XMAC_HOST_INFO6_DEFAULT;
+    254: xmac_reg_default = XMAC_HOST_INFO7_DEFAULT;
+    255: xmac_reg_default = XMAC_HOST_INFO8_DEFAULT;
+    256: xmac_reg_default = XMAC_HOST_INFO9_DEFAULT;
+    257: xmac_reg_default = XMAC_HOST_INFO10_DEFAULT;
+    258: xmac_reg_default = XMAC_HOST_INFO11_DEFAULT;
+    259: xmac_reg_default = XMAC_HOST_INFO12_DEFAULT;
+    260: xmac_reg_default = XMAC_HOST_INFO13_DEFAULT;
+    261: xmac_reg_default = XMAC_HOST_INFO14_DEFAULT;
+    262: xmac_reg_default = XMAC_HOST_INFO15_DEFAULT;
+    263: xmac_reg_default = XMAC_HOST_INFO16_DEFAULT;
+    264: xmac_reg_default = XMAC_HOST_INFO17_DEFAULT;
+    265: xmac_reg_default = XMAC_HOST_INFO18_DEFAULT;
+    266: xmac_reg_default = XMAC_HOST_INFO19_DEFAULT;
+    267: xmac_reg_default = XMAC_HOST_INFO20_DEFAULT;
+    268: xmac_reg_default = XMAC_HOST_INFO21_DEFAULT;
+    269: xmac_reg_default = XMAC_HOST_INFO22_DEFAULT;
+    270: xmac_reg_default = XMAC_HOST_INFO23_DEFAULT;
+    271: xmac_reg_default = XMAC_HOST_INFO24_DEFAULT;
+    272: xmac_reg_default = XMAC_HOST_INFO25_DEFAULT;
+    273: xmac_reg_default = XMAC_HOST_INFO26_DEFAULT;
+    274: xmac_reg_default = XMAC_HOST_INFO27_DEFAULT;
+    275: xmac_reg_default = XMAC_HOST_INFO28_DEFAULT;
+    276: xmac_reg_default = XMAC_HOST_INFO29_DEFAULT;
+    277: xmac_reg_default = XMAC_HOST_INFO30_DEFAULT;
+    278: xmac_reg_default = XMAC_HOST_INFO31_DEFAULT;
+
+
+  }
+}
+
+
+

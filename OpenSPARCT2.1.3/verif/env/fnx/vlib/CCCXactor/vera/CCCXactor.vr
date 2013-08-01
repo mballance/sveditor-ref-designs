@@ -1,0 +1,695 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: CCCXactor.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "report_macros.vri"
+#include "cReport.vrh"
+#include "CCCXactor.port.vri"
+#include "CCCXactorDefines.vri"
+//#include "CCCXactorTransaction.vrh"
+//#include "CCCXactorPacketCollection.vrh"
+
+
+//------------------------------------------------------------------------------
+//  Class Definition 
+//      
+//
+//
+//------------------------------------------------------------------------------
+
+class CCCXactor {
+
+  local CCCXactorRingDataIn  ring_in_port;
+  local CCCXactorRingDataOut ring_out_port;
+  local ReportClass Report;
+  local integer drive_mbx,rcv_mbx,availTransID;
+  local event TransactionComplete;
+  local string XactorName;
+
+  //----------------------------------------------------------------------------
+  // Note that ring_in must be PHOLD in users interface definition.
+  //----------------------------------------------------------------------------
+  
+  //--------------------------
+  // Constructor 
+  //--------------------------
+  
+  task new( CCCXactorRingDataIn ring_in_bind,
+	    CCCXactorRingDataOut ring_out_bind,
+	    ReportClass rpt,
+	    integer BaseTransID );
+
+  //--------------------------
+  // ExecuteTrans Task 
+  //--------------------------
+  
+   task ExecuteTrans( CCCXactorTransaction ring_trans, integer timeout, integer min_timeout );
+   
+  //--------------------------
+  // Drive Task 
+  //	- non blocking
+  //--------------------------
+  
+   task Drive( CCCXactorTransaction ring_trans );
+  
+  
+  //--------------------------
+  // Expect Task 
+  //	- blocking 
+  //        - until satified
+  //        - timeout 
+  //        - unexepected tran
+  //--------------------------
+ 
+  task Expect( CCCXactorTransaction ring_trans, integer timeout, integer min_timeout );
+  
+  //--------------------------
+  // Driver Task 
+  //--------------------------
+  
+  protected task Driver();
+  
+  //--------------------------
+  // Sampler Task 
+  //--------------------------
+  
+  protected task Sampler();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+  //***************************************************************
+  //  Constructor 
+  //
+  //	- Pass in bind to input port
+  //	- Pass in bind to output port
+  //	- Pass in reference to report 
+  //	- Pass in intial Trans ID 
+  //
+  //***************************************************************
+
+
+task CCCXactor::new( CCCXactorRingDataIn ring_in_bind,
+		     CCCXactorRingDataOut ring_out_bind,
+		     ReportClass rpt,
+		     integer BaseTransID )
+{
+
+  //------------------------------------
+  // Assign the Passed in Varibles 
+  //------------------------------------
+  ring_in_port 	= ring_in_bind;
+  ring_out_port = ring_out_bind;
+  Report 	= rpt;
+  XactorName 	= "CCC_XACTOR";
+  availTransID = BaseTransID;
+
+
+#ifdef N2_FC
+  ring_in_port.$ring_data_in = {32{1'bz}};
+#endif
+  
+  //------------------------------------
+  // Alloc the Mailbox Space  
+  //------------------------------------
+ 
+  drive_mbx = alloc( MAILBOX, 0, 1 );
+  rcv_mbx = alloc( MAILBOX, 0, 1 );
+  
+  if (drive_mbx == 0 || rcv_mbx == 0) 
+    error ("%0s: Cannot alloc mailbox\n", XactorName);
+  
+  //------------------------------------
+  // Call Driver and Sampler Tasks
+  //------------------------------------
+  
+  Driver();
+  Sampler();
+}
+
+
+  //***************************************************************
+  //  Execute Transaction Task  
+  //
+  //	- Pass in a CCC Transaction 
+  //	- Pass in a Timeout value 
+  //
+  //***************************************************************
+  
+  
+
+task CCCXactor::ExecuteTrans( CCCXactorTransaction ring_trans,
+			      integer timeout,
+			      integer min_timeout )
+{
+#ifndef N2_FC
+  CCCXactorTransaction blank_data_trans;
+
+  //-----------------------------------
+  //  Choose between Read and Write 
+  //-----------------------------------
+
+  case (ring_trans.wr_rd_cmd) {
+  
+    CCC_XACTOR_RD_CMD: 
+    {
+    
+      //------------------------------
+      // Copy Packet to New 
+      //------------------------------
+    
+      blank_data_trans            = new;
+      blank_data_trans.error	  = ring_trans.error;
+      blank_data_trans.wr_rd_cmd  = ring_trans.wr_rd_cmd;
+      blank_data_trans.address 	  = ring_trans.address;
+      blank_data_trans.src_bus_id = ring_trans.src_bus_id;
+      
+      blank_data_trans.RingXactionID.SetContextID( ring_trans.RingXactionID.GetContextID() );
+      blank_data_trans.RingXactionID.SetStrategyID( ring_trans.RingXactionID.GetStrategyID() );
+      blank_data_trans.RingXactionID.SetTransID( ring_trans.RingXactionID.GetTransID() );
+	
+     //-------------------------------
+     //  Call the Drive and Expect
+     //-------------------------------	
+
+      fork 
+      {
+	Expect( ring_trans, timeout, min_timeout);
+      }
+      {
+	Drive( blank_data_trans );
+      }
+      join all
+    }
+    
+    
+    CCC_XACTOR_WR_CMD: 
+    {
+      fork {
+	Expect( ring_trans, timeout, min_timeout);
+      }
+      {
+	Drive( ring_trans );
+      }
+      join all
+    }
+    
+    default:
+      QuickReport(Report,  RTYP_TEST_ERROR,
+		     "%s: executing transaction with invalid wr/rd cmd (%0b)",
+		     XactorName, ring_trans.wr_rd_cmd );
+  }
+#endif
+}
+
+
+
+//***************************************************************
+//  Drive Task  
+//
+//	- Pass in a CCC Transaction 
+//
+//***************************************************************
+
+task CCCXactor::Drive( CCCXactorTransaction ring_trans )
+{
+#ifndef N2_FC
+  bit [ 31:0 ] ring_drive_data = 0;
+  
+  CCCXactorPacketCollection drive_pkts = new;
+
+  //----------------------------------------------------
+  // Assign a transaction ID to the transaction
+  //----------------------------------------------------
+  
+  ring_trans.RingXactionID.SetTransID( availTransID++ );
+
+  //--------------------------------
+  //Form Command Phase of Packet
+  //--------------------------------
+  
+  ring_drive_data[CCC_RING_FIELD_CMD] 		= {1'b0, 1'b1, ring_trans.wr_rd_cmd};
+  ring_drive_data[CCC_RING_FIELD_SRC_BUS_ID] 	= ring_trans.src_bus_id;
+  ring_drive_data[CCC_RING_FIELD_ADDR] 		= ring_trans.address;
+
+  drive_pkts.ring_pkt_collection[0] 		= ring_drive_data;
+   
+  //--------------------------------
+  //Form Data Phase 0 of Packet
+  //--------------------------------
+
+  ring_drive_data[CCC_TRANS_FIELD_DATA_0] 	= ring_trans.csr_data[63:32];
+
+  drive_pkts.ring_pkt_collection[1] 		= ring_drive_data;
+
+  //--------------------------------
+  //Form Data Phase 1 of Packet
+  //--------------------------------
+
+  ring_drive_data[CCC_TRANS_FIELD_DATA_1] 	= ring_trans.csr_data[31:0];
+
+  drive_pkts.ring_pkt_collection[2] 		= ring_drive_data;
+
+
+  //--------------------------------
+  // Put Into Mail Box 
+  //--------------------------------
+
+  mailbox_put( drive_mbx, drive_pkts );
+#endif
+}
+
+
+//***************************************************************
+//  Expect Task  
+//
+//	- Pass in a CCC Transaction
+//	- Pass in a Time Out Value 
+//
+//***************************************************************
+
+
+task CCCXactor::Expect( CCCXactorTransaction ring_trans,
+			integer timeout,
+			integer min_timeout)
+{
+#ifndef N2_FC
+  bit [31:0 ] ring_expect_data = 0;
+  
+  CCCXactorPacketCollection expected_pkts = new;
+  
+  bit satisfied_min_timeout = 1'b0;
+  bit satisfied_expect = 1'b0;
+  string tmp;
+  
+  //--------------------------------
+  //Form Command Phase of Packet
+  //--------------------------------
+  
+  ring_expect_data[CCC_RING_FIELD_CMD] 		= {1'b1, ring_trans.error, ring_trans.wr_rd_cmd};
+  ring_expect_data[CCC_RING_FIELD_SRC_BUS_ID] 	= ring_trans.src_bus_id;
+  ring_expect_data[CCC_RING_FIELD_ADDR] 	= ring_trans.address;
+
+  expected_pkts.ring_pkt_collection[0] 		= ring_expect_data;
+   
+  //--------------------------------
+  //Form Data Phase 0 of Packet
+  //--------------------------------
+
+  if (ring_trans.wr_rd_cmd == CCC_XACTOR_RD_CMD) {
+      ring_expect_data[CCC_TRANS_FIELD_DATA_0] 	= ring_trans.csr_data[63:32];
+  }
+  
+  expected_pkts.ring_pkt_collection[1] 		= ring_expect_data;
+
+  //--------------------------------
+  //Form Data Phase 1 of Packet
+  //--------------------------------
+
+  if (ring_trans.wr_rd_cmd == CCC_XACTOR_RD_CMD) {
+      ring_expect_data[CCC_TRANS_FIELD_DATA_1] 	= ring_trans.csr_data[31:0];
+  }
+  
+  expected_pkts.ring_pkt_collection[2] 		= ring_expect_data;
+
+
+  sprintf( tmp, "%s: expect launched:\n%s",
+	   XactorName, ring_trans.toString() );
+  QuickReport(Report,  RTYP_DEBUG_3, tmp );
+
+
+  //----------------------------------------------------------------------------
+  // Launch Expect 
+  //	
+  //	- Fork off Time out and Actual Expect 
+  //----------------------------------------------------------------------------
+
+  fork
+    { //@min_timeout satisfied_min_timeout = 1'b1;
+    
+     repeat (min_timeout) {
+     
+      @(posedge ring_out_port.$clk);
+      sprintf( tmp, "%s: One Clock for Min Timeout: the min time out value is %d\n the value of timeout is %d\n",
+	   XactorName, min_timeout, timeout);
+          QuickReport(Report,  RTYP_DEBUG_3, tmp );
+     
+     
+     }
+     satisfied_min_timeout = 1'b1;
+    
+     sprintf( tmp, "%s: Satified Min Timeout\n",
+	   XactorName);
+          QuickReport(Report,  RTYP_DEBUG_3, tmp );
+    
+    }
+    join none 
+
+
+  fork
+    {
+      @timeout ring_in_port.$ring_data_in = void; // wait
+    }
+  {
+    CCCXactorPacketCollection rcvd_pkts = new;
+    
+    bit xor_check;
+
+
+    //------------------------------------------
+    // Wait for somthing in the MailBox
+    //
+    //	- Put it in rcvd_pkts
+    //------------------------------------------
+
+    mailbox_get( WAIT, rcv_mbx, rcvd_pkts );
+
+
+    //-----------------------------------------
+    // Check for any x values from DUT
+    //-----------------------------------------
+
+    xor_check = ^rcvd_pkts.ring_pkt_collection[0];
+
+    if (xor_check === 1'bx) {
+      sprintf( tmp, "%s: sampled x during Command Phase:\n Command Phase: %b\n Data 0 Phase: %b\n Data 1 Phase: %b\n",
+	       XactorName,
+	       rcvd_pkts.ring_pkt_collection[0],
+	       rcvd_pkts.ring_pkt_collection[1],
+	       rcvd_pkts.ring_pkt_collection[2]
+      );
+      QuickReport(Report,  RTYP_CCC_XTR_SAMPLED_X_ERROR, tmp );
+    }
+
+
+    //-----------------------------------------
+    // Check for Data Compare 
+    //-----------------------------------------
+
+    if (expected_pkts.ring_pkt_collection[0] != rcvd_pkts.ring_pkt_collection[0]) {
+    
+      sprintf( tmp,
+	       "%s: unexpected transaction: Command Phase mismatch\nexpected:\n%sreceived:\n%s",
+	       XactorName, expected_pkts.toString(), rcvd_pkts.toString() );
+      	       QuickReport(Report,  RTYP_TEST_ERROR, tmp );
+    }
+    
+    
+    if (ring_trans.wr_rd_cmd == CCC_XACTOR_RD_CMD) {
+      if (expected_pkts.ring_pkt_collection[1] !== 32'hx && expected_pkts.ring_pkt_collection[1] !== rcvd_pkts.ring_pkt_collection[1]) {
+        sprintf( tmp,
+                 "%s: unexpected transaction: Data Phase 0  mismatch\nexpected:\n%sreceived:\n%s",
+                 XactorName, expected_pkts.toString(), rcvd_pkts.toString() );
+                 QuickReport(Report,  RTYP_TEST_ERROR, tmp );
+      }
+    
+      if (expected_pkts.ring_pkt_collection[2] !== 32'hx && expected_pkts.ring_pkt_collection[2] !== rcvd_pkts.ring_pkt_collection[2]) {
+        sprintf( tmp,
+	         "%s: unexpected transaction: Data Phase 1  mismatch\nexpected:\n%sreceived:\n%s",
+	         XactorName, expected_pkts.toString(), rcvd_pkts.toString() );
+      	         QuickReport(Report,  RTYP_TEST_ERROR, tmp );
+      }
+    }    
+
+    //-------------------------------------------
+    // Check Trans didn't come back to fast 
+    //-------------------------------------------
+    
+    if (satisfied_min_timeout) {
+    	satisfied_expect = 1'b1;
+	
+	//------------------------------------------------------------
+	// Put Data Sampled into Packet so it can be used if 
+	// user wants to put x's in
+	//------------------------------------------------------------
+        if (ring_trans.wr_rd_cmd) { }
+	else {
+	   ring_expect_data = rcvd_pkts.ring_pkt_collection[1];
+	   ring_trans.csr_data[63:32] = ring_expect_data; 
+	
+	   ring_expect_data = rcvd_pkts.ring_pkt_collection[2];
+	   ring_trans.csr_data[31:0] = ring_expect_data; 
+	}
+    }
+ 
+  }
+ 
+  join any
+  terminate;
+
+  if(satisfied_expect !== 1'b1 ) {
+    
+    
+    if(satisfied_min_timeout !== 1'b1) {
+    
+     sprintf( tmp, "%s: expected transaction came back to quickly:\n%s",
+	     XactorName, ring_trans.toString() );
+     QuickReport(Report,  RTYP_TEST_ERROR, tmp );
+     trigger( ONE_BLAST, TransactionComplete );
+    
+    }
+    else {
+     sprintf( tmp, "%s: expected transaction timed out:\n%s",
+	     XactorName, ring_trans.toString() );
+     QuickReport(Report,  RTYP_TEST_ERROR, tmp );
+     trigger( ONE_BLAST, TransactionComplete );
+    }
+    
+    
+  }
+  else {
+    sprintf( tmp, "%s: expect satisifed:\n%s",
+	     XactorName, ring_trans.toString() );
+    QuickReport(Report,  RTYP_DEBUG_3, tmp );
+  }
+#endif
+}
+
+//***************************************************************
+//  Driver Task 
+//
+//	- Launched by the contructor 
+//	- Constantly monitors the drive mailbox
+//		- if has a packet sends and waits for sync
+//
+//
+//***************************************************************
+
+task CCCXactor::Driver()
+{
+#ifndef N2_FC
+  fork {
+  
+    CCCXactorPacketCollection drive_pkts;
+  
+    bit [31:0] drive_data;
+
+    @( posedge ring_in_port.$clk );
+
+    ring_in_port.$ring_data_in = CCC_XACTOR_IDLE;
+
+    while( 1 ) {
+      mailbox_get( WAIT, drive_mbx, drive_pkts );
+
+      @( posedge ring_in_port.$clk );
+      drive_data = drive_pkts.ring_pkt_collection[ 0 ];
+      ring_in_port.$ring_data_in = drive_data;
+
+      @( posedge ring_in_port.$clk );
+      drive_data = drive_pkts.ring_pkt_collection[ 1 ];
+      ring_in_port.$ring_data_in = drive_data;
+      
+      @( posedge ring_in_port.$clk );
+      drive_data = drive_pkts.ring_pkt_collection[ 2 ];
+      ring_in_port.$ring_data_in = drive_data;
+
+      @( posedge ring_in_port.$clk );
+      
+      ring_in_port.$ring_data_in = CCC_XACTOR_IDLE;
+
+      // Keep driving IDLE and wait for event notifying transaction complete
+      
+      sync( ANY, TransactionComplete );
+
+    }
+  }
+  join none
+#endif
+}
+
+  
+//***************************************************************
+//  Sampler Task  
+//
+//
+//***************************************************************
+
+
+
+task CCCXactor::Sampler()
+{
+#ifndef N2_FC
+  CCCXactorPacketCollection rcvd_pkts;
+
+  fork {
+    bit [ 31:0 ] curr_rcvd_data;
+    
+    integer curr_state = CCC_XACTOR_SAMPLE_IDLE;
+    integer seen_mapped_bit = 0;
+    string tmp;
+    
+    //---------------------------------------------------------------
+    // state machine
+    //   CCC_XACTOR_SAMPLE_IDLE
+    //       --> CSR ring is idle
+    //   CCC_XACTOR_SAMPLE_REC_1
+    //       --> detected Command phase, 
+    //   CCC_XACTOR_SAMPLE_REC_2
+    //       --> 
+    //---------------------------------------------------------------
+    
+    while( 1 ) {
+      curr_rcvd_data = ring_out_port.$ring_data_out;
+
+      case( curr_state ) {
+      
+        //---------------------------------------------------------------
+	// IDLE STATE 
+	//
+	//	- Stay here until a response is seen 
+	// 		- 4 possible could be seen 
+	//			- READ  	100
+	//			- WRITE 	101
+	//			- READ ERROR 	110
+	//			- WRITE ERROR 	111
+	//
+	//
+	//	- When see response packet load data into index [0]
+	//	 of collection
+	//---------------------------------------------------------------
+      
+        CCC_XACTOR_SAMPLE_IDLE: {
+
+	if (curr_rcvd_data[CCC_RING_FIELD_CMD] !== 3'b000) {
+	
+	  if (curr_rcvd_data[CCC_RING_FIELD_CMD_MSB] === 1'b1) {
+	  
+	    QuickReport(Report,  RTYP_DEBUG_3, "%s: transitioning from IDLE to REC_1",XactorName );
+	
+	    rcvd_pkts = new;
+            rcvd_pkts.ring_pkt_collection[0] = curr_rcvd_data;	
+			   
+	    curr_state = CCC_XACTOR_SAMPLE_REC_1;
+	    
+	  }
+	  else {
+	     QuickReport(Report,  RTYP_DEBUG_3, "%s: transitioning from IDLE to INVAL_1",XactorName );
+	     curr_state = CCC_XACTOR_SAMPLE_INVAL_1;
+	  }
+	  
+	 } 
+	}
+	
+	//---------------------------------------------------------------
+	// INAVLID 1 STATE 
+	//
+	//
+	//---------------------------------------------------------------
+	
+        CCC_XACTOR_SAMPLE_INVAL_1: {
+	
+	    QuickReport(Report,  RTYP_DEBUG_3, "%s: transitioning from INVAL_1 to INVAL_2",XactorName );
+				   
+	    curr_state = CCC_XACTOR_SAMPLE_INVAL_2;
+	}
+	
+	//---------------------------------------------------------------
+	// INAVLID 2 STATE 
+	//
+	//
+	//---------------------------------------------------------------
+	
+        CCC_XACTOR_SAMPLE_INVAL_2: {
+	
+	    QuickReport(Report,  RTYP_DEBUG_3, "%s: transitioning from INVAL_2 to IDLE",XactorName );
+				   
+	    curr_state = CCC_XACTOR_SAMPLE_IDLE;
+	}
+	
+	//---------------------------------------------------------------
+	// REC 1 STATE 
+	//
+	//
+	//	- Load data into index [1]  of collection
+	//---------------------------------------------------------------
+	
+        CCC_XACTOR_SAMPLE_REC_1: {
+	
+	    QuickReport(Report,  RTYP_DEBUG_3, "%s: transitioning from REC_1 to REC_2",XactorName );
+	
+            rcvd_pkts.ring_pkt_collection[1] = curr_rcvd_data;	
+			   
+	    curr_state = CCC_XACTOR_SAMPLE_REC_2;
+	}
+
+	//---------------------------------------------------------------
+	// REC 2 STATE 
+	//
+	//
+	//	- Load data into index [2]  of collection
+	//---------------------------------------------------------------
+
+        CCC_XACTOR_SAMPLE_REC_2: {
+	
+	    QuickReport(Report,  RTYP_DEBUG_3, "%s: transitioning from REC_2 to IDLE",XactorName );
+	
+            rcvd_pkts.ring_pkt_collection[2] = curr_rcvd_data;	
+			   
+	    curr_state = CCC_XACTOR_SAMPLE_IDLE;
+	    mailbox_put( rcv_mbx, rcvd_pkts );
+	    rcvd_pkts = null;
+	    trigger( ONE_BLAST, TransactionComplete );
+	}
+   
+      default:
+	QuickReport(Report,  RTYP_TEST_ERROR,
+		       "%s: invalid state reached in CCCXactor.Sampler()",
+		       XactorName );
+      }
+      @( posedge ring_out_port.$clk );
+    }
+  }
+  join none
+#endif
+}

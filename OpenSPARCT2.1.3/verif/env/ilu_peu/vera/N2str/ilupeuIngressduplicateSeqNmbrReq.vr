@@ -1,0 +1,167 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuIngressduplicateSeqNmbrReq.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class ilupeuIngressduplicateSeqNmbrReq extends PEUStrBase 
+  {
+  integer f_len;				// The packet's payload length
+  bit f_lenSpecified;				// Was a length specified?
+  bit [4:0]  f_type;				// The request's type
+  bit f_data;      				// Does the request have data?
+  bit f_typeSpecified;				// Was a length specified?
+  integer f_errQueue;
+
+  task new( PEUTestEnv a_env )
+    {
+    super.new( a_env );
+    f_lenSpecified = 0;
+    f_typeSpecified = 0;
+    f_errQueue = 0;
+    }
+  task SetLen( integer a_len )
+    {
+    f_len = a_len;
+    f_lenSpecified = 1;
+    }
+  task SetType( bit[5:0] a_type, bit a_data )
+    {
+    f_type = a_type;
+    f_data = a_data;
+    f_typeSpecified = 1;
+    }
+  task SetErrQueue( integer a_queue )
+    {
+    f_errQueue = a_queue;
+    } /* end SetErrQueue */
+
+  task Execute()
+    {
+    bit[PEC_PCI__HDR] ingressHdr;		// The ingress TLP's header
+    integer ingressData;			// A payload descriptor
+    bit[7:0] ingressTag;			// The tag for the TLP
+
+					// What are we doing?
+    if ( !f_typeSpecified )
+      {
+      randcase
+        {
+        1: f_type = PEC_PCI__TYPE_MEM;
+        1: f_type = PEC_PCI__TYPE_MSG;
+        }
+      randcase
+        {
+        1: f_data = 0;
+        1: f_data = 1;
+        }
+      }
+    if ( !f_lenSpecified ) f_len = urandom()%8 + 1;
+
+					// First, get in line for a DMA tag...
+    f_env.allocDmaTag( ingressTag );
+
+					// Then build a TLP
+    if ( f_type == PEC_PCI__TYPE_MSG ) 
+      f_env.genIngressMsg( ingressTag, ingressHdr, ingressData );    
+    else if ( f_data )
+      f_env.genIngressWrReq( ingressTag, ingressHdr, ingressData, f_len );    
+    else 
+      f_env.genIngressRdReq( ingressTag, ingressHdr, ingressData, f_len );
+
+//     //Denali can hold a TLP from being transmitted if a previous TLP
+//     // with the same tag and Request ID has not completed yet. This only
+//     // should happen with error TLPs. To help with this make all bad REQs
+//     // PEC_PCI__REQ_ID[0] = 1
+//     ingressHdr[80] = 1'b1;
+//     
+//     // Set the "poisoned" bit, and then
+//     // push the beastie into the TLU.
+//     ingressHdr[PEC_PCI__EP] = 1;
+//     printf("(DmaPoison IngressHdr) EP : %x TYPE :%x FMT : %x TC : %x\n", 
+// 	   ingressHdr[PEC_PCI__EP], 
+// 	   ingressHdr[PEC_PCI__TYPE],
+// 	   ingressHdr[PEC_PCI__FMT],
+// 	   ingressHdr[PEC_PCI__TC]);
+//     
+//     printf("(DmaPoison IngressHdr) ATTR : %x REQ_ID : %x MSG_CODE : %x\n",
+// 	   ingressHdr[PEC_PCI__ATTR],
+// 	   ingressHdr[PEC_PCI__REQ_ID],
+// 	   ingressHdr[PEC_PCI__MSG_CODE]
+// 	   );
+// 
+//     if( (f_type != PEC_PCI__TYPE_MSG)  && !f_data ){
+//        f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlPoison );
+//     }
+// 
+//     //If a test calls this then we'll just disable this check for duration 
+//     f_env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_COR_TLP_USERTAG_2 );
+//  
+//     if ( super.f_abortErrTlp )
+//       {
+//       f_env.drivePCIE( ingressHdr, ingressData, *, *, *, 1 );
+//       f_env.waitIngressLatency( ingressHdr );
+//       }
+//     else
+//       { 
+//       f_env.reserveIngressCredits( ingressHdr );
+//       f_env.drivePCIE( ingressHdr, ingressData );
+//       f_env.consumeIngressCredits( ingressHdr );
+//       if ( ingressHdr[PEC_PCI__FMT_DATA] )
+//         f_env.waitIngressLatency( ingressHdr );
+//       else
+//         f_env.expectILU( ingressHdr, ingressData );
+//       }
+//     f_env.freeDmaTag( ingressTag );
+//     if( (f_type != PEC_PCI__TYPE_MSG)  && !f_data ){
+//        f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlPoison );
+//     }
+
+         f_env.driveduplicateSeqNmbrReq( ingressHdr, ingressData );
+         f_env.freeDmaTag( ingressTag );
+    
+// 					// Put a "poisoned" error into the
+// 					// error-queue, if one was supplied.
+//     if ( f_errQueue != 0 && ingressHdr[PEC_PCI__FMT_DATA] )
+//       {
+// 	printf( "DmaPoison - Add poisoned header to error queue\n" );
+// 	mailbox_put( f_errQueue, e_ERR_ue_pp );
+// 	mailbox_put( f_errQueue, ingressHdr );
+//       }
+//     else if ( f_errQueue != 0 )
+//       {
+// 	mailbox_put( f_errQueue, e_ERR_none );
+// 	mailbox_put( f_errQueue, 0 );
+//       }
+
+    printf( "AC: driveduplicateSeqNmbrReq  - Done! at time %d\n", get_time(LO) );
+    } /* end Execute */
+} /* end DmaPoison */

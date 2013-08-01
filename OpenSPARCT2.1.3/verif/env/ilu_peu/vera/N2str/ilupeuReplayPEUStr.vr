@@ -1,0 +1,420 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuReplayPEUStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class ReplayPEUStr extends PEUStrBase 
+  {
+  integer f_errQueue;				// A mailbox for bad pkt headers
+  string f_typeReplay;				// The replay type nak/timeout
+  bit f_typeSpecified;				// Was a type specified?
+  integer f_nmbrReplays;			// The number of replays to cause 
+                                                // 1-3 are normal 
+	 					// 4 will cause link to retrain
+  bit f_nmbrReplaysSpecified;			// Was number of replays specified?
+  integer f_nmbrTlpsRplyBfr;		  	// Number of TLPs in replay buffer before sending NAK
+  bit f_nmbrTlpsRplyBfrSpecified;		// Was number of TLPs in replay specified?
+  bit f_restartAck;				// restart the ACKs from Denali after replay timeout
+
+  //Only allow 1 of these strategies to be active at a time
+  static integer myturn_semaphore = alloc(SEMAPHORE, 0, 1, 1);
+
+  task new( PEUTestEnv a_env )
+    {
+    super.new( a_env );
+    f_errQueue = 0;
+    f_nmbrReplaysSpecified = 0;
+    f_nmbrTlpsRplyBfrSpecified = 0;
+    f_typeSpecified = 0;
+    f_restartAck = 1;
+    }
+
+  task SetErrQueue( integer a_queue )
+    {
+    f_errQueue = a_queue;
+    }
+
+  task SetType( string a_typeReplay )
+    {
+    f_typeReplay = a_typeReplay;
+    f_typeSpecified = 1;
+    } 
+
+  task SetNmbrReplays( integer a_nmbrReplays )
+    {
+    f_nmbrReplays = a_nmbrReplays;
+    f_nmbrReplaysSpecified = 1;
+    }
+
+  task SetNmbrTlpsRplyBfr( integer a_nmbrTlpsRplyBfr )
+    {
+    f_nmbrTlpsRplyBfr = a_nmbrTlpsRplyBfr;
+    f_nmbrTlpsRplyBfrSpecified = 1;
+    }
+
+  task SetRestartAck( integer a_restartAck )
+    {
+    f_restartAck = a_restartAck;
+    }
+
+  task Execute(){
+    integer seqNmbrNak = 0;
+    integer loop = 0;
+    integer cntr;
+    bit[63:0] replay_timer_csr;
+    bit[15:0] replay_timer;
+    bit[1:0]  replay_count;
+    bit[15:0] replay_timer_threshold;
+
+    //Get the semaphore when its your turn
+    semaphore_get( WAIT, myturn_semaphore, 1);
+
+    if( !f_typeSpecified ){
+       randcase
+          {
+          10 : { f_typeReplay = "nak"; }
+          1  : { f_typeReplay = "timeout"; }
+          }
+    }
+    //If no length is specified then only allow up to 3 replays so as not to 
+    // cause a link retraining
+    if( !f_nmbrReplaysSpecified && f_typeReplay == "nak" ){
+          //Since no error bits are set for NAK replays 1-3 can occur
+       randcase
+          {
+          1 : f_nmbrReplays = 1;
+          1 : f_nmbrReplays = 2;
+          1 : f_nmbrReplays = 3;
+          }
+    }
+    else if( !f_nmbrReplaysSpecified && f_typeReplay == "timeout" ){
+          //Since timeouts set an error bit the ErrorChk Strategy needs to 
+          // know how many take place, so if its not specified at the test
+          // level then set to only 1
+          f_nmbrReplays = 1;
+    }
+    
+    //Allow only the max of 4 replays since this will cause a retraining
+    if( f_nmbrReplaysSpecified && f_nmbrReplays > 4 ){
+       f_nmbrReplays = 4;
+    }
+
+    //If nmbrTlpsRplyBfr is not set then lets just try between 5 and 20 
+    if( !f_nmbrTlpsRplyBfrSpecified ){
+       f_nmbrTlpsRplyBfr = urandom_range( 20, 5 ); 
+    }
+
+    //If the f_typeSpecified is not valid then just set it to a nak
+    if( f_typeSpecified ){
+       if( f_typeReplay != "nak" && f_typeReplay != "timeout" ){
+        
+          f_typeReplay = "nak";
+       }
+    }
+
+    //Turn off the Denali auto generated ACKs
+    f_env.disableDenaliAcks();
+    f_env.activityStalled += 1;         //Stall the hangDetect since we could be doing replays 
+
+    //Allow disabling of ACKs to propagate through testbench
+    repeat(2) @(posedge if_ILU_PEU_PCIE.refclk);
+
+    replay_timer_threshold = ( (f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_replay_tim_thresh )) ) + (4*f_env.Scenario.ilupeuLtssmNFTS) );
+
+
+    //Loop for the number of replays specified
+    for( loop = 0; loop < f_nmbrReplays ; loop++ ){
+
+       f_env.Report.report(RTYP_INFO,"ReplayPEUStr loop=%0d f_nmbrReplays=%0d \n",loop,f_nmbrReplays);
+
+       //Loop for NAK replays   
+       if( f_typeReplay == "nak" ){
+          //If this is a nak then Wait till the number of tlps to be replayed is 
+          // met or the replay buffer is full
+          fork
+          {
+             f_env.waitRetryCreditsExhausted();
+             printf("ReplayPEUStr Replay Buffer is FULL!!!!\n");
+          }
+          {
+             while( f_env.getNmbrTlpsReplayBuffer() < f_nmbrTlpsRplyBfr ){
+                f_env.Report.report(RTYP_INFO,"ReplayPEUStr f_env.nmbrTlpsReplayBuffer=%0d < f_nmbrTlpsRplyBfr=%0d while loop\n",f_env.getNmbrTlpsReplayBuffer(),f_nmbrTlpsRplyBfr);
+                repeat(10) @(posedge if_ILU_PEU_PCIE.refclk);
+             }
+             printf("ReplayPEUStr f_env.nmbrTlpsReplayBuffer=%0d < f_nmbrTlpsRplyBfr=%0d done\n",f_env.getNmbrTlpsReplayBuffer(),f_nmbrTlpsRplyBfr);
+          }
+          {
+
+             repeat(2500) @(posedge if_ILU_PEU_PCIE.refclk);
+             f_env.Report.report(RTYP_TEST_ERROR,"ReplayPEUStr takes longer then 2500 cycles to fill replay buffer f_env.getNmbrTlpsReplayBuffer=%0d f_nmbrTlpsRplyBfr=%0d  \n",f_env.getNmbrTlpsReplayBuffer(),f_nmbrTlpsRplyBfr );
+          }
+          join any
+          terminate;	//Kill the child processes that don't finish 1st 
+
+          f_env.Report.report(RTYP_INFO,"ReplayPEUStr finished first fork loop=%0d\n",loop);
+       
+          if( f_nmbrReplays >= 4 ){ 
+              seqNmbrNak = f_env.AckdSeqNum;	//Just NAK the same Seq Number
+          }else if( f_nmbrReplays == 1 || loop == f_nmbrReplays-1){ 
+          //If the number of replays is 1 then we can either clear the replay buffer 
+             randcase{
+                2: seqNmbrNak = (f_env.egressNextTransmitSeqNum - 1)%4096;	//Clear the replay buffer
+                1: {  if( (f_env.AckdSeqNum%4096) == (f_env.egressNextTransmitSeqNum - 1)%4096 ){
+                         seqNmbrNak = f_env.AckdSeqNum%4096;	//Just replay from the oldest TLP
+                      }else{
+                         seqNmbrNak = (f_env.AckdSeqNum + 1)%4096;
+                      }
+                   }
+                1: { if( f_env.egressNextTransmitSeqNum%4096 > f_env.AckdSeqNum%4096 ){
+                        seqNmbrNak = urandom_range( (f_env.egressNextTransmitSeqNum - 1)%4096, (f_env.AckdSeqNum + 1)%4096 ); //Replay some of the TLPs 
+                     }else{	//Special case some rollover ACK seq numbers
+                           if( f_env.egressNextTransmitSeqNum%4096 == 0 ){
+                              seqNmbrNak = urandom_range( 4095 , (f_env.AckdSeqNum + 1)%4096 );
+                           }
+                           else if( f_env.egressNextTransmitSeqNum%4096 >= 1 )
+                              randcase{
+                                 2: seqNmbrNak = urandom_range( 4095 , (f_env.AckdSeqNum + 1)%4096 );
+
+                                 1: seqNmbrNak = urandom_range( (f_env.egressNextTransmitSeqNum - 1)%4096, 0 );
+                              }
+                     }
+                   }
+             }
+          }
+          else{	
+          //Don't clear the replay buffer
+             randcase{
+                1: {  if( (f_env.AckdSeqNum%4096) == (f_env.egressNextTransmitSeqNum - 1)%4096 ){
+                         seqNmbrNak = f_env.AckdSeqNum%4096;	//Just replay from the oldest TLP
+                      }else{
+                         seqNmbrNak = (f_env.AckdSeqNum + 1)%4096;
+                      }
+                   }
+                1: { if( f_env.egressNextTransmitSeqNum%4096 > f_env.AckdSeqNum%4096 ){
+                        seqNmbrNak = urandom_range( (f_env.egressNextTransmitSeqNum - 1)%4096, (f_env.AckdSeqNum + 1)%4096 ); //Replay some of the TLPs 
+                     }else{	//Special case some rollover ACK seq numbers
+                           if( f_env.egressNextTransmitSeqNum%4096 == 0 ){
+                              seqNmbrNak = urandom_range( 4094 , (f_env.AckdSeqNum + 1)%4096 );
+                           }
+                           else if( f_env.egressNextTransmitSeqNum%4096 >= 1 ){
+                              randcase{
+                                 2: { if( ((f_env.AckdSeqNum + 1)%4096 ) == 0 ){
+                                         randcase{
+                                            3: seqNmbrNak = 4095;
+                                            1: seqNmbrNak = 0;
+                                         }
+                                      }else{
+                                       seqNmbrNak = urandom_range( 4095 , (f_env.AckdSeqNum + 1)%4096 );
+                                      }
+                                    }
+
+                                 1: seqNmbrNak = urandom_range( (f_env.egressNextTransmitSeqNum - 1)%4096, 0 );
+                              }
+                           }
+                     }
+                   }
+
+             }
+          }
+
+          f_env.Report.report(RTYP_INFO,"ReplayPEUStr checking the replay time\n");
+    
+          replay_timer_csr = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_replay_timer ) );
+          replay_timer = replay_timer_csr[FIRE_PLC_TLU_CTB_TLR_CSR_A_REPLAY_TIMER_RPLAY_TMR_SLC];
+
+          //If replay_timer is = 0 then it hasn't started replaying 
+          while( replay_timer == 0 ){
+            repeat(10) @( posedge if_ILU_PEU_PCIE.refclk );
+            replay_timer_csr = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_replay_timer ) );
+            replay_timer = replay_timer_csr[FIRE_PLC_TLU_CTB_TLR_CSR_A_REPLAY_TIMER_RPLAY_TMR_SLC];
+          }
+          //replay timer should be less then replay timeout threshold 
+          if( replay_timer >= replay_timer_threshold ){
+             f_env.Report.report(RTYP_TEST_ERROR,"ReplayPEUStr replay_timer >= replay_timer_threshold for NAK test \n");
+          } 
+//          if( replay_timer >= f_env.Scenario.ilupeuReplayTimerThreshold ){
+//             f_env.Report.report(RTYP_TEST_ERROR,"ReplayPEUStr replay_timer >= f_env.Scenario.ilupeuReplayTimerThreshold for NAK test \n");
+//          } 
+          printf("ReplayPEUStr send a NAK seqNmbrNak=%0d f_env.egressNextTransmitSeqNum=%0d f_env.AckdSeqNum=%0d\n",seqNmbrNak,f_env.egressNextTransmitSeqNum,f_env.AckdSeqNum );
+          //Send the NAK
+          f_env.sendNak( seqNmbrNak );
+
+          //Replay Timer will only reset if not on the middle of a replay already
+          //We shouldn't be in a replay so timer should reset to 0
+          //Replay timer should be running so check it and then wait until it
+      	  // resets to 0 which means the NAK has been received and TLPs have 
+          // been acknowledged
+          replay_timer_csr = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_replay_timer ) );
+          replay_timer = replay_timer_csr[FIRE_PLC_TLU_CTB_TLR_CSR_A_REPLAY_TIMER_RPLAY_TMR_SLC];
+          cntr = 50;	//review - adjust for lane width
+          while( replay_timer != 0 && cntr ){
+             @( posedge if_ILU_PEU_PCIE.refclk );
+             cntr--;
+             replay_timer_csr = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_replay_timer ) );
+             replay_timer = replay_timer_csr[FIRE_PLC_TLU_CTB_TLR_CSR_A_REPLAY_TIMER_RPLAY_TMR_SLC];
+          }
+
+          if( !cntr  && f_nmbrReplays < 4 &&  loop == 0 ){
+             f_env.Report.report(RTYP_TEST_ERROR,"ReplayPEUStr replay_timer not set to 0 after NAK sent loop = 0\n");
+          } 
+          else if( !cntr && (loop > 0) ){	
+                                                //If loop 1, 2 or 3 then we could be in the middle 
+                                                // of the previous replay already so wait until replay 
+                                                // timer goes back to 0 which means previuos replay
+                                                // is over and the NAK is being processed
+             cntr = 2000;	//Longest time a replay should take //review - adjust for lane width
+             while( replay_timer != 0 && cntr ){
+                f_env.Report.report(RTYP_INFO,"waiting for replay timer\n");
+                @( posedge if_ILU_PEU_PCIE.refclk );
+                cntr--;
+                replay_timer_csr = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_replay_timer ) );
+                replay_timer = replay_timer_csr[FIRE_PLC_TLU_CTB_TLR_CSR_A_REPLAY_TIMER_RPLAY_TMR_SLC];
+             }
+             if( !cntr ){
+                f_env.Report.report(RTYP_TEST_ERROR,"ReplayPEUStr replay_timer not set to 0 after NAK sent loop > 0 \n");
+             } 
+
+          }
+
+          f_env.Report.report(RTYP_INFO,"ReplayPEUStr going to the error section\n");
+          
+          //Check the replay number to make sure a replay starts if needed -N2 - review
+//FIRE_PLC_TLU_CTB_TLR_CSR_A_REPLAY_TIMER_RPLAY_TMR_SLC
+//FIRE_PLC_TLU_CTB_TLR_CSR_A_REPLAY_TIMER_REPLAY_NUM_SLC
+          //Set the replay rollover errors to expect
+          // There are no errors for a NAK
+          if( f_errQueue != 0 && f_nmbrReplays >= 4 && loop == 3){
+
+             f_env.Report.report(RTYP_INFO,"got in the replay nak loop\n");
+
+             replay_timer_csr = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_replay_timer ) );
+             replay_timer = replay_timer_csr[FIRE_PLC_TLU_CTB_TLR_CSR_A_REPLAY_TIMER_RPLAY_TMR_SLC];
+             mailbox_put( f_errQueue, e_ERR_ce_rnr );
+             mailbox_put( f_errQueue, 128'bx );          //No header to check for this
+//             if( replay_timer >= f_env.Scenario.ilupeuReplayTimerThreshold )
+             if( replay_timer >= replay_timer_threshold ){
+                mailbox_put( f_errQueue, e_ERR_ce_rto );
+                mailbox_put( f_errQueue, 128'bx );	//No header to check for this 
+             }
+
+             if (!f_restartAck) {
+               f_env.Report.report(RTYP_INFO,"Sending over parity errors\n");
+               mailbox_put( f_errQueue, e_ERR_oe_erp );
+               mailbox_put( f_errQueue, 128'hx);
+             }
+
+             
+             //Disable Interrupts here because when Denali transitions to 
+             // recovery it can cut of the end of a TLP causing TLP with no END
+             // and Bad TLP error because of dab CRC
+             f_env.disableInterrupt();
+             printf("\n---------- f_env.disableInterrupt() called in ReplayPEUStr----------  \n");
+
+          }
+ 
+          repeat(urandom_range(50, 30) )  @( posedge if_ILU_PEU_PCIE.refclk );
+
+       }	//End f_typeReplay == "nak"
+       f_env.Report.report(RTYP_INFO,"ReplayPEUStr done nak loop\n");
+       //Loop for timeout replays
+       if( f_typeReplay == "timeout" ){
+          f_env.Report.report(RTYP_INFO,"Got in the timeout loop\n");
+          //Since ACKs are disabled just wait for the replay timeout time 
+          // and check the replay counter  
+          //Delay to let the last ACK sent propogate if needed
+          repeat( 20 ) @( posedge if_ILU_PEU_PCIE.refclk );
+          replay_timer_csr = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_replay_timer ) );
+          replay_timer = replay_timer_csr[FIRE_PLC_TLU_CTB_TLR_CSR_A_REPLAY_TIMER_RPLAY_TMR_SLC];
+          //
+//          replay_timer_threshold = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_replay_tim_thresh ) );
+          replay_timer_threshold = ( (f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_replay_tim_thresh )) ) + (4*f_env.Scenario.ilupeuLtssmNFTS) );
+
+          printf("ReplayPEUStr f_typeReplay=timeout replay_timer_threshold=%0d Scenario.ilupeuReplayTimerThreshold=%0d \n",replay_timer_threshold,f_env.Scenario.ilupeuReplayTimerThreshold );
+          repeat( replay_timer_threshold - replay_timer ) @( posedge if_ILU_PEU_PCIE.refclk );
+
+          replay_timer_csr = f_env.readCSRdirect( f_env.getCSRaddr( e_CSR_replay_timer ) );
+          replay_timer = replay_timer_csr[FIRE_PLC_TLU_CTB_TLR_CSR_A_REPLAY_TIMER_RPLAY_TMR_SLC];
+ 
+          //Let the timeout propogate
+          repeat( 15 ) @( posedge if_ILU_PEU_PCIE.refclk );
+          //Wait until the retry counter increments -N2 - review
+
+          //Set the replay timeout errors to expect
+          // There are no errors for a NAK
+          if( f_errQueue != 0 && f_typeReplay == "timeout"){
+
+             f_env.Report.report(RTYP_INFO,"checking errors in the timeout loop\n");
+             //Let the Error Check know that this stratgy will produce more
+             // then 1 error
+             if( loop === 0  && f_nmbrReplays > 1 ){
+                mailbox_put( f_errQueue, e_ERR_none );
+                mailbox_put( f_errQueue, f_nmbrReplays );
+             }
+
+            mailbox_put( f_errQueue, e_ERR_ce_rto );
+            mailbox_put( f_errQueue, 128'bx );		//No header to check for this 
+            if (!f_restartAck) {
+              f_env.Report.report(RTYP_INFO,"sending parity error in timeout loop\n");
+              mailbox_put( f_errQueue, e_ERR_oe_erp );
+              mailbox_put( f_errQueue, 128'hx);
+            }
+          }
+       } 	//End f_typeReplay == "timeout"
+       f_env.Report.report(RTYP_INFO,"ReplayPEUStr done timeout loop\n");
+       if (!f_restartAck) {
+         f_env.Report.report(RTYP_INFO,"ReplayPEUStr sending parity error in no loop\n");
+         mailbox_put( f_errQueue, e_ERR_oe_erp );
+         mailbox_put( f_errQueue, 128'hx);
+       }
+
+    }	//End for loop
+
+    //Turn the Denali auto generated ACKs back on and since the 
+    // replay timer has already reset to 0 the replay has started
+    if (f_restartAck) {
+      f_env.Report.report(RTYP_INFO,"ReplayPEUStr enabling acks\n");
+      f_env.enableDenaliAcks();
+      f_env.activityStalled -= 1;         
+    }
+
+    if( f_errQueue != 0 && f_nmbrReplays >= 4 && loop == 4){
+       //Exit quickly to catch link retraining
+    }else{
+       //We have to make sure the Replay is done but not timeout so...
+       repeat( f_env.Scenario.ilupeuReplayTimerThreshold - 50 ) @( posedge if_ILU_PEU_PCIE.refclk );
+    }
+
+    semaphore_put( myturn_semaphore, 1 );
+    
+    printf("ReplayPEUStr FINISHED!!!\n"); 
+    } /* end Execute */
+  } /* end TimeOutPEUStr */

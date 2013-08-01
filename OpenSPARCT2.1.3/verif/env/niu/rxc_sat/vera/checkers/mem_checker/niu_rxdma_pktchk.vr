@@ -1,0 +1,898 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_rxdma_pktchk.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "niu_rx_crentry.vrh"
+#include "niu_rxdmc.vrh"
+#include "niu_rxtoken.vrh"
+#include "niu_rxdma_pkttab.vrh"
+#include "niu_byte_array.vrh"
+#include "niu_mem.vrh"
+#include "mbox_class.vrh"
+#include "get_mbox_id.vrh"
+#include "niu_rxtoken.vrh"
+#include "dmc_memory_map.vri"
+#include "cMesg.vrh"
+#include "niu_rx_test_util.vrh"
+#include "niu_int_mgr.vrh"
+#include "niu_rx_exit_tools.vrh"
+
+#ifdef NEPTUNE
+ #define MAX_PORTS 4
+#else
+ #define MAX_PORTS 2
+#endif
+
+extern niu_gen_pio gen_pio_drv;
+extern Mesg be_msg;
+extern mbox_class mbox_id;
+extern CSparseMem SparseMem;
+extern CRDMC rdmc;
+extern event RX_chk_done;
+extern integer RX_TEST_REACHED_END;
+
+extern CNiuIntrMgr NiuIntrMgr;
+
+#define CR_L2_ERROR 1
+
+class CRxDmaPktChk {
+  bit[3:0] last_packet_seen;
+  bit[3:0] ports_active;
+  integer debug_en=0;
+  integer packets_remaining[4];
+  integer packets_checked[4], total_packets_sent[4];
+  integer packets_dropped[4], packets_l2_errors[4];
+  integer check_done = 0;
+  integer interrupts_enabled;
+  integer ignore_address_mismatch = 0;
+  CRxPacketScoreBoard PacketScoreBoard[4];
+  niu_rx_test_util niu_rx_test_util;
+  rx_exit_tools rx_exit_tools;
+  task watch_for_last_pkt_and_flush();
+  task SpCRCheckPacket();
+  task check_packet(Ccr_entry cr[*], integer dma_no, integer no_of_scatters, integer index);
+  task readPacketfromMem(bit[63:0] address, integer length, var byte_array readpacket, integer offset);
+  task check_for_last_packet(CRxToken RxToken);
+  task check_control_header(CRxToken RxToken, byte_array readpacket);
+  task collectStats();
+  task UpdateRCRStat( integer no_of_entries_to_check,integer pkts_checked, integer scatters[*],integer dma_no) ;
+  task RCR_FLUSH_START_pio_wr(bit [63:0] address, bit [63:0] data, integer dma);
+  local function integer WaitForCrTobeWritten(var integer dma_no) ;
+
+  local task  free_memory(CRxToken RxToken ,integer dma_no);
+  task rx_exit_routine(integer mac_id);
+  task match_xmac_status(integer mac_id, bit[31:0] status);
+  task match_bmac_status(integer mac_id, bit[31:0] status);
+
+
+  task new() {
+    string init_mac_ports,temp_port;
+    bit[31:0] get_mac_port;
+    integer i;
+    integer rxdma_pthres_intr,rxdma_timer_intr;
+    interrupts_enabled = 0; 
+
+    niu_rx_test_util = new;
+
+
+    if(mbox_id.niu_rxpath_cr == -1) {
+      mbox_id.niu_rxpath_cr = alloc(MAILBOX,0,1);
+    }
+
+    fork
+     SpCRCheckPacket();
+    join none
+
+    fork 
+      watch_for_last_pkt_and_flush();
+    join none
+
+    ports_active = 0;
+    last_packet_seen =0;
+    if(get_plus_arg( CHECK, "SKIP_ADDRESS_CHECK")) {
+      // This flag has to be used for randoms only for cases where
+      // descriptor ring is getting empty. For all other cases this flag should not be used
+      ignore_address_mismatch = 1;
+    } else ignore_address_mismatch = 0;
+    if(get_plus_arg( CHECK, "GET_MAC_PORTS="))
+      get_mac_port = get_plus_arg( STR, "GET_MAC_PORTS=");
+
+    init_mac_ports.bittostr(get_mac_port);
+    for(i=0; i<init_mac_ports.len();i++) {
+      temp_port =init_mac_ports.substr(i,i);
+      ports_active = ports_active | ( 1<<temp_port.atoi());
+    }
+    for(i=0;i<4;i++) {
+      packets_remaining[i] = 0;
+      packets_checked[i] = 0;
+      total_packets_sent[i] =0;
+      packets_dropped[i] = 0;
+      packets_l2_errors[i] = 0;
+      if(ports_active[i]) PacketScoreBoard[i] = new(i);
+    }
+    if(get_plus_arg( CHECK, "RXDMA_PTHRESH_INTR_CHKR="))
+        rxdma_pthres_intr = get_plus_arg(HNUM,"RXDMA_PTHRESH_INTR_CHKR=");
+     else rxdma_pthres_intr=0;
+    if(get_plus_arg (CHECK,"RXDMA_TIMER_INTR_CHKR="))
+         rxdma_timer_intr = get_plus_arg(HNUM,"RXDMA_TIMER_INTR_CHKR=");
+     else rxdma_timer_intr = 0;
+
+    interrupts_enabled = ( rxdma_pthres_intr | rxdma_timer_intr) ;
+    printf ("rxdma_pthres_intr=0x%h, rxdma_timer_intr=0x%h, interrupts_enabled=0x%h\n", rxdma_pthres_intr,rxdma_timer_intr,interrupts_enabled);
+  } // new
+} //class
+
+
+function integer CRxDmaPktChk::WaitForCrTobeWritten(var integer dma_no) {
+ integer no_of_entries;
+ Ccr_update cr_update;
+
+ no_of_entries = mailbox_get(WAIT,mbox_id.niu_rxpath_cr, cr_update);
+ dma_no = cr_update.dma_no;
+ WaitForCrTobeWritten = cr_update.no_of_entries;
+}
+
+task CRxDmaPktChk::watch_for_last_pkt_and_flush() {
+  bit[3:0] last_seen=4'b0000;
+  shadow integer dma;
+
+  repeat(1000) @(posedge CLOCK); // This delay is a MUST
+
+  while(last_seen !== ports_active ) {
+    if(ports_active[0]) last_seen[0]=PacketScoreBoard[0].last_pkt_rcvd;
+    if(ports_active[1]) last_seen[1]=PacketScoreBoard[1].last_pkt_rcvd;
+    if(ports_active[2]) last_seen[2]=PacketScoreBoard[2].last_pkt_rcvd;
+    if(ports_active[3]) last_seen[3]=PacketScoreBoard[3].last_pkt_rcvd;
+    repeat(1000) @(posedge CLOCK);
+  }
+  if(get_plus_arg( CHECK, "RX_LAST_PKT_LATENCY="))
+    repeat( get_plus_arg( NUM, "RX_LAST_PKT_LATENCY=") ) @(posedge CLOCK);
+  else
+    repeat(5000) @(posedge CLOCK);
+
+  // RCR flush of all 16 DMAs
+  for(dma=0;dma<16;dma++) {
+   fork {
+    rdmc.rx_dma[dma].flush_rcr(1);
+   } join all
+  }
+
+  // kick in the timer interrupt to flush out the residual interrupts from all DMAs
+  niu_rx_test_util.cleanup_dma_interrupts(interrupts_enabled) ;
+
+  printf("check_packet RX_TEST_REACHED_END (all dmas flushed) time=%0d\n", {get_time(HI),get_time(LO)});
+  RX_TEST_REACHED_END = 1;
+}
+
+
+task CRxDmaPktChk::SpCRCheckPacket() {
+  Ccr_entry cr[*];
+  integer i, no_of_entries;
+  integer status, dma_no;
+  integer start_index, no_of_scatter;
+  integer prev_remaining_entries[32];
+  integer no_of_entries_to_check;
+  integer pkts_checked;
+  bit [63:0] rd_data_;
+  integer scatters[*];
+  integer none_found;
+  integer done_with_while;
+
+
+  for(i=0; i<32; i++) prev_remaining_entries[i]=0;
+
+  while(1) {
+    no_of_entries = WaitForCrTobeWritten(dma_no); //get dma_no and no_of_entries
+    //printf("check_packet dma=%0d no_of_entries=%0d prev_remaining_entries=%0d\n", dma_no, no_of_entries, prev_remaining_entries[dma_no]);
+   no_of_entries = no_of_entries + prev_remaining_entries[dma_no];
+
+if(no_of_entries >rdmc.rx_dma[dma_no].completionring.ring_length ) {
+   be_msg.print(e_mesg_error,"CRxDmaPktChk","SpCRCheckPacket","CR_no_of_entries > RCR_RING_LEN at time %0d. Exiting the simulation \n", get_time(LO));
+   repeat(300) @(posedge CLOCK);
+   exit(0);
+}
+   status = rdmc.rx_dma[dma_no].completionring.ReadCrEntry(no_of_entries,cr);
+  
+   // parse entries
+   if(cr[no_of_entries-1].multi==0) {
+     prev_remaining_entries[dma_no] =0;
+     no_of_entries_to_check = no_of_entries;
+   }
+   else {    //scan through the list and get the complete packet
+     if(no_of_entries ==1) {
+       no_of_entries_to_check =0;
+       prev_remaining_entries[dma_no] =1;
+     }
+     else {
+       i= no_of_entries-1;
+       none_found = 0;
+       done_with_while = 0;
+       while( (done_with_while==0) && ( none_found==0) )  { 
+	if(cr[i].multi==0 ) {
+	  done_with_while = 1;
+	  i++;
+        }
+        i--;
+	if(i<0) none_found = 1;
+       }
+       if(none_found) {
+        no_of_entries_to_check = 0;
+       } else {
+        no_of_entries_to_check = i + 1;
+       }
+       prev_remaining_entries[dma_no] = no_of_entries - no_of_entries_to_check ;
+     }
+   }
+   printf("check_packet dma=%0d num_entries_to_check=%0d num_entries=%0d prev_remaining_entries=%0d\n", dma_no, no_of_entries_to_check, no_of_entries, prev_remaining_entries[dma_no]);
+   
+   rdmc.rx_dma[dma_no].completionring.UpdateCRLastAddress(no_of_entries_to_check);
+
+   pkts_checked = 0;
+   scatters = new[no_of_entries_to_check];
+
+   for(i=0; i<no_of_entries_to_check; i++) {
+     if(cr[i].multi==0) {
+       check_packet(cr, dma_no, 1, i);
+       scatters[pkts_checked] = 1;
+       pkts_checked++;
+     }
+     else {               // jumbo packets - collect all the cr entries
+       no_of_scatter = 1;
+       start_index = i;
+       while(cr[i].multi==1) {
+         no_of_scatter ++;
+         i++;	
+       } 
+       check_packet(cr, dma_no, no_of_scatter, start_index);
+       scatters[pkts_checked] = no_of_scatter;
+       pkts_checked++;
+     }
+   }
+   @(posedge CLOCK);
+   UpdateRCRStat(no_of_entries_to_check,pkts_checked,scatters,dma_no);
+
+  }
+}
+
+task CRxDmaPktChk::UpdateRCRStat( integer no_of_entries_to_check,integer pkts_checked, integer scatters[*],integer dma_no) {
+Crcr_update rcr_update;
+integer i;
+  
+  if (get_plus_arg( CHECK, "CHKR_AUTO_UPDATE_RCR_HEAD")) {
+   rcr_update = new();
+   rcr_update.no_of_entries = no_of_entries_to_check;
+   rcr_update.dma_no = dma_no;
+   rcr_update.pkts_checked = pkts_checked;
+   rcr_update.scatters= new[no_of_entries_to_check];
+   for(i=0;i<pkts_checked;i++) {
+    rcr_update.scatters[i] = scatters[i];
+   }
+   mailbox_put(mbox_id.niu_rxpath_rcr_update[dma_no], rcr_update); 
+  }
+
+}
+
+task CRxDmaPktChk::check_control_header(  CRxToken RxToken, byte_array readpacket ) {
+  bit [7:0] exp_cntl_hdr_B0, exp_cntl_hdr_B1, rtl_cntl_hdr_B0, rtl_cntl_hdr_B1;
+  bit [1:0] exp_port_num, rtl_port_num, exp_tres, rtl_tres; 
+  bit       exp_maccheck, rtl_maccheck;
+  bit [4:0] exp_packet_class, rtl_packet_class;
+  bit exp_vlan,exp_llcsnap,exp_noport,exp_badip,exp_tcamhit,exp_tzfvld;
+  bit rtl_vlan,rtl_llcsnap,rtl_noport,rtl_badip,rtl_tcamhit,rtl_tzfvld;
+
+ // Collect the expected control header fields
+    exp_cntl_hdr_B0 	= RxToken.rx_cntl_hdr.val[0];
+    exp_cntl_hdr_B1 	= RxToken.rx_cntl_hdr.val[1];
+
+    exp_port_num 	= exp_cntl_hdr_B0[7:6];
+    exp_maccheck 	= exp_cntl_hdr_B0[5];
+    exp_packet_class 	= exp_cntl_hdr_B0[4:0];
+    exp_vlan 		= exp_cntl_hdr_B1[7];
+    exp_llcsnap 	= exp_cntl_hdr_B1[6];
+    exp_noport 		= exp_cntl_hdr_B1[5];
+    exp_badip 		= exp_cntl_hdr_B1[4];
+    exp_tcamhit 	= exp_cntl_hdr_B1[3];
+    exp_tres 		= exp_cntl_hdr_B1[2:1];
+    exp_tzfvld 		= exp_cntl_hdr_B1[0];
+
+
+ // Collect the RTL control header fields got from memory
+    rtl_cntl_hdr_B0	= readpacket.val[0];
+    rtl_cntl_hdr_B1	= readpacket.val[1];
+
+    rtl_port_num 	= rtl_cntl_hdr_B0[7:6];
+    rtl_maccheck 	= rtl_cntl_hdr_B0[5];
+    rtl_packet_class 	= rtl_cntl_hdr_B0[4:0];
+    rtl_vlan 		= rtl_cntl_hdr_B1[7];
+    rtl_llcsnap 	= rtl_cntl_hdr_B1[6];
+    rtl_noport 		= rtl_cntl_hdr_B1[5];
+    rtl_badip 		= rtl_cntl_hdr_B1[4];
+    rtl_tcamhit 	= rtl_cntl_hdr_B1[3];
+    rtl_tres 		= rtl_cntl_hdr_B1[2:1];
+    rtl_tzfvld 		= rtl_cntl_hdr_B1[0];
+
+
+
+	printf("CNTL_HDR_CHECK: ---------------------------------------------------\n");
+	printf("CNTL_HDR_CHECK:     RX CONTROL HEADER CHECK IN PKT_DROP CHECKER    \n");
+	printf("CNTL_HDR_CHECK: ---------------------------------------------------\n");
+	printf("CNTL_HDR_CHECK: 		  RTL		MODEL              \n");
+	printf("CNTL_HDR_CHECK: ---------------------------------------------------\n");
+
+	if (rtl_tzfvld!==exp_tzfvld)
+	be_msg.print(e_mesg_error,"CNTL_HDR_CHECK", "", "TZFVLD		= %0h\t\t%0h\n", rtl_tzfvld, exp_tzfvld);
+	else
+	printf("CNTL_HDR_CHECK: TZFVLD		= %0h\t\t%0h\n", rtl_tzfvld, exp_tzfvld);
+	if (rtl_tres!==exp_tres)
+	be_msg.print(e_mesg_error,"CNTL_HDR_CHECK", "", "TRES		= %0h\t\t%0h\n", rtl_tres, exp_tres);	
+	else
+	printf("CNTL_HDR_CHECK: TRES		= %0h\t\t%0h\n", rtl_tres, exp_tres);	
+	if (rtl_tcamhit!==exp_tcamhit)
+	be_msg.print(e_mesg_error,"CNTL_HDR_CHECK", "", "TCAM-Hit	= %0h\t\t%0h\n", rtl_tcamhit, exp_tcamhit);
+	else
+	printf("CNTL_HDR_CHECK: TCAM-Hit	= %0h\t\t%0h\n", rtl_tcamhit, exp_tcamhit);
+	if (exp_badip!==exp_badip)
+	be_msg.print(e_mesg_error,"CNTL_HDR_CHECK", "", "Bad-IP		= %0h\t\t%0h\n", exp_badip, exp_badip);
+	else
+	printf("CNTL_HDR_CHECK: Bad-IP		= %0h\t\t%0h\n", exp_badip, exp_badip);
+	if (rtl_noport!==exp_noport)
+	be_msg.print(e_mesg_error,"CNTL_HDR_CHECK", "", "No-port		= %0h\t\t%0h\n", rtl_noport, exp_noport);
+	else
+	printf("CNTL_HDR_CHECK: No-port		= %0h\t\t%0h\n", rtl_noport, exp_noport);
+	if (rtl_llcsnap!==exp_llcsnap)
+	be_msg.print(e_mesg_error,"CNTL_HDR_CHECK", "", "LLC-SNAP	= %0h\t\t%0h\n", rtl_llcsnap, exp_llcsnap);
+	else
+	printf("CNTL_HDR_CHECK: LLC-SNAP	= %0h\t\t%0h\n", rtl_llcsnap, exp_llcsnap);
+	if (rtl_vlan!==exp_vlan)
+	be_msg.print(e_mesg_error,"CNTL_HDR_CHECK", "", "VLAN		= %0h\t\t%0h\n", rtl_vlan, exp_vlan);
+	else
+	printf("CNTL_HDR_CHECK: VLAN		= %0h\t\t%0h\n", rtl_vlan, exp_vlan);
+	if (rtl_packet_class!==exp_packet_class)
+	be_msg.print(e_mesg_error,"CNTL_HDR_CHECK", "", "CLASS		= %0h\t\t%0h\n", rtl_packet_class, exp_packet_class);
+	else
+	printf("CNTL_HDR_CHECK: CLASS		= %0h\t\t%0h\n", rtl_packet_class, exp_packet_class);
+	if (rtl_maccheck!==exp_maccheck)
+	be_msg.print(e_mesg_error,"CNTL_HDR_CHECK", "", "MAC-check	= %0h\t\t%0h\n", rtl_maccheck, exp_maccheck);
+	else
+	printf("CNTL_HDR_CHECK: MAC-check	= %0h\t\t%0h\n", rtl_maccheck, exp_maccheck);
+	if (rtl_port_num!==exp_port_num)
+	be_msg.print(e_mesg_error,"CNTL_HDR_CHECK", "", "MAC-PORT	= %0h\t\t%0h\n", rtl_port_num, exp_port_num);
+	else
+	printf("CNTL_HDR_CHECK: MAC-PORT	= %0h\t\t%0h\n", rtl_port_num, exp_port_num);
+	printf("CNTL_HDR_CHECK: ---------------------------------------------------\n");
+ 
+
+}
+
+task CRxDmaPktChk::check_packet(Ccr_entry cr[*], integer dma_no, integer no_of_scatters, integer index) {
+  bit[63:0] packet_address;
+  bit[63:0] xlate_packet_address;
+  integer length, total_length;
+  integer i, block_size, page_id;
+  byte_array readpacket, expected_packet;
+  bit[15:0] packet_id;
+  CRxToken RxToken;
+  integer mac_id, gId;
+  integer status;
+  integer n, bytes_mismatched, total_offset;
+  byte_array ctrlhdr;
+  integer port_num_from_pkt;
+  integer error_status;
+  integer skip_checking;
+  integer getaddr_status;
+  integer offset = 0;
+  integer expected_dma_no,expected_port_no,dma_no_from_pkt;
+
+  total_offset = rdmc.rx_dma[dma_no].ctrl_hdr_len + rdmc.rx_dma[dma_no].buffer_offset;
+  total_length = cr[index].length + total_offset/*header_length*/;
+  block_size = rdmc.rx_dma[dma_no].dma_block_size;
+  
+  readpacket = new();
+  printf("check_packet  index=%0d num_scatters=%0d length=%0d\n", index, no_of_scatters, total_length);
+
+  length = total_length;
+  for(i=0;i<no_of_scatters;i++) {
+    xlate_packet_address=64'h0;
+    packet_address = cr[i+index].pkt_buf_address;
+    page_id = rdmc.rx_dma[dma_no].getPageId(packet_address);
+    // page_id = 64 + 2*dma_no; 
+    if(page_id==-1)
+      be_msg.print(e_mesg_error, "niu_rx_chkr", "check_packet", "PacketBuf Addr in CR doesnt Match Any valid page!!\n");
+    else {
+      xlate_packet_address = SparseMem.xlate_addr( packet_address[39:0], page_id );
+    }
+    // length = min(block_size, total_length);
+    if(block_size<length)
+      length = block_size;
+    //printf("check_packet dma=%0d min block_size=%0d length=%0d\n", dma_no, block_size, length);
+    printf("check_packet  xlated_addr=0x%0h orig_addr=0x%0h page_id=%0d\n", xlate_packet_address, packet_address, page_id);
+   
+    // length = (block_size<length) ? block_size: length;
+    readPacketfromMem(xlate_packet_address, length, readpacket, offset);
+    offset = offset + length; 
+    length = total_length - offset;
+  }
+
+  ctrlhdr = new();
+  for(i=0; i<total_offset; i++) {
+    ctrlhdr.val[i] = readpacket.val[i];
+  }
+
+  if (rdmc.rx_dma[dma_no].ctrl_hdr_len == 2)
+    port_num_from_pkt = ( ctrlhdr.val[0] & 8'hc0)>>6;
+  else if (rdmc.rx_dma[dma_no].ctrl_hdr_len == 18) // for 18B hdr, second cycle has the port_num info
+    port_num_from_pkt = ( ctrlhdr.val[16] & 8'hc0)>>6;
+
+  packet_id = {readpacket.val[total_offset+6+4],readpacket.val[total_offset+6+5]};
+
+  
+  expected_port_no = readpacket.val[total_offset + 6 + 3] & 8'h3;
+  expected_dma_no = ({readpacket.val[total_offset + 6 + 2], readpacket.val[total_offset + 6 + 3]}>>2) & 8'h3f; 
+  dma_no_from_pkt = ({readpacket.val[total_offset + 6 + 2], readpacket.val[total_offset + 6 + 3]}>>2) & 8'h3f; 
+
+  error_status = cr[index].errors;
+  skip_checking = 0;
+  
+  if(error_status == CR_L2_ERROR) {
+    // for L2 Error the expected DMA is the port default DMA
+    expected_dma_no = rdmc.getPortDefDma(expected_port_no);
+    rdmc.rx_dma[expected_dma_no].incDefPktCnt();
+   } else {
+    rdmc.rx_dma[dma_no].incPktCnt();
+  }
+
+  if(expected_dma_no!=dma_no) {
+    printf(" RTL_MODEL DMA PREDICTION MISMATCH ERROR!!! packet_id - %0d, Mismatch in DMA no exp - %0d, got - %0d port_num %0d\n",
+ 	packet_id, expected_dma_no, dma_no, expected_port_no);
+   } 
+   
+  if(expected_port_no!=port_num_from_pkt) {
+    printf(" RTL_MODEL PORT MISMATCH ERROR!!! packet_id - %0d, Mismatch in Port No exp - %0d, got - %0d port_num %0d\n",
+ 	packet_id, expected_port_no, port_num_from_pkt, expected_port_no);
+   } 
+
+  printf("check_packet  mac.seq=%0d.%0d\n", port_num_from_pkt, packet_id);
+
+  if(error_status == CR_L2_ERROR) { //for unexpected L2 Error cases only due to runts 
+                                    //caused by ipp back pressure
+    PacketScoreBoard[port_num_from_pkt].no_of_packets_l2_errors++;
+    PacketScoreBoard[port_num_from_pkt].no_of_bytes_l2_errors = PacketScoreBoard[port_num_from_pkt].no_of_bytes_l2_errors + cr[index].length;
+    printf("check_packet Packet at addr=0x%x cr_address=0x%x received with L2 error\n", packet_address, cr[index].address);
+    //printf("check_packet PACKET_CHECKING SKIPPED!! \n");
+    skip_checking = 1;
+  }
+
+  status = PacketScoreBoard[port_num_from_pkt].getPacket(packet_id, RxToken, dma_no,dma_no_from_pkt);
+
+  // At this point, we have RxToken. Check the control header here.
+ if(get_plus_arg (CHECK, "ENABLE_RX_CNTL_HDR_CHECK")) {
+    check_control_header(RxToken,readpacket);
+ }
+
+  // calculate expected address
+  // calculate expected completion ring entry
+
+// #ifdef 0
+  if(status==1) {
+    RxToken.pkt_length = total_length - total_offset;
+    getaddr_status = rdmc.rx_dma[dma_no].getPacketAddress(RxToken);
+    // various compare points
+    if(RxToken.NoOfScatter!==no_of_scatters) {
+     printf("ERROR Expected RxToken.NoOfScatter - %d Actual no_of_scatters - %d \n",RxToken.NoOfScatter,no_of_scatters);
+    }
+    for(i=0;i<RxToken.NoOfScatter;i++) {
+      if(RxToken.packet_virtaddress[i]!== cr[i+index].pkt_buf_address) {
+	if(ignore_address_mismatch) 
+           printf("ADDRESS MISMATCH WARNING !!! RxToken.packet_virtaddr[%0d]=0x%x, cr[%0d].pkt_buf_address=0x%x\n", i, RxToken.packet_virtaddress[i], i+index, cr[i+index].pkt_buf_address);
+        else 
+           printf("ADDRESS MISMATCH ERROR !!! RxToken.packet_virtaddr[%0d]=0x%x, cr[%0d].pkt_buf_address=0x%x\n", i, RxToken.packet_virtaddress[i], i+index, cr[i+index].pkt_buf_address);
+      }
+    }
+   } 
+// #endif
+
+  if(skip_checking) printf("check_packet PACKET_CHECKING SKIPPED!! FIX IT \n");
+  else if(status == -1) be_msg.print(e_mesg_error, "niu_rx_chkr", "check_packet", "Illegal Packet received Id=%0d\n", packet_id);
+  // do a sanity check on the status
+  else {
+    expected_packet = RxToken.pgToken.buf;
+    mac_id = RxToken.port_num;
+    gId = RxToken.id;
+    if(port_num_from_pkt!==mac_id) be_msg.print(e_mesg_error, "niu_rx_chkr", "check_packet", "PortNum from Packet=%0d  Exp Port Num=%0d\n", port_num_from_pkt, mac_id); 
+
+    for(n=0; n<total_length-total_offset;n =n+1) {
+      if(expected_packet.val[n] !== readpacket.val [n+total_offset]) { // check after "total_offset" number of Bytes
+        be_msg.print(e_mesg_error, "niu_rx_chkr", "check_packet", "DATA_MISMATCH:niu_rx_chkr[%0d]: Token=%0d Word[%0d] Got=0x%0h Exp=0x%0h\n", mac_id, gId, n,readpacket.val[n+total_offset], expected_packet.val[n] );
+        bytes_mismatched ++;
+      }
+      else {
+        if(debug_en) {
+          be_msg.print(e_mesg_info, "niu_rx_chkr", "check_packet", "Packet Successfully Written:niu_rx_chkr[%0d]: Token=%0d Word[%0d] Got=0x%0h Exp=0x%0h\n", mac_id, gId, n,readpacket.val[n+total_offset], expected_packet.val[n] );
+        }
+      }
+    }
+  }
+  fork {
+     check_for_last_packet(RxToken); 
+  } join none
+
+  if(status==1)
+   free_memory(RxToken,expected_dma_no);
+  printf("check_packet  ========== done with entry \n");
+}
+
+	task  CRxDmaPktChk::free_memory(CRxToken RxToken ,integer dma_no){
+    rdmc.rx_dma[dma_no ].free_memory(RxToken);
+}
+
+task CRxDmaPktChk::readPacketfromMem(bit[63:0] address, integer length, var byte_array readpacket, integer offset) {
+  integer NoOf8Bytes, index, j;
+  bit[63:0] mem_rd_data;
+  bit[63:0] mem_rd_addr;
+
+  mem_rd_addr = address;
+  NoOf8Bytes = ( (length)/8) + ( ((length) %8) ? 1 :0 ) ;
+  printf("check_packet  readPacketfromMem length=%0d addr=0x%x offset=%0d\n", length, address, offset);
+  for(index=0; index<NoOf8Bytes; index ++) {
+    SparseMem.ReadMem(mem_rd_addr + 8*index, mem_rd_data, 8'hff);
+    for(j=0; j<8; j++) {
+      readpacket.val[offset+ 8*index +j] = mem_rd_data[ 8*j + 7: 8*j]; 
+      // printf("CRxDmaPktChk::readPacketfromMem index - %d byte - %x \n",(offset+ 8*index + j),readpacket.val[offset+ 8*index + j]);
+    }
+  }
+}
+
+
+task CRxDmaPktChk::check_for_last_packet(CRxToken RxToken) {
+  shadow integer dma;
+  integer port_num, dma_num;
+
+  bit[31:0] dma_active_list;
+  bit[31:0] dma_done_list;
+
+  if(RxToken.last_packet) {
+    last_packet_seen[RxToken.port_num] = 1;
+
+    printf("check_packet port_active=0x%0h last_packet_seen=%0d\n", ports_active, last_packet_seen);
+    if(last_packet_seen ==  ports_active) {
+      printf("check_packet Last Packet token received from all active ports time=%d \n",{get_time(HI), get_time(LO)});
+      repeat(500) @(posedge CLOCK);
+      check_done = 1;
+      repeat(500) @(posedge CLOCK);
+
+      if(get_plus_arg(CHECK, "RX_LAST_PKT_LATENCY="))
+        repeat(get_plus_arg( NUM, "RX_LAST_PKT_LATENCY=")) @(posedge CLOCK);
+      else
+        repeat(5000) @(posedge CLOCK);
+
+     // Wait for All the active CR Polls to be done before exiting
+ 
+    
+    for(dma=0; dma<16; dma++) { 
+	dma_active_list = (rdmc.rx_dma[dma].poll_cr_active)<<dma;
+	dma_done_list = (rdmc.rx_dma[dma].poll_cr_done)<<dma;
+    }
+
+   while((dma_active_list != dma_done_list)) {
+      for(dma=0; dma<16; dma++) { 
+	dma_active_list = (rdmc.rx_dma[dma].poll_cr_active)<<dma;
+	dma_done_list = (rdmc.rx_dma[dma].poll_cr_done)<<dma;
+      }
+      repeat(100)@(posedge CLOCK);
+   }
+
+      for(dma=0; dma<16; dma++) {    //flush all 16 DMA Crings
+       fork {
+	rdmc.rx_dma[dma].flush_rcr(1);
+       } join all
+      }
+
+     repeat(1000) @(posedge CLOCK); // 
+    
+    printf ("interrupts_enabled=0x%h\n", interrupts_enabled);
+     if (interrupts_enabled) {
+       niu_rx_test_util.cleanup_dma_interrupts(interrupts_enabled) ;
+        repeat(1000) @(posedge CLOCK); // 
+        repeat(1000) @(posedge CLOCK); // 
+       NiuIntrMgr.CheckPendingFlags();
+        repeat(1000) @(posedge CLOCK); // 
+       NiuIntrMgr.CheckPendingFlags();
+     }
+
+
+      collectStats(); // for all ports
+
+      trigger (ON, RX_chk_done);
+    }
+  }  
+  // Do stats collection at this point
+}
+task CRxDmaPktChk::collectStats() {
+  integer total_rtl_drop_count=0, rtl_mac_drop_count=0, rtl_ipp_drop_count=0, rtl_rdma_drop_count=0;
+  integer total_env_drop_count=0;
+  integer port_num, dma_num, TotalNoOfEntries=0;
+  bit pkt_drop_expected, 
+      pkt_drop_may_be_expected,
+      env_rtl_mismatch_expected, 
+      rtl_pkt_drop_count_non_zero, 
+      env_pkt_drop_count_non_zero, 
+      rtl_and_env_drop_count_matched;
+  
+
+  // collect total env drop count
+  for(port_num=0;port_num<4;port_num++) {
+      if(ports_active[port_num])
+         total_env_drop_count += PacketScoreBoard[port_num].getNoOfEntries();
+  }
+
+  // collect rtl mac drop count
+  for(port_num=0;port_num<4;port_num++) {
+      if(ports_active[port_num])
+  	 rtl_mac_drop_count += niu_rx_test_util.getMacDropCnt(port_num, 
+	                                        PacketScoreBoard[port_num].no_of_packets_qued);
+  }
+
+  // collect rtl ipp drop count
+  for(port_num=0;port_num<4;port_num++) {
+      if(ports_active[port_num])
+  	 rtl_ipp_drop_count += niu_rx_test_util.getIppDropCnt(port_num);
+  }
+
+  //printf("<%0d> collectStats: setting rtl_ipp_drop_count=0 mac and ipp increments cnt for the same pkt\n",
+ // 	get_time(LO));
+  //rtl_ipp_drop_count = 0;
+
+  // collect rtl rdma drop count
+  for(dma_num=0;dma_num<16;dma_num++) {
+  	rtl_rdma_drop_count += niu_rx_test_util.getRdmcDropCnt(dma_num);
+  }
+
+  
+
+  total_rtl_drop_count = rtl_mac_drop_count + rtl_ipp_drop_count + rtl_rdma_drop_count;
+
+  // print PacketScoreBoard
+  //for(port_num=0;port_num<4 && ports_active[port_num];port_num++) {
+  //  PacketScoreBoard[port_num].print_stats();
+  //}
+
+
+
+  if (get_plus_arg(CHECK, "PKT_DROPS_EXPECTED")) pkt_drop_expected = 1;
+  else pkt_drop_expected = 0;
+  if (get_plus_arg(CHECK, "PKT_DROPS_MAY_BE_EXPECTED")) pkt_drop_may_be_expected = 1;
+  else pkt_drop_may_be_expected = 0;
+  if (get_plus_arg(CHECK, "ENV_RTL_MISMATCH_EXPECTED")) env_rtl_mismatch_expected = 1;
+  else env_rtl_mismatch_expected = 0;
+
+  rtl_pkt_drop_count_non_zero = total_rtl_drop_count ? 1: 0;
+  env_pkt_drop_count_non_zero = total_env_drop_count ? 1: 0;
+  rtl_and_env_drop_count_matched = (total_rtl_drop_count == total_env_drop_count) ? 1: 0;
+
+  // print drop statistics
+  printf("============================ check_packet : collectStats ========================\n");
+  printf("collectStats rtl_mac_drop_count:%0d rtl_ipp_drop_count:%0d rtl_rdma_drop_count:%0d\n",
+    	  rtl_mac_drop_count, rtl_ipp_drop_count, rtl_rdma_drop_count);
+  printf("collectStats total_rtl_drop_count:%0d total_env_drop_count:%0d\n",
+    	  total_rtl_drop_count, total_env_drop_count);
+  printf("collectStats pkt_drop_expected:%b  pkt_drop_may_be_expected:%b\n",
+          pkt_drop_expected, pkt_drop_may_be_expected);
+  printf("rtl_pkt_drop_cnt_non_zero:%b, env_pkt_drop_cnt_non_zero:%b, rtl_and_env_drop_cnt_matched:%b\n",
+          rtl_pkt_drop_count_non_zero, env_pkt_drop_count_non_zero, rtl_and_env_drop_count_matched);
+  	
+  // Analyze all the counters
+  case ({pkt_drop_expected, 
+         rtl_pkt_drop_count_non_zero, 
+         env_pkt_drop_count_non_zero, 
+	 rtl_and_env_drop_count_matched}) {
+    4'b0001,    // PASS -- No pkts tests
+    4'b1111: {} // PASS -- normal pkt drop not allowed tests
+    4'b001X,    // FAIL -- drops are not allowed
+    4'b0110,    // FAIL -- drop count mismatch
+    4'b010X: {  // FAIL -- drop count mismatch
+                if(!env_rtl_mismatch_expected)
+                   be_msg.print(e_mesg_error, "niu_rxdma_pktchk", 
+		       "collectStats", 
+		       "ERROR : drop count mismatch between env and rtl!\n");
+		else
+                   be_msg.print(e_mesg_info, "niu_rxdma_pktchk",
+                       "collectStats",
+                       "drop count mismatch between env and rtl found, but is expected by the TEST!\n");
+    }
+    4'b0111: {  // FAIL -- drops are not allowed unless pkt_drop_may_be_expected is set
+		if(!pkt_drop_may_be_expected)
+                   be_msg.print(e_mesg_error, "niu_rxdma_pktchk", 
+		       "collectStats", 
+		       "drops are not allowed in this test. use PKT_DROPS_EXPECTED to allow drops\n");
+		else
+                   be_msg.print(e_mesg_info, "niu_rxdma_pktchk", 
+		       "collectStats", 
+		       "there are few drops in this test. PKT_DROPS_MAY_BE_EXPECTED is set\n");
+    }
+    4'b100X: {  // FAIL -- expecting pkt drops unless pkt_drop_may_be_expected is set
+		if(!pkt_drop_may_be_expected)
+                   be_msg.print(e_mesg_error, "niu_rxdma_pktchk", 
+		       "collectStats", 
+		       "expecting pkts drops in this test\n");
+		else 
+                   be_msg.print(e_mesg_info, "niu_rxdma_pktchk", 
+		       "collectStats", 
+		       "expecting pkts drops in this test but PKT_DROPS_MAY_BE_EXPECTED is set\n");
+
+    }
+    4'b101X,
+    4'b110X,
+    4'b1110: {   // FAIL -- rtl and env drop counts did not match
+                if(!env_rtl_mismatch_expected)
+                   be_msg.print(e_mesg_error, "niu_rxdma_pktchk", 
+		       "collectStats", 
+		       "env and rtl drop counts does not match\n");
+                else
+                   be_msg.print(e_mesg_info, "niu_rxdma_pktchk",
+                       "collectStats",
+                       "drop count mismatch between env and rtl found, but is expected by the TEST!\n");
+    }
+  } // case
+
+  // Fatal error if there is any packet in the env which is not accounted for
+  for(port_num=0;port_num<4;port_num++) {
+    if(ports_active[port_num]) {
+       TotalNoOfEntries += PacketScoreBoard[port_num].getNoOfEntries();
+       be_msg.print(e_mesg_info, "niu_rxdma_pktchk", 
+		    "collectStats", 
+		    "PacketScoreBoard[%0d].getNoOfEntries:%0d\n",
+		    port_num,PacketScoreBoard[port_num].getNoOfEntries());
+    }
+  }
+
+  // rtl pkt drop better match with noOfEntries in score board
+  if(TotalNoOfEntries != total_rtl_drop_count) {
+   if(!env_rtl_mismatch_expected)
+     be_msg.print(e_mesg_error, "niu_rxdma_pktchk", "collectStats", 
+           	  "noOfEntries:%0d in PacketScoreBoard does not match with total_rtl_drop_cnt:%0d\n",
+           	  TotalNoOfEntries, total_rtl_drop_count);
+   else
+     be_msg.print(e_mesg_info, "niu_rxdma_pktchk", "collectStats", 
+           	  "noOfEntries:%0d in PacketScoreBoard does not match with total_rtl_drop_cnt:%0d, as expected by TEST\n",
+           	  TotalNoOfEntries, total_rtl_drop_count);
+  }
+
+  for(port_num=0;port_num<4;port_num++) {
+      if(ports_active[port_num]) {
+         PacketScoreBoard[port_num].print_stats(*, 1);
+      }
+  }
+  printf("============================ check_packet : collectStats ========================\n");
+
+if (get_plus_arg(CHECK, "ENABLE_RX_EXIT_ROUTINE")) {
+  // do exit check here
+  for(port_num=0;port_num<4;port_num++) {
+    if(ports_active[port_num]) {
+       printf("CRxDmaPktChk: Doing RX Exit Routine for port %0d\n", port_num);
+       rx_exit_routine(port_num);
+    }
+  }
+}
+
+}
+
+task CRxDmaPktChk::RCR_FLUSH_START_pio_wr(bit [63:0] address, bit [63:0] data, integer dma) {
+     gen_pio_drv.pio_wr(rdmc.rx_dma[dma].getPIOAddress(address,rdmc.rx_dma[dma].dis_pio_virt), data);
+}
+
+task CRxDmaPktChk::rx_exit_routine(integer mac_id) {
+
+  bit [31:0] xmac_exp_status0,xmac_exp_status1;
+  bit [31:0] bmac_exp_status2,bmac_exp_status3;
+  rx_counters env_counters, rtl_counters;
+
+  env_counters = new(mac_id);
+
+  if (mac_id==0 || mac_id==1){
+    env_counters.mac_crc_cntr=PacketScoreBoard[mac_id].no_of_packets_ext_l2_errors;
+    env_counters.xmac_hist1_cntr=PacketScoreBoard[mac_id].hist1_count;
+    env_counters.xmac_hist2_cntr=PacketScoreBoard[mac_id].hist2_count;
+    env_counters.xmac_hist3_cntr=PacketScoreBoard[mac_id].hist3_count;
+    env_counters.xmac_hist4_cntr=PacketScoreBoard[mac_id].hist4_count;
+    env_counters.xmac_hist5_cntr=PacketScoreBoard[mac_id].hist5_count;
+    env_counters.xmac_hist6_cntr=PacketScoreBoard[mac_id].hist6_count;
+    env_counters.xmac_hist7_cntr=PacketScoreBoard[mac_id].hist7_count;
+    env_counters.mac_mpszer_cntr=PacketScoreBoard[mac_id].max_pkt_err_count;
+    env_counters.xmac_frag_cntr=PacketScoreBoard[mac_id].min_pkt_err_count;
+    env_counters.xmac_byte_cntr=PacketScoreBoard[mac_id].xmac_byte_cnt;
+    env_counters.xmac_mcast_cntr=PacketScoreBoard[mac_id].mcast_pkt_count;
+    env_counters.xmac_bcast_cntr=PacketScoreBoard[mac_id].bcast_pkt_count;
+    env_counters.mac_codevio_cntr=PacketScoreBoard[mac_id].code_viol_err_count;
+    // Now, check the xmac status only if given the expected result
+    if (get_plus_arg(CHECK, "EXPECTED_XMAC_EXIT_STATUS0="))
+        xmac_exp_status0 = get_plus_arg(HNUM,"EXPECTED_XMAC_EXIT_STATUS0=");
+    else
+    	xmac_exp_status0 = 32'h00080001; // Expecting linkUpDown=1, FrameRcvd=1
+    if (get_plus_arg(CHECK, "EXPECTED_XMAC_EXIT_STATUS1="))
+        xmac_exp_status1 = get_plus_arg(HNUM,"EXPECTED_XMAC_EXIT_STATUS1=");
+    else
+    	xmac_exp_status1 = 32'h00080001; // Expecting linkUpDown=1, FrameRcvd=1
+    if (mac_id==0)
+      match_xmac_status(0, xmac_exp_status0);
+    else if (mac_id==1)
+      match_xmac_status(1, xmac_exp_status1);
+  }
+  else if (mac_id==2 || mac_id==3){
+    env_counters.bmac_frame_cntr=PacketScoreBoard[mac_id].hist7_count;
+    env_counters.bmac_alignerr_cntr=PacketScoreBoard[mac_id].bmac_align_err_count;
+    env_counters.mac_crc_cntr=PacketScoreBoard[mac_id].no_of_packets_ext_l2_errors;
+    env_counters.mac_codevio_cntr=PacketScoreBoard[mac_id].code_viol_err_count;
+    env_counters.mac_mpszer_cntr=PacketScoreBoard[mac_id].max_pkt_err_count;
+    // Now, check the bmac status only if given the expected result
+    if (get_plus_arg(CHECK, "EXPECTED_BMAC_EXIT_STATUS2="))
+        bmac_exp_status2 = get_plus_arg(HNUM,"EXPECTED_BMAC_EXIT_STATUS2=");
+    else
+        bmac_exp_status2 = 32'h1; // Expecting FrameRcvd=1
+    if (get_plus_arg(CHECK, "EXPECTED_BMAC_EXIT_STATUS3="))
+        bmac_exp_status3 = get_plus_arg(HNUM,"EXPECTED_BMAC_EXIT_STATUS3=");
+    else
+        bmac_exp_status3 = 32'h1; // Expecting FrameRcvd=1
+    if (mac_id==2)
+      match_bmac_status(2, bmac_exp_status2);
+    else if (mac_id==3)
+      match_bmac_status(3, bmac_exp_status3);
+  }
+
+  rtl_counters = rx_exit_tools.read_rx_rtl_cntrs(mac_id);
+  if(mac_id==0 | mac_id==1)
+    rtl_counters.xmac_hist7_cntr=niu_rx_test_util.xmac_hist7_cntr[mac_id]; // correct rtl value
+  rx_exit_tools.match_rtl_env_cntrs(rtl_counters, env_counters);
+
+}
+
+task CRxDmaPktChk::match_xmac_status(integer mac_id, bit[31:0] status) {
+bit [63:0] xmac_stat;
+  niu_rx_test_util.XMAC_STATUS_pio_rd(mac_id, xmac_stat);
+  if (xmac_stat[20:0] !== status[20:0])
+   printf("ERROR xmac status for port %0d did not match in the exit check. Exp 0x%h, Got 0x%h\n",
+		mac_id, status[20:0], xmac_stat[20:0]);
+  else
+   printf("EXIT-CHECK xmac status 0x%h for port %0d matched in the exit check.\n", status[20:0], mac_id);
+}
+
+task CRxDmaPktChk::match_bmac_status(integer mac_id, bit[31:0] status) {
+bit [63:0] bmac_stat;
+  niu_rx_test_util.BMAC_STATUS_pio_rd(mac_id, bmac_stat);
+  if (bmac_stat[7:0] !== status[7:0])
+   printf("ERROR bmac status for port %0d did not match in the exit check. Exp 0x%h, Got 0x%h\n",
+		mac_id, status[7:0], bmac_stat[7:0]);
+  else
+   printf("EXIT-CHECK bmac status 0x%h for port %0d matched in the exit check.\n", status[7:0], mac_id);
+}

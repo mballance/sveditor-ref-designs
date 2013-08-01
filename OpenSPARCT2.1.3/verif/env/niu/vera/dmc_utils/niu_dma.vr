@@ -1,0 +1,210 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_dma.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "niu_dmc_descr.vrh"
+#include "niu_dmc_descr_ring.vrh"
+
+#include "niu_int_dev.vrh"
+#include "niu_dma_bind.vrh"
+
+extern CNiuDMABind NiuDMABind;
+
+class CDMA extends CNiuIntrDev {
+    integer id;
+    integer type; //0=Tx or 1=Rx
+
+    integer group_no = -1;
+    integer function_no =-1;
+    integer en_pio_virt=0;
+
+    integer address_incr; // either 4 or 8 depending upon Tx or Rx
+
+
+    // partition support shadow variables
+    bit [63:0] ring_lpvalid;
+    bit [63:0] ring_lpmask1;
+    bit [63:0] ring_lpvalue1;
+    bit [63:0] ring_lpmask2;
+    bit [63:0] ring_lpvalue2;
+    bit [63:0] ring_lprelo1;
+    bit [63:0] ring_lprelo2;
+    bit [63:0] ring_lphandle;
+
+    // descriptor_ring -- -
+    CDescrRing desc_ring;
+
+    function bit[63:0] translate_address(bit[63:0] sw_address);
+    virtual function integer isr( ( bit[1:0] ldf_flags = 0) ){}
+    task SetDMAGroupBind( integer g);
+    task ResetDMAGroupBind( integer g);
+    function integer isDMABound(integer dma_no, integer tx_or_rx, integer group_no);
+    function bit[63:0] getPIOAddress( bit[63:0] address, (integer pass_through=1));
+    task new( integer i, integer t, (integer intr_dev_id = 0) ) {
+      super.new(intr_dev_id);
+      id = i;
+      type = t;
+    }
+    task SetDefFunc(integer func) {
+	NiuDMABind.SetDefFunc(func,type,id);
+    }
+}
+function bit[63:0] CDMA::getPIOAddress( bit[63:0] address, (integer pass_through=1)) {
+
+   getPIOAddress = NiuDMABind.getPIOAddress(id, type, group_no, address, pass_through);
+
+}
+
+task CDMA::SetDMAGroupBind( integer g){
+      group_no = g;
+      printf("CDMA::SetDMAGroupBind Group - %d DMA - %d \n",g,id);
+      if(group_no<=15) {
+       function_no = 0;
+      } else if(group_no<=31) {
+       function_no = 1;
+     } else if(group_no<=47) {
+       function_no = 2;
+  } else if(group_no<=63) {
+       function_no = 3;
+  } else {
+       printf(" ERROR Incorrect Group Number Specified for DMA - %d \n",id);
+  }
+
+   if(type==0) // TX
+    NiuDMABind.SetTxBind(id,group_no);
+   else  // RX
+    NiuDMABind.SetRxBind(id,group_no);
+
+   }
+
+function integer CDMA::isDMABound(integer dma_no, integer tx_or_rx, integer group_no) {
+    isDMABound = NiuDMABind.isDMABound(dma_no, tx_or_rx, group_no);
+}
+
+task CDMA::ResetDMAGroupBind( integer g){
+      group_no = g;
+      printf("CDMA::ResetDMAGroupBind Group - %d DMA - %d \n",g,id);
+      if(group_no<=15) {
+       function_no = 0;
+      } else if(group_no<=31) {
+       function_no = 1;
+     } else if(group_no<=47) {
+       function_no = 2;
+  } else if(group_no<=63) {
+       function_no = 3;
+  } else {
+       printf(" ERROR Incorrect Group Number Specified for DMA - %d \n",id);
+  }
+
+   if(type==0) // TX
+    NiuDMABind.ResetTxBind(id,group_no);
+   else  // RX
+    NiuDMABind.ResetRxBind(id,group_no);
+
+   group_no = -1;
+}
+
+
+function bit[63:0] CDMA ::translate_address(bit[63:0] sw_address)
+{
+	integer loop=0;
+	bit [31:0] mask_address;
+
+	if(ring_lpvalid[0]) {
+	 // first check Page0
+	 mask_address = sw_address[43:12] & ring_lpmask1;
+	 if(mask_address == ring_lpvalue1) {
+	 // translate the address
+	 printf("Address within the Page0\n");
+	 translate_address[63:44] = ring_lphandle;
+	 for(loop=0;loop<32;loop++) {
+		if(ring_lpmask1[loop])
+		   translate_address[12+loop] = ring_lprelo1[loop];
+		else
+		   translate_address[12+loop] = sw_address[12+loop];
+	 }
+	 // translate_address[43:12] = ring_lprelo1 & ring_lpmask1;
+	 translate_address[11:0] = sw_address[11:0];
+	 printf("The Trans_Address is %0h\n",translate_address);
+	 } else {
+		printf("Page0 enabled, but Address not within Page0\n");
+             // check for page1
+             mask_address = sw_address[43:12] & ring_lpmask2;
+	   if(mask_address == ring_lpvalue2) {
+	   // translate the address
+	   printf("Address within the Page1\n");
+	   translate_address[63:44] = ring_lphandle;
+	   for(loop=0;loop<32;loop++) {
+		if(ring_lpmask2[loop])
+                   translate_address[12+loop] = ring_lprelo2[loop];
+             else
+                   translate_address[12+loop] = sw_address[12+loop];
+            }
+            // translate_address[43:12] = ring_lprelo1 & ring_lpmask1;
+            translate_address[11:0] = sw_address[11:0];
+            printf("The Trans_Address is %0h\n",translate_address);
+            } else {
+                 printf("Page1 enabled, but Address not within Page1\n");
+		 translate_address = sw_address;
+            }
+          }
+         } else if(ring_lpvalid[1]) {
+	   // check if the address is in Page1
+	   mask_address = sw_address[43:12] & ring_lpmask2;
+	   if(mask_address == ring_lpvalue2) {
+	   // translate the address
+	   printf("Address within the Page1\n");
+	   translate_address[63:44] = ring_lphandle;
+	   for(loop=0;loop<32;loop++) {
+		if(ring_lpmask2[loop])
+                   translate_address[12+loop] = ring_lprelo2[loop];
+             else
+                   translate_address[12+loop] = sw_address[12+loop];
+            }
+		// translate_address[43:12] = ring_lprelo1 & ring_lpmask1;
+		translate_address[11:0] = sw_address[11:0];
+		printf("The Trans_Address is %0h\n",translate_address);
+           } else {
+		printf("Page1 enabled, but Address not within Page1\n");
+		translate_address = sw_address;
+             	  }
+	} else {
+			 printf("Neither Page0 or Page1 is defined, Potenial SW_Error\n");
+			 translate_address = sw_address;
+	}
+}
+
+
+

@@ -1,0 +1,1347 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: fc_top.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#define PROG_FILE
+
+#include <vera_defines.vrh>      // standard header file from Vera
+#include <VeraListProgram.vrh>   // standard header file from Vera
+#include <ListMacros.vrh>        // standard header file from Vera
+
+#include "cpu.h"    // constant definitions for CPU rtl at :/design/cpu/rtl/
+
+// added this #ifndef for excluding code for NIU in Opensparc T2
+#ifndef FC_NO_NIU_T2
+#include "mbox_class.vrh"
+#include "get_mbox_id.vrh"
+#include "niu_verilog_tasks.vri"
+
+//IP PacketGen related
+
+#include "pcg_defines.vri"
+#include "pcg_types.vri"
+#include "pack_db.vrh"
+#include "flow_db.vrh"
+#include "flow_db_tasks.vrh"
+#include "pg_top_pp.vrh"
+#include "pc_top_pp.vrh"
+#include "mac_pio_class.vrh"
+#include "pio_driver.vrh"
+#include "bmac_util.vrh"
+#include "pcs_util.vrh"
+#include "xpcs_util.vrh"
+#include "fflp_util.vrh"
+#include "txc_util.vrh"
+#include "niu_gen_pio.vrh"
+
+// New code for pktconfig and RDMC MOdel
+#include "pktConfig.vrh"
+#include "niu_rxdmc.vrh"
+
+#include "rand_packet.vrh"
+
+
+#ifndef GATESIM
+#ifndef NIU_SYSTEMC_T2
+#include "niu_rx_coverage.vrh"
+#endif
+#endif
+
+#ifndef RXC_SAT
+#ifndef MAC_SAT
+#include "niu_rxdma_wr_chk.vrh"
+#endif
+#endif
+
+#ifndef MAC_SAT
+#ifndef NIU_SYSTEMC_T2
+#include "control_fifo_mon.vrh"
+#include "control_fifo_chkr.vrh"
+#include "rdmc_mon.vrh"  
+#endif
+#include "mac_mon.vrh"
+#endif
+
+#include "hostRdCbMgr.vrh"
+#endif // #ifndef FC_NO_NIU_T2
+
+
+// interfaces & binds
+#include <fc_top.if.vrh>
+#include <ccxDevices.if.vrh>
+#include <ccxDevices.binds.vrh>
+
+#include "asmEventsToVera.if.vrh"
+#include "errorCountTasks.if.vrh"
+#include "sparcBenchUtils_if.vrh"
+#ifndef GATESIM
+#include "fc_jtpor.if.vrh"
+#endif
+
+// defines
+#include "defines.vri"
+#include <ccxDevicesDefines.vri>
+#include "plusArgMacros.vri"
+#include "std_display_defines.vri"
+
+// classes refered to in this file
+#include "std_display_class.vrh"
+#include "baseUtilsClass.vrh"
+#include "sparcBenchUtils.vrh"
+#include "utilsClass.vrh"
+#include "ssi.if.vrh"
+#include "ssi.vrh"
+#include "baseParamsClass.vrh"
+#include "sparcParams.vrh"
+
+#include "asmEvent.vrh"
+#include "baseAsmToVeraIntf.vrh"
+#include "asmEventsToVera.vrh"
+
+#ifndef FC_NO_NIU_T2
+#include "asmToVeraIntf.vrh"
+#include "niu_tx_descp.vrh"
+#include "niu_tx_port.vrh"
+#endif
+
+#include "generic_ev_packet.vrh"  // packet for generic user event
+
+/*****************************
+ * TCU Driver classes *
+ *****************************/
+#include "tcu_tasks.vrh"
+#include "sys_reset.vrh"
+#ifndef GATESIM
+#include "fcShadowScanClass.vrh"
+#endif
+
+#ifndef FC_NO_NIU_T2
+#ifndef RXC_SAT
+#include "rxc_class.vrh"          
+#include "ip_ingress_classes.vrh" 
+#include "ip_ingress_db.vrh"      
+#include "ip_util.vrh"            
+#endif
+
+// Interrupt
+#include "niu_int_qmgr.vrh"
+#include "niu_int_mgr.vrh"
+#include "niu_dma_bind.vrh"
+#ifndef NIU_SYSTEMC_T2
+#include "niu_intr_mon.vrh"
+#endif
+#endif //#ifndef FC_NO_NIU_T2
+
+#ifdef USE_JTAG_DRIVER
+#ifdef FC_JTAG_DEBUG_COVERAGE
+#include "ncu_coverage.vrh"
+#include "ncu_rtl_cov.vrh"
+#endif
+//------- Run TCU along with SPARC diag ------------
+extern function integer tcu_diag(StandardDisplay gDbg);
+#endif
+
+// verilog tasks/functions that vera is going to call
+#include <verilog_tasks_misc.vri>
+#include "seedingVerilogTasks.vri"
+
+// PEU Integration
+#ifndef FC_NO_PEU_VERA
+#include "report_verilog_tasks.vrh"
+#include "cReport.vrh"
+#include "Testbench.vrh"
+#include "peu_verilog_tasks.vri"
+#include "FNXPCIEXactorExports.vri"
+
+// dma checker
+#ifndef GATESIM
+hdl_task mem_check (  bit [39:0]       pa,
+                      bit [(64*8)-1:0] data
+                    ) "tb_top.ldst_sync.ldst_l2.mem_check";
+#endif
+
+#include "top_defines.vrh"
+#include "ios_l2_stub.vrh"
+#include "fc_l2_sio_stub.vrh"
+
+#include "niu_sig.if.vrh"
+#include "niu_checker.vrh"
+
+#else
+#ifdef USE_BOBO
+hdl_task bobo_write_64bit (bit [39:0] pa,
+                           bit [63:0] data64
+                           ) "tb_top.bobo_write_64bit";
+#else
+#ifndef FC_NO_PEU_T2
+hdl_task pep_write_32bit (bit [39:0] pa,
+                          bit [31:0] data32
+                          ) "tb_top.ept.pci_dma.dma.pio.pep_write_32bit";
+#endif // FC_NO_PEU_T2
+#endif // USE_BOBO
+#endif // FC_NO_PEU_VERA
+
+// Mcu Mon for Rx checker added here
+#include "FcMcuMon.vrh"
+#include "FcMcuMonPort.if.vrh"    
+
+// ras
+#ifndef GATESIM
+#include <verilog_tasks_RandErr.vri>
+#endif
+
+#include "ios_injerr.vrh"
+#include "../../ios/vera/include/ios_verilog_tasks.vri"
+
+#ifndef FC_NO_NIU_T2
+#include "sioniu_err_mon.vrh"
+#endif
+#include "siodmu_err_mon.vrh"
+
+#ifndef GATESIM
+#include "ios_err_interrupt.vrh"
+#endif
+
+// extern FcMcuMon fcmcumon[4]    
+
+#ifndef FC_NO_PEU_VERA
+//// extern class PEUTestBase {}
+extern class N2fcCtx {}
+#endif
+
+
+// events. Note: these are macro, so no ';' at the end
+MakeVeraList(string)
+MakeVeraList(EventClass)
+
+// FOR TXC
+hdl_task write_sys_mem (
+                                bit [63:0] addr,
+                                bit [63:0] data,
+                                bit [7:0] be
+                        ) "tb_top.write_sys_mem";
+
+hdl_task read_sys_mem (
+                                bit [63:0] addr,
+                                var bit [63:0] rd_data
+                        ) "tb_top.read_sys_mem" ;
+
+#ifndef FC_NO_NIU_T2
+hdl_task force_tcam_entry (bit [7:0] tcam_index, bit [199:0] tcam_key) "tb_top.force_tcam_entry" ;
+hdl_task backdoor_init_tcam () "tb_top.backdoor_init_tcam" ;
+#endif
+hdl_task force_pkg_pin_TRIGIN(bit is_forcing, bit value) "tb_top.force_pkg_pin_TRIGIN";
+hdl_task force_tcu_clk_stop_at_tcu(bit is_forcing, bit value) "tb_top.force_tcu_clk_stop_at_tcu";
+hdl_task force_tcu_siu_L2_write(bit [39:0] addr, bit [63:0] wr_data) "tb_top.force_tcu_siu_L2_write";
+hdl_task force_tcu_siu_L2_read(bit [39:0] addr, var bit [63:0] rd_data) "tb_top.force_tcu_siu_L2_read";
+
+// for tlr glitch enable
+hdl_task force_tlrState() "`TOP.force_tlrState";
+hdl_task release_tlrState() "`TOP.release_tlrState";
+//
+// include interface coverages
+#ifdef FC_COVERAGE
+#include "ncu_coverage.vrh"
+#include "ncu_rtl_cov.vrh"
+#include "l2sat_coverage.vrh"
+#include "l2sat_misc_cov.vrh"
+#include "mcusat_coverage.vri"
+#include "dmu_coverage.vri"
+
+#ifndef FC_NO_PEU_VERA
+#include "ilu_peu_coverage.vrh"
+#endif
+#ifndef GATESIM
+#include "siu_coverage.vrh"
+#endif
+#include "fc_coverage.vrh"
+#endif
+// 
+#ifdef FC_JTAG_DEBUG_COVERAGE
+#include "ncu_coverage.vrh"
+#include "ncu_rtl_cov.vrh"
+#endif
+
+//SIU monitors/checkers
+#ifndef FC_NO_NIU_T2
+#include "siu_niu_mon.vrh"
+#endif
+#include "siu_dmu_mon.vrh"
+#include "siu_l2_mon.vrh"
+#include "siu_order_checker.vrh"
+#include "siu_err_mask.vrh"
+//L2 monitors/checkers
+#ifndef GATESIM
+#include <l2jbi.if.vrh>
+#include <l2jbi_ports_binds.vrh>
+#endif
+#include <cpxorder.if.vrh>
+#include <cpxorder_ports_binds.vrh>
+
+#include "siu_ncu_mondo.if.vrh"
+#include "siu_ncu_mondo_ports_binds.vrh"
+#include "siu_ncu_mondo_checker.vrh"
+
+extern task MonitorCPX();
+#ifndef GATESIM
+extern task CheckJbiInvBeforeAck();
+#endif
+
+#include "fc_top_defines.vri"     // common definitions for fc bench at /verif/env/common/vera/include/
+#include "ucb_top.vri"            // constants/port/if/bind definitions for UCB at :/verif/env/tcu/vera/include/
+#include "ucb___packet.vrh"       // UCB pkt definition at :/verif/env/tcu/vera/packets/
+#include "ucb_monitor.vrh"        // UCB protocol monitor at :/verif/env/tcu/vera/classes/
+
+#ifndef GATESIM
+#include "ccu_top.vri"           // constants/port/if/bind definitions for CCU at :/verif/env/tcu/vera/include/
+#include "cluster_hdr_top.vri"   // constants/port/if/bind definitions for cluster hdrs at :/verif/env/tcu/vera/include/
+#include "ccu_clk_packet.vrh"    // ccu/clk pkt definition at :/verif/env/tcu/vera/packets/
+#include "ccu_clks_states.vrh"   // ccu/clk state at :/verif/env/tcu/vera/classes/
+#include "ccu_checker.vrh"       // ccu checker at :/verif/env/tcu/vera/classes/
+#include "cluster_hdr_chkr.vrh"  // cluster header checkers at :/verif/env/tcu/vera/classes/
+#include "ccu_clk_chkr_4fc.vrh"  // ccu and cluster header checkers at :/verif/env/tcu/vera/classes/
+#endif // #ifndef GATESIM
+
+//=====================================================================
+//================ main vera program  =================================
+//=====================================================================
+
+program fc_test
+{
+
+
+// This is where the global 'extern declerations' are. Typedefs too.
+// Other files needing globals include this.
+#define STORAGE_CLASS
+#include "globals.vri"
+#ifndef FC_NO_NIU_T2
+#include "global_variable.vri"
+#endif
+
+  string dispmonScope = "vera_top"; // display scope for dispmon (ie. gDbg and dbg)
+  integer verbose = (get_plus_arg(CHECK, "fc_vera_top_verbose"))? 1 : 0;  // non-zero: print out info for debugging fc_top.vr
+
+  integer generic_ev_mbox; // mailbox for generic user event
+  SSI bootrom;
+
+  reg asmDiagRun;
+  reg asmDiagDone;
+  integer ipp_config0[4];
+  integer ipp_config1[4];
+  integer opp_config0[4];
+  integer opp_config1[4];
+  integer mac_config0[4];
+  integer mac_config1[4];
+  integer ntx_config[2];
+  integer bif_config[2];
+  integer RX_TEST_REACHED_END = 0;
+
+
+  //Block detection
+  integer port_type_flag[9];    // Port Types
+  bit [8:0] active_port=0;      // Active ports on fedx
+
+#ifndef FC_NO_NIU_T2
+  bit [3:0] rtl_mac;          // For each rtl  level mac the bit is set to 1
+  bit [3:0] gate_mac=0;         // For each gate level mac the bit is set to 1
+  bit [3:0] active_mac=0;       // For each active mac the bit is set to 1
+  bit [3:0] fake_mac=0;         // For each fake level mac the bit is set to 1
+#endif
+
+  //Block detection IPP
+  bit [3:0] rtl_ipp=0;          // For each rtl  level ipp the bit is set to 1
+  bit [3:0] gate_ipp=0;         // For each gate level ipp the bit is set to 1
+  bit [3:0] active_ipp=0;       // For each active ipp the bit is set to 1
+  bit [3:0] fake_ipp=0;         // For each fake level ipp the bit is set to 1
+
+  //Block detection OPP
+  bit [3:0] rtl_opp=0;          // For each rtl  level opp the bit is set to 1
+  bit [3:0] gate_opp=0;         // For each gate level opp the bit is set to 1
+  bit [3:0] active_opp=0;       // For each active opp the bit is set to 1
+  bit [3:0] fake_opp=0;         // For each fake level opp the bit is set to 1
+
+  //Block detection BIF
+  bit rtl_mif=0;                // For rtl  level bif the bit is set to 1
+  bit gate_mif=0;               // For gate level bif the bit is set to 1
+  bit active_mif=0;             // For active bif the bit is set to 1
+  bit fake_mif=0;               // For fake level bif the bit is set to 1
+
+#ifndef FC_NO_NIU_T2
+  //Setting Multiple Mac Port
+  bit[31:0] get_mac_port;
+  integer mac_speed0,mac_speed1,mac_speed2,mac_speed3;
+  bit [2047:0] bit_str;
+  string init_mac_ports,temp_port;
+  integer port_no[];
+#endif
+  integer i;
+  string str;
+  bit [39:0] address;   // MAQ_Tx
+  bit [511:0] wri_data; // MAQ_Tx
+  FcMcuMon      fcmcumon[4];
+  bit [63:0] FCMemoryAddress_A[4];
+  bit [63:0] FCMemoryAddress_B[4];
+  bit [63:0] FCMemoryAddress_C[4];
+  event FCMemorySync_A[4];
+  event FCMemorySync_B[4];
+  event FCMemorySync_C[4];
+
+#ifndef GATESIM
+  ios_err_interrupt_mon ras_interrupt;
+#endif // #ifndef GATESIM
+  ios_ras_inj ras_injector;
+#ifndef FC_NO_NIU_T2
+  sioniu_err_mon sioniu_errmon;
+#endif
+  siodmu_err_mon siodmu_errmon;
+
+//SIU monitors
+#ifndef FC_NO_NIU_T2
+siu_niu_monitor         siuniu_mon;
+#endif
+siu_dmu_monitor         siudmu_mon;
+
+siu_l2_monitor          siul2_mon[];
+siu_order_checker	order_chk;
+#ifndef FC_NO_NIU_T2
+integer niu_snd_mbox, niu_rec_mbox;
+#endif
+integer dmu_snd_mbox, dmu_rec_mbox, ncu_rec_mbox;
+integer l2_snd_mbox[], l2_rec_mbox[];
+
+siu_ncu_mondo_checker      siu_ncu_mondo_chk;
+
+  // **************************************************
+  // ***Variables for Checker tasks
+  // **************************************************
+
+  bit VERIF_RESET=0;            // reset for the verification environment.
+  bit token_debug=1;            // for comments concerning the token flow.
+
+  bit TCU_DONE=1;            // indicate when the TCU is done default is 1 
+                             // when TCU is run will be set to 0 & 1
+  bit TCU_Test_En=0;
+  bit jtag_reset_done = 0;   // when USE_JTAG_DRIVER, set it to 1 after reseting jtag completed
+
+  integer numberOfCores = 0; // Keep track of how many cores available  
+  reg [63:0] bootedThreads;  // to store which threads booted
+
+#ifndef FC_NO_NIU_T2
+  //Checker Interface enable
+  bit mac_ipp_interface_ena    =1;
+  bit mac_opp_interface_ena    =1;
+
+  //Checker Protocol Check Enable
+  bit mac_ipp_proto_ena    =1;
+  bit mac_opp_proto_ena    =1;
+
+  //Checker Data Check Enable
+  bit mac_ipp_data_ena     =1;
+  bit mac_opp_data_ena     =1;
+#endif
+
+//  interface coverages. 
+
+     StandardDisplay dbg;
+     bit                  coverage_on;
+     event                dmu_diag_done;
+
+#ifdef FC_JTAG_DEBUG_COVERAGE
+  ncu_intf_cov                ncu_intf_cov_obj;
+  ncu_rtl_cov                 ncu_rtl_cov_obj;
+#endif
+
+#ifdef FC_COVERAGE
+  ncu_intf_cov                ncu_intf_cov_obj;
+  ncu_rtl_cov		      ncu_rtl_cov_obj;
+  l2sat_intf_coverage_class   Interface_coverage;
+  dram_coverage               dram_coverage_obj;
+  dmu_coverage                dmu_coverage_obj;
+
+#ifndef FC_NO_PEU_VERA
+  ilu_peu_intf_coverage       ilu_peu_intf_coverage_obj;
+#endif
+  siu_intf_coverage           siu_intf_coverage_obj;
+  siu_intf_schmoo_coverage      siu_schmoo_coverage_obj;
+  siu_ipcs_coverage		siu_ipcs_coverage_obj;
+  siu_opcs_coverage		siu_opcs_coverage_obj;
+  fc_cov                        fc_cov_obj;
+  fc_modes_cov                  fc_modes_cov_obj;  //Modes coverage object
+  fc_ncu_internal_coverage      fc_ncu_internal_coverage_obj;
+  fc_siu_internal_coverage      fc_siu_internal_coverage_obj;
+  fc_l2_internal_coverage	fc_l2_internal_coverage_obj;
+  fc_siu_ras_coverage           fc_siu_ras_coverage_obj;
+#ifndef FC_NO_NIU_T2
+  fc_niu_coverage               fc_niu_coverage_obj;
+#endif
+  fc_mcu_ras_coverage 		fc_mcu_ras_coverage_obj;
+#endif
+
+#ifndef FC_NO_NIU_T2
+ mbox_class mbox_id;
+ Mesg  be_msg;
+#endif
+ 
+ integer pack_db_lock;
+ integer flow_db_lock;
+ integer pack_db_index = 0;
+ integer flow_num = 0;
+ integer quiet_on   = 0;
+ integer n;
+ integer tcuerrorcount   = 0;
+ integer flow_mb;
+ integer config_mb;
+ integer config0_mb;
+ integer config1_mb;
+
+#ifndef FC_NO_NIU_T2
+ CSparseMem     SparseMem;
+ CHostErrInjTab HostErrInj;
+ CHostRdCbMgr	  hostRdCbMgr;
+
+ pg                    pack_gen[16];        // Allocate pointers for 4 packet generators
+ pg                    ptr_to_first_pg;
+ pc                    pack_check[4]; 
+ pack_db_entry         pack_db[];
+ flow_db_entry         flow_db[];
+
+ node_db node[32];
+ tup_descr tud[32];
+ fr_cl fr[8];
+ DMAChannel dma[32];
+
+#ifndef MAC_SAT
+#ifndef NIU_SYSTEMC_T2
+ control_fifo_mon control_fifo_monitor;
+ control_fifo_chkr control_fifo_checker;
+ RdmcMonitor rdmc_mon;        
+#endif
+ MacMonitor mac_mon_rx;       // 02/16/06
+ MacMonitor mac_mon_tx;
+#endif
+
+  pio_drv    pio_driver_class;
+  mac_pio_cl mac_pio_class;
+  mac_util_class mac_util;
+  bmac_util_class bmac_util;
+  pcs_util_class pcs_util;
+  xpcs_util_class xpcs_util;
+  fflp_util_class fflp_util;
+  CNiuDMABind NiuDMABind;
+  niu_gen_pio gen_pio_drv;
+
+  event  RX_chk_done;
+  event mac_init_done;
+  event  TX_rvcd_allpkts[4];
+  txc_util_class txc_util;
+
+  CpktConfig pktConfig;
+  CRDMC      rdmc;
+  rand_packet rx_rand_packet;
+
+#ifndef GATESIM
+#ifndef NIU_SYSTEMC_T2
+  niu_intf_coverage niu_rx_intf_coverage;
+#endif
+#endif
+
+#ifndef RXC_SAT
+#ifndef MAC_SAT
+ Cniu_rxdma_wr_chkr     niu_rxdma_wrchk;
+#endif
+#endif
+
+#ifndef MAC_SAT
+RxDMAChannel rx_dma[32];
+#ifndef RXC_SAT
+Crxc         rxc_cl;    
+#endif
+#endif  
+
+  /* Interrupt Related variables*/
+  CNiuIntrQMgr NiuIntrQ;
+  CNiuIntrMgr NiuIntrMgr;
+#ifndef GATESIM
+#ifndef NIU_SYSTEMC_T2
+  CNiuIntMonitor  NiuIntMon;
+#endif
+#endif
+
+#ifndef FC_NO_PEU_VERA
+	ReportClass MyReport;
+        N2fcCtx     peutest;
+
+        integer     non_posted_read_cmpl_outstanding;
+        integer     non_posted_write_cmpl_outstanding;
+
+	bit	    PEU_Test_En = 0;
+        event       e_StartPEUTest;
+        integer     asm2peu_mbox;
+        N2fcPiuShadowRegs PiuCsrs;
+        bit [63:0] IOSMemoryAddress[8];
+	event IOSMemorySync[8];
+	integer fc_peu_dma_ptr=0;
+        fc_l2_sio_stub l2sio_stub;
+
+	ios_l2_stub l2_stub[];
+
+	VeraList_l2_packet	  l2_list0;
+	VeraList_l2_packet	  l2_list1;
+	VeraList_l2_packet	  l2_list2;
+	VeraList_l2_packet	  l2_list3;
+	VeraList_l2_packet	  l2_list4;
+	VeraList_l2_packet	  l2_list5;
+	VeraList_l2_packet	  l2_list6;
+	VeraList_l2_packet	  l2_list7;
+
+	niu_checker niuchk;
+
+#endif // #ifndef FC_NO_PEU_VERA
+#endif // #ifndef FC_NO_NIU_T2
+
+
+  bit  vera_top_debug  = 0;    
+  bit  reset_complete  = 0;    
+
+#ifndef GATESIM
+  //CCU_clk_chkr_4fc ccu_clk_chkr_4fc;  // ccu and clock checkers
+#endif
+
+  /*****************************************************************
+   * TCU Driver                                             *
+   *****************************************************************/
+  SystemTap dft;
+  SystemReset reset;
+  tcu_siu_packet tcu_siu_pkt; // for L2 access
+  reg [39:0] jtagDoneMemAddr; // indicate JTAG done to ASM
+#ifndef GATESIM
+  fcShadowScanClass shScanCapture; // capture the shadow scan bits
+#endif
+
+  event         e_StartJtag;
+
+  // review
+//   VeraListIterator_EventClass event_it;
+//   VeraList_EventClass         vera_tasks[];
+//   VeraList_string             str_list   = new;
+
+  
+  // vera tasks that verilog calls, if any
+  //#include "vera_tasks.vrh"
+
+  //=======================================================
+  //====== end of variable declarations ===================
+  //=======================================================
+
+//-----------------------------------------------------------------------------
+// You must seed the RNG from *top* *BEFORE* class instantiations and forks.
+// YES, this matters in vera > V5, see vera docs. If you don't seed before
+// instantiating a class, that class ALWAYS repeats random numbers which is
+// NOT what you want.
+//-----------------------------------------------------------------------------
+#define HDNLNAME gSeedFileHndl
+#define SEEDNAME gSeed
+#include "seeding.vri"
+
+  gDbg = new();
+  dbg = gDbg;     // gDbg and dbg are the same
+
+#ifndef GATESIM
+  //ccu_clk_chkr_4fc = new(dbg);    // ccu and cluster header checkers. By default, they're disable
+#endif
+
+  generic_ev_mbox = alloc(MAILBOX, 0, 1);
+  
+#ifndef FC_NO_NIU_T2
+  flow_db_init();
+  mbox_id = new;
+  ptr_to_first_pg = null; 
+
+  be_msg = new(e_mesg_debug2);
+  SparseMem = new();
+  HostErrInj = new();
+  hostRdCbMgr = new(0);
+
+  flow_mb = alloc(MAILBOX, 0, 1);
+  config_mb = alloc(MAILBOX, 0, 1);
+  config0_mb = alloc(MAILBOX, 0, 1);
+  config1_mb = alloc(MAILBOX, 0, 1);
+
+  NiuIntrQ = new();
+  NiuIntrMgr = new();
+  NiuDMABind = new();
+#ifndef GATESIM
+#ifndef NIU_SYSTEMC_T2
+  NiuIntMon = new();
+#endif
+#endif
+
+   mac_pio_class = new( );
+   mac_util = new();
+   bmac_util = new();
+   pcs_util = new();
+   xpcs_util = new();
+   fflp_util = new;
+   gen_pio_drv = new();
+   pktConfig = new();
+   rdmc = new();
+   txc_util = new(); 
+
+// For Rx checker
+  fcmcumon[0] = new(DramWriteMCU0, 2'b00);
+  fcmcumon[1] = new(DramWriteMCU1, 2'b01);
+  fcmcumon[2] = new(DramWriteMCU2, 2'b10);
+  fcmcumon[3] = new(DramWriteMCU3, 2'b11);
+  trigger(OFF,FCMemorySync_A[0]);
+  trigger(OFF,FCMemorySync_A[1]);
+  trigger(OFF,FCMemorySync_A[2]);
+  trigger(OFF,FCMemorySync_A[3]);
+
+  trigger(OFF,FCMemorySync_B[0]);
+  trigger(OFF,FCMemorySync_B[1]);
+  trigger(OFF,FCMemorySync_B[2]);
+  trigger(OFF,FCMemorySync_B[3]);
+
+  trigger(OFF,FCMemorySync_C[0]);
+  trigger(OFF,FCMemorySync_C[1]);
+  trigger(OFF,FCMemorySync_C[2]);
+  trigger(OFF,FCMemorySync_C[3]);
+
+  trigger(OFF,RX_chk_done);
+
+  if (get_plus_arg(CHECK, "ENABLE_RANDOM_LAYER"))
+  {
+    rx_rand_packet = new();
+  }
+  else
+  {
+    printf("\n Random Layer disabled \n");
+  }
+
+  if (get_plus_arg(CHECK, "ENABLE_COV_OBJECT"))
+  {
+#ifndef GATESIM
+#ifndef NIU_SYSTEMC_T2
+    niu_rx_intf_coverage = new();
+#endif
+#endif
+  }
+  else
+  {
+    printf("\n coverage objects disabled \n");
+  }
+#endif // FC_NO_NIU_T2
+
+
+#ifndef FC_NO_PEU_VERA
+  if ( get_plus_arg(CHECK, "PEU_TEST") ) {
+    l2_list0 = new();
+    l2_list1 = new();
+    l2_list2 = new();
+    l2_list3 = new();
+    l2_list4 = new();
+    l2_list5 = new();
+    l2_list6 = new();
+    l2_list7 = new();
+    printf("Time before L2 %0d\n", get_time(LO));
+    l2sio_stub = new(dbg);
+    l2_stub[0] = new(l2_stub_bind0, 0, dbg, l2_list0);
+    l2_stub[1] = new(l2_stub_bind1, 1, dbg, l2_list1);
+    l2_stub[2] = new(l2_stub_bind2, 2, dbg, l2_list2);
+    l2_stub[3] = new(l2_stub_bind3, 3, dbg, l2_list3);
+    l2_stub[4] = new(l2_stub_bind4, 4, dbg, l2_list4);
+    l2_stub[5] = new(l2_stub_bind5, 5, dbg, l2_list5);
+    l2_stub[6] = new(l2_stub_bind6, 6, dbg, l2_list6);
+    l2_stub[7] = new(l2_stub_bind7, 7, dbg, l2_list7);
+    trigger(OFF,IOSMemorySync[0]);
+    trigger(OFF,IOSMemorySync[1]);
+    trigger(OFF,IOSMemorySync[2]);
+    trigger(OFF,IOSMemorySync[3]);
+    trigger(OFF,IOSMemorySync[4]);
+    trigger(OFF,IOSMemorySync[5]);
+    trigger(OFF,IOSMemorySync[6]);
+    trigger(OFF,IOSMemorySync[7]);
+    niuchk = new(dbg);
+
+    PEU_Test_En = 1;
+    //printf(" DENALI= %s \n", get_env("DENALI")); // now this is printed by sims
+    printf(" PATH= %s \n", get_env("PATH"));
+    //printf(" LM_LICENSE_FILE= %s \n", get_env("LM_LICENSE_FILE")); // now this is printed by sims
+    MyReport = new;
+    asm2peu_mbox = alloc(MAILBOX, 0, 1);
+  }
+#endif // FC_NO_PEU_VERA
+
+#ifndef FC_NO_NIU_T2
+  mac_config0[0] = 1;    //   config1    config0
+  mac_config0[1] = 1;    //     0         1          RTL
+  mac_config0[2] = 1;    //     1         1          DUmmy
+  mac_config0[3] = 1;
+
+  mac_config1[0] =1 ;
+  mac_config1[1] =1 ;
+  mac_config1[2] =1 ;
+  mac_config1[3] =1 ;
+
+  if( get_plus_arg( CHECK, "GET_MAC_PORTS=")) 
+    get_mac_port = get_plus_arg( STR, "GET_MAC_PORTS=");
+  printf("The val of get_mac_port is %h\n",get_mac_port);
+  init_mac_ports.bittostr(get_mac_port); 
+  for (i=0; i<init_mac_ports.len();i++)
+  {
+    temp_port =init_mac_ports.substr(i,i);
+    printf("\nTemp = %d",temp_port.atoi());
+    port_no[i]=temp_port.atoi();
+  }
+
+#ifndef MAC_SAT
+#ifndef NIU_SYSTEMC_T2
+  // Control Fifo Monitors per port
+  if (get_plus_arg(CHECK, "DIS_CTRL_MON"))
+  {
+    printf("\n Control FIFO Monitor Disabled \n");
+  }
+  else
+  {
+    control_fifo_monitor = new(get_mac_port[1:0]);
+  }
+
+  // Control Fifo Checkers per port
+  if (get_plus_arg(CHECK, "ENABLE_CTRL_FIFO_CHKR"))
+  {
+    control_fifo_checker = new(get_mac_port[1:0]);
+  }
+  else
+  {
+    printf("\n Control FIFO Checkers Disabled \n");
+  }
+
+  if (get_plus_arg(CHECK, "RDMC_MON_ENABLE")) {
+    fork
+      rdmc_mon = new(vera_top_debug);
+    join none
+  }
+#endif
+
+  if (get_plus_arg(CHECK, "MAC_MON_ENABLE")) {
+    fork
+      mac_mon_tx = new(vera_top_debug, "Tx");
+      mac_mon_rx = new(vera_top_debug, "Rx");
+    join none
+  }
+#endif
+
+  if ( get_plus_arg(CHECK, "MAC_SPEED0=") )
+  {
+    mac_speed0 = get_plus_arg(NUM, "MAC_SPEED0") ;
+    printf("INFO:MAC0 port is set  %0d Speed\n" ,mac_speed0);
+  }
+  if ( get_plus_arg(CHECK, "MAC_SPEED1=") )
+  {
+    mac_speed1 = get_plus_arg(NUM, "MAC_SPEED1") ;
+    printf("INFO:MAC1 port is set  %0d Speed\n" ,mac_speed1);
+  }
+  if ( get_plus_arg(CHECK, "MAC_SPEED2=") )
+  {
+    mac_speed2 = get_plus_arg(NUM, "MAC_SPEED2") ;
+    printf("INFO:MAC2 port is set  %0d Speed\n" ,mac_speed2);
+  }
+  if ( get_plus_arg(CHECK, "MAC_SPEED3=") )
+  {
+    mac_speed3 = get_plus_arg(NUM, "MAC_SPEED3") ;
+    printf("INFO:MAC3 port is set  %0d Speed\n" ,mac_speed3);
+  }
+
+  if ( get_plus_arg(CHECK, "TX_TEST") ) {
+  }
+  else {
+    //    dmc_util.dmc_init();
+  }
+
+  for (i=0; i<init_mac_ports.len();i++)
+  {
+    case(port_no[i])
+    {
+      0: {
+        mac_config1[0]=0;
+      }
+      1: {
+        mac_config1[1]=0;
+      }
+      2: {
+        mac_config1[2]=0;
+      }
+      3: {
+        mac_config1[3]=0;
+      }
+    }
+  }
+
+
+  ntx_config[0] = 1;
+  ntx_config[1] = 1;
+
+  for(n=0;n<4;n++) {
+    rtl_mac[n] = (!mac_config1[n] &  mac_config0[n]);
+  }
+
+  for(n=0;n<4;n++) {
+    if (rtl_mac[n] ) {
+      pack_gen[n] = new(n,0);         // Attach a pg to port #n
+      pack_gen[n+8] = new(n+8,0);    // Attach a pg to port #n+8 for tx side
+    }
+  }
+
+  // 02/02/06
+  if ( get_plus_arg(CHECK, "REG_TEST") ) {
+    printf("do not init TXC\n");
+  }
+  else
+  {
+#ifndef MAC_SAT
+    txc_util.txc_init();
+#endif
+  }
+#endif // FC_NO_NIU_T2
+
+
+  //-----------------------------------------------------------------------------
+  // Classes and forks (POST SEEDING!!!)
+  //-----------------------------------------------------------------------------
+  gOutOfBoot = 0;
+
+  gClkPeriod = period_if.core_period async;
+
+  // clock period can be dynamic so track it.
+  fork {
+    while (1) {
+      @(posedge period_if.core_period_change);
+      gClkPeriod = period_if.core_period async;
+      gUtil.updateClockPeriod(gClkPeriod);
+    }
+  } join none
+  
+  // Check Plusargs, knob/parameter files, config files, etc
+  gParam = new(gDbg);
+  
+  if (gParam.asmDiagName !== null) {
+    asmDiagRun = 1;  // indicate that an assembly diag will be run
+    asmDiagDone = 0; // set to 1 when assembly diag completes
+  } else {
+    asmDiagRun = 0;
+    asmDiagDone = 1;
+  }    
+  
+  // utils, base utils
+  gUtil = new(gDbg, gClkPeriod);
+
+  // $EVENTs
+  gAsmEventsToVera = new(gDbg,gParam.coreEnableReg,0,0); // main/common $EVENTs code 
+  gAsmEventsToVera.readEventFile("diag.ev");
+
+   // check coverage option
+  if( mChkPlusarg(coverage_on) ) coverage_on = 1;
+  else                           coverage_on = 0;       // off by default
+
+#ifdef FC_JTAG_DEBUG_COVERAGE
+  if ((coverage_on) &&
+      ! mChkPlusarg(coverage_off)) {
+    fork {
+      printf("Instantiating vera coverage objects\n");
+      ncu_intf_cov_obj = new("ncu_intf_cov_obj", gDbg );
+      ncu_rtl_cov_obj  = new("ncu_rtl_cov_obj", gDbg );
+    }join none
+  }
+#endif
+
+
+#ifdef FC_COVERAGE
+  if (( mChkPlusarg(fc_coverage) || coverage_on) &&
+      ! mChkPlusarg(coverage_off)) {
+    fork {
+      printf("Instantiating vera coverage objects\n");
+      ncu_intf_cov_obj = new("ncu_intf_cov_obj", gDbg );
+      ncu_rtl_cov_obj  = new("ncu_rtl_cov_obj", gDbg );
+    }join none
+  }
+#endif
+
+  
+  /*****************************************************************
+   * TCU Driver                                             *
+   *****************************************************************/
+#ifdef USE_JTAG_DRIVER  		//  added this to not drive Tap pins in functional Mode.
+  dft     = new(gDbg);  // warning: new() resets JTAG TAP, so advances sim time
+  reset   = new(dbg, dft);
+  fork {
+    dft.fc_bench_jtag_POR_reset();  // reset JTAG TAP (see tcu_task.vr for details)
+    jtag_reset_done = 1;
+  } join none
+#endif
+  // for L2 access from TCU
+  tcu_siu_pkt = new (JTAG_RD, 0, 0);
+
+#ifndef AXIS_DDR2_MODEL
+  bootrom = new (gDbg,ncu,ssi);
+#endif
+
+  // Initialize bench, virtual ports, $EVENTs, etc.
+  gUtil.initTB(0,0,0,1); // initTB(reg useMCUbfms = 0, reg useL1Tags = 0);
+
+  // this waits for reset to be done.
+  // skip it when vera diag wants to run very early on (reset diag).
+  //if (! mChkPlusarg(vera_driven_reset))
+  fork
+   {  
+     gUtil.initDut();
+     reset_complete = 1'b1; // inidicate the fulsh reset complete
+   }
+  join none
+  
+  for (i=0; i<8; i++) {
+    if(gParam.coreAvilable[i]) {
+      numberOfCores++;
+    }
+  }
+  if(!numberOfCores) {
+    numberOfCores = 1; // default
+  }
+
+//=============================
+// - ported from IOS sat
+// ------- start coverage objects after reset has been de-asserted ---------
+
+
+#ifdef FC_COVERAGE
+  if (( mChkPlusarg(fc_coverage) || coverage_on) && !mChkPlusarg(coverage_off)) {
+    printf("probe_if.flush_reset_complete = %d \n", probe_if.flush_reset_complete);
+    fork {
+      //    @(posedge probe_if.flush_reset_complete);
+      printf("Instantiating vera coverage objects\n");
+      printf("probe_if.flush_reset_complete = %d \n", probe_if.flush_reset_complete);
+      //ncu_intf_cov_obj = new("ncu_intf_cov_obj", gDbg );
+      //ncu_rtl_cov_obj  = new("ncu_rtl_cov_obj", gDbg );
+      Interface_coverage = new(gDbg);
+      InitMiscCov(Interface_coverage);
+      dram_coverage_obj = new();
+      dmu_coverage_obj = new(dbg);
+
+#ifndef FC_NO_PEU_VERA
+      ilu_peu_intf_coverage_obj = new();
+#endif
+      siu_intf_coverage_obj = new(dbg);
+      siu_schmoo_coverage_obj = new(dbg);
+      siu_ipcs_coverage_obj = new(dbg);
+      siu_opcs_coverage_obj = new(dbg);
+      fc_cov_obj = new("fc_cov_obj", gDbg );
+      fc_modes_cov_obj = new(); //New modes coverage object
+      fc_ncu_internal_coverage_obj = new(dbg);
+      fc_siu_internal_coverage_obj = new(dbg);
+      fc_l2_internal_coverage_obj = new(dbg);
+      fc_siu_ras_coverage_obj     = new(dbg);
+#ifndef FC_NO_NIU_T2
+      fc_niu_coverage_obj         = new(dbg);
+#endif
+      fc_mcu_ras_coverage_obj = new();
+    } join none
+  }
+#endif // FC_COVERAGE
+
+  // set name of coverage database file
+  // Note: this file contains results for _all_ coverage objects
+  coverage_set_database_file_name("raw_coverage/coverage.db");
+  // by default, no data saved (until diag passes)
+  //    unless +force_save_cov is set as vcs plusarg
+  if ( mChkPlusarg(force_save_cov) ) {
+    coverage_save_database(1);
+  } else {
+    coverage_save_database(0);
+  }
+
+  fork {
+#ifndef FC_NO_NIU_T2
+    niu_snd_mbox = alloc(MAILBOX, 0, 1);
+    niu_rec_mbox = alloc(MAILBOX, 0, 1);
+    siuniu_mon = new(niumon_bind, niu_snd_mbox, niu_rec_mbox, dbg);
+#endif
+    dmu_snd_mbox = alloc(MAILBOX, 0, 1);
+    dmu_rec_mbox = alloc(MAILBOX, 0, 1);
+    siudmu_mon = new(dmumon_bind, dmu_snd_mbox, dmu_rec_mbox, dbg);
+    ncu_rec_mbox = alloc(MAILBOX, 0, 1);
+
+    // mailbox
+    for (i=0; i<8; i++)
+    {
+      l2_snd_mbox[i] = alloc(MAILBOX, 0, 1);
+      l2_rec_mbox[i] = alloc(MAILBOX, 0, 1);
+    }
+
+    siul2_mon[0] = new(l2_mon_bind0, l2_snd_mbox[0], l2_rec_mbox[0], 0, dbg);
+    siul2_mon[1] = new(l2_mon_bind1, l2_snd_mbox[1], l2_rec_mbox[1], 1, dbg);
+    siul2_mon[2] = new(l2_mon_bind2, l2_snd_mbox[2], l2_rec_mbox[2], 2, dbg);
+    siul2_mon[3] = new(l2_mon_bind3, l2_snd_mbox[3], l2_rec_mbox[3], 3, dbg);
+    siul2_mon[4] = new(l2_mon_bind4, l2_snd_mbox[4], l2_rec_mbox[4], 4, dbg);
+    siul2_mon[5] = new(l2_mon_bind5, l2_snd_mbox[5], l2_rec_mbox[5], 5, dbg);
+    siul2_mon[6] = new(l2_mon_bind6, l2_snd_mbox[6], l2_rec_mbox[6], 6, dbg);
+    siul2_mon[7] = new(l2_mon_bind7, l2_snd_mbox[7], l2_rec_mbox[7], 7, dbg);
+
+    order_chk = new(
+#ifndef FC_NO_NIU_T2
+                    niu_snd_mbox, niu_rec_mbox, 
+#endif
+                    dmu_snd_mbox, dmu_rec_mbox, ncu_rec_mbox,
+                    l2_snd_mbox[0], l2_rec_mbox[0],
+                    l2_snd_mbox[1], l2_rec_mbox[1],
+                    l2_snd_mbox[2], l2_rec_mbox[2],
+                    l2_snd_mbox[3], l2_rec_mbox[3],
+                    l2_snd_mbox[4], l2_rec_mbox[4],
+                    l2_snd_mbox[5], l2_rec_mbox[5],
+                    l2_snd_mbox[6], l2_rec_mbox[6],
+                    l2_snd_mbox[7], l2_rec_mbox[7],
+                    dbg);
+
+  } join
+
+  //L2 monitors
+  fork
+    {
+      if (!get_plus_arg(CHECK, "cpxorder_disable"))
+      MonitorCPX();
+    }
+    {
+#ifndef GATESIM
+      if (!get_plus_arg(CHECK, "l2jbi_disable"))      
+      CheckJbiInvBeforeAck();
+#endif
+    }
+  join none
+
+  if (get_plus_arg(CHECK, "siu_ncu_mondo_chk_on"))
+  {
+    siu_ncu_mondo_chk = new(mondo_ncu_bind);
+  }
+
+#ifndef RXC_SAT
+#ifndef MAC_SAT
+
+#ifndef FC_NO_NIU_T2
+  if ( get_plus_arg(CHECK, "RX_TEST") ) {
+          niu_rxdma_wrchk = new;
+  }
+#endif
+
+#endif
+#endif
+
+#ifndef FC_NO_NIU_T2
+if ( get_plus_arg(CHECK, "NIU_NO_PACKET_CHECKER") ) {
+}
+else {
+  if (mac_speed0 == 10000) {
+  pack_check[0] = new(0,8);        // Attach a pc to port 0
+  } else if (mac_speed0 == 1000) {
+  pack_check[0] = new(0,1);        // Attach a pc to port 0
+  }
+  else {
+  pack_check[0] = new(0,0);       // Attach a pc to port 0
+  }
+
+  if (mac_speed1 == 10000) {
+  pack_check[1] = new(1,8);        // Attach a pc to port 1
+  } else
+  if (mac_speed1 == 1000) {
+  pack_check[1] = new(1,1);       // Attach a pc to port 1
+  }
+  else {
+  pack_check[1] = new(1,0);       // Attach a pc to port 1
+  }
+}
+#endif
+
+  fork
+    ras_injector = new(
+#ifndef FC_NO_NIU_T2
+                        niu_sii_inj_bind, 
+#endif
+                        dmu_sii_inj_bind, 
+#ifndef FC_NO_NIU_T2
+                        sio_niu_inj_bind,
+#endif
+                       sio_dmu_inj_bind, l2_0_sio_inj_bind, l2_1_sio_inj_bind,
+                       l2_2_sio_inj_bind, l2_3_sio_inj_bind, l2_4_sio_inj_bind,
+                       l2_5_sio_inj_bind, l2_6_sio_inj_bind, l2_7_sio_inj_bind,
+                       sii_ncu_inj_bind, dbg);
+  join none
+
+#ifndef GATESIM
+  ras_interrupt = new (1000); // interrupt itme out = 1000
+#endif
+#ifndef FC_NO_NIU_T2
+  sioniu_errmon = new(sioniu_errmon_bind, dbg);
+#endif
+  siodmu_errmon = new(siodmu_errmon_bind, dbg);
+
+//// OK, all setup is done. Do the testing ////  
+  
+  gUtil.wait4termination(gParam.maxCycle);  // this task running in background
+
+
+  //============= start of big testcases(s) fork/join ==================
+  // THIS FORK IS FOR FORKING TESTCASES, DO NOT ADD ANYTHING ELSE HERE.
+  // YOUR BENCH CODE GOES ABOVE, BEFORE TESTCASES START.
+  //====================================================================
+
+  fork
+  {  //---- this thread runs PEU diag --------
+#ifndef FC_NO_PEU_VERA    
+    //-----------------------------------------------------------------------------------
+    //  PEU section
+    // Executing the PEU diag here
+    //-----------------------------------------------------------------------------------
+    //
+    if (PEU_Test_En == 1) {
+      // call this to stop verilog from doing $finish once the asm finishes
+      //verilog_set_no_verilog_finish(); // only Vera can finish the simulation
+      // Since peutest.execute() never seems to return right now, doing the above
+      // will cause the sim to run forever.
+      PR_NORMAL(dispmonScope, MON_NORMAL,"PEU Diag Starting Now ; Later it will be initialization of PEU");
+      repeat (40) @(posedge probe_if.clk);
+      PiuCsrs = new();
+      peutest = new();
+
+      PR_NORMAL(dispmonScope, MON_NORMAL,"PEU B4 Test.Execute. Waiting for assembly to enable peutest");
+      sync (ALL, e_StartPEUTest);
+      PR_NORMAL(dispmonScope, MON_NORMAL,"PEU B4 Test.Execute. Done Waiting for assembly to enable peutest");
+      peutest.execute(); // THIS BETTER BLOCK UNTIL DONE!!!
+    }
+#endif
+  }
+
+
+
+  { //---- this thread invokes vera diag when use JTAG driver -----
+#ifdef USE_JTAG_DRIVER  
+//    if (!jtag_reset_done)
+//      wait_var(jtag_reset_done); // wait for JTAG TAP is reseted.
+
+    // skip this stuff when vera diag wants to run very early on (reset diag).
+    //if (! mChkPlusarg(vera_driven_reset)) {
+    // call this to stop verilog from doing $finish once the asm finishes
+    verilog_set_no_verilog_finish(); // only Vera can finish the simulation
+#ifndef GATESIM
+    shScanCapture = new(gDbg); // shadow scan capture whenever tcu_shscan_scan_en = '1'
+#endif
+
+    TCU_Test_En = 1;
+    TCU_DONE = 0;
+    PR_NORMAL(dispmonScope, MON_NORMAL, psprintf("Number of Cores Available: %d", numberOfCores));
+
+    PR_NORMAL(dispmonScope, MON_NORMAL, psprintf("Number of Cores Available: %d", numberOfCores));
+    bootedThreads = gUtil.getThreadEnables();  // get 64-bit finish_mask
+    PR_NORMAL(dispmonScope, MON_NORMAL, psprintf("Number of threads enabled: %d", bootedThreads));
+    
+    tcuerrorcount = tcu_diag(gDbg); // run vera diag
+    TCU_DONE = 1;
+    PR_NORMAL(dispmonScope, MON_NORMAL,"DEBUG : TCU Vera Diag completed");
+
+#endif
+  }
+
+  { //--- use this thread to run non tcu/peu vera diag --------------------
+    if (gParam.veraDiagName !== null) {
+      // call this to stop verilog from doing $finish once the asm finishes
+      //verilog_set_no_verilog_finish(); // only Vera can finish the simulation
+      // Run the testcase
+      // TestCase testCase = new(); // NEEDS to be blocking
+      // or block here
+      // printf("DEBUG : Other Vera Diag Has Completed \n");
+    }
+  }
+
+  { //----- thread to wait for assembly diag to complete------
+    if (!get_plus_arg(CHECK, "nowait_asmdiag_done") && gParam.asmDiagName !== null) {
+      // if you don't want to wait for asm code to finish,
+      // put a condition here other than "1".
+      // MUST be off of time zero or sim_status will X -> 0!
+      repeat (2) @(posedge probe_if.clk); 
+      if (asmDiagRun) @(probe_if.sim_status); // verilog half is done
+      asmDiagDone = 1; // indicate Assembly diag done
+      PR_NORMAL(dispmonScope, MON_NORMAL,"DEBUG : Assembly Diag Has Completed");
+#ifndef FC_NO_PEU_VERA
+      // check whether the peu transations have completed
+      if (PEU_Test_En == 1) peutest.CheckIfDone();
+#endif
+    }
+  }
+  join all // JOIN ALL this may require assembly code to run and finish!
+
+  //==========================================================================
+  //============= end of big testcase fork/join ==============================
+  //==========================================================================
+  
+#ifndef FC_NO_NIU_T2
+  // All final wrapup messages etc. here. Assumes an assembly diag
+  // ran and passed. If an assembly diag ran and failed this is a don't care.
+  if (probe_if.sim_status[ASM_PASS]) {
+    // wait for all packets in flight to be checked
+    if ( get_plus_arg(CHECK, "RX_TEST") ) {
+      sync (ALL, RX_chk_done);
+      PR_NORMAL(dispmonScope, MON_NORMAL,"Synced on Event RX_chk_done");
+    }
+  }
+#endif
+  if (TCU_Test_En == 1) {
+    gDbg.errors += tcuerrorcount; // error count from running tcu diag
+  }
+
+#ifndef FC_NO_PEU_VERA
+  if (PEU_Test_En == 1) {
+    gDbg.errors += be_msg.get_error_count();
+    gDbg.warnings += be_msg.get_warning_count();
+    MyReport.report_test_complete();
+    PR_NORMAL(dispmonScope, MON_NORMAL,"DEBUG : A PEU diag ran.\n");
+  }
+#endif
+
+
+  // let vera check for errors, print pass/fail only if
+  // verilog did not see an error!!!
+  if (probe_if.sim_status[ASM_ERR])
+    // have verilog error so tell exitBench
+    gUtil.exitBench(*,*,1,1); // (scope, message, noPrint, externalFail)
+  else
+    // will check gDbg.errors & gDbg.warnings
+    gUtil.exitBench();
+  
+
+}  // end of main vera program (ie. program fc_test)

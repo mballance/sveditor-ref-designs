@@ -1,0 +1,188 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: CTContextBase.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "CTVerifObjectBase.vrh"
+#include "CTStrategyBase.vrh"
+#include "CTTransactionID.vrh"
+#include "cReport.vrh"
+
+virtual class CTContextBase extends CTVerifObject {
+  integer       StratDone = 0;
+  integer       NumStrat;
+  string        Name = "";
+  ReportClass   ContextReport = new;
+
+  local bit     HangDetect = 0;
+  local integer WaitCount;
+
+  // This object is a triplet of ID information, but only context ID is set at this level.
+  protected    CTTransactionID      ID = new;  
+
+  // This object is a reference to a strategy object that could potentially be
+  // instantiated in a test.
+  protected    CTStrategyBase MyStrategy;
+
+  //This tracks the auto-generated context ID numbers
+  local static integer  NextContextID = 0;
+
+  ////////////////////////////////////////////////////////////////////////////////////
+  // These super-class virtual methods should be overridden by concrete
+  // context classes. The step of the Execute template method, represented by each 
+  // of these methods, will be skipped if an implementation is not provided in a 
+  // concrete class.
+  //
+  // ProvideStrategy
+  // ---------------
+  // The purpose of this method is to provide the next strategy to 
+  // be forked off as part of a concurrent group. This method can pass
+  // through a reference to a strategy that was selected and instantiated
+  // in a test, or alternatively, this method can select and instantiate
+  // the strategy itself. There is great flexibility to either approach.
+  virtual protected function CTStrategyBase ProvideStrategy() {}
+  //
+  // FinalizeParms
+  // -------------
+  // Once a final strategy is selected, its parameters must be finalized.
+  // Like strategies themselves, parameters can either be set in a test or
+  // chosen by the context. This method takes a Strategy and initializes any
+  // parameters that were not set in the context.
+  virtual protected function CTStrategyBase FinalizeParms(CTStrategyBase S) {}
+  //
+  // CheckParms
+  // ----------
+  // After a final set of parameters is chosen, it can be checked for consistency
+  // before proceeding. This method scans the final parameters to determine
+  // if the set is consistent (i.e., no mutually conflicting or impossible values).
+  // The consequence of finding a bad parameter set is left up to the implementor.
+  // The set can be made consistent (this is the reason that S is a var parameter)
+  // or an error can be signaled.
+  // Note: This task does not need to be implemented.
+  virtual protected task    CheckParms(var CTStrategyBase S) {}
+  //
+  // DelayIssue
+  // ----------
+  // This method controls the rate at which strategies are created and launched.
+  // This is useful for two reasons:
+  //   1. To vary the stimulus for the DUT, it provides a variable delay between the start of 
+  //      strategies.
+  //   2. It allows prior strategies to make progress while subsequent strategies are in
+  //      the process of being created and launched.
+  //
+  // It is *highly recommended* that every derived context defines DelayIssue with
+  // at least a single "@(posedge CLOCK)" to make simulation progress before all
+  // strategies are created.
+  virtual protected task    DelayIssue () {}
+  ////////////////////////////////////////////////////////////////////////////////////
+
+  // Test writers will presuppose that each context has an Execute method.
+  // This Execute template method should be generic enough to be used
+  // by most concrete contexts. However, in rare cases where an alternate
+  // pattern of execution is required, this method can be overridden.
+  //
+  // At the context level, "Execute" is a command to fork a number (NumStrat) of
+  // independent strategy treads. NumStrat is set by the test writer.
+  virtual task Execute() {
+    shadow integer StratNum; //Number assocated with the next strategy to be launched
+    CTStrategyBase FinalStrategy;
+
+    // The number of strategy threads that are forked (NumStrat) is set
+    // by the client test.
+    ContextReport.report(RTYP_INFO, "Starting Context %s ID = %0d", 
+			   Name,
+			   ID.GetContextID()); 
+    for (StratDone = 0, StratNum=1; StratNum<=NumStrat; ++StratNum) {
+
+      //Wait for a user-defined synchronization event
+      DelayIssue();
+      
+      // There are five distinct steps in setting up and launching a strategy thread.
+      fork 
+	{
+	  // Step 1:
+	  FinalStrategy = ProvideStrategy();
+      
+	  // Step 2:
+	  FinalStrategy = FinalizeParms(FinalStrategy);
+
+	  // Step 3:
+	  CheckParms(FinalStrategy);
+
+	  // Step 4:
+	  // If it made it this far, give the strategy a unique identifier.
+	  FinalStrategy.SetID(ID.GetContextID(), StratNum);
+
+	  // Step 5:
+	  // Kick it off.
+	  FinalStrategy.RunThread();
+	  ++StratDone;
+
+	}
+      join none
+    }
+
+    // This loop works like a breakable wait_child() and 
+    // causes Execute to block until all its strategies are
+    // complete.
+    while (StratDone < NumStrat) {
+
+      if (HangDetect) {
+	--WaitCount;
+	if (WaitCount <= 0)
+	  error("Hang Detected In Context %s ID = %0d\n", Name, ID.GetContextID());
+      }
+
+      @(posedge CLOCK);
+    }
+  }
+
+  task new (string Name = "") {
+    //Auto-increment context ID
+    this.Name = Name;
+    ID.SetContextID(++NextContextID);
+  }
+
+  task SetHangDetect(integer HangTime) {
+    
+    if (HangTime <= 0)
+      HangDetect = 0;
+    else {
+      HangDetect = 1;
+      WaitCount = HangTime;
+    }
+      
+  }
+
+}
+

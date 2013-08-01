@@ -1,0 +1,350 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: fcShadowScanClass.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+// defines
+#include "defines.vri"
+#include "std_display_defines.vri"
+
+#include "std_display_class.vrh"
+#include "fc_top_defines.vri"
+
+#include "fc_shadow_scan.if.vrh"
+
+#define CLASSNAME fcShadowScanClass
+
+class CLASSNAME {
+  
+  local string className = "fcShadowScanClass";
+  local StandardDisplay gDbg;
+
+  fc_shadow_scan__port fc_shadow_scan_port = fc_shadow_scan_bind;
+  integer spcThreadId;
+
+  bit [117:0] spc0_shadow_scan;
+#ifndef RTL_NO_SPC1
+  bit [117:0] spc1_shadow_scan;
+#endif
+#ifndef RTL_NO_SPC2
+  bit [117:0] spc2_shadow_scan;
+#endif
+#ifndef RTL_NO_SPC3
+  bit [117:0] spc3_shadow_scan;
+#endif
+#ifndef RTL_NO_SPC4
+  bit [117:0] spc4_shadow_scan;
+#endif
+#ifndef RTL_NO_SPC5
+  bit [117:0] spc5_shadow_scan;
+#endif
+#ifndef RTL_NO_SPC6
+  bit [117:0] spc6_shadow_scan;
+#endif
+#ifndef RTL_NO_SPC7
+  bit [117:0] spc7_shadow_scan;
+#endif
+
+  bit [141:0] l2t0_shadow_scan;
+  bit [141:0] l2t1_shadow_scan;
+  bit [141:0] l2t2_shadow_scan;
+  bit [141:0] l2t3_shadow_scan;
+  bit [141:0] l2t4_shadow_scan;
+  bit [141:0] l2t5_shadow_scan;
+  bit [141:0] l2t6_shadow_scan;
+  bit [141:0] l2t7_shadow_scan;
+
+  task new(StandardDisplay dbgHndl);
+  function string getShadowScanValue(string cluster);
+  function integer getSpcThreadId();
+}
+
+task CLASSNAME::new(StandardDisplay dbgHndl) {
+  this.gDbg = dbgHndl;
+  fork
+  {
+    spcThreadId = fc_shadow_scan_port.$spc_shadow_scan_id;
+    while (1) {
+     @(posedge fc_shadow_scan_port.$spc_shadow_scan_en async);
+     spcThreadId = fc_shadow_scan_port.$spc_shadow_scan_id;
+     spc0_shadow_scan = fc_shadow_scan_port.$spc0_shadow_scan_bits;
+     PR_NORMAL(className, MON_NORMAL, psprintf("Captured SPC0 Thread %d Shadow scan bits", spcThreadId));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TL for last trap: %h", spc0_shadow_scan[2:0]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TT for last trap: %h", spc0_shadow_scan[11:3]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TPC for last trap: %h", spc0_shadow_scan[57:12]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TL: %b", spc0_shadow_scan[60:58]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("HPSTATE.TLZ: %b", spc0_shadow_scan[61]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.IE: %b", spc0_shadow_scan[62]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.PRIV: %b", spc0_shadow_scan[63]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.AM: %b", spc0_shadow_scan[64]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.PEF: %b", spc0_shadow_scan[65]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.RED: %b", spc0_shadow_scan[66]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.HPRIV: %b", spc0_shadow_scan[67]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.TCT: %b", spc0_shadow_scan[68]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.TLE: %b", spc0_shadow_scan[69]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.CLE: %b", spc0_shadow_scan[70]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("HPSTATE.IBE: %b", spc0_shadow_scan[71]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("VA: %h", spc0_shadow_scan[117:72]));
+#ifndef RTL_NO_SPC1
+     spc1_shadow_scan = fc_shadow_scan_port.$spc1_shadow_scan_bits;
+     PR_NORMAL(className, MON_NORMAL, psprintf("Captured SPC1 Thread %d Shadow scan bits", spcThreadId));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TL for last trap: %h", spc1_shadow_scan[2:0]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TT for last trap: %h", spc1_shadow_scan[11:3]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TPC for last trap: %h", spc1_shadow_scan[57:12]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TL: %b", spc1_shadow_scan[60:58]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("HPSTATE.TLZ: %b", spc1_shadow_scan[61]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.IE: %b", spc1_shadow_scan[62]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.PRIV: %b", spc1_shadow_scan[63]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.AM: %b", spc1_shadow_scan[64]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.PEF: %b", spc1_shadow_scan[65]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.RED: %b", spc1_shadow_scan[66]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.HPRIV: %b", spc1_shadow_scan[67]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.TCT: %b", spc1_shadow_scan[68]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.TLE: %b", spc1_shadow_scan[69]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.CLE: %b", spc1_shadow_scan[70]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("HPSTATE.IBE: %b", spc1_shadow_scan[71]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("VA: %h", spc1_shadow_scan[117:72]));
+#endif
+#ifndef RTL_NO_SPC2
+     spc2_shadow_scan = fc_shadow_scan_port.$spc2_shadow_scan_bits;
+     PR_NORMAL(className, MON_NORMAL, psprintf("Captured SPC2 Thread %d Shadow scan bits", spcThreadId));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TL for last trap: %h", spc2_shadow_scan[2:0]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TT for last trap: %h", spc2_shadow_scan[11:3]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TPC for last trap: %h", spc2_shadow_scan[57:12]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TL: %b", spc2_shadow_scan[60:58]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("HPSTATE.TLZ: %b", spc2_shadow_scan[61]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.IE: %b", spc2_shadow_scan[62]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.PRIV: %b", spc2_shadow_scan[63]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.AM: %b", spc2_shadow_scan[64]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.PEF: %b", spc2_shadow_scan[65]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.RED: %b", spc2_shadow_scan[66]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.HPRIV: %b", spc2_shadow_scan[67]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.TCT: %b", spc2_shadow_scan[68]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.TLE: %b", spc2_shadow_scan[69]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.CLE: %b", spc2_shadow_scan[70]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("HPSTATE.IBE: %b", spc2_shadow_scan[71]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("VA: %h", spc2_shadow_scan[117:72]));
+#endif
+#ifndef RTL_NO_SPC3
+     spc3_shadow_scan = fc_shadow_scan_port.$spc3_shadow_scan_bits;
+     PR_NORMAL(className, MON_NORMAL, psprintf("Captured SPC3 Thread %d Shadow scan bits", spcThreadId));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TL for last trap: %h", spc3_shadow_scan[2:0]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TT for last trap: %h", spc3_shadow_scan[11:3]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TPC for last trap: %h", spc3_shadow_scan[57:12]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TL: %b", spc3_shadow_scan[60:58]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("HPSTATE.TLZ: %b", spc3_shadow_scan[61]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.IE: %b", spc3_shadow_scan[62]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.PRIV: %b", spc3_shadow_scan[63]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.AM: %b", spc3_shadow_scan[64]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.PEF: %b", spc3_shadow_scan[65]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.RED: %b", spc3_shadow_scan[66]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.HPRIV: %b", spc3_shadow_scan[67]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.TCT: %b", spc3_shadow_scan[68]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.TLE: %b", spc3_shadow_scan[69]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.CLE: %b", spc3_shadow_scan[70]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("HPSTATE.IBE: %b", spc3_shadow_scan[71]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("VA: %h", spc3_shadow_scan[117:72]));
+#endif
+#ifndef RTL_NO_SPC4
+     spc4_shadow_scan = fc_shadow_scan_port.$spc4_shadow_scan_bits;
+     PR_NORMAL(className, MON_NORMAL, psprintf("Captured SPC4 Thread %d Shadow scan bits", spcThreadId));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TL for last trap: %h", spc4_shadow_scan[2:0]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TT for last trap: %h", spc4_shadow_scan[11:3]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TPC for last trap: %h", spc4_shadow_scan[57:12]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TL: %b", spc4_shadow_scan[60:58]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("HPSTATE.TLZ: %b", spc4_shadow_scan[61]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.IE: %b", spc4_shadow_scan[62]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.PRIV: %b", spc4_shadow_scan[63]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.AM: %b", spc4_shadow_scan[64]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.PEF: %b", spc4_shadow_scan[65]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.RED: %b", spc4_shadow_scan[66]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.HPRIV: %b", spc4_shadow_scan[67]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.TCT: %b", spc4_shadow_scan[68]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.TLE: %b", spc4_shadow_scan[69]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.CLE: %b", spc4_shadow_scan[70]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("HPSTATE.IBE: %b", spc4_shadow_scan[71]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("VA: %h", spc4_shadow_scan[117:72]));
+#endif
+#ifndef RTL_NO_SPC5
+     spc5_shadow_scan = fc_shadow_scan_port.$spc5_shadow_scan_bits;
+     PR_NORMAL(className, MON_NORMAL, psprintf("Captured SPC5 Thread %d Shadow scan bits", spcThreadId));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TL for last trap: %h", spc5_shadow_scan[2:0]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TT for last trap: %h", spc5_shadow_scan[11:3]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TPC for last trap: %h", spc5_shadow_scan[57:12]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TL: %b", spc5_shadow_scan[60:58]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("HPSTATE.TLZ: %b", spc5_shadow_scan[61]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.IE: %b", spc5_shadow_scan[62]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.PRIV: %b", spc5_shadow_scan[63]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.AM: %b", spc5_shadow_scan[64]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.PEF: %b", spc5_shadow_scan[65]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.RED: %b", spc5_shadow_scan[66]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.HPRIV: %b", spc5_shadow_scan[67]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.TCT: %b", spc5_shadow_scan[68]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.TLE: %b", spc5_shadow_scan[69]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.CLE: %b", spc5_shadow_scan[70]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("HPSTATE.IBE: %b", spc5_shadow_scan[71]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("VA: %h", spc5_shadow_scan[117:72]));
+#endif
+#ifndef RTL_NO_SPC6
+     spc6_shadow_scan = fc_shadow_scan_port.$spc6_shadow_scan_bits;
+     PR_NORMAL(className, MON_NORMAL, psprintf("Captured SPC6 Thread %d Shadow scan bits", spcThreadId));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TL for last trap: %h", spc6_shadow_scan[2:0]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TT for last trap: %h", spc6_shadow_scan[11:3]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TPC for last trap: %h", spc6_shadow_scan[57:12]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TL: %b", spc6_shadow_scan[60:58]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("HPSTATE.TLZ: %b", spc6_shadow_scan[61]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.IE: %b", spc6_shadow_scan[62]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.PRIV: %b", spc6_shadow_scan[63]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.AM: %b", spc6_shadow_scan[64]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.PEF: %b", spc6_shadow_scan[65]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.RED: %b", spc6_shadow_scan[66]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.HPRIV: %b", spc6_shadow_scan[67]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.TCT: %b", spc6_shadow_scan[68]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.TLE: %b", spc6_shadow_scan[69]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.CLE: %b", spc6_shadow_scan[70]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("HPSTATE.IBE: %b", spc6_shadow_scan[71]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("VA: %h", spc6_shadow_scan[117:72]));
+#endif
+#ifndef RTL_NO_SPC7
+     spc7_shadow_scan = fc_shadow_scan_port.$spc7_shadow_scan_bits;
+     PR_NORMAL(className, MON_NORMAL, psprintf("Captured SPC7 Thread %d Shadow scan bits", spcThreadId));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TL for last trap: %h", spc7_shadow_scan[2:0]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TT for last trap: %h", spc7_shadow_scan[11:3]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TPC for last trap: %h", spc7_shadow_scan[57:12]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("TL: %b", spc7_shadow_scan[60:58]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("HPSTATE.TLZ: %b", spc7_shadow_scan[61]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.IE: %b", spc7_shadow_scan[62]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.PRIV: %b", spc7_shadow_scan[63]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.AM: %b", spc7_shadow_scan[64]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.PEF: %b", spc7_shadow_scan[65]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.RED: %b", spc7_shadow_scan[66]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.HPRIV: %b", spc7_shadow_scan[67]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.TCT: %b", spc7_shadow_scan[68]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.TLE: %b", spc7_shadow_scan[69]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("PSTATE.CLE: %b", spc7_shadow_scan[70]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("HPSTATE.IBE: %b", spc7_shadow_scan[71]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("VA: %h", spc7_shadow_scan[117:72]));
+#endif
+    }
+  }
+  {
+    while (1) {
+     @(posedge fc_shadow_scan_port.$l2t_shadow_scan_en async);
+     l2t0_shadow_scan = fc_shadow_scan_port.$l2t0_shadow_scan_bits;
+     l2t1_shadow_scan = fc_shadow_scan_port.$l2t1_shadow_scan_bits;
+     l2t2_shadow_scan = fc_shadow_scan_port.$l2t2_shadow_scan_bits;
+     l2t3_shadow_scan = fc_shadow_scan_port.$l2t3_shadow_scan_bits;
+     l2t4_shadow_scan = fc_shadow_scan_port.$l2t4_shadow_scan_bits;
+     l2t5_shadow_scan = fc_shadow_scan_port.$l2t5_shadow_scan_bits;
+     l2t6_shadow_scan = fc_shadow_scan_port.$l2t6_shadow_scan_bits;
+     l2t7_shadow_scan = fc_shadow_scan_port.$l2t7_shadow_scan_bits;
+
+     PR_NORMAL(className, MON_NORMAL, psprintf("Captured L2T Shadow scan bits"));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T0 Error Address Register: %h", l2t0_shadow_scan[35:0]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T0 Notdata Error Register: %h", l2t0_shadow_scan[83:36]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T0 Error Status Register: %h", l2t0_shadow_scan[141:84]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T1 Error Address Register: %h", l2t1_shadow_scan[35:0]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T1 Notdata Error Register: %h", l2t1_shadow_scan[83:36]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T1 Error Status Register: %h", l2t1_shadow_scan[141:84]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T2 Error Address Register: %h", l2t2_shadow_scan[35:0]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T2 Notdata Error Register: %h", l2t2_shadow_scan[83:36]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T2 Error Status Register: %h", l2t2_shadow_scan[141:84]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T3 Error Address Register: %h", l2t3_shadow_scan[35:0]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T3 Notdata Error Register: %h", l2t3_shadow_scan[83:36]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T3 Error Status Register: %h", l2t3_shadow_scan[141:84]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T4 Error Address Register: %h", l2t4_shadow_scan[35:0]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T4 Notdata Error Register: %h", l2t4_shadow_scan[83:36]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T4 Error Status Register: %h", l2t4_shadow_scan[141:84]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T5 Error Address Register: %h", l2t5_shadow_scan[35:0]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T5 Notdata Error Register: %h", l2t5_shadow_scan[83:36]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T5 Error Status Register: %h", l2t5_shadow_scan[141:84]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T6 Error Address Register: %h", l2t6_shadow_scan[35:0]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T6 Notdata Error Register: %h", l2t6_shadow_scan[83:36]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T6 Error Status Register: %h", l2t6_shadow_scan[141:84]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T7 Error Address Register: %h", l2t7_shadow_scan[35:0]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T7 Notdata Error Register: %h", l2t7_shadow_scan[83:36]));
+     PR_NORMAL(className, MON_NORMAL, psprintf("L2T7 Error Status Register: %h", l2t7_shadow_scan[141:84]));
+    }
+  }
+  join none
+}
+
+function string CLASSNAME::getShadowScanValue(string cluster) {
+  string outStr = "";
+  string tmpStr = "";
+
+  tmpStr = cluster.substr(0,2);
+  if (tmpStr.match("spc")) { 
+      sprintf(outStr, "%b",spc0_shadow_scan);
+#ifndef RTL_NO_SPC1
+      sprintf(tmpStr, "%b",spc1_shadow_scan);
+      outStr = {outStr,tmpStr};
+#endif
+#ifndef RTL_NO_SPC2
+      sprintf(tmpStr, "%b",spc2_shadow_scan);
+      outStr = {outStr,tmpStr};
+#endif
+#ifndef RTL_NO_SPC3
+      sprintf(tmpStr, "%b",spc3_shadow_scan);
+      outStr = {outStr,tmpStr};
+#endif
+#ifndef RTL_NO_SPC4
+      sprintf(tmpStr, "%b",spc4_shadow_scan);
+      outStr = {outStr,tmpStr};
+#endif
+#ifndef RTL_NO_SPC5
+      sprintf(tmpStr, "%b",spc5_shadow_scan);
+      outStr = {outStr,tmpStr};
+#endif
+#ifndef RTL_NO_SPC6
+      sprintf(tmpStr, "%b",spc6_shadow_scan);
+      outStr = {outStr,tmpStr};
+#endif
+#ifndef RTL_NO_SPC7
+      sprintf(tmpStr, "%b",spc7_shadow_scan);
+      outStr = {outStr,tmpStr};
+#endif
+  }
+  else if (tmpStr.match("l2t")) { 
+   sprintf(outStr, "%b",{l2t0_shadow_scan,l2t1_shadow_scan,l2t2_shadow_scan,l2t3_shadow_scan,l2t4_shadow_scan,l2t5_shadow_scan,l2t6_shadow_scan,l2t7_shadow_scan});
+  }
+  else {
+     PR_ERROR(className, MON_ERROR, psprintf("Given string: %s does not match spc or l2t", cluster));
+  }
+  PR_ALWAYS(className, MON_ALWAYS, psprintf("Captured shadow scan value for %s : %s", cluster, outStr));
+  getShadowScanValue = outStr;
+}
+
+function integer CLASSNAME::getSpcThreadId() {
+  getSpcThreadId = spcThreadId;
+}

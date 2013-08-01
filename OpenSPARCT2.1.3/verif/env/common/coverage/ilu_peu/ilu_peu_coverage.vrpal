@@ -1,0 +1,1974 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilu_peu_coverage.vrpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "plusArgMacros.vri"
+
+#inc "ilu_peu_cov_inc.pal"
+// #include "std_display_class.vrh"
+// #include "std_display_defines.vri"
+// # include "ilu_peu_defines.vrh"
+
+#include "ilu_peu_cov.if.vrh"
+  //#include "ILU_PEU_cov_ports_binds.vrh"
+
+class ilu_peu_intf_coverage
+{	
+  // for dispmon
+//    StandardDisplay dbg;
+  //  local string 	  myname;
+ 
+  event y2k_rcd_enq_event_trig; 
+  event y2k_rel_enq_event_trig; 
+  event y2k_rel1_enq_event_trig; 
+  event y2k_rel2_enq_event_trig; 
+  event k2y_rcd_enq_event_trig; 
+  event k2y_rel_enq_event_trig; 
+  event k2y_rel1_enq_event_trig; 
+  event k2y_rel2_enq_event_trig; 
+  event y2k_buf_addr_vld_monitor_event_trig; 
+  event k2y_buf_addr_vld_monitor_event_trig; 
+  event k2y_dou_vld_event_trig; 
+  event dmu_psr_rate_event_trig; 
+
+//-----------------ILU-DMU-egress DP-----------
+  bit y2k_buf_addr_vld_monitor = 1'b0;
+  bit k2y_buf_addr_vld_monitor = 1'b0;
+  reg [1:0]     ilu_dmu_hdr_F;
+  reg [4:0]     ilu_dmu_hdr_Type;
+  reg [6:0]     ilu_dmu_hdr_F_Type;
+  reg [2:0]     ilu_dmu_hdr_TC;
+  reg [1:0]     ilu_dmu_hdr_Atr;
+  reg [9:0]     ilu_dmu_hdr_Len;
+  reg [15:0]    ilu_dmu_hdr_ReqID;
+  reg [7:0]     ilu_dmu_hdr_TLPTag;
+  reg [3:0]     ilu_dmu_hdr_LastDWBE;
+  reg [3:0]     ilu_dmu_hdr_FirstDWBE;
+  reg [61:0]    ilu_dmu_hdr_Addr;
+  reg [2:0]     ilu_dmu_mps;
+  reg [4:0]     pec_ingress_rel;
+  reg [4:0]     pec_ingress_rel1;
+  reg [3:0]     pec_ingress_rel2;
+
+//-----------------ILU-DMU-egress--------------
+  reg [1:0]     dmu_ilu_hdr_F;
+  reg [4:0]     dmu_ilu_hdr_Type;
+  reg [6:0]     dmu_ilu_hdr_F_Type;
+  reg [2:0]     dmu_ilu_hdr_TC;
+  reg [1:0]     dmu_ilu_hdr_Atr;
+  reg [7:0]     dmu_ilu_hdr_Len;
+  reg [15:0]    dmu_ilu_hdr_ReqID;
+  reg [7:0]     dmu_ilu_hdr_TLPTag;
+  reg [3:0]     dmu_ilu_hdr_LastDWBE;
+  reg [3:0]     dmu_ilu_hdr_FirstDWBE;
+  reg [63:0]    dmu_ilu_hdr_Addr;
+  reg [5:0]     dmu_ilu_hdr_Dptr;
+  reg [8:0]     pec_egress_rel;
+  reg [4:0]     pec_egress_rel1;
+  reg [3:0]     pec_egress_rel2;
+
+  reg [4:0]     k2y_dou_dptr1;
+  bit           k2y_dou_err1;
+  bit           rx_b0sds0_var;
+  bit           rx_b0sds1_var;
+  bit           rx_b1sds0_var;
+  bit           rx_b1sds1_var;
+  bit           rx_b2sds0_var;
+  bit           rx_b2sds1_var;
+  bit           rx_b3sds0_var;
+  bit           rx_b3sds1_var;
+  bit           tx_b0sds0_var;
+  bit           tx_b0sds1_var;
+  bit           tx_b1sds0_var;
+  bit           tx_b1sds1_var;
+  bit           tx_b2sds0_var;
+  bit           tx_b2sds1_var;
+  bit           tx_b3sds0_var;
+  bit           tx_b3sds1_var;
+
+  //////ILU_PEU interface  //////
+
+
+  coverage_group ilu_dmu_ingress_coverage_group
+  {
+    const_sample_reference      = 1;
+    // sample_event = @(posedge dmu_ilu_coverage_ifc.y2k_rcd_enq  );
+    sample_event = sync (ANY, y2k_rcd_enq_event_trig);
+    #include "ilu_dmu_ingress_sample.vrh"
+  }
+
+  coverage_group ilu_dmu_ingress_data_coverage_group
+  {
+    const_sample_reference      = 1;
+    sample_event = sync (ANY, y2k_buf_addr_vld_monitor_event_trig);
+    #include "ilu_dmu_ingress_data_sample.vrh"
+  }
+
+  coverage_group ilu_dmu_ingress_rel_coverage_group
+  {
+    const_sample_reference      = 1;
+    sample_event = sync (ANY, y2k_rel_enq_event_trig, y2k_rel1_enq_event_trig, y2k_rel2_enq_event_trig);
+    #include "ilu_dmu_ingress_rel_sample.vrh"
+  }
+
+  coverage_group ilu_dmu_egress_coverage_group
+  {
+    const_sample_reference      = 1; 
+    sample_event = sync (ANY, k2y_rcd_enq_event_trig);
+    #include "ilu_dmu_egress_sample.vrh"
+  }
+
+  coverage_group ilu_dmu_egress_data_coverage_group
+  {
+    const_sample_reference      = 1; 
+//    sample_event = sync (ANY, k2y_buf_addr_vld_monitor_event_trig);
+    sample_event = sync (ANY, k2y_rcd_enq_event_trig);
+    #include "ilu_dmu_egress_data_sample.vrh"
+  }
+
+  coverage_group ilu_dmu_egress_rel_coverage_group
+  {
+    const_sample_reference      = 1;
+    sample_event = sync (ANY, k2y_rel_enq_event_trig, k2y_rel1_enq_event_trig, k2y_rel2_enq_event_trig);
+    #include "ilu_dmu_egress_rel_sample.vrh"
+  }
+
+  coverage_group ilu_dmu_d2p_req_coverage_group
+  {
+    sample_event = @(posedge dmu_ilu_coverage_ifc.ilu_clk  );
+          sample dmu_ilu_coverage_ifc.d2p_req_id_1
+          {
+                state s_0 (3'b000);
+                state s_1 (3'b101);
+                state s_2 (3'b111);
+          }
+
+          sample dmu_ilu_coverage_ifc.d2p_req_id_2
+          {
+                state s_0 (5'b00000);
+                state s_1 (5'b00101);
+                state s_2 (5'b01010);
+                state s_3 (5'b11111);
+          }
+
+          sample dmu_ilu_coverage_ifc.d2p_req_id_3
+          {
+                state s_0 (8'b00000000);
+                state s_1 (8'b00000101);
+                state s_2 (8'b00001010);
+                state s_3 (8'b11111111);
+          }
+
+  }
+
+  coverage_group ilu_dmu_dou_coverage_group
+  {
+    const_sample_reference      = 1; 
+    sample_event = sync (ANY, k2y_dou_vld_event_trig);
+    #include "ilu_dmu_dou_sample.vrh"
+  }
+
+  coverage_group ilu_peu_interface_psr_rate_rx_b0sds0_coverage_group
+  {
+    const_sample_reference      = 1;
+    sample_event = wait_var(rx_b0sds0_var);
+//    sample_event = sync (ANY, dmu_psr_rate_event_trig);
+//  sample_event = @(posedge dmu_ilu_coverage_ifc.ilu_clk && dmu_ilu_coverage_ifc.ccu_serdes_dtm );
+    sample dmu_ilu_coverage_ifc.dmu_psr_rate_scale_rx_b0sds0
+        {
+             state s_0 (2'b00);
+             state s_1 (2'b01);
+             state s_2 (2'b10);
+        }  
+  }
+  coverage_group ilu_peu_interface_psr_rate_rx_b0sds1_coverage_group
+  {
+    const_sample_reference      = 1;
+    sample_event = wait_var(rx_b0sds1_var);
+    sample dmu_ilu_coverage_ifc.dmu_psr_rate_scale_rx_b0sds1
+        {
+             state s_0 (2'b00);
+             state s_1 (2'b01);
+             state s_2 (2'b10);
+        }  
+  }
+  coverage_group ilu_peu_interface_psr_rate_rx_b1sds0_coverage_group
+  {
+    const_sample_reference      = 1;
+    sample_event = wait_var(rx_b1sds0_var);
+    sample dmu_ilu_coverage_ifc.dmu_psr_rate_scale_rx_b1sds0
+        {
+             state s_0 (2'b00);
+             state s_1 (2'b01);
+             state s_2 (2'b10);
+        }  
+  }
+  coverage_group ilu_peu_interface_psr_rate_rx_b1sds1_coverage_group
+  {
+    const_sample_reference      = 1;
+    sample_event = wait_var(rx_b1sds1_var);
+    sample dmu_ilu_coverage_ifc.dmu_psr_rate_scale_rx_b1sds1
+        {
+             state s_0 (2'b00);
+             state s_1 (2'b01);
+             state s_2 (2'b10);
+        }  
+  }
+  coverage_group ilu_peu_interface_psr_rate_rx_b2sds0_coverage_group
+  {
+    const_sample_reference      = 1;
+    sample_event = wait_var(rx_b2sds0_var);
+    sample dmu_ilu_coverage_ifc.dmu_psr_rate_scale_rx_b2sds0
+        {
+             state s_0 (2'b00);
+             state s_1 (2'b01);
+             state s_2 (2'b10);
+        }  
+  }
+  coverage_group ilu_peu_interface_psr_rate_rx_b2sds1_coverage_group
+  {
+    const_sample_reference      = 1;
+    sample_event = wait_var(rx_b2sds1_var);
+    sample dmu_ilu_coverage_ifc.dmu_psr_rate_scale_rx_b2sds1
+        {
+             state s_0 (2'b00);
+             state s_1 (2'b01);
+             state s_2 (2'b10);
+        }  
+  }
+  coverage_group ilu_peu_interface_psr_rate_rx_b3sds0_coverage_group
+  {
+    const_sample_reference      = 1;
+    sample_event = wait_var(rx_b3sds0_var);
+    sample dmu_ilu_coverage_ifc.dmu_psr_rate_scale_rx_b3sds0
+        {
+             state s_0 (2'b00);
+             state s_1 (2'b01);
+             state s_2 (2'b10);
+        }  
+  }
+  coverage_group ilu_peu_interface_psr_rate_rx_b3sds1_coverage_group
+  {
+    const_sample_reference      = 1;
+    sample_event = wait_var(rx_b3sds1_var);
+    sample dmu_ilu_coverage_ifc.dmu_psr_rate_scale_rx_b3sds1
+        {
+             state s_0 (2'b00);
+             state s_1 (2'b01);
+             state s_2 (2'b10);
+        }  
+  }
+  coverage_group ilu_peu_interface_psr_rate_tx_b0sds0_coverage_group
+  {
+    const_sample_reference      = 1;
+    sample_event = wait_var(tx_b0sds0_var);
+    sample dmu_ilu_coverage_ifc.dmu_psr_rate_scale_tx_b0sds0
+        {
+             state s_0 (2'b00);
+             state s_1 (2'b01);
+             state s_2 (2'b10);
+        }  
+  }
+  coverage_group ilu_peu_interface_psr_rate_tx_b0sds1_coverage_group
+  {
+    const_sample_reference      = 1;
+    sample_event = wait_var(tx_b0sds1_var);
+    sample dmu_ilu_coverage_ifc.dmu_psr_rate_scale_tx_b0sds1
+        {
+             state s_0 (2'b00);
+             state s_1 (2'b01);
+             state s_2 (2'b10);
+        }  
+  }
+  coverage_group ilu_peu_interface_psr_rate_tx_b1sds0_coverage_group
+  {
+    const_sample_reference      = 1;
+    sample_event = wait_var(tx_b1sds0_var);
+    sample dmu_ilu_coverage_ifc.dmu_psr_rate_scale_tx_b1sds0
+        {
+             state s_0 (2'b00);
+             state s_1 (2'b01);
+             state s_2 (2'b10);
+        }  
+  }
+  coverage_group ilu_peu_interface_psr_rate_tx_b1sds1_coverage_group
+  {
+    const_sample_reference      = 1;
+    sample_event = wait_var(tx_b1sds1_var);
+    sample dmu_ilu_coverage_ifc.dmu_psr_rate_scale_tx_b1sds1
+        {
+             state s_0 (2'b00);
+             state s_1 (2'b01);
+             state s_2 (2'b10);
+        }  
+  }
+  coverage_group ilu_peu_interface_psr_rate_tx_b2sds0_coverage_group
+  {
+    const_sample_reference      = 1;
+    sample_event = wait_var(tx_b2sds0_var);
+    sample dmu_ilu_coverage_ifc.dmu_psr_rate_scale_tx_b2sds0
+        {
+             state s_0 (2'b00);
+             state s_1 (2'b01);
+             state s_2 (2'b10);
+        }  
+  }
+  coverage_group ilu_peu_interface_psr_rate_tx_b2sds1_coverage_group
+  {
+    const_sample_reference      = 1;
+    sample_event = wait_var(tx_b2sds1_var);
+    sample dmu_ilu_coverage_ifc.dmu_psr_rate_scale_tx_b2sds1
+        {
+             state s_0 (2'b00);
+             state s_1 (2'b01);
+             state s_2 (2'b10);
+        }  
+  }
+  coverage_group ilu_peu_interface_psr_rate_tx_b3sds0_coverage_group
+  {
+    const_sample_reference      = 1;
+    sample_event = wait_var(tx_b3sds0_var);
+    sample dmu_ilu_coverage_ifc.dmu_psr_rate_scale_tx_b3sds0
+        {
+             state s_0 (2'b00);
+             state s_1 (2'b01);
+             state s_2 (2'b10);
+        }  
+  }
+  coverage_group ilu_peu_interface_psr_rate_tx_b3sds1_coverage_group
+  {
+    const_sample_reference      = 1;
+    sample_event = wait_var(tx_b3sds1_var);
+    sample dmu_ilu_coverage_ifc.dmu_psr_rate_scale_tx_b3sds1
+        {
+             state s_0 (2'b00);
+             state s_1 (2'b01);
+             state s_2 (2'b10);
+        }  
+  }
+
+
+  coverage_group ilu_peu_interface_interrupt_coverage_group
+  {
+    const_sample_reference      = 1;
+    // sample_event = @(posedge dmu_ilu_coverage_ifc.ilu_clk  );
+    // sample_event = @(posedge dmu_ilu_coverage_ifc.peu_clk  );
+    // sample_event = @(posedge dmu_ilu_coverage_ifc.j2d_por_l  );
+    // work
+    // sample_event = @(posedge dmu_ilu_coverage_ifc.iol2clk);
+    // trying
+    sample_event = @(posedge dmu_ilu_coverage_ifc.ilu_clk  );
+
+    sample dmu_ilu_coverage_ifc.y2k_int_l
+        {
+             state y2k_int0 (0);
+             state y2k_int1 (1);
+        }  
+    sample dmu_ilu_coverage_ifc.p2d_ue_int
+        {
+             state p2d_ue_int0 (0);
+             state p2d_ue_int1 (1);
+        }  
+    sample dmu_ilu_coverage_ifc.p2d_ce_int
+        {
+             state p2d_ce_int0 (0);
+             state p2d_ce_int1 (1);
+        } 
+    sample dmu_ilu_coverage_ifc.p2d_oe_int
+        {
+             state p2d_oe_int0 (0);
+             state p2d_oe_int1 (1);
+        }  
+
+//    sample dmu_ilu_coverage_ifc.y2k_int_l,
+//           dmu_ilu_coverage_ifc.p2d_ue_int,
+//           dmu_ilu_coverage_ifc.p2d_ce_int,
+//           dmu_ilu_coverage_ifc.p2d_oe_int;
+//        {
+//           state y2k_int_l;
+//           state p2d_ue_int;
+//           state p2d_ce_int;
+//           state p2d_oe_int;
+//        }
+//     cross  ilu_peu_interrupts_cross_cov (
+//            dmu_ilu_coverage_ifc.y2k_int_l,
+// 	    dmu_ilu_coverage_ifc.p2d_ue_int,
+//       	    dmu_ilu_coverage_ifc.p2d_ce_int,
+//            dmu_ilu_coverage_ifc.p2d_oe_int );
+
+  }
+
+
+ task new(); 
+
+ // task set_cov_cond_bits ();
+ task set_cov_cond_bits ();
+
+
+} //class ilu_peu_intf_coverage
+
+task ilu_peu_intf_coverage::new() {
+     bit coverage_on; 
+
+     if (get_plus_arg (CHECK, "ilu_peu_intf_coverage") || get_plus_arg (CHECK, "coverage_on")) {
+       coverage_on = 1;
+     } else {
+       coverage_on = 0;
+     }
+
+     if (coverage_on) {
+       ilu_dmu_ingress_coverage_group                     = new();
+       ilu_dmu_ingress_data_coverage_group                = new();
+       ilu_dmu_ingress_rel_coverage_group                 = new();
+       ilu_dmu_egress_coverage_group	        	  = new(); 
+       ilu_dmu_egress_data_coverage_group                 = new();
+       ilu_dmu_egress_rel_coverage_group                  = new();
+       ilu_peu_interface_interrupt_coverage_group         = new();
+
+       set_cov_cond_bits(); 
+       printf("\n\n AC: Coverage turned on for ilu_peu objects\n\n");
+
+       
+     }
+  
+}
+
+ task ilu_peu_intf_coverage::set_cov_cond_bits()
+ { 
+   reg [115:0] pec_ingress_rcd;
+   reg [123:0] pec_egress_rcd;
+   printf("============= AC: start set_cov_cond_bits\n");
+   fork
+   {
+     // setting event trigger for y2k_rcd_enq
+     while (1)
+     {
+       @(posedge dmu_ilu_coverage_ifc.ilu_clk);
+
+        rx_b0sds0_var = dmu_ilu_coverage_ifc.dmu_psr_rate_scale_rx_b0sds0 ;
+        rx_b0sds1_var = dmu_ilu_coverage_ifc.dmu_psr_rate_scale_rx_b0sds1 ;
+        rx_b1sds0_var = dmu_ilu_coverage_ifc.dmu_psr_rate_scale_rx_b1sds0 ;
+        rx_b1sds1_var = dmu_ilu_coverage_ifc.dmu_psr_rate_scale_rx_b1sds1 ;
+        rx_b2sds0_var = dmu_ilu_coverage_ifc.dmu_psr_rate_scale_rx_b2sds0 ;
+        rx_b2sds1_var = dmu_ilu_coverage_ifc.dmu_psr_rate_scale_rx_b2sds1 ;
+        rx_b3sds0_var = dmu_ilu_coverage_ifc.dmu_psr_rate_scale_rx_b3sds0 ;
+        rx_b3sds1_var = dmu_ilu_coverage_ifc.dmu_psr_rate_scale_rx_b3sds1 ;
+        tx_b0sds0_var = dmu_ilu_coverage_ifc.dmu_psr_rate_scale_tx_b0sds0 ;
+        tx_b0sds1_var = dmu_ilu_coverage_ifc.dmu_psr_rate_scale_tx_b0sds1 ;
+        tx_b1sds0_var = dmu_ilu_coverage_ifc.dmu_psr_rate_scale_tx_b1sds0 ;
+        tx_b1sds1_var = dmu_ilu_coverage_ifc.dmu_psr_rate_scale_tx_b1sds1 ;
+        tx_b2sds0_var = dmu_ilu_coverage_ifc.dmu_psr_rate_scale_tx_b2sds0 ;
+        tx_b2sds1_var = dmu_ilu_coverage_ifc.dmu_psr_rate_scale_tx_b2sds1 ;
+        tx_b3sds0_var = dmu_ilu_coverage_ifc.dmu_psr_rate_scale_tx_b3sds0 ;
+        tx_b3sds1_var = dmu_ilu_coverage_ifc.dmu_psr_rate_scale_tx_b3sds1 ;
+        if (dmu_ilu_coverage_ifc.y2k_rcd_enq)
+
+          {
+           pec_ingress_rcd       = dmu_ilu_coverage_ifc.y2k_rcd[115:0];
+           ilu_dmu_hdr_F         = pec_ingress_rcd[115:114];
+           ilu_dmu_hdr_Type      = pec_ingress_rcd[113:109];
+           ilu_dmu_hdr_F_Type    = pec_ingress_rcd[115:109];
+           ilu_dmu_hdr_TC        = pec_ingress_rcd[108:106];
+           ilu_dmu_hdr_Atr       = pec_ingress_rcd[105:104];
+           ilu_dmu_hdr_Len       = pec_ingress_rcd[103:94];
+           ilu_dmu_hdr_ReqID     = pec_ingress_rcd[93:78];
+           ilu_dmu_hdr_TLPTag    = pec_ingress_rcd[77:70];
+           ilu_dmu_hdr_LastDWBE  = pec_ingress_rcd[69:66];
+           ilu_dmu_hdr_FirstDWBE = pec_ingress_rcd[65:62];
+           ilu_dmu_hdr_Addr      = pec_ingress_rcd[61:0];
+           ilu_dmu_mps           = dmu_ilu_coverage_ifc.y2k_mps; // max payload size
+           trigger (y2k_rcd_enq_event_trig);
+            printf("============= AC: cov: y2k_rcd_enq_event_trig triggered, %0d \n",get_time(LO));
+            //printf("============= y2k_rcd[115] = %d, y2k_rcd[114] = %d, %0d \n", dmu_ilu_coverage_ifc.y2k_rcd[115], dmu_ilu_coverage_ifc.y2k_rcd[114] );
+            //printf("============= y2k_rcd[115:0] = %x \n", dmu_ilu_coverage_ifc.y2k_rcd[115:0] );
+          }
+
+
+        if (dmu_ilu_coverage_ifc.k2y_rcd_enq)
+          {
+           pec_egress_rcd        = dmu_ilu_coverage_ifc.k2y_rcd[123:0];
+           dmu_ilu_hdr_F         = pec_egress_rcd[123:122];
+           dmu_ilu_hdr_Type      = pec_egress_rcd[121:117];
+           dmu_ilu_hdr_F_Type    = pec_egress_rcd[123:117];
+           dmu_ilu_hdr_TC        = pec_egress_rcd[116:114];
+           dmu_ilu_hdr_Atr       = pec_egress_rcd[113:112];
+           dmu_ilu_hdr_Len       = pec_egress_rcd[109:102];
+           dmu_ilu_hdr_ReqID     = pec_egress_rcd[101:86];
+           dmu_ilu_hdr_TLPTag    = pec_egress_rcd[85:78];
+           dmu_ilu_hdr_LastDWBE  = pec_egress_rcd[77:74];
+           dmu_ilu_hdr_FirstDWBE = pec_egress_rcd[73:70];
+           dmu_ilu_hdr_Addr      = pec_egress_rcd[69:6];
+           dmu_ilu_hdr_Dptr      = pec_egress_rcd[5:0];
+           trigger (k2y_rcd_enq_event_trig); 
+            printf("============= AC: cov: k2y_rcd_enq_event_trig triggered, TLPTag %0x  Addr %0x  %0d \n", dmu_ilu_hdr_TLPTag, dmu_ilu_hdr_Addr, get_time(LO));
+          }
+
+        // Egress datapath y2k_buf_addr_vld_monitor
+        if (dmu_ilu_coverage_ifc.y2k_buf_addr_vld_monitor)
+        {
+	    trigger (y2k_buf_addr_vld_monitor_event_trig);  
+            printf("============= AC: cov: y2k_buf_addr_vld_monitor_event_trig triggered, %0d \n",get_time(LO));
+        }
+
+        // Egress datapath y2k_rel_enq
+        if (dmu_ilu_coverage_ifc.y2k_rel_enq)
+        {
+           pec_ingress_rel       = dmu_ilu_coverage_ifc.y2k_rel_rcd[4:0];
+	   trigger (y2k_rel_enq_event_trig);  
+            printf("============= AC: cov: y2k_rel_enq_event_trig triggered, %0d \n",get_time(LO));
+        }
+
+        if (dmu_ilu_coverage_ifc.y2k_rel_enq)
+        {
+           if ( dmu_ilu_coverage_ifc.y2k_rel_rcd[8] === 1'b1 )
+           pec_ingress_rel1      = dmu_ilu_coverage_ifc.y2k_rel_rcd[4:0];
+	   trigger (y2k_rel1_enq_event_trig);  
+            printf("============= AC: cov: y2k_rel1_enq_event_trig triggered, %0d \n",get_time(LO));
+        }
+
+        if (dmu_ilu_coverage_ifc.y2k_rel_enq)
+        {
+           if ( dmu_ilu_coverage_ifc.y2k_rel_rcd[8] === 1'b0 )
+           pec_ingress_rel2      = dmu_ilu_coverage_ifc.y2k_rel_rcd[3:0];
+	   trigger (y2k_rel2_enq_event_trig);  
+            printf("============= AC: cov: y2k_rel2_enq_event_trig triggered, %0d \n",get_time(LO));
+        }
+
+        // Egress datapath y2k_buf_addr_vld_monitor
+        if (dmu_ilu_coverage_ifc.k2y_buf_addr_vld_monitor)
+        {
+	   trigger (k2y_buf_addr_vld_monitor_event_trig);  
+            printf("============= AC: cov: k2y_buf_addr_vld_monitor_event_trig triggered, %0d \n",get_time(LO));
+        }
+
+        // Egress datapath k2y_rel_enq
+        if (dmu_ilu_coverage_ifc.k2y_rel_enq)
+        {
+           pec_egress_rel        = dmu_ilu_coverage_ifc.k2y_rel_rcd[8:0];
+	   trigger (k2y_rel_enq_event_trig);  
+            printf("============= AC: cov: k2y_rel_enq_event_trig triggered, %0d \n",get_time(LO));
+        }
+
+        if (dmu_ilu_coverage_ifc.k2y_rel_enq)
+        {
+           if ( dmu_ilu_coverage_ifc.k2y_rel_rcd[8] === 1'b1 )
+           pec_egress_rel1       = dmu_ilu_coverage_ifc.k2y_rel_rcd[4:0];
+	   trigger (k2y_rel1_enq_event_trig);  
+            printf("============= AC: cov: k2y_rel1_enq_event_trig triggered, %0d \n",get_time(LO));
+        }
+
+        if (dmu_ilu_coverage_ifc.k2y_rel_enq)
+        {
+           if ( dmu_ilu_coverage_ifc.k2y_rel_rcd[8] === 1'b0 )
+           pec_egress_rel2       = dmu_ilu_coverage_ifc.k2y_rel_rcd[3:0];
+	   trigger (k2y_rel2_enq_event_trig);  
+            printf("============= AC: cov: k2y_rel2_enq_event_trig triggered, %0d \n",get_time(LO));
+        }
+
+        if (dmu_ilu_coverage_ifc.k2y_dou_vld)
+        {
+           k2y_dou_dptr1      = dmu_ilu_coverage_ifc.k2y_dou_dptr[4:0];
+           k2y_dou_err1       = dmu_ilu_coverage_ifc.k2y_dou_err;
+	   trigger (k2y_dou_vld_event_trig);  
+            printf("============= AC: cov: k2y_dou_vld_event_trig triggered, %0d \n",get_time(LO));
+        }
+
+        if (dmu_ilu_coverage_ifc.ccu_serdes_dtm)
+        {
+	   trigger (dmu_psr_rate_event_trig);  
+            printf("============= AC: cov: dmu_psr_rate_event_trig triggered, %0d \n",get_time(LO));
+        }
+
+         
+     } // end while 
+   }
+   join none
+ }
+
+
+
+
+class peu_registers_coverage
+{	
+  // event y2k_rcd_enq_event_trig; 
+  event oe_log_w_ld_event_trig;
+  event oe_int_en_w_ld_event_trig;
+  event oe_err_rw1c_event_trig; 
+  event oe_err_rw1s_event_trig; 
+  event peu_oe_err_cycle_afer_hw_set_event_trig; 
+
+  event ue_log_w_ld_event_trig;
+  event ue_int_en_w_ld_event_trig;
+  event ue_err_rw1c_event_trig;
+  event ue_err_rw1s_event_trig;
+  event peu_ue_err_cycle_afer_hw_set_event_trig;
+
+  event ce_log_w_ld_event_trig;
+  event ce_int_en_w_ld_event_trig;
+  event ce_err_rw1c_event_trig;
+  event ce_err_rw1s_event_trig;
+  event peu_ce_err_cycle_afer_hw_set_event_trig;
+
+  event peu_event_rw1c_event_trig;
+  event peu_event_rw1s_event_trig;
+  event peu_event_cycle_afer_hw_set_event_trig;
+
+  event peu_link_bit_error_counter_I_reg_cnt_bad_event_trig;
+
+  bit [63:0] peu_oe_err_hw_set_var; 
+  bit [63:0] peu_ue_err_hw_set_var; 
+  bit [63:0] peu_ce_err_hw_set_var; 
+  bit [63:0] peu_event_hw_set_var; 
+
+  bit [8:0] peu_debug_select_a_reg_var = 9'b0;  
+  // bit [63:0] peu_trn_off_reg_var = 64'b0;
+  
+  bit [63:0] peu_oe_log_en_reg_var; 
+  bit [63:0] peu_oe_int_en_reg_var; 
+  bit [63:0] peu_ce_log_en_reg_var; 
+  bit [63:0] peu_ce_int_en_reg_var; 
+  bit [63:0] peu_ue_log_en_reg_var; 
+  bit [63:0] peu_ue_int_en_reg_var; 
+
+  bit [63:0] peu_event_log_en_reg_var; 
+  bit [63:0] peu_event_int_en_reg_var; 
+
+  bit [5:0]       d2p_ihb_addr      = 6'b0;
+  bit [5:0]       it2ih_addr        = 6'b0;
+  bit [5:0]       ihb_rd_adr        = 6'b0;
+  bit [5:0]       ihb_wr_adr        = 6'b0;
+  bit [7:0]       d2p_idb_addr      = 8'b0;
+  bit [7:0]       it2id_addr        = 8'b0;
+  bit [7:0]       idb_rd_adr        = 8'b0;
+  bit [7:0]       idb_wr_adr        = 8'b0;
+  bit [5:0]       et2eh_addr        = 6'b0;
+  bit [5:0]       ehb_rd_adr        = 6'b0;
+  bit [5:0]       ehb_wr_adr        = 6'b0;
+  bit [5:0]       d2p_ehb_addr      = 6'b0;
+  bit [7:0]       et2ed_addr        = 8'b0;
+  bit [7:0]       edb_rd_adr        = 8'b0;
+  bit [7:0]       edb_wr_adr        = 8'b0;
+  bit [7:0]       d2p_edb_addr      = 8'b0;
+  bit [3:0]       lpm2ctb_pmc_state    = 4'b0;
+  bit [3:0]       fc_state             = 4'b0;
+  bit [4:0]       lts_state            = 5'b0;
+  bit [1:0]       replay_num           = 2'b0;
+  bit [7:0]       rbuf_raddr           = 8'b0;
+  bit [7:0]       rbuf_waddr           = 8'b0;
+  bit [7:0]       retry_rd_adr         = 8'b0;
+  bit [7:0]       retry_wr_adr         = 8'b0;
+
+  integer         ihb_size  = 0;
+  integer         idb_size  = 0;
+  integer         ehb_size  = 0;
+  integer         edb_size  = 0;
+  integer         rbuf_size = 0;
+
+  integer         ihb_d_rd_b2b  = 0;
+  integer         ihb_d_wr_b2b  = 0;
+  integer         idb_d_rd_b2b  = 0;
+  integer         idb_d_wr_b2b  = 0;
+  integer         ehb_d_rd_b2b  = 0;
+  integer         ehb_d_wr_b2b  = 0;
+  integer         edb_d_rd_b2b  = 0;
+  integer         edb_d_wr_b2b  = 0;
+  integer         rbuf_d_rd_b2b = 0;
+  integer         rbuf_d_wr_b2b = 0;
+
+
+  coverage_group peu_debug_select_a_reg_coverage_group  
+  {
+    const_sample_reference      = 1;
+    sample_event = wait_var(peu_debug_select_a_reg_var);
+    sample peu_registers_coverage_ifc.peu_debug_select_a_block[2:0]  {
+. &toggle( 3 );
+      cov_weight = 1;
+    } 
+    sample peu_registers_coverage_ifc.peu_debug_select_a_module[2:0] { 
+. &toggle( 3 );
+      cov_weight = 1;
+    } 
+    sample peu_registers_coverage_ifc.peu_debug_select_a_signal[2:0] { 
+. &toggle( 3 );
+      cov_weight = 1;
+    } 
+
+    cross peu_debug_select_a_reg_cross_coverage
+    (
+           peu_registers_coverage_ifc.peu_debug_select_a_block[2:0],
+           peu_registers_coverage_ifc.peu_debug_select_a_module[2:0],
+           peu_registers_coverage_ifc.peu_debug_select_a_signal[2:0]
+    );
+  } 
+
+  bit [8:0] peu_debug_select_b_reg_var = 9'b0;  
+    coverage_group peu_debug_select_b_reg_coverage_group 
+  {
+    const_sample_reference      = 1;
+    sample_event = wait_var(peu_debug_select_b_reg_var);
+    sample peu_registers_coverage_ifc.peu_debug_select_b_block[2:0] {
+. &toggle( 3 );
+      cov_weight = 1;
+    } 
+    sample peu_registers_coverage_ifc.peu_debug_select_b_module[2:0]  {
+. &toggle( 3 );
+      cov_weight = 1;
+    } 
+    sample peu_registers_coverage_ifc.peu_debug_select_b_signal[2:0]  {
+. &toggle( 3 );
+      cov_weight = 1;
+    } 
+
+    cross peu_debug_select_b_reg_cross_coverage
+    (
+           peu_registers_coverage_ifc.peu_debug_select_b_block[2:0],
+           peu_registers_coverage_ifc.peu_debug_select_b_module[2:0],
+           peu_registers_coverage_ifc.peu_debug_select_b_signal[2:0]
+    );
+  } 
+
+
+  bit [63:0] peu_control_reg_var = 64'b0;  
+
+    coverage_group peu_control_reg_coverage_group
+  {
+    const_sample_reference      = 1;
+    // sample_event = wait_var(peu_registers_coverage_ifc.peu_control_reg);
+    // sample_event = wait_var(peu_control_reg_los_tim_var);
+    sample_event = wait_var(peu_control_reg_var);
+    sample peu_registers_coverage_ifc.peu_control_reg_los_tim  { 
+       //state peu_control_los_tim_reg_s0 (8'h0, 8'h1, 8'h2, 8'hda, 8'hff); 
+       state peu_control_los_tim_reg_s0 (8'h0); 
+       state peu_control_los_tim_reg_s1 (8'h1); 
+       state peu_control_los_tim_reg_s2 (8'h2); 
+       state peu_control_los_tim_reg_sda (8'hda); 
+       state peu_control_los_tim_reg_sff (8'hff); 
+    }
+      
+    
+
+  }
+
+  coverage_group peu_bit_error_cnt1_reg_cnt_bad_coverage_group
+  {
+     const_sample_reference      = 1;
+     sample_event = sync(ANY,peu_link_bit_error_counter_I_reg_cnt_bad_event_trig); 
+     sample  peu_registers_coverage_ifc.peu_link_bit_error_counter_I_reg_cnt_bad_dllp[7:0] { 
+. for ($i=0; $i<255; $i++)
+. {
+. $j = $i + 1; 
+      trans peu_bit_error_cnt_bad_dllp_t${i}_to_t${j} (${i} -> ${j}); 
+. }
+      bad_trans peu_bit_error_cnt_bad_dllp_t255_to_0 (255 -> 0); 
+     }
+ 
+     sample  peu_registers_coverage_ifc.peu_link_bit_error_counter_I_reg_cnt_bad_tlp[7:0] { 
+. for ($i=0; $i<255; $i++)
+. {
+. $j = $i + 1; 
+      trans peu_bit_error_cnt_bad_tllp_t${i}_to_t${j} (${i} -> ${j}); 
+. }
+      bad_trans peu_bit_error_cnt_bad_tllp_t255_to_0 (255 -> 0); 
+     }
+ 
+    
+     sample  peu_registers_coverage_ifc.peu_link_bit_error_counter_I_reg_cnt_pre[9:0] { 
+. for ($i=0; $i<1023; $i++)
+. {
+. $j = $i + 1; 
+      trans peu_bit_error_cnt_pre_t${i}_to_t${j} (${i} -> ${j}); 
+. }
+      bad_trans peu_bit_error_cnt_pre_t1023_to_0 (1023 -> 0); 
+     }
+ 
+     sample  peu_registers_coverage_ifc.peu_link_bit_error_counter_II_reg[5:0] { 
+. for ($i=0; $i<63; $i++)
+. {
+. $j = $i + 1; 
+      trans peu_bit_error_cnt_bad_sym_0_t${i}_to_t${j} (${i} -> ${j}); 
+. }
+      bad_trans peu_bit_error_cnt_bad_sym_t63_to_0 (63 -> 0); 
+     }
+
+
+     sample  peu_registers_coverage_ifc.peu_link_bit_error_counter_II_reg[13:8] { 
+. for ($i=0; $i<63; $i++)
+. {
+. $j = $i + 1; 
+      trans peu_bit_error_cnt_bad_sym_1_t${i}_to_t${j} (${i} -> ${j}); 
+. }
+      bad_trans peu_bit_error_cnt_bad_sym_t63_to_0 (63 -> 0); 
+     }
+
+ 
+     sample  peu_registers_coverage_ifc.peu_link_bit_error_counter_II_reg[21:16] { 
+. for ($i=0; $i<63; $i++)
+. {
+. $j = $i + 1; 
+      trans peu_bit_error_cnt_bad_sym_2_t${i}_to_t${j} (${i} -> ${j}); 
+. }
+      bad_trans peu_bit_error_cnt_bad_sym_t63_to_0 (63 -> 0); 
+     }
+
+     sample  peu_registers_coverage_ifc.peu_link_bit_error_counter_II_reg[29:24] { 
+. for ($i=0; $i<63; $i++)
+. {
+. $j = $i + 1; 
+      trans peu_bit_error_cnt_bad_sym_3_t${i}_to_t${j} (${i} -> ${j}); 
+. }
+      bad_trans peu_bit_error_cnt_bad_sym_t63_to_0 (63 -> 0); 
+     }
+
+     sample  peu_registers_coverage_ifc.peu_link_bit_error_counter_II_reg[37:32] { 
+. for ($i=0; $i<63; $i++)
+. {
+. $j = $i + 1; 
+      trans peu_bit_error_cnt_bad_sym_4_t${i}_to_t${j} (${i} -> ${j}); 
+. }
+      bad_trans peu_bit_error_cnt_bad_sym_t63_to_0 (63 -> 0); 
+     }
+
+     sample  peu_registers_coverage_ifc.peu_link_bit_error_counter_II_reg[45:40] { 
+. for ($i=0; $i<63; $i++)
+. {
+. $j = $i + 1; 
+      trans peu_bit_error_cnt_bad_sym_5_t${i}_to_t${j} (${i} -> ${j}); 
+. }
+      bad_trans peu_bit_error_cnt_bad_sym_t63_to_0 (63 -> 0); 
+     }
+
+     sample  peu_registers_coverage_ifc.peu_link_bit_error_counter_II_reg[53:48] { 
+. for ($i=0; $i<63; $i++)
+. {
+. $j = $i + 1; 
+      trans peu_bit_error_cnt_bad_sym_6_t${i}_to_t${j} (${i} -> ${j}); 
+. }
+      bad_trans peu_bit_error_cnt_bad_sym_t63_to_0 (63 -> 0); 
+     }
+
+     sample  peu_registers_coverage_ifc.peu_link_bit_error_counter_II_reg[61:56] { 
+. for ($i=0; $i<63; $i++)
+. {
+. $j = $i + 1; 
+      trans peu_bit_error_cnt_bad_sym_7_t${i}_to_t${j} (${i} -> ${j}); 
+. }
+      bad_trans peu_bit_error_cnt_bad_sym_t63_to_0 (63 -> 0); 
+     }
+      
+  }
+
+   #include "peu_register_coverage_sample.vrh"
+
+  //========= peu RAS 
+  //==  peu oe log enable reg ;
+    coverage_group peu_oe_log_en_reg_coverage_group
+  {
+    const_sample_reference      = 1;
+       // sample_event = sync(ANY, oe_log_w_ld_event_trig);
+       sample_event = wait_var(peu_oe_log_en_reg_var);
+        sample  peu_oe_log_en_reg_sample (peu_registers_coverage_ifc.peu_oe_log_en_reg) {
+. &toggle( 24 );
+         cov_weight = 1;
+        }
+
+//      #include "peu_ras_coverage_sample.vrh" 
+  } 
+
+  // peu interrupt enable register  
+    coverage_group peu_oe_int_en_reg_coverage_group
+  {
+    const_sample_reference      = 1;
+       // sample_event = sync(ANY, oe_int_en_w_ld_event_trig);
+       sample_event = wait_var(peu_oe_int_en_reg_var);
+        sample  peu_oe_int_en_reg_55_32_sample (peu_registers_coverage_ifc.peu_oe_int_en_reg[55:32]) {
+. &toggle( 24 );
+         cov_weight = 1;
+        }
+        sample  peu_oe_int_en_reg_23_0_sample (peu_registers_coverage_ifc.peu_oe_int_en_reg[23:0])
+        {
+. &toggle( 24 );
+         cov_weight = 1;
+        }
+  }
+
+
+  // peu oe error register  
+    // == oe error reg :  sw clear status coverage group
+    coverage_group peu_oe_err_sw_clear_coverage_group
+  {
+    const_sample_reference      = 1;
+        sample_event = sync(ANY, oe_err_rw1c_event_trig);
+        sample peu_oe_err_csr_rw1c_22_0_secondary (peu_registers_coverage_ifc.peu_oe_err_csrbus_wr_data[22:0]) {
+. &toggle( 23 );
+         cov_weight = 1;
+        }
+        sample peu_oe_err_csr_rw1c_42_32_secondary (peu_registers_coverage_ifc.peu_oe_err_csrbus_wr_data[42:32]) {
+. &toggle( 11 );
+         cov_weight = 1;
+        }
+        sample peu_oe_err_csr_rw1c_54_44_primary (peu_registers_coverage_ifc.peu_oe_err_csrbus_wr_data[54:44]) {
+. &toggle( 11 );
+         cov_weight = 1;
+        }
+  }
+
+    // == oe error reg :  sw set status coverage group
+    coverage_group peu_oe_err_sw_set_coverage_group
+  {
+    const_sample_reference      = 1;
+       sample_event = sync(ANY, oe_err_rw1s_event_trig);
+        sample peu_oe_err_csr_rw1s_22_0_secondary (peu_registers_coverage_ifc.peu_oe_err_csrbus_wr_data[22:0]) {
+. &toggle( 23 );
+         cov_weight = 1;
+        }
+        sample peu_oe_err_csr_rw1s_42_32_primary (peu_registers_coverage_ifc.peu_oe_err_csrbus_wr_data[42:32]) {
+. &toggle( 11 );
+         cov_weight = 1;
+        }
+        sample peu_oe_err_csr_rw1s_54_44_primary (peu_registers_coverage_ifc.peu_oe_err_csrbus_wr_data[54:44]) {
+. &toggle( 11 );
+         cov_weight = 1;
+        }
+  }
+
+    // == oe error reg :  hw set status coverage group
+    coverage_group peu_oe_err_hw_set_coverage_group
+  {
+    const_sample_reference      = 1;
+ 
+   sample_event = sync(ANY, peu_oe_err_cycle_afer_hw_set_event_trig); 
+   // sample_event = sync(ANY, oe_log_w_ld_event_trig); 
+   #include "peu_oe_error_sample.vrh"
+   // sample peu_oe_eip ( { peu_registers_coverage_ifc.peu_oe_err_csrbus_read_data[32],
+   //              peu_registers_coverage_ifc.peu_oe_err_csrbus_read_data[0] }); 
+
+
+  }
+
+
+  //==  peu ue log enable reg ;
+    coverage_group peu_ue_log_en_reg_coverage_group
+  {
+    const_sample_reference      = 1;
+       // sample_event = sync(ANY, ue_log_w_ld_event_trig);
+       sample_event = wait_var(peu_ue_log_en_reg_var);
+        sample  peu_ue_log_en_reg_20_0_sample (peu_registers_coverage_ifc.peu_ue_log_en_reg[20:0]) {
+. &toggle( 21 );
+         cov_weight = 1;
+        }
+  } 
+
+  // peu interrupt enable register  
+    coverage_group peu_ue_int_en_reg_coverage_group
+  {
+    const_sample_reference      = 1;
+       // sample_event = sync(ANY, ue_int_en_w_ld_event_trig);
+       sample_event = wait_var(peu_ue_int_en_reg_var);
+        sample  peu_ue_int_en_reg_52_32_sample (peu_registers_coverage_ifc.peu_ue_int_en_reg[52:32]) {
+. &toggle( 21 );
+         cov_weight = 1;
+        }
+        sample  peu_ue_int_en_reg_20_0_sample (peu_registers_coverage_ifc.peu_ue_int_en_reg[20:0])
+        {
+. &toggle( 21 );
+         cov_weight = 1;
+        }
+  }
+
+
+  // peu ue error register  
+    // == ue error reg :  sw clear status coverage group
+    coverage_group peu_ue_err_sw_clear_coverage_group
+  {
+    const_sample_reference      = 1;
+       sample_event = sync(ANY, ue_err_rw1c_event_trig);
+        sample peu_ue_err_csr_rw1c_4_secondary (peu_registers_coverage_ifc.peu_ue_err_csrbus_wr_data[4]) {
+. &toggle( 1 );
+         cov_weight = 1;
+        }
+        sample peu_ue_err_csr_rw1c_14_12_secondary (peu_registers_coverage_ifc.peu_ue_err_csrbus_wr_data[14:12]) {
+. &toggle( 3 );
+         cov_weight = 1;
+        }
+        sample peu_ue_err_csr_rw1c_18_16_secondary (peu_registers_coverage_ifc.peu_ue_err_csrbus_wr_data[18:16]) {
+. &toggle( 3 );
+         cov_weight = 1;
+        }
+        sample peu_ue_err_csr_rw1c_20_secondary (peu_registers_coverage_ifc.peu_ue_err_csrbus_wr_data[20]) {
+. &toggle( 1 );
+         cov_weight = 1;
+        }
+        sample peu_ue_err_csr_rw1c_36_secondary (peu_registers_coverage_ifc.peu_ue_err_csrbus_wr_data[36]) {
+. &toggle( 1 );
+         cov_weight = 1;
+        }
+        sample peu_ue_err_csr_rw1c_46_44_secondary (peu_registers_coverage_ifc.peu_ue_err_csrbus_wr_data[46:44]) {
+. &toggle( 3 );
+         cov_weight = 1;
+        }
+        sample peu_ue_err_csr_rw1c_50_48_secondary (peu_registers_coverage_ifc.peu_ue_err_csrbus_wr_data[50:48]) {
+. &toggle( 3 );
+         cov_weight = 1;
+        }
+        sample peu_ue_err_csr_rw1c_52_secondary (peu_registers_coverage_ifc.peu_ue_err_csrbus_wr_data[52]) {
+. &toggle( 1 );
+         cov_weight = 1;
+        }
+  }
+
+    // == ue error reg :  sw set status coverage group
+    coverage_group peu_ue_err_sw_set_coverage_group
+  {
+    const_sample_reference      = 1;
+       sample_event = sync(ANY, ue_err_rw1s_event_trig);
+        sample peu_ue_err_csr_rw1s_4_secondary (peu_registers_coverage_ifc.peu_ue_err_csrbus_wr_data[4]) {
+. &toggle( 1 );
+         cov_weight = 1;
+        }
+        sample peu_ue_err_csr_rw1s_14_12_secondary (peu_registers_coverage_ifc.peu_ue_err_csrbus_wr_data[14:12]) {
+. &toggle( 3 );
+         cov_weight = 1;
+        }
+        sample peu_ue_err_csr_rw1s_18_16_secondary (peu_registers_coverage_ifc.peu_ue_err_csrbus_wr_data[18:16]) {
+. &toggle( 3 );
+         cov_weight = 1;
+        }
+        sample peu_ue_err_csr_rw1s_20_secondary (peu_registers_coverage_ifc.peu_ue_err_csrbus_wr_data[20]) {
+. &toggle( 1 );
+         cov_weight = 1;
+        }
+        sample peu_ue_err_csr_rw1s_36_secondary (peu_registers_coverage_ifc.peu_ue_err_csrbus_wr_data[36]) {
+. &toggle( 1 );
+         cov_weight = 1;
+        }
+        sample peu_ue_err_csr_rw1s_46_44_secondary (peu_registers_coverage_ifc.peu_ue_err_csrbus_wr_data[46:44]) {
+. &toggle( 3 );
+         cov_weight = 1;
+        }
+        sample peu_ue_err_csr_rw1s_50_48_secondary (peu_registers_coverage_ifc.peu_ue_err_csrbus_wr_data[50:48]) {
+. &toggle( 3 );
+         cov_weight = 1;
+        }
+        sample peu_ue_err_csr_rw1s_52_secondary (peu_registers_coverage_ifc.peu_ue_err_csrbus_wr_data[52]) {
+. &toggle( 1 );
+         cov_weight = 1;
+        }
+  }
+
+    // == ue error reg :  hw set status coverage group
+    coverage_group peu_ue_err_hw_set_coverage_group
+  {
+    const_sample_reference      = 1;
+   sample_event = sync(ANY, peu_ue_err_cycle_afer_hw_set_event_trig); 
+   #include "peu_ue_error_sample.vrh"
+  }
+
+
+
+  //==  peu ce log enable reg ;
+    coverage_group peu_ce_log_en_reg_coverage_group
+  {
+    const_sample_reference      = 1;
+       // sample_event = sync(ANY, ce_log_w_ld_event_trig);
+       sample_event = wait_var(peu_ce_log_en_reg_var);
+        sample  peu_ce_log_en_reg_12_0_sample (peu_registers_coverage_ifc.peu_ce_log_en_reg[12:0]) {
+. &toggle( 13 );
+         cov_weight = 1;
+        }
+  } 
+
+  // peu interrupt enable register  
+    coverage_group peu_ce_int_en_reg_coverage_group
+  {
+    const_sample_reference      = 1;
+       // sample_event = sync(ANY, ce_int_en_w_ld_event_trig);
+       sample_event = wait_var(peu_ce_int_en_reg_var);
+        sample  peu_ce_int_en_reg_44_32_sample (peu_registers_coverage_ifc.peu_ce_int_en_reg[44:32]) {
+. &toggle( 13 );
+         cov_weight = 1;
+        }
+        sample  peu_ce_int_en_reg_12_0_sample (peu_registers_coverage_ifc.peu_ce_int_en_reg[12:0])
+        {
+. &toggle( 13 );
+         cov_weight = 1;
+        }
+  }
+
+
+  // peu ce error register  
+    // == ce error reg :  sw clear status coverage group
+    coverage_group peu_ce_err_sw_clear_coverage_group
+  {
+    const_sample_reference      = 1;
+       sample_event = sync(ANY, ce_err_rw1c_event_trig);
+        sample peu_ce_err_csr_rw1c_0_primary (peu_registers_coverage_ifc.peu_ce_err_csrbus_wr_data[0]) {
+. &toggle( 1); 
+         cov_weight = 1;
+        } 
+        sample peu_ce_err_csr_rw1c_8_6_primary (peu_registers_coverage_ifc.peu_ce_err_csrbus_wr_data[8:6]) {
+. &toggle( 3 );
+         cov_weight = 1;
+        }
+        sample peu_ce_err_csr_rw1c_12_primary (peu_registers_coverage_ifc.peu_ce_err_csrbus_wr_data[12]) {
+. &toggle( 1); 
+         cov_weight = 1;
+        } 
+        sample peu_ce_err_csr_rw1c_32_secondary (peu_registers_coverage_ifc.peu_ce_err_csrbus_wr_data[32]) {
+. &toggle( 1); 
+         cov_weight = 1;
+        } 
+        sample peu_ce_err_csr_rw1c_40_38_secondary (peu_registers_coverage_ifc.peu_ce_err_csrbus_wr_data[40:38]) {
+. &toggle( 3 );
+         cov_weight = 1;
+        }
+        sample peu_ce_err_csr_rw1c_44_secondary (peu_registers_coverage_ifc.peu_ce_err_csrbus_wr_data[44]) {
+. &toggle( 1); 
+         cov_weight = 1;
+        } 
+  }
+
+    // == ce error reg :  sw set status coverage group
+    coverage_group peu_ce_err_sw_set_coverage_group
+  {
+    const_sample_reference      = 1;
+       sample_event = sync(ANY, ce_err_rw1s_event_trig);
+        sample peu_ce_err_csr_rw1s_0_primary (peu_registers_coverage_ifc.peu_ce_err_csrbus_wr_data[0]) {
+. &toggle( 1); 
+         cov_weight = 1;
+        } 
+        sample peu_ce_err_csr_rw1s_8_6_primary (peu_registers_coverage_ifc.peu_ce_err_csrbus_wr_data[8:6]) {
+. &toggle( 3 );
+         cov_weight = 1;
+        }
+        sample peu_ce_err_csr_rw1s_12_primary (peu_registers_coverage_ifc.peu_ce_err_csrbus_wr_data[12]) {
+. &toggle( 1); 
+         cov_weight = 1;
+        } 
+        sample peu_ce_err_csr_rw1s_32_secondary (peu_registers_coverage_ifc.peu_ce_err_csrbus_wr_data[32]) {
+. &toggle( 1); 
+         cov_weight = 1;
+        } 
+        sample peu_ce_err_csr_rw1s_40_38_secondary (peu_registers_coverage_ifc.peu_ce_err_csrbus_wr_data[40:38]) {
+. &toggle( 3 );
+         cov_weight = 1;
+        }
+        sample peu_ce_err_csr_rw1s_44_secondary (peu_registers_coverage_ifc.peu_ce_err_csrbus_wr_data[44]) {
+. &toggle( 1); 
+         cov_weight = 1;
+        } 
+
+  }
+
+    // == ce error reg :  hw set status coverage group
+    coverage_group peu_ce_err_hw_set_coverage_group
+  {
+    const_sample_reference      = 1;
+   sample_event = sync(ANY, peu_ce_err_cycle_afer_hw_set_event_trig); 
+   #include "peu_ce_error_sample.vrh"
+  }
+
+
+  //==  peu dlpl err log enable reg 
+    coverage_group peu_event_log_en_reg_coverage_group
+  {
+    const_sample_reference      = 1;
+       sample_event = wait_var(peu_event_log_en_reg_var);
+        sample  peu_event_log_en_reg_17_0_sample (peu_registers_coverage_ifc.peu_event_log_en_reg[17:0]) {
+. &toggle( 18 );
+         cov_weight = 1;
+        }
+        sample  peu_event_log_en_reg_31_24_sample (peu_registers_coverage_ifc.peu_event_log_en_reg[31:24]) {
+. &toggle( 8 );
+         cov_weight = 1;
+        }
+  } 
+
+  // peu dlpl error  interrupt enable register  
+    coverage_group peu_event_int_en_reg_coverage_group
+  {
+    const_sample_reference      = 1;
+       sample_event = wait_var(peu_event_int_en_reg_var);
+        sample  peu_event_int_en_reg_17_0_sample (peu_registers_coverage_ifc.peu_event_int_en_reg[17:0]) {
+. &toggle( 18 );
+         cov_weight = 1;
+        }
+        sample  peu_event_int_en_reg_31_24_sample (peu_registers_coverage_ifc.peu_event_int_en_reg[31:24])
+        {
+. &toggle( 8 );
+         cov_weight = 1;
+        }
+  }
+
+
+  // peu dlpl err error register  
+    // == dlpl error reg :  sw clear status coverage group
+    coverage_group peu_event_sw_clear_coverage_group
+  {
+    const_sample_reference      = 1;
+        sample_event = sync(ANY, peu_event_rw1c_event_trig);
+        sample peu_event_csr_rw1c_17_0 (peu_registers_coverage_ifc.peu_event_csrbus_wr_data[17:0]) {
+. &toggle( 18 );
+         cov_weight = 1;
+        }
+        sample peu_event_csr_rw1c_31_24 (peu_registers_coverage_ifc.peu_event_csrbus_wr_data[31:24]) {
+. &toggle( 8 );
+         cov_weight = 1;
+        }
+  }
+
+    // == dlpl error reg :  sw set status coverage group
+    coverage_group peu_event_sw_set_coverage_group
+  {
+    const_sample_reference      = 1;
+       sample_event = sync(ANY, peu_event_rw1s_event_trig);
+        sample peu_event_csr_rw1s_17_0 (peu_registers_coverage_ifc.peu_event_csrbus_wr_data[17:0]) {
+. &toggle( 18 );
+         cov_weight = 1;
+        }
+        sample peu_event_csr_rw1s_31_24 (peu_registers_coverage_ifc.peu_event_csrbus_wr_data[31:24]) {
+. &toggle( 8 );
+         cov_weight = 1;
+        }
+  }
+
+    // == dlpl error reg :  hw set status coverage group
+    coverage_group peu_event_hw_set_coverage_group
+  {
+    const_sample_reference      = 1;
+ 
+   sample_event = sync(ANY, peu_event_cycle_afer_hw_set_event_trig); 
+   // include "peu_eventor_sample.vrh"
+        sample peu_event_hw_set_17_0 (peu_registers_coverage_ifc.peu_event_csrbus_read_data[17:0]) {
+. &toggle( 18 );
+         cov_weight = 1;
+        }
+        sample peu_event_csr_hw_set_31_24 (peu_registers_coverage_ifc.peu_event_csrbus_read_data[31:24]) {
+. &toggle( 8 );
+         cov_weight = 1;
+        }
+
+  }
+
+
+  coverage_group ilu_peu_cov_ihb_rd_coverage_group
+  {
+    sample_event = wait_var(d2p_ihb_addr);
+    #include "ilu_peu_ihb_rd_sample.vrh"
+  }
+
+  coverage_group ilu_peu_cov_ihb_wr_coverage_group
+  {
+    sample_event = wait_var(it2ih_addr);
+    #include "ilu_peu_ihb_wr_sample.vrh"
+  }
+
+  coverage_group ilu_peu_cov_idb_rd_coverage_group
+  {
+    sample_event = wait_var(d2p_idb_addr);
+    #include "ilu_peu_idb_rd_sample.vrh"
+  }
+
+  coverage_group ilu_peu_cov_idb_wr_coverage_group
+  {
+    sample_event = wait_var(it2id_addr);
+    #include "ilu_peu_idb_wr_sample.vrh"
+  }
+
+  coverage_group ilu_peu_cov_ehb_rd_coverage_group
+  {
+    sample_event = wait_var(et2eh_addr);
+    #include "ilu_peu_ehb_rd_sample.vrh"
+  }
+
+  coverage_group ilu_peu_cov_ehb_wr_coverage_group
+  {
+    sample_event = wait_var(d2p_ehb_addr);
+    #include "ilu_peu_ehb_wr_sample.vrh"
+  }
+
+  coverage_group ilu_peu_cov_edb_rd_coverage_group
+  {
+    sample_event = wait_var(et2ed_addr);
+    #include "ilu_peu_edb_rd_sample.vrh"
+  }
+
+  coverage_group ilu_peu_cov_edb_wr_coverage_group
+  {
+    sample_event = wait_var(d2p_edb_addr);
+    #include "ilu_peu_edb_wr_sample.vrh"
+  }
+
+  coverage_group ilu_peu_cov_pmc_state_coverage_group
+  {
+    sample_event = wait_var(lpm2ctb_pmc_state);
+    #include "ilu_peu_pm_state_sample.vrh"
+  }
+
+  coverage_group ilu_peu_cov_fcsm_state_coverage_group
+  {
+    sample_event = wait_var(fc_state);
+    #include "ilu_peu_fcsm_state_sample.vrh"
+  }
+
+  coverage_group ilu_peu_cov_ltssm_state_coverage_group
+  {
+    sample_event = wait_var(lts_state);
+    #include "ilu_peu_ltssm_state_sample.vrh"
+  }
+
+  coverage_group ilu_peu_cov_replay_coverage_group
+  {
+    sample_event = wait_var(replay_num);
+    #include "ilu_peu_replay_times_sample.vrh"
+  }
+
+  coverage_group ilu_peu_cov_retry_buf_rd_coverage_group
+  {
+    sample_event = wait_var(rbuf_raddr);
+    #include "ilu_peu_retry_buf_rd_sample.vrh"
+  }
+
+  coverage_group ilu_peu_cov_retry_buf_wr_coverage_group
+  {
+    sample_event = wait_var(rbuf_waddr);
+    #include "ilu_peu_retry_buf_wr_sample.vrh"
+  }
+
+  //    peu error log enable reg 
+    coverage_group ilu_peu_cov_log_en_reg_coverage_group
+  {
+    const_sample_reference      = 1;
+       sample_event = wait_var(peu_event_log_en_reg_var);
+        sample  peu_error_log_en (peu_registers_coverage_ifc.ilu_error_log_enable_reg) {
+. &toggle( 1 );
+         cov_weight = 1;
+        }
+  } 
+
+  //    peu error interrupt reg 
+  coverage_group ilu_peu_cov_interrupt_coverage_group
+  {
+    const_sample_reference      = 1;
+       sample_event = wait_var(peu_event_int_en_reg_var);
+        sample peu_interrupt_p (peu_registers_coverage_ifc.ilu_error_interrupt_p_reg) {
+. &toggle( 1); 
+         cov_weight = 1;
+        } 
+        sample peu_interrupt_s (peu_registers_coverage_ifc.ilu_error_interrupt_s_reg) {
+. &toggle( 1); 
+         cov_weight = 1;
+        } 
+  }
+
+  //    peu error status clear reg 
+  coverage_group ilu_peu_cov_error_status_clear_coverage_group
+  {
+    const_sample_reference      = 1;
+       sample_event = sync(ANY, peu_event_rw1c_event_trig);
+        sample peu_error_status_p_rw1c (peu_registers_coverage_ifc.ilu_error_status_p_reg) {
+. &toggle( 1); 
+         cov_weight = 1;
+        } 
+        sample peu_error_status_s_rw1c (peu_registers_coverage_ifc.ilu_error_status_s_reg) {
+. &toggle( 1); 
+         cov_weight = 1;
+        } 
+  }
+
+  //    peu error status set reg 
+  coverage_group ilu_peu_cov_error_status_set_coverage_group
+  {
+    const_sample_reference      = 1;
+       sample_event = sync(ANY, peu_event_rw1s_event_trig);
+        sample peu_error_status_p_rw1s (peu_registers_coverage_ifc.ilu_error_status_p_reg) {
+. &toggle( 1); 
+         cov_weight = 1;
+        } 
+        sample peu_error_status_s_rw1s (peu_registers_coverage_ifc.ilu_error_status_s_reg) {
+. &toggle( 1); 
+         cov_weight = 1;
+        } 
+  }
+
+
+  task new(); 
+ task set_cov_cond_bits ();
+
+
+} //class peu_registers_coverage 
+
+
+task peu_registers_coverage::new() {
+     bit coverage_on; 
+
+     if (get_plus_arg (CHECK, "peu_registers_coverage") || get_plus_arg (CHECK, "coverage_on")) {
+       coverage_on = 1;
+     } else {
+       coverage_on = 0;
+     }
+
+     if (coverage_on) {
+
+     peu_debug_select_a_reg_coverage_group	= new(); 
+     peu_debug_select_b_reg_coverage_group	= new(); 
+     peu_control_reg_coverage_group	= new(); 
+     peu_trn_off_reg_coverage_group	= new(); 
+     peu_ici_reg_coverage_group	= new(); 
+     peu_prfc_reg_coverage_group	= new(); 
+     peu_device_control_reg_coverage_group	= new(); 
+     peu_diagnostic_reg_coverage_group   	= new(); 
+     peu_link_control_reg_coverage_group	= new(); 
+     peu_link_status_reg_coverage_group	= new(); 
+     peu_slot_cap_register_coverage_group	= new(); 
+     peu_dlpl_dll_control_reg_coverage_group	= new(); 
+     peu_dlpl_macl_control_reg_coverage_group	= new(); 
+     peu_dlpl_lane_skew_reg_coverage_group	= new(); 
+     peu_dlpl_sym_num_reg_coverage_group	= new(); 
+     peu_dlpl_sym_timer_reg_coverage_group	= new(); 
+     peu_link_bit_error_counter_I_reg_coverage_group	= new(); 
+     serdes_pll_csrbus_read_data_coverage_group 	= new(); 
+     peu_ser_receiver_lane_ctl0_reg_coverage_group	= new(); 
+     peu_ser_receiver_lane_ctl1_reg_coverage_group	= new(); 
+     peu_ser_receiver_lane_ctl2_reg_coverage_group	= new(); 
+     peu_ser_receiver_lane_ctl3_reg_coverage_group	= new(); 
+     peu_ser_receiver_lane_ctl4_reg_coverage_group	= new(); 
+     peu_ser_receiver_lane_ctl5_reg_coverage_group	= new(); 
+     peu_ser_receiver_lane_ctl6_reg_coverage_group	= new(); 
+     peu_ser_receiver_lane_ctl7_reg_coverage_group	= new(); 
+     peu_ser_xmitter_ctl_lane0_reg_coverage_group	= new(); 
+     peu_ser_xmitter_ctl_lane1_reg_coverage_group	= new(); 
+     peu_ser_xmitter_ctl_lane2_reg_coverage_group	= new(); 
+     peu_ser_xmitter_ctl_lane3_reg_coverage_group	= new(); 
+     peu_ser_xmitter_ctl_lane4_reg_coverage_group	= new(); 
+     peu_ser_xmitter_ctl_lane5_reg_coverage_group	= new(); 
+     peu_ser_xmitter_ctl_lane6_reg_coverage_group	= new(); 
+     peu_ser_xmitter_ctl_lane7_reg_coverage_group	= new(); 
+
+     peu_ser_receiver_status_lane0_reg_coverage_group	= new(); 
+     peu_ser_receiver_status_lane1_reg_coverage_group	= new(); 
+     peu_ser_receiver_status_lane2_reg_coverage_group	= new(); 
+     peu_ser_receiver_status_lane3_reg_coverage_group	= new(); 
+     peu_ser_receiver_status_lane4_reg_coverage_group	= new(); 
+     peu_ser_receiver_status_lane5_reg_coverage_group	= new(); 
+     peu_ser_receiver_status_lane6_reg_coverage_group	= new(); 
+     peu_ser_receiver_status_lane7_reg_coverage_group	= new(); 
+
+     peu_ser_xmitter_status_lane0_reg_coverage_group	= new(); 
+     peu_ser_xmitter_status_lane1_reg_coverage_group	= new(); 
+     peu_ser_xmitter_status_lane2_reg_coverage_group	= new(); 
+     peu_ser_xmitter_status_lane3_reg_coverage_group	= new(); 
+     peu_ser_xmitter_status_lane4_reg_coverage_group	= new(); 
+     peu_ser_xmitter_status_lane5_reg_coverage_group	= new(); 
+     peu_ser_xmitter_status_lane6_reg_coverage_group	= new(); 
+     peu_ser_xmitter_status_lane7_reg_coverage_group	= new(); 
+
+     
+     // RAS
+     peu_oe_log_en_reg_coverage_group                   = new(); 
+     peu_oe_int_en_reg_coverage_group           	= new(); 
+     peu_oe_err_sw_clear_coverage_group			= new(); 
+     peu_oe_err_sw_set_coverage_group           	= new(); 
+     peu_oe_err_hw_set_coverage_group           	= new(); 
+
+     peu_ue_log_en_reg_coverage_group                   = new();
+     peu_ue_int_en_reg_coverage_group                   = new();
+     peu_ue_err_sw_clear_coverage_group                 = new();
+     peu_ue_err_sw_set_coverage_group                   = new();
+     peu_ue_err_hw_set_coverage_group                   = new();
+
+     peu_ce_log_en_reg_coverage_group                   = new();
+     peu_ce_int_en_reg_coverage_group                   = new();
+     peu_ce_err_sw_clear_coverage_group                 = new();
+     peu_ce_err_sw_set_coverage_group                   = new();
+     peu_ce_err_hw_set_coverage_group                   = new();
+
+     peu_event_log_en_reg_coverage_group                = new();
+     peu_event_int_en_reg_coverage_group                = new();
+     peu_event_sw_clear_coverage_group                  = new();
+     peu_event_sw_set_coverage_group                    = new();
+     peu_event_hw_set_coverage_group                    = new();
+     ilu_peu_cov_log_en_reg_coverage_group              = new();
+     ilu_peu_cov_interrupt_coverage_group               = new();
+     ilu_peu_cov_error_status_clear_coverage_group      = new();
+     ilu_peu_cov_error_status_set_coverage_group        = new();
+
+
+     // Bit Error count bad 
+     peu_bit_error_cnt1_reg_cnt_bad_coverage_group	= new(); 
+
+
+     ilu_peu_cov_ihb_rd_coverage_group                  = new();
+     ilu_peu_cov_ihb_wr_coverage_group                  = new();
+     ilu_peu_cov_idb_rd_coverage_group                  = new();
+     ilu_peu_cov_idb_wr_coverage_group                  = new();
+     ilu_peu_cov_ehb_rd_coverage_group                  = new();
+     ilu_peu_cov_ehb_wr_coverage_group                  = new();
+     ilu_peu_cov_edb_rd_coverage_group                  = new();
+     ilu_peu_cov_edb_wr_coverage_group                  = new();
+     ilu_peu_cov_pmc_state_coverage_group               = new();
+     ilu_peu_cov_fcsm_state_coverage_group              = new();
+     ilu_peu_cov_ltssm_state_coverage_group             = new();
+     ilu_peu_cov_replay_coverage_group                  = new();
+     ilu_peu_cov_retry_buf_rd_coverage_group            = new();
+     ilu_peu_cov_retry_buf_wr_coverage_group            = new();
+
+     
+
+
+       set_cov_cond_bits ();
+       printf("\n\n AC: Coverage turned on for peu_registers objects\n\n");
+     }
+  
+}
+
+ task peu_registers_coverage::set_cov_cond_bits()
+ {
+   fork
+   {
+     
+     {
+     printf("============= AC: at peu_registers.set_cov_cond_bits start\n");
+     }
+     // setting event trigger for y2k_rcd_enq
+     while (1)
+     {
+       @(posedge peu_registers_coverage_ifc.peu_clk);
+         
+
+       peu_debug_select_a_reg_var = peu_registers_coverage_ifc.peu_debug_select_a_reg[63:0] ;
+       peu_debug_select_b_reg_var = peu_registers_coverage_ifc.peu_debug_select_b_reg[63:0] ;
+       peu_control_reg_var = peu_registers_coverage_ifc.peu_control_reg[63:0] ;
+       peu_trn_off_reg_var = peu_registers_coverage_ifc.peu_trn_off_reg[63:0] ;
+       peu_ici_reg_var = peu_registers_coverage_ifc.peu_ici_reg[63:0] ;
+       peu_prfc_reg_var = peu_registers_coverage_ifc.peu_prfc_reg[63:0] ;
+       peu_device_control_reg_var = peu_registers_coverage_ifc.peu_device_control_reg[63:0] ;
+       peu_diagnostic_reg_var = peu_registers_coverage_ifc.ilu_diagnos_csrbus_read_data[63:0] ;
+       peu_link_control_reg_var = peu_registers_coverage_ifc.peu_link_control_reg[63:0] ;
+       peu_link_status_reg_var = peu_registers_coverage_ifc.peu_link_status_reg[63:0] ;
+       peu_slot_cap_register_var = peu_registers_coverage_ifc.peu_slot_cap_register[9:0] ;
+       peu_dlpl_dll_control_reg_var = peu_registers_coverage_ifc.peu_dlpl_dll_control_reg[63:0] ;
+       peu_dlpl_macl_control_reg_var = peu_registers_coverage_ifc.peu_dlpl_macl_control_reg[63:0] ;
+       peu_dlpl_lane_skew_reg_var = peu_registers_coverage_ifc.peu_dlpl_lane_skew_reg[63:0] ;
+       peu_dlpl_sym_num_reg_var = peu_registers_coverage_ifc.peu_dlpl_sym_num_reg[63:0] ;
+       peu_dlpl_sym_timer_reg_var = peu_registers_coverage_ifc.peu_dlpl_sym_timer_reg[63:0] ;
+       // peu_dlpl_core_status_reg_var = peu_registers_coverage_ifc.peu_dlpl_core_status_reg[63:0] ;
+       peu_link_bit_error_counter_I_reg_var = peu_registers_coverage_ifc.peu_link_bit_error_counter_I_reg[1:0] ;
+       serdes_pll_csrbus_read_data_var    = peu_registers_coverage_ifc.serdes_pll_csrbus_read_data[63:0] ;
+       peu_ser_receiver_lane_ctl0_reg_var = peu_registers_coverage_ifc.peu_ser_receiver_lane_ctl0_reg[63:0] ;
+       peu_ser_receiver_lane_ctl1_reg_var = peu_registers_coverage_ifc.peu_ser_receiver_lane_ctl0_reg[63:0] ;
+       peu_ser_receiver_lane_ctl2_reg_var = peu_registers_coverage_ifc.peu_ser_receiver_lane_ctl0_reg[63:0] ;
+       peu_ser_receiver_lane_ctl3_reg_var = peu_registers_coverage_ifc.peu_ser_receiver_lane_ctl0_reg[63:0] ;
+       peu_ser_receiver_lane_ctl4_reg_var = peu_registers_coverage_ifc.peu_ser_receiver_lane_ctl0_reg[63:0] ;
+       peu_ser_receiver_lane_ctl5_reg_var = peu_registers_coverage_ifc.peu_ser_receiver_lane_ctl0_reg[63:0] ;
+       peu_ser_receiver_lane_ctl6_reg_var = peu_registers_coverage_ifc.peu_ser_receiver_lane_ctl0_reg[63:0] ;
+       peu_ser_receiver_lane_ctl7_reg_var = peu_registers_coverage_ifc.peu_ser_receiver_lane_ctl0_reg[63:0] ;
+       // peu_ser_receiver_lane_status0_reg_var = peu_registers_coverage_ifc.peu_ser_receiver_lane_status0_reg[63:0] ;
+       peu_ser_xmitter_ctl_lane0_reg_var = peu_registers_coverage_ifc.peu_ser_xmitter_ctl_lane0_reg[63:0] ;
+       peu_ser_xmitter_ctl_lane1_reg_var = peu_registers_coverage_ifc.peu_ser_xmitter_ctl_lane1_reg[63:0] ;
+       peu_ser_xmitter_ctl_lane2_reg_var = peu_registers_coverage_ifc.peu_ser_xmitter_ctl_lane2_reg[63:0] ;
+       peu_ser_xmitter_ctl_lane3_reg_var = peu_registers_coverage_ifc.peu_ser_xmitter_ctl_lane3_reg[63:0] ;
+       peu_ser_xmitter_ctl_lane4_reg_var = peu_registers_coverage_ifc.peu_ser_xmitter_ctl_lane4_reg[63:0] ;
+       peu_ser_xmitter_ctl_lane5_reg_var = peu_registers_coverage_ifc.peu_ser_xmitter_ctl_lane5_reg[63:0] ;
+       peu_ser_xmitter_ctl_lane6_reg_var = peu_registers_coverage_ifc.peu_ser_xmitter_ctl_lane6_reg[63:0] ;
+       peu_ser_xmitter_ctl_lane7_reg_var = peu_registers_coverage_ifc.peu_ser_xmitter_ctl_lane7_reg[63:0] ;
+       
+        
+       peu_ser_receiver_status_lane0_reg_var = peu_registers_coverage_ifc.peu_ser_receiver_status_lane0_reg[63:0] ;
+       peu_ser_receiver_status_lane1_reg_var = peu_registers_coverage_ifc.peu_ser_receiver_status_lane1_reg[63:0] ;
+       peu_ser_receiver_status_lane2_reg_var = peu_registers_coverage_ifc.peu_ser_receiver_status_lane2_reg[63:0] ;
+       peu_ser_receiver_status_lane3_reg_var = peu_registers_coverage_ifc.peu_ser_receiver_status_lane3_reg[63:0] ;
+       peu_ser_receiver_status_lane4_reg_var = peu_registers_coverage_ifc.peu_ser_receiver_status_lane4_reg[63:0] ;
+       peu_ser_receiver_status_lane5_reg_var = peu_registers_coverage_ifc.peu_ser_receiver_status_lane5_reg[63:0] ;
+       peu_ser_receiver_status_lane6_reg_var = peu_registers_coverage_ifc.peu_ser_receiver_status_lane6_reg[63:0] ;
+       peu_ser_receiver_status_lane7_reg_var = peu_registers_coverage_ifc.peu_ser_receiver_status_lane7_reg[63:0] ;
+
+
+       peu_ser_xmitter_status_lane0_reg_var = peu_registers_coverage_ifc.peu_ser_xmitter_status_lane0_reg[63:0] ;
+       peu_ser_xmitter_status_lane1_reg_var = peu_registers_coverage_ifc.peu_ser_xmitter_status_lane1_reg[63:0] ;
+       peu_ser_xmitter_status_lane2_reg_var = peu_registers_coverage_ifc.peu_ser_xmitter_status_lane2_reg[63:0] ;
+       peu_ser_xmitter_status_lane3_reg_var = peu_registers_coverage_ifc.peu_ser_xmitter_status_lane3_reg[63:0] ;
+       peu_ser_xmitter_status_lane4_reg_var = peu_registers_coverage_ifc.peu_ser_xmitter_status_lane4_reg[63:0] ;
+       peu_ser_xmitter_status_lane5_reg_var = peu_registers_coverage_ifc.peu_ser_xmitter_status_lane5_reg[63:0] ;
+       peu_ser_xmitter_status_lane6_reg_var = peu_registers_coverage_ifc.peu_ser_xmitter_status_lane6_reg[63:0] ;
+       peu_ser_xmitter_status_lane7_reg_var = peu_registers_coverage_ifc.peu_ser_xmitter_status_lane7_reg[63:0] ;
+       d2p_ihb_addr         = ilu_peu_coverage_ihb_rd_coverage_group.d2p_ihb_addr ;
+       it2ih_addr           = ilu_peu_coverage_ihb_wr_coverage_group.it2ih_addr ;
+       d2p_idb_addr         = ilu_peu_coverage_idb_rd_coverage_group.d2p_idb_addr ;
+       it2id_addr           = ilu_peu_coverage_idb_wr_coverage_group.it2id_addr ;
+       et2eh_addr           = ilu_peu_coverage_ehb_rd_coverage_group.et2eh_addr ;
+       d2p_ehb_addr         = ilu_peu_coverage_ehb_wr_coverage_group.d2p_ehb_addr ;
+       et2ed_addr           = ilu_peu_coverage_edb_rd_coverage_group.et2ed_addr ;
+       d2p_edb_addr         = ilu_peu_coverage_edb_wr_coverage_group.d2p_edb_addr ;
+       lpm2ctb_pmc_state    = ilu_peu_coverage_pmc_state_coverage_group.lpm2ctb_pmc_state ;
+       fc_state             = ilu_peu_coverage_fcsm_state_coverage_group.fc_state ;
+       lts_state            = ilu_peu_coverage_ltssm_state_coverage_group.lts_state ;
+       replay_num           = ilu_peu_coverage_replay_times_coverage_group.replay_num ;
+       rbuf_raddr           = ilu_peu_coverage_retry_buf_rd_coverage_group.rbuf_raddr ;
+       rbuf_waddr           = ilu_peu_coverage_retry_buf_wr_coverage_group.rbuf_waddr ;
+
+
+
+     }
+   }
+
+   //======  peu RAS
+   // OE 
+    {
+     // trigger oe, ce, ue, event  log event
+     while (1)
+     {
+       @(posedge peu_registers_coverage_ifc.peu_clk);
+       peu_oe_log_en_reg_var = peu_registers_coverage_ifc.peu_oe_log_en_reg[23:0]; 
+       peu_oe_int_en_reg_var = peu_registers_coverage_ifc.peu_oe_int_en_reg[63:0]; 
+       peu_ce_log_en_reg_var = peu_registers_coverage_ifc.peu_ce_log_en_reg[23:0]; 
+       peu_ce_int_en_reg_var = peu_registers_coverage_ifc.peu_ce_int_en_reg[63:0]; 
+       peu_ue_log_en_reg_var = peu_registers_coverage_ifc.peu_ue_log_en_reg[23:0]; 
+       peu_ue_int_en_reg_var = peu_registers_coverage_ifc.peu_ue_int_en_reg[63:0]; 
+
+       peu_event_log_en_reg_var = peu_registers_coverage_ifc.peu_ue_log_en_reg[63:0]; 
+       peu_event_int_en_reg_var = peu_registers_coverage_ifc.peu_ue_int_en_reg[63:0]; 
+       
+     } // end while  
+   }  
+
+
+   {
+     // trigger oe error events 
+     while (1)
+     {
+       @(posedge peu_registers_coverage_ifc.peu_clk);
+
+       // trigger oe error sw write 1 to clear   
+       if (peu_registers_coverage_ifc.peu_oe_err_w_ld && peu_registers_coverage_ifc.peu_oe_err_rw1c) {
+          trigger (oe_err_rw1c_event_trig);
+       }
+
+       // trigger oe error sw write 1 to set   
+       if (peu_registers_coverage_ifc.peu_oe_err_w_ld && peu_registers_coverage_ifc.peu_oe_err_rw1s) {
+          trigger (oe_err_rw1s_event_trig);
+       }
+
+     } // end while 
+   } 
+
+   {
+     // trigger oe hw set event
+     while (1)
+     {
+       @(posedge peu_registers_coverage_ifc.peu_clk); 
+       // peu_oe_err_hw_set_var = peu_registers_coverage_ifc.peu_oe_err_hw_set[63:0] ;
+       // if (|(peu_oe_err_hw_set_var) == 1) 
+        // if ((peu_oe_err_hw_set_var[63:0]) != 0) 
+        if ((peu_registers_coverage_ifc.peu_oe_err_hw_set[63:0]) > 0) {
+          @(posedge peu_registers_coverage_ifc.peu_clk);
+          trigger (peu_oe_err_cycle_afer_hw_set_event_trig); 
+          printf("peu_oe_err_cycle_afer_hw_set_event_trig triggered, %0d \n ", get_time(LO)); 
+        }
+
+     } // end while 
+   } 
+
+   {
+     // trigger ue error sw set/clear events
+     while (1)
+     {
+       @(posedge peu_registers_coverage_ifc.peu_clk);
+
+       // trigger ue error sw write 1 to clear
+       if (peu_registers_coverage_ifc.peu_ue_err_w_ld && peu_registers_coverage_ifc.peu_ue_err_rw1c) {
+          trigger (ue_err_rw1c_event_trig);
+       }
+
+       // trigger ue error sw write 1 to set
+       if (peu_registers_coverage_ifc.peu_ue_err_w_ld && peu_registers_coverage_ifc.peu_ue_err_rw1s) {
+          trigger (ue_err_rw1s_event_trig);
+       }
+
+     } // end while
+   }
+
+   {
+     // trigger ue hw set event
+     while (1)
+     {
+       @(posedge peu_registers_coverage_ifc.peu_clk);
+       peu_ue_err_hw_set_var = peu_registers_coverage_ifc.peu_ue_err_hw_set[63:0] ;
+       if (|(peu_ue_err_hw_set_var) == 1) {
+          @(posedge peu_registers_coverage_ifc.peu_clk);
+          trigger (peu_ue_err_cycle_afer_hw_set_event_trig);
+          printf("peu_ue_err_cycle_afer_hw_set_event_trig triggered, %0d \n ", get_time(LO));
+       }
+
+     } // end while
+   }
+
+
+   {
+     // trigger dlpl error events
+     while (1)
+     {
+       @(posedge peu_registers_coverage_ifc.peu_clk);
+
+       // trigger dlpl error sw write 1 to clear
+       if (peu_registers_coverage_ifc.peu_event_w_ld && peu_registers_coverage_ifc.peu_event_rw1c) {
+          trigger (peu_event_rw1c_event_trig);
+       }
+
+       // trigger dlpl error sw write 1 to set
+       if (peu_registers_coverage_ifc.peu_event_w_ld && peu_registers_coverage_ifc.peu_event_rw1s) {
+          trigger (peu_event_rw1s_event_trig);
+       }
+
+     } // end while
+   }
+
+   {
+     // trigger dlpl hw set event
+     while (1)
+     {
+       @(posedge peu_registers_coverage_ifc.peu_clk);
+        if ((peu_registers_coverage_ifc.peu_event_hw_set[63:0]) > 0) {
+          @(posedge peu_registers_coverage_ifc.peu_clk);
+          trigger (peu_event_cycle_afer_hw_set_event_trig);
+          printf("peu_event_cycle_afer_hw_set_event_trig triggered, %0d \n ", get_time(LO));
+        }
+
+     } // end while
+   }
+
+   //====== peu serdes receiver lane 0-7 status reg 
+ 
+   //====== peu Bit error register count bad 
+   {
+     while (1)
+     {
+       @(posedge peu_registers_coverage_ifc.peu_clk);
+         if ( peu_registers_coverage_ifc.peu_link_bit_error_counter_I_reg_ber_en ) {
+          trigger (peu_link_bit_error_counter_I_reg_cnt_bad_event_trig);
+//          printf(" peu_link_bit_error_counter_I_reg_cnt_bad_event_trig triggered, %0d \n ", get_time(LO));
+        }
+
+     } // end while
+   }
+
+        {
+           integer edb_wr_last_cycle = 0;
+           while(1)
+           {
+                integer edb_wr_this_cycle = 0;
+                @(posedge ilu_peu_coverage_edb_wr_coverage_group.d2p_edb_clk);
+                if (ilu_peu_coverage_edb_wr_coverage_group.d2p_edb_we === 1'b1)
+                {
+                        edb_size++;
+
+                        edb_wr_this_cycle = get_cycle(ilu_peu_coverage_edb_wr_coverage_group.d2p_edb_clk);
+                        edb_d_wr_b2b = edb_wr_this_cycle - edb_wr_last_cycle;
+                        edb_wr_last_cycle = edb_wr_this_cycle;
+                        edb_wr_adr = ilu_peu_coverage_edb_wr_coverage_group.d2p_edb_addr;
+                }
+           }
+        }
+
+       {
+           integer edb_rd_last_cycle = 0;
+           while(1)
+           {
+                integer edb_rd_this_cycle = 0;
+                @(posedge ilu_peu_coverage_edb_rd_coverage_group.d2p_edb_clk);
+                if (ilu_peu_coverage_edb_rd_coverage_group.et2ed_rd === 1'b1)
+                {
+                        edb_size++;
+
+                        edb_rd_this_cycle = get_cycle(ilu_peu_coverage_edb_rd_coverage_group.d2p_edb_clk);
+                        edb_d_rd_b2b = edb_rd_this_cycle - edb_rd_last_cycle;
+                        edb_rd_last_cycle = edb_rd_this_cycle;
+                        edb_rd_adr = ilu_peu_coverage_edb_rd_coverage_group.et2ed_addr;
+                }
+           }
+        }
+
+        {
+           integer ehb_wr_last_cycle = 0;
+           while(1)
+           {
+                integer ehb_wr_this_cycle = 0;
+                @(posedge ilu_peu_coverage_ehb_wr_coverage_group.d2p_ehb_clk);
+                if (ilu_peu_coverage_ehb_wr_coverage_group.d2p_ehb_we === 1'b1)
+                {
+                        ehb_size++;
+
+                        ehb_wr_this_cycle = get_cycle(ilu_peu_coverage_ehb_wr_coverage_group.d2p_ehb_clk);
+                        ehb_d_wr_b2b = ehb_wr_this_cycle - ehb_wr_last_cycle;
+                        ehb_wr_last_cycle = ehb_wr_this_cycle;
+                        ehb_wr_adr = ilu_peu_coverage_ehb_wr_coverage_group.d2p_ehb_addr;
+                }
+           }
+        }
+
+       {
+           integer ehb_rd_last_cycle = 0;
+           while(1)
+           {
+                integer ehb_rd_this_cycle = 0;
+                @(posedge ilu_peu_coverage_ehb_rd_coverage_group.d2p_ehb_clk);
+                if (ilu_peu_coverage_ehb_rd_coverage_group.et2eh_rd === 1'b1)
+                {
+                        ehb_size++;
+
+                        ehb_rd_this_cycle = get_cycle(ilu_peu_coverage_ehb_rd_coverage_group.d2p_ehb_clk);
+                        ehb_d_rd_b2b = ehb_rd_this_cycle - ehb_rd_last_cycle;
+                        ehb_rd_last_cycle = ehb_rd_this_cycle;
+                        ehb_rd_adr = ilu_peu_coverage_ehb_rd_coverage_group.et2eh_addr;
+                }
+           }
+        }
+
+        {
+           integer idb_wr_last_cycle = 0;
+           while(1)
+           {
+                integer idb_wr_this_cycle = 0;
+                @(posedge ilu_peu_coverage_idb_wr_coverage_group.d2p_idb_clk);
+                if (ilu_peu_coverage_idb_wr_coverage_group.it2id_we === 1'b1)
+                {
+                        idb_size++;
+
+                        idb_wr_this_cycle = get_cycle(ilu_peu_coverage_idb_wr_coverage_group.d2p_idb_clk);
+                        idb_d_wr_b2b = idb_wr_this_cycle - idb_wr_last_cycle;
+                        idb_wr_last_cycle = idb_wr_this_cycle;
+                        idb_wr_adr = ilu_peu_coverage_idb_wr_coverage_group.it2id_addr;
+                }
+           }
+        }
+
+       {
+           integer idb_rd_last_cycle = 0;
+           while(1)
+           {
+                integer idb_rd_this_cycle = 0;
+                @(posedge ilu_peu_coverage_idb_rd_coverage_group.d2p_idb_clk);
+                if (ilu_peu_coverage_idb_rd_coverage_group.d2p_idb_rd === 1'b1)
+                {
+                        idb_size++;
+
+                        idb_rd_this_cycle = get_cycle(ilu_peu_coverage_idb_rd_coverage_group.d2p_idb_clk);
+                        idb_d_rd_b2b = idb_rd_this_cycle - idb_rd_last_cycle;
+                        idb_rd_last_cycle = idb_rd_this_cycle;
+                        idb_rd_adr = ilu_peu_coverage_idb_rd_coverage_group.d2p_idb_addr;
+                }
+           }
+        }
+
+        {
+           integer ihb_wr_last_cycle = 0;
+           while(1)
+           {
+                integer ihb_wr_this_cycle = 0;
+                @(posedge ilu_peu_coverage_ihb_wr_coverage_group.d2p_ihb_clk);
+                if (ilu_peu_coverage_ihb_wr_coverage_group.it2ih_we === 1'b1)
+                {
+                        ihb_size++;
+
+                        ihb_wr_this_cycle = get_cycle(ilu_peu_coverage_ihb_wr_coverage_group.d2p_ihb_clk);
+                        ihb_d_wr_b2b = ihb_wr_this_cycle - ihb_wr_last_cycle;
+                        ihb_wr_last_cycle = ihb_wr_this_cycle;
+                        ihb_wr_adr = ilu_peu_coverage_ihb_wr_coverage_group.it2ih_addr;
+                }
+           }
+        }
+
+       {
+           integer ihb_rd_last_cycle = 0;
+           while(1)
+           {
+                integer ihb_rd_this_cycle = 0;
+                @(posedge ilu_peu_coverage_ihb_rd_coverage_group.d2p_ihb_clk);
+                if (ilu_peu_coverage_ihb_rd_coverage_group.d2p_ihb_rd === 1'b1)
+                {
+                        ihb_size++;
+
+                        ihb_rd_this_cycle = get_cycle(ilu_peu_coverage_ihb_rd_coverage_group.d2p_ihb_clk);
+                        ihb_d_rd_b2b = ihb_rd_this_cycle - ihb_rd_last_cycle;
+                        ihb_rd_last_cycle = ihb_rd_this_cycle;
+                        ihb_rd_adr = ilu_peu_coverage_ihb_rd_coverage_group.d2p_ihb_addr;
+                }
+           }
+        }
+
+        {
+           integer retry_wr_last_cycle = 0;
+           while(1)
+           {
+                integer retry_wr_this_cycle = 0;
+                @(posedge ilu_peu_coverage_retry_buf_wr_coverage_group.core_clk);
+                if (ilu_peu_coverage_retry_buf_wr_coverage_group.xdlh_retryram_we === 1'b1)
+                {
+                        rbuf_size++;
+
+                        retry_wr_this_cycle = get_cycle(ilu_peu_coverage_retry_buf_wr_coverage_group.core_clk);
+                        rbuf_d_wr_b2b = retry_wr_this_cycle - retry_wr_last_cycle;
+                        retry_wr_last_cycle = retry_wr_this_cycle;
+                        retry_wr_adr = ilu_peu_coverage_retry_buf_wr_coverage_group.rbuf_waddr;
+                }
+           }
+        }
+
+        {
+           integer retry_rd_last_cycle = 0;
+           while(1)
+           {
+                integer retry_rd_this_cycle = 0;
+                @(posedge ilu_peu_coverage_retry_buf_rd_coverage_group.core_clk);
+                if (ilu_peu_coverage_retry_buf_rd_coverage_group.xdlh_rbuf_rd === 1'b1)
+                {
+                        rbuf_size++;
+
+                        retry_rd_this_cycle = get_cycle(ilu_peu_coverage_retry_buf_rd_coverage_group.core_clk);
+                        rbuf_d_rd_b2b = retry_rd_this_cycle - retry_rd_last_cycle;
+                        retry_rd_last_cycle = retry_rd_this_cycle;
+                        retry_rd_adr = ilu_peu_coverage_retry_buf_rd_coverage_group.rbuf_raddr;
+                }
+           }
+        }
+
+
+  join none
+} // end task 
+
+
+
+
+
+ 

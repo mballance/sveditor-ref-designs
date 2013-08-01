@@ -1,0 +1,242 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: flow_db.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "pcg_types.vri"
+#include "niu_byte_array.vrh"
+
+
+// -----  Node Descriptor -----
+class node_desc {
+    bit	[47:0]	l2_addr;	// L2 address for this station
+    bit	[15:0]	tci;		// Tag Control Information
+    bit	[31:0]	ip_addr;	// IPv4 address of this substation
+    bit	[128:0]	ipv6_addr=128'h0;	// IPv6 address of this substation
+    bit [7:0]   tos =0;         // TOS v4/Frame Class v6
+    bit	[19:0]	src_port;	// Which ports may use this node as source
+    bit [31:0]  spi = 0;        // Security Parameter Index for AH /ESP
+    bit [7:0]   nxthdr = 06;
+    bit [31:0]  esp_ah_seq_no = 0;    // Sequence Number for AH/ ESP
+    
+}
+
+// -----  TCP/UDP Ports Descriptor -----
+class tup_descr {
+    bit	[15:0]	src_tcp_udp_port;	// Source TCP/UDP Port
+    bit	[15:0]	dst_tcp_udp_port;	// Destination TCP/UDP Port
+    bit [31:0]  tcp_seq_no=0;
+
+}
+class sctp_descr {
+
+    bit	[15:0]	src_sctp_port=0;	// Source TCP/UDP Port
+    bit	[15:0]	dst_sctp_port=0;	// Destination TCP/UDP Port
+    bit [31:0]  sctp_vtag=0;
+}
+
+class arp_descr {
+
+    bit [15:0]  hw_type=1;           // Hardware type (e.g., Ethernet-0x0001, Packet Radio Net.)
+    bit [15:0]  proto_type=16'h0800; // Protocol type (e.g., IP - 0x0800)
+    bit [7:0]   hlen=6;        	     // byte length of each hardware address
+    bit [7:0]   plen=4;        	     // byte length of each protocol address
+    bit [15:0]  operation=1;         // opcode (e.g. REQ or REPLY)
+    bit [47:0]  src_hw_addr=0;       // Hardware address of sender of this packet
+    bit [31:0]  src_proto_addr=0;    // Protocol address of the sender
+    bit [47:0]  dst_hw_addr=0;       // Hardware address of target of this packet (if known)
+    bit [31:0]  dst_proto_addr=0;    // Protocol address of the target
+    
+}
+
+// -----  Frame Descriptor -----
+class frame_desc {
+    bit	[4:0]  frame_type = 0; // Frame Type (bit 3:  0=IPv4 Header 1=IPv6 Header) 
+                               //             bit 4:  0=Tunneling off     
+    bit	[1:0]  tunnel_type = 0;// selects between different tunneling combinations 
+                               //    00: IPv4/IPv4 (default)   
+                               //    01: IPv4/IPv6      
+                               //    10: IPv6/IPv4    
+                               //    11: IPv6/IPv6    
+    integer    frame_class;    // L3 IP class
+    integer    type;           // L3 IP class type (-1 = auto: length or type from class);
+    integer    tpid;           // L2 Tagged frames custopm TPID value (-1 =  use default)
+    integer    class_mask;     // Mask to be applied to class
+    integer    class_funct;    // Mask Operation (0-AND, 1-OR)
+    integer    data_type;      // Type of payload
+    integer    data_seed;      // Seed for random data
+    //integer    data_length;    // Length of payload (-1=make exactly 64 byte packets)
+    integer    header_length; // min value = 5, max value = 15; header length including options would be 4*header_length;
+    integer   l2_pad_length;
+    bit[15:0] error_chksum;
+    bit [15:0] error_type_len;
+    bit [7:0] l4_proto_field;
+    bit [15:0] ip_frag;
+    integer error_code;
+
+
+    task new() {
+        frame_type  = 0;
+        tunnel_type = 0;
+        frame_class = 0;
+        type = -1;
+        tpid = -1;
+        class_mask  = 0;
+        class_funct = 0;
+        data_type   = 0;
+        data_seed   = 0;
+        error_code = 0;
+        error_chksum = 0;
+	error_type_len = 0;
+	header_length = 5;
+        l2_pad_length = 0;
+        l4_proto_field = 0;
+	ip_frag = 16'h20fa; // choose something else?
+        //data_length = 0;
+    }
+}
+
+
+// -----  TCP Tx Parameters -----
+class tmt_param {
+   bit [31:0] adv_isn;
+   bit [31:0] last_seqno;
+   bit retr_timeout; //Initialize to zero          
+   bit [15:0] adv_window_size;//Initialize to zero
+
+   task new() {
+        retr_timeout = 0;
+        adv_window_size = 0;
+        last_seqno = 0;
+       }
+
+
+  }
+
+// -----  TCP Rx Parameters -----
+class rcv_param {
+   bit [31:0] rcv_isn;//User Programs while Setting "SYN"
+   bit [31:0] last_ackno;
+   bit timeout; //Initialize to zero          
+   bit [15:0] rmt_window_size;//Initialize to zero
+
+   task new() {
+        timeout = 0;
+        rmt_window_size = 0;
+       }
+  }
+
+
+// -----  TCP State Parameters -----
+
+class tcp_state {
+   bit [5:0] tcp_flags;
+   bit [3:0] tcp_st;//Initialise to zero now
+
+   task new() {
+        //tcp_flags = 6'b00_0010;//{(URG,ACK,PSH,RST,SYN,FIN}
+        tcp_st = 0;
+       }
+}
+
+
+// -----  FLow Descriptor To Generate Packets of Various Flows -----
+class flow_desc {
+
+    frame_desc frame = new; 
+    node_desc  src_node = new;
+    node_desc  dst_node = new;
+
+        tup_descr  tup = new;
+    sctp_descr  sctp = new;
+    arp_descr   arp  = new;
+    rcv_param  rx_param = new;
+    tmt_param  tx_param = new;
+    tcp_state  fl_state = new ;
+    integer    flow_no;
+
+    integer    partial_chksum=0; // ONLY FOR TX
+    bit [7:0]  psu_hdr[2]; // ONLY FOR TX
+    bit[31:0] options = 32'h0;
+    integer preamble_cnt = 0;
+    integer sfd = 32'hd5;
+
+
+
+}
+   
+
+// -----  Forwarding Descriptor -----
+class fwd_desc {
+    // Forwarding Decision from FFLP
+    bit	[23:0]  fwd_decision[5];
+}
+
+// -----  Class Descriptor -----
+class l3_class_desc {
+    bit	[7:0]   val[14];
+}
+
+// -----  Class Mask Descriptor -----
+class l3_class_mask {
+    bit	[7:0]   val[14];
+}
+
+// -----  Global Flow DB Entry -----
+class flow_db_entry {
+
+        flow_desc       flow;
+	tup_descr	tup;	          // TCP/UDP Ports
+        rcv_param       rx_param;         // TCP Rx Parameters 
+        tmt_param       tx_param;         // TCP Tx Parameters 
+        tcp_state       fl_state;         // TCP State Parameters 
+
+        integer         org_port;         // Originating Port Number
+
+	integer		flow_num;      	  // Flow counter for this packet generator
+
+        
+
+	integer		data_length;	  
+
+
+        bit     [63:0]  options;          // Options
+	integer preamble_cnt = 0;
+	integer sfd = 32'hd5;
+
+   }
+
+
+//
+
+

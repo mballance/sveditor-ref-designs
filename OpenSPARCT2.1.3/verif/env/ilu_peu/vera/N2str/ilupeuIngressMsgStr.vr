@@ -1,0 +1,96 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuIngressMsgStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class DmaMsgPEUStr extends PEUStrBase 
+  {
+  bit [7:0] f_msg;				// The requested message code
+  bit [2:0] f_rc;				// The requested routing code
+  bit f_msgSpecified;				// Was a message specified?
+  bit f_rcSpecified;				// Was a routing code specified?
+  integer f_len;				// Payload length (or zero)
+
+  task new( PEUTestEnv a_env )
+    {
+    super.new( a_env );
+    f_msgSpecified = 0;
+    f_rcSpecified = 0;
+    f_len = 0;
+    }
+  task SetMsgCode( bit [7:0] a_msg )
+    {
+    f_msg = a_msg;
+    f_msgSpecified = 1;
+    }
+  task SetRoutingCode( bit [2:0] a_rc )
+    {
+    f_rc = a_rc;
+    f_rcSpecified = 1;
+    }
+  task SetLen( integer a_len )
+    {
+    f_len = a_len;
+    }
+  task Execute()
+    {
+    bit[PEC_PCI__HDR] ingressHdr;		// The ingress TLP's header
+    integer ingressData;			// A payload descriptor
+    bit[7:0] ingressTag;			// The tag for the TLP
+
+					// First, get in line for a DMA tag...
+    f_env.allocDmaTag( ingressTag );
+
+					// Then build a TLP
+    f_env.genIngressMsg( ingressTag, ingressHdr, ingressData );
+
+					// ...and set fields as requested
+                                        // by the caller.
+    if ( f_msgSpecified )
+      ingressHdr[PEC_PCI__MSG_CODE] = f_msg;
+    if ( f_rcSpecified )
+      ingressHdr[PEC_PCI__TYPE] = 
+                ( ingressHdr[PEC_PCI__TYPE] & ~PEC_PCI__TYPE_MSG_RC_MASK )
+              | ( f_rc & PEC_PCI__TYPE_MSG_RC_MASK );
+    if ( f_len )
+      {
+      ingressHdr[PEC_PCI__FMT_DATA] = 1;
+      ingressHdr[PEC_PCI__LEN] = f_len;
+      }
+
+    f_env.reserveIngressCredits( ingressHdr );
+    f_env.drivePCIE( ingressHdr, ingressData );
+    f_env.consumeIngressCredits( ingressHdr );
+    f_env.expectILU( ingressHdr, ingressData );
+    f_env.freeDmaTag( ingressTag );
+    } /* end Execute */
+  } /* end DmaMsgPECStr */

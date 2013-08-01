@@ -1,0 +1,765 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_rxdma_wr_chk.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+
+#include "cMesg.vrh"
+#include "mbox_defines.vri"
+#include "mbox_class.vrh"
+#include "get_mbox_id.vrh"
+#include "pg_top_pp.vrh"
+
+#include "niu_mem.vrh"
+#include "niu_rxdmc.vrh"
+#include "niu_rx_descp.vrh"
+#include "niu_rxtoken.vrh"
+#include "niu_cbclass.vrh"
+#include "niu_cb_events.vri"
+#include "niu_rxcbmgr.vrh"
+#include "niu_rxdma_pkttab.vrh"
+#include "niu_rxdma_pktchk.vrh"
+
+
+extern event	      RX_chk_done;
+extern mbox_class     mbox_id;
+extern Mesg           be_msg;
+extern pg	      pack_gen[16];
+
+extern CSparseMem     SparseMem;
+
+extern CRDMC  rdmc;
+
+
+
+
+
+class rxdma_wr_buf_cl {
+
+    bit [7:0] val [];
+}
+
+class Cniu_rxdma_wr_chkr {
+
+ integer         mac_token = -1;
+ integer         wrchk_timeout_val = 1000 ;
+ integer         no_of_pkts_chkd = 0;
+ integer	 no_of_pkts_discarded = 0;
+ integer  	 WRITE_TIMEOUT;
+ bit 		 debug_en;
+ bit [3:0] ports_active;
+ bit [3:0] last_packet_seen;
+
+ CcbRxWriteMgr cbRxWriteMgr;
+ CRxDmaPktChk RxDmaPktChk;
+ integer use_cr_address;
+ integer use_old_timeout;
+ integer rx_pkt_buf_offset;
+
+ task new ();
+ local task protocol_chk_select();
+ local task count_pkts_chkd ();
+ local task count_pkts_chkd_old (/*TO BE REMOVED *** TMP ONLY*/);
+ local task StartPacketCheck ();
+ local task SpDropPacketsCheck();
+ local function integer getToken( var CRxToken RxToken ); 
+ local task check_good_packet( CRxToken RxToken);
+ local task check_drop_packet( CRxToken RxToken);
+ local task check_packet(CRxToken RxToken, integer semId );
+ local task free_memory(CRxToken RxToken  );
+
+ local task processTestDefines(CRxToken RxToken );
+ local function bit[63:0] processErrorCodes(CRxToken RxToken );
+
+}
+
+
+task Cniu_rxdma_wr_chkr::new() {
+  string init_mac_ports,temp_port;
+  bit[31:0] get_mac_port;
+  integer i;
+  ports_active = 0;
+  if( get_plus_arg( CHECK, "GET_MAC_PORTS="))
+     get_mac_port = get_plus_arg( STR, "GET_MAC_PORTS=");
+     init_mac_ports.bittostr(get_mac_port);
+     for (i=0; i<init_mac_ports.len();i++)
+     {
+        temp_port =init_mac_ports.substr(i,i);
+        ports_active = ports_active | ( 1<<temp_port.atoi());
+     }
+
+    printf("Cniu_rxdma_wr_chkr::new ports_active - %x\n",ports_active);
+
+    last_packet_seen = 0;
+ 
+ if (get_plus_arg (CHECK, "RXDMA_WR_CHK_DEBUG_EN"))
+    debug_en = 1;
+   else
+    debug_en = 0;
+ if (get_plus_arg (CHECK, "USE_OLD_TIMEOUT"))
+    use_old_timeout = 1;
+   else
+    use_old_timeout = 0;
+
+ if (get_plus_arg (CHECK, "RX_PKT_BUF_OFFSET"))
+    rx_pkt_buf_offset = get_plus_arg (NUM, "RX_PKT_BUF_OFFSET");
+   else
+    rx_pkt_buf_offset = 0;
+
+ if (get_plus_arg (CHECK, "RXWRITE_TIMEOUT"))
+    WRITE_TIMEOUT = get_plus_arg (NUM, "RXWRITE_TIMEOUT");
+   else
+    WRITE_TIMEOUT = 5000;
+ if(get_plus_arg (CHECK, "RXDMA_WR_CHK_USE_CR")) {
+    use_cr_address = 1;
+    cbRxWriteMgr = new(40 /* MAX SPAWNED TASKS */);
+  } else {
+    use_cr_address = 0;
+    cbRxWriteMgr = new(10 /* MAX SPAWNED TASKS */);
+  } 
+  fork {
+     StartPacketCheck (); 
+  } join none
+
+  if(use_old_timeout) {
+  fork {
+    count_pkts_chkd_old();
+  } join none
+  }
+
+ if (get_plus_arg (CHECK, "RX_DROP_PKT_CHECK"))
+  RxDmaPktChk = new();
+} 
+
+task Cniu_rxdma_wr_chkr::count_pkts_chkd_old(/*TO BE REMOVED *** TMP ONLY*/ ) {
+
+  integer  no_of_pkts;
+ 
+
+   if (get_plus_arg (CHECK, "RXMAC_PKTCNT"))
+    no_of_pkts = get_plus_arg (NUM, "RXMAC_PKTCNT");
+   else
+    no_of_pkts = 1;
+   if (get_plus_arg (CHECK, "WRCHK_TO"))
+    wrchk_timeout_val = get_plus_arg (NUM, "WRCHK_TO");
+   else
+    wrchk_timeout_val = 1000;
+
+
+
+   repeat(wrchk_timeout_val*no_of_pkts)  @(posedge CLOCK);
+   printf("In count_pkts_chkd : no_of_pkts- %d no_of_pkts_chkd - %d \n",no_of_pkts,no_of_pkts_chkd);
+
+    if ( (no_of_pkts_chkd+no_of_pkts_discarded) != no_of_pkts){
+      printf("   Cniu_rxdma_wr_chkr:  ERROR: Not all RX packets written into memory. \
+	total_no_of_pkts = %0d, no_of_pkts_chkd = %0d, no_of_pkts_discarded = %0d\n", 
+        no_of_pkts, no_of_pkts_chkd, no_of_pkts_discarded);
+      	be_msg.print(e_mesg_error,"rxdma_wr_chkr", "count_pkts_chkd",
+	" Not all RX packets written into memory\n");
+
+      repeat(2) @(posedge CLOCK);
+   }
+   trigger (ON, RX_chk_done);
+   printf("In count_pkts_chkd : Triggered event RX_chk_done \n");
+}
+
+task Cniu_rxdma_wr_chkr::count_pkts_chkd( ) {
+
+  integer  last_packet_timeout;
+  integer  no_of_pkts;
+  integer  pkts_per_flow;
+
+   if (get_plus_arg (CHECK, "STATEFULL_FLOW"))
+     {
+      if (get_plus_arg (CHECK, "PKTS_PER_FLOW="))
+        {
+         pkts_per_flow = get_plus_arg (NUM, "PKTS_PER_FLOW");
+        }
+      else
+        {
+         pkts_per_flow = 3;
+        }
+     }
+   else
+     {
+      pkts_per_flow = 1;
+     }
+
+   if (get_plus_arg (CHECK, "RXMAC_PKTCNT"))
+    no_of_pkts = pkts_per_flow * get_plus_arg (NUM, "RXMAC_PKTCNT");
+   else
+    no_of_pkts = 1 * pkts_per_flow; // Should not assume 1, better to print error to user
+
+
+  if (get_plus_arg (CHECK, "LAST_RXPKT_TO"))
+    last_packet_timeout = get_plus_arg (NUM, "LAST_RXPKT_TO");
+   else
+    last_packet_timeout = WRITE_TIMEOUT + 1000 ;
+
+
+   repeat(last_packet_timeout)  @(posedge CLOCK);
+   printf("In count_pkts_chkd : no_of_pkts- %d no_of_pkts_chkd - %d \n",no_of_pkts,no_of_pkts_chkd);
+
+    if ( (no_of_pkts_chkd+no_of_pkts_discarded) != no_of_pkts){
+      printf("   Cniu_rxdma_wr_chkr:  ERROR: Not all RX packets written into memory. \
+	total_no_of_pkts = %0d, no_of_pkts_chkd = %0d, no_of_pkts_discarded = %0d\n", 
+        no_of_pkts, no_of_pkts_chkd, no_of_pkts_discarded);
+      	be_msg.print(e_mesg_error,"rxdma_wr_chkr", "count_pkts_chkd",
+	" Not all RX packets written into memory\n");
+
+      repeat(2) @(posedge CLOCK);
+   }
+   trigger (ON, RX_chk_done);
+   printf("In count_pkts_chkd : Triggered event RX_chk_done \n");
+}    
+
+
+function integer Cniu_rxdma_wr_chkr:: getToken( var CRxToken RxToken ) {
+      integer no_of_tokens;
+      no_of_tokens = mailbox_get(WAIT,mbox_id.niu_rxpacket_memchk_mb, RxToken);
+      printf(" No of Tokens left to check - %d \n",  no_of_tokens);
+      if(RxToken == null) {
+        printf("ERROR Cniu_rxdma_wr_chkr::getToken -Failed for port \n");
+        getToken = -1;
+      }
+      getToken = 1;
+}
+
+task Cniu_rxdma_wr_chkr::SpDropPacketsCheck() {
+  integer semId;
+  integer status;
+  semId = cbRxWriteMgr.getdroppktSemId();
+  
+  while(1) {
+    status = semaphore_get(WAIT,semId,1);
+    @(posedge CLOCK);
+    printf(" ERROR -- Packet Not expected to be written !!!! \n");
+    return;
+  }
+
+}
+
+
+task Cniu_rxdma_wr_chkr::StartPacketCheck() {
+
+// Task which parses various tokens and spawns off different call back
+// routines
+
+integer status;
+integer pkt_type;
+integer mac_id,gId;
+bit[63:0] error_code;
+CRxToken RxToken;
+
+
+
+
+// First get the token
+ while (1) {
+  status = getToken(RxToken);
+  if(status == -1) {
+   printf(" ERROR Occurred during  Cniu_rxdma_wr_chkr:: getToken \n");
+   return;
+  }
+ mac_id = RxToken.port_num; 
+ gId = RxToken.id;
+ printf(" Received a Token- Packet Originated at port = %d \n",mac_id);
+
+// Now check for available callbacks-- Dont want to spawn off too many 
+// call backs
+
+
+while(!cbRxWriteMgr.isAvailable() ) {
+  // wait---
+  repeat(10) @(posedge CLOCK);
+}
+
+printf(" CcbRxWriteMgr::isAvailable  is available - Current value - %d \n",cbRxWriteMgr.isAvailable());
+
+// check if this token belongs to the last packet of the sims
+ if(use_old_timeout ==0) { //TMP ONLY
+ if(RxToken.last_packet) {
+  
+   last_packet_seen[RxToken.port_num] = 1;
+   printf(" Cniu_rxdma_wr_chkr::StartPacketCheck Last Packet Token Received from Port- %d Time - %d \n",RxToken.port_num,{get_time(HI), get_time(LO)});
+
+   printf(" port_active - %x last_packet_seen - %x \n",ports_active,last_packet_seen);
+   if(last_packet_seen ==  ports_active) {
+   printf(" Cniu_rxdma_wr_chkr::StartPacketCheck Last Packet Token Received from All Active Ports- Time - %d \n",{get_time(HI), get_time(LO)});
+      fork {
+       count_pkts_chkd();
+     } join none
+  }
+ }
+ 
+}
+
+
+
+
+// check token for the type of callback needed ie -
+// if this is a drop packet  or a good packet
+
+  error_code = processErrorCodes(RxToken);
+  printf ("niu_rxdma_wr_chk.vr: error_code from processErrorCodes = %0d, pkt_num = %0d\n", error_code, RxToken.pgToken.gId);
+ processTestDefines(RxToken);
+
+  case(error_code) {
+  RX_TEST_CLASS_NO_ERR0R: {
+    pkt_type = RxToken.pkt_type;
+    if(pkt_type == GOOD_RxPKT) {
+      check_good_packet(RxToken);
+      printf("GOOD_RxPKT received pkt_num %0d\n", RxToken.pgToken.gId);
+    } else if(pkt_type == DROP_RxPKT) {
+      check_drop_packet(RxToken);
+      no_of_pkts_discarded ++;
+    } else if(pkt_type == RUNT_DROP_RxPKT) {
+      printf(" Packet id - %d  Dropped by Checker - RUNT pkt has been sent to rtl. rtl will drop this pkt as well \n",RxToken.pgToken.gId);
+      no_of_pkts_discarded ++;
+    } else if(pkt_type == RNGFULL_DROP_RxPKT) {
+      printf(" Packet id - %d  Dropped by Checker - RING is either FULL, EMPTY or is not initialized \n",RxToken.pgToken.gId);
+      no_of_pkts_discarded ++;
+    } else if(pkt_type == BUFFSIZE_EXCEEDED_DROP_RxPKT) {
+      printf(" Packet id - %d  Dropped by Checker - PktSize Exceeded the programmed buf size \n",RxToken.pgToken.gId);
+      no_of_pkts_discarded ++; 
+    } else if(pkt_type == VALID_DISABLED_DROP_RxPKT) {
+      printf(" Packet id - %d  Dropped by Checker - All 3 buffer size valid bits are OFF \n",RxToken.pgToken.gId);
+      no_of_pkts_discarded ++;
+    } else if(pkt_type == CRCACHE_FULL_DROP_RxPKT) {
+      printf(" Packet id - %d  Dropped by Checker - Completion Ring Cache FULL \n",RxToken.pgToken.gId);
+      no_of_pkts_discarded ++;
+    }
+   }
+  MEM_ERR0R_RBR_CACHE_PARITY_ERR: {
+      printf(" Packet id - %d  Dropped by Checker - due to MEM_ERR0R_RBR_CACHE_PARITY_ERR\n", RxToken.pgToken.gId);
+      no_of_pkts_discarded ++;
+   }    
+  MEM_ERR0R_RCR_CACHE_PARITY_ERR: {
+      printf(" Packet id - %d  Dropped by Checker - due to MEM_ERR0R_RCR_CACHE_PARITY_ERR\n", RxToken.pgToken.gId);
+      no_of_pkts_discarded ++;
+   }    
+  MEM_ERR0R_IPP_DFIFO_DOUBLE_BIT_ECC: {
+      printf(" Packet id - %d  Dropped by Checker - due to MEM_ERR0R_IPP_DFIFO_DOUBLE_BIT_ECC\n", RxToken.pgToken.gId);
+      no_of_pkts_discarded ++;
+   }    
+  NEP_RD_HOST_PEU_ECRC_ERR: {
+      printf(" Packet id - %d  Dropped by Checker - due to NEP_RD_HOST_PEU_ECRC_ERR\n", RxToken.pgToken.gId);
+      no_of_pkts_discarded ++;
+   }    
+  NEP_RD_HOST_PEU_POISON_ERR: {
+      printf(" Packet id - %d  Dropped by Checker - due to NEP_RD_HOST_PEU_POISON_ERR\n", RxToken.pgToken.gId);
+      no_of_pkts_discarded ++;
+   }    
+  NEP_RD_HOST_PEU_MAL_LEN_TLP_ERR: {
+      printf(" Packet id - %d  Dropped by Checker - due to NEP_RD_HOST_PEU_MAL_LEN_TLP_ERR\n", RxToken.pgToken.gId);
+      no_of_pkts_discarded ++;
+   }    
+  NEP_RD_HOST_PEU_MAL_TLP_NULL_ERR: {
+      printf(" Packet id - %d  Dropped by Checker - due to NEP_RD_HOST_PEU_MAL_TLP_NULL_ERR\n", RxToken.pgToken.gId);
+      no_of_pkts_discarded ++;
+   }    
+  NEP_RD_HOST_PEU_MAL_TLP_NULL_PLOAD_ERR: {
+      printf(" Packet id - %d  Dropped by Checker - due to NEP_RD_HOST_PEU_MAL_TLP_NULL_PLOAD_ERR\n", RxToken.pgToken.gId);
+      no_of_pkts_discarded ++;
+   }    
+  RX_TEST_CLASS_MAYBE_DROPED : {
+      printf(" Packet id - %d  Dropped by Checker - due to RX_TEST_CLASS_MAYBE_DROPED \n", RxToken.pgToken.gId);
+      printf(" Packet id - %d  Dropped by Checker - RX_TEST_CLASS_MAYBE_DROPED USED ONLY WITH RESETS \n", RxToken.pgToken.gId);
+      no_of_pkts_discarded ++;
+  }
+  default: { }
+  } // case
+
+ }
+}
+
+task Cniu_rxdma_wr_chkr::check_drop_packet( CRxToken RxToken ) {
+
+  bit[63:0] mem_rd_addr;
+  integer semId ;
+  CcbMem cb;
+
+  // This task needs to set the callback for the address where the packet 
+  // is not expected to be written
+  // If the packet gets written, this should flag an error
+
+    semId = cbRxWriteMgr.getdroppktSemId();
+
+    mem_rd_addr = RxToken.packet_end_address[0];
+    cb = new(semId);
+    cb.set(mem_rd_addr,DROP_PACKET) ;
+    SparseMem.setCallBack(cb);
+    mem_rd_addr = RxToken.packet_start_address[0];
+    cb = new(semId);
+    cb.set(mem_rd_addr,DROP_PACKET) ;
+    SparseMem.setCallBack(cb);
+
+}
+
+
+task Cniu_rxdma_wr_chkr::check_good_packet( CRxToken RxToken) {
+
+   integer semId ;
+   integer i;
+
+   if(use_cr_address) {
+      semId = cbRxWriteMgr.getgoodpktSemId(RxToken.cr_address, 20000 /* CHOOSE THIS NO*/ );
+      printf(" Spawning off check_packet id - %d  -- Address - %x  \n",semId,RxToken.cr_address);
+   } else {
+      semId = cbRxWriteMgr.getgoodpktSemId(RxToken.packet_end_address[ RxToken.NoOfScatter -1 ]);
+      printf(" Spawning off check_packet id - %d  -- NoOfScatter - %d  Address - %x  \n",semId,RxToken.NoOfScatter,RxToken.packet_end_address[ RxToken.NoOfScatter -1 ]);
+   }
+   
+   if(semId == -1) {
+    printf(" TESTBENCH ERROR -- FIX IT\n");
+   }
+   
+   fork {
+    check_packet(RxToken,semId);
+   } join none
+   
+
+
+}
+
+function bit[63:0] Cniu_rxdma_wr_chkr::processErrorCodes(CRxToken RxToken){
+  if(RxToken.rx_test_class!=null){
+   if(RxToken.rx_test_class.valid){
+    processErrorCodes = RxToken.rx_test_class.errors.isErrSet();
+   }
+  else{
+    processErrorCodes = 0;
+  }
+  }
+}
+
+task Cniu_rxdma_wr_chkr::processTestDefines(CRxToken RxToken ){
+  bit[63:0] start_address,end_address;
+  integer semId;
+   CcbMem cb;
+  
+  if(RxToken.rx_test_class!=null){
+    if(RxToken.rx_test_class.valid) {
+       if(RxToken.rx_test_class.test_defines & RX_SEMID_START_ADDR) {
+          semId = RxToken.rx_test_class.semId[RX_SEMID_START_ADDR];
+	  start_address = RxToken.packet_start_address[0];
+	  cb = new(semId);
+	  cb.set(start_address, GOOD_PACKET);
+	  SparseMem.setCallBack(cb);
+       }
+       if(RxToken.rx_test_class.test_defines & RX_SEMID_END_ADDR) {
+          semId = RxToken.rx_test_class.semId[RX_SEMID_END_ADDR];
+	  end_address = RxToken.packet_end_address[RxToken.NoOfScatter -1]-16;
+	  cb = new(semId);
+	  cb.set(end_address, GOOD_PACKET);
+	  SparseMem.setCallBack(cb);
+       }
+    }
+  }
+
+}
+
+task Cniu_rxdma_wr_chkr::check_packet(CRxToken RxToken, integer semId ){
+
+integer rx_len;
+integer NoOf8Bytes; 
+integer index,offset;
+integer i,j,n,m;
+integer match;
+integer status;
+bit [63:0] mem_rd_data;
+bit [39:0] mem_rd_addr;
+bit [39:0] exp_address;
+bit [39:0] cr_address;
+integer mac_id,gId;
+CcbMem cb;
+integer k;
+integer sem_cnt;
+byte_array rxdma_wrbuf;
+byte_array nb,ctrlhdr;
+integer bytes_mismatched;
+integer total_offset, expected_port_num, port_num_from_pkt;
+integer ctrlhdr_len;
+
+bit [7:0] exp_cntl_hdr_B0, exp_cntl_hdr_B1, rtl_cntl_hdr_B0, rtl_cntl_hdr_B1;
+bit [1:0] exp_port_num, rtl_port_num, exp_tres, rtl_tres; 
+bit       exp_maccheck, rtl_maccheck;
+bit [4:0] exp_packet_class, rtl_packet_class;
+bit exp_vlan,exp_llcsnap,exp_noport,exp_badip,exp_tcamhit,exp_tzfvld;
+bit rtl_vlan,rtl_llcsnap,rtl_noport,rtl_badip,rtl_tcamhit,rtl_tzfvld;
+
+
+ mac_id = RxToken.port_num; 
+ gId = RxToken.id;
+ printf(" Starting check_packet  for Tokenid - %d - Packet Originated at port = %d \n",gId,mac_id);
+
+ mem_rd_addr = RxToken.packet_end_address[RxToken.NoOfScatter -1];
+ cr_address = RxToken.cr_address;
+
+
+ // Set callback in the memory 
+ cb = new(semId);
+ if(use_cr_address) {
+   cb.set(cr_address,GOOD_PACKET) ;
+   exp_address = cr_address;
+ }
+ else  {
+   cb.set(mem_rd_addr,GOOD_PACKET) ;
+   exp_address = mem_rd_addr;
+ }
+ SparseMem.setCallBack(cb);
+
+ // processTestDefines(RxToken);
+
+ sem_cnt = 0;
+
+ fork
+   {
+      while(semaphore_get(WAIT,semId,1) == 0 ) {
+       repeat(10) @(posedge CLOCK); 
+      }
+   } {
+      while(sem_cnt<(WRITE_TIMEOUT/10)) {
+       sem_cnt = sem_cnt+1;
+       repeat(10) @(posedge CLOCK); 
+      }
+   } join any
+
+  if (sem_cnt >= (WRITE_TIMEOUT/10) ){
+    printf("ERROR: TIMEOUT PACKET WRITES \n");
+    be_msg.print(e_mesg_error, "Cniu_rxdma_wr_chkr::check_packet", "PacketWrite TimeOut","Address - %x \
+	PacketID - %0d PortId - %0d DMA - %0d \n",exp_address,gId,mac_id,RxToken.dma_num);
+    exit(0); 
+  }
+
+ cbRxWriteMgr.releaseSemId(semId);
+
+ #ifdef N2_FC
+  repeat(1000) @(posedge CLOCK); 
+ // printf("%0d : MAQ-Debug: After 100 Clocks \n", {get_time(HI), get_time(LO)});
+ #else
+  repeat(10) @(posedge CLOCK); 
+ #endif
+
+ nb = new();
+ rxdma_wrbuf = new();
+ //pack_gen[mac_id].build_frame(RxToken.pgToken.gId,RxToken.pgToken.pack_db, nb, rx_len);
+#ifdef MAC_SAT
+#else
+ nb =  new RxToken.pgToken.buf;
+#endif
+ pack_gen[mac_id].display_buf(nb,rx_len,0);
+
+  offset = 0;
+  bytes_mismatched = 0;
+
+  for(k = 0; k < RxToken.NoOfScatter; k ++) {
+    rx_len = RxToken.bytesperchunk[k];
+    NoOf8Bytes = ( (rx_len)/8) + ( ((rx_len) %8) ? 1 :0 ) ;
+    mem_rd_addr = RxToken.packet_start_address[k];
+    printf("RDMC DEBUG TheNoOf8Bytes is %0d\n",  NoOf8Bytes);
+  
+
+
+    for(index=0;index <NoOf8Bytes;index ++) {
+     SparseMem.ReadMem(mem_rd_addr + 8*index  ,mem_rd_data,8'hff);
+  // CLEAN UP -----
+        i=7;
+        j=0;    
+         if ( index >=0 ) {
+         for ( n =0; n< 8; n++) {
+         rxdma_wrbuf.val[offset++] = mem_rd_data[i:j];    
+         i +=8;
+         j +=8;
+         }
+        } 
+     }
+  }
+
+ total_offset = RxToken.header_length;
+ printf ("total_offset=%0d\n", total_offset);
+ ctrlhdr = new();
+ ctrlhdr_len = total_offset - rx_pkt_buf_offset;
+ for(i=0;i<ctrlhdr_len;i++) {
+   ctrlhdr.val[i] = rxdma_wrbuf.val[rx_pkt_buf_offset+i];
+ }
+  if (ctrlhdr_len == 2)
+    port_num_from_pkt = ( ctrlhdr.val[0] & 8'hc0)>>6;
+  else if (ctrlhdr_len == 18) // for 18B hdr, second cycle has the port_num info
+    port_num_from_pkt = ( ctrlhdr.val[16] & 8'hc0)>>6;
+
+  expected_port_num = mac_id;
+
+
+ // $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+ // Checking the fields in the control header
+ // $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+
+ // ----------- PORT NUM check in control header -----------
+ if (expected_port_num !== port_num_from_pkt)
+         be_msg.print(e_mesg_error, "niu_rx_chkr", "check_packet",
+        "CNTL_HDR_MISMATCH, PORT_NUM: niu_rx_chkr[%0d]: Token: %0d Port# Expected %0h \
+         Port# Got %0h\n", mac_id, gId, expected_port_num, port_num_from_pkt);
+    
+ if(get_plus_arg (CHECK, "ENABLE_RX_CNTL_HDR_CHECK")) {
+
+ // Collect the expected control header fields
+    exp_cntl_hdr_B0 	= RxToken.rx_cntl_hdr.val[0];
+    exp_cntl_hdr_B1 	= RxToken.rx_cntl_hdr.val[1];
+
+    exp_port_num 	= exp_cntl_hdr_B0[7:6];
+    exp_maccheck 	= exp_cntl_hdr_B0[5];
+    exp_packet_class 	= exp_cntl_hdr_B0[4:0];
+    exp_vlan 		= exp_cntl_hdr_B1[7];
+    exp_llcsnap 	= exp_cntl_hdr_B1[6];
+    exp_noport 		= exp_cntl_hdr_B1[5];
+    exp_badip 		= exp_cntl_hdr_B1[4];
+    exp_tcamhit 	= exp_cntl_hdr_B1[3];
+    exp_tres 		= exp_cntl_hdr_B1[2:1];
+    exp_tzfvld 		= exp_cntl_hdr_B1[0];
+
+
+ // Collect the RTL control header fields got from memory
+    rtl_cntl_hdr_B0	= rxdma_wrbuf.val[0];
+    rtl_cntl_hdr_B1	= rxdma_wrbuf.val[1];
+
+    rtl_port_num 	= rtl_cntl_hdr_B0[7:6];
+    rtl_maccheck 	= rtl_cntl_hdr_B0[5];
+    rtl_packet_class 	= rtl_cntl_hdr_B0[4:0];
+    rtl_vlan 		= rtl_cntl_hdr_B1[7];
+    rtl_llcsnap 	= rtl_cntl_hdr_B1[6];
+    rtl_noport 		= rtl_cntl_hdr_B1[5];
+    rtl_badip 		= rtl_cntl_hdr_B1[4];
+    rtl_tcamhit 	= rtl_cntl_hdr_B1[3];
+    rtl_tres 		= rtl_cntl_hdr_B1[2:1];
+    rtl_tzfvld 		= rtl_cntl_hdr_B1[0];
+
+
+
+	printf("CNTL_HDR_CHECK: ---------------------------------------------------\n");
+	printf("CNTL_HDR_CHECK:      RX CONTROL HEADER CHECK IN MEMORY CHECKER     \n");
+	printf("CNTL_HDR_CHECK: ---------------------------------------------------\n");
+	printf("CNTL_HDR_CHECK: 		  RTL		MODEL              \n");
+	printf("CNTL_HDR_CHECK: ---------------------------------------------------\n");
+
+	if (rtl_tzfvld!==exp_tzfvld)
+	be_msg.print(e_mesg_error,"CNTL_HDR_CHECK", "", "TZFVLD		= %0h\t\t%0h\n", rtl_tzfvld, exp_tzfvld);
+	else
+	printf("CNTL_HDR_CHECK: TZFVLD		= %0h\t\t%0h\n", rtl_tzfvld, exp_tzfvld);
+	if (rtl_tres!==exp_tres)
+	be_msg.print(e_mesg_error,"CNTL_HDR_CHECK", "", "TRES		= %0h\t\t%0h\n", rtl_tres, exp_tres);	
+	else
+	printf("CNTL_HDR_CHECK: TRES		= %0h\t\t%0h\n", rtl_tres, exp_tres);	
+	if (rtl_tcamhit!==exp_tcamhit)
+	be_msg.print(e_mesg_error,"CNTL_HDR_CHECK", "", "TCAM-Hit	= %0h\t\t%0h\n", rtl_tcamhit, exp_tcamhit);
+	else
+	printf("CNTL_HDR_CHECK: TCAM-Hit	= %0h\t\t%0h\n", rtl_tcamhit, exp_tcamhit);
+	if (exp_badip!==exp_badip)
+	be_msg.print(e_mesg_error,"CNTL_HDR_CHECK", "", "Bad-IP		= %0h\t\t%0h\n", exp_badip, exp_badip);
+	else
+	printf("CNTL_HDR_CHECK: Bad-IP		= %0h\t\t%0h\n", exp_badip, exp_badip);
+	if (rtl_noport!==exp_noport)
+	be_msg.print(e_mesg_error,"CNTL_HDR_CHECK", "", "No-port		= %0h\t\t%0h\n", rtl_noport, exp_noport);
+	else
+	printf("CNTL_HDR_CHECK: No-port		= %0h\t\t%0h\n", rtl_noport, exp_noport);
+	if (rtl_llcsnap!==exp_llcsnap)
+	be_msg.print(e_mesg_error,"CNTL_HDR_CHECK", "", "LLC-SNAP	= %0h\t\t%0h\n", rtl_llcsnap, exp_llcsnap);
+	else
+	printf("CNTL_HDR_CHECK: LLC-SNAP	= %0h\t\t%0h\n", rtl_llcsnap, exp_llcsnap);
+	if (rtl_vlan!==exp_vlan)
+	be_msg.print(e_mesg_error,"CNTL_HDR_CHECK", "", "VLAN		= %0h\t\t%0h\n", rtl_vlan, exp_vlan);
+	else
+	printf("CNTL_HDR_CHECK: VLAN		= %0h\t\t%0h\n", rtl_vlan, exp_vlan);
+	if (rtl_packet_class!==exp_packet_class)
+	be_msg.print(e_mesg_error,"CNTL_HDR_CHECK", "", "CLASS		= %0h\t\t%0h\n", rtl_packet_class, exp_packet_class);
+	else
+	printf("CNTL_HDR_CHECK: CLASS		= %0h\t\t%0h\n", rtl_packet_class, exp_packet_class);
+	if (rtl_maccheck!==exp_maccheck)
+	be_msg.print(e_mesg_error,"CNTL_HDR_CHECK", "", "MAC-check	= %0h\t\t%0h\n", rtl_maccheck, exp_maccheck);
+	else
+	printf("CNTL_HDR_CHECK: MAC-check	= %0h\t\t%0h\n", rtl_maccheck, exp_maccheck);
+	if (rtl_port_num!==exp_port_num)
+	be_msg.print(e_mesg_error,"CNTL_HDR_CHECK", "", "MAC-PORT	= %0h\t\t%0h\n", rtl_port_num, exp_port_num);
+	else
+	printf("CNTL_HDR_CHECK: MAC-PORT	= %0h\t\t%0h\n", rtl_port_num, exp_port_num);
+	printf("CNTL_HDR_CHECK: ---------------------------------------------------\n");
+ 
+ }
+
+   
+ if (debug_en) printf ("total offset for the packet# %0d is %0d\n", gId, total_offset);
+
+   m = RxToken.pkt_length;
+   for( n = 0; n < m; n = n + 1) {
+      if( nb.val[n] !== rxdma_wrbuf.val [n+total_offset]) { // check after "total_offset" number of Bytes
+	be_msg.print(e_mesg_error, "niu_rx_chkr", "check_packet",
+        "DATA_MISMATCH:niu_rx_chkr[%0d]: Token: %0d Word[%0d] Got %0h \
+         Expected %0h\n", mac_id, gId, n,rxdma_wrbuf.val[n+total_offset], nb.val[n] );
+	 bytes_mismatched ++;
+      }
+      else {
+        if (debug_en)
+	be_msg.print(e_mesg_info, "niu_rx_chkr", "check_packet",
+        "Packet Successfully Written:niu_rx_chkr[%0d]: Token: %0d Word[%0d] Got %0h \
+         Expected %0h\n", mac_id, gId, n,rxdma_wrbuf.val[n+total_offset], nb.val[n] );
+     }
+
+  }
+      no_of_pkts_chkd++;
+      if (!bytes_mismatched) {
+      printf ("Completed RX packet check of Token: %0d arrived at dma_num %0d from port %0d, Len %0d\n", 
+              gId, RxToken.dma_num, mac_id, RxToken.pkt_length);
+      printf ("Number of RX packets checked is %0d \n", no_of_pkts_chkd);
+      }
+      else {
+	if (get_plus_arg (CHECK,"EXIT_CHKR_ON_DATA_MISMATCH")) {
+	  be_msg.print(e_mesg_error, "niu_rx_chkr", "check_packet",
+          "ERROR:niu_rx_chkr[%0d]: RX packet %0d has DATA_MISMATCH. Exiting the Test.\n", mac_id, gId);
+	  repeat (100) @(posedge CLOCK);
+          exit(0);
+        }
+      }
+
+
+      if (debug_en)
+        printf ("Exiting check_packet in niu_rx_chkr \n");
+
+      free_memory(RxToken);
+}
+
+
+
+task Cniu_rxdma_wr_chkr::free_memory(CRxToken RxToken  ){
+    rdmc.rx_dma[RxToken.dma_num ].free_memory(RxToken);
+}

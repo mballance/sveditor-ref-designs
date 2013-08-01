@@ -1,0 +1,125 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: rng.if.vri
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#ifndef INC_RNG_IF_VRI
+#define INC_RNG_IF_VRI
+
+#include "fc_top_defines.vri"
+
+port RNG_port {  // signals are listed in alphabetical order
+  l2clk;
+
+  anlg_char_out; // connected to pkg pin RNG_ANLG_CHAR_OUT
+  anlg_sel;      // connected to ccu.rng_anlg_sel <= sig names are different
+  bypass;        // connected to ccu.rng_bypass   <= sig names are different
+  ch_sel;        // connected to ccu.rng_ch_sel   <= sig names are different
+  rng_arst_l;    // connectee to ccu.rng_arst_l
+  rng_data;      // connected to ccu.rng_data
+  stop;          // tied to 0
+  vcoctrl_sel;   // connected to ccu.rng_vcoctrl_sel <= sig names are different
+  vdd_hv15;      // connected to pkg pin VDD_RNG_HV
+  vreg_selbg_l;  // connected to pkg pin VREG_SELBG_L
+}
+
+interface rng_if {
+  input       l2clk          CLOCK        verilog_node "`CPU.rng.l2clk";
+
+  input       anlg_char_out  PSAMPLE #-1  verilog_node "`CPU.rng.anlg_char_out";
+  input [1:0] anlg_sel       PSAMPLE #-1  verilog_node "`CPU.rng.anlg_sel";
+  input       bypass         PSAMPLE #-1  verilog_node "`CPU.rng.bypass";
+  input [1:0] ch_sel         PSAMPLE #-1  verilog_node "`CPU.rng.ch_sel";
+  input       rng_arst_l     PSAMPLE #-1  verilog_node "`CPU.rng.rng_arst_l";
+  input       rng_data       PSAMPLE #-1  verilog_node "`CPU.rng.rng_data";
+  input       stop           PSAMPLE #-1  verilog_node "`CPU.rng.stop";
+  input [1:0] vcoctrl_sel    PSAMPLE #-1  verilog_node "`CPU.rng.vcoctrl_sel";
+  input       vdd_hv15       PSAMPLE #-1  verilog_node "`CPU.rng.vdd_hv15";
+  input       vreg_selbg_l   PSAMPLE #-1  verilog_node "`CPU.rng.vreg_selbg_l";
+}
+
+bind RNG_port rng_bind {
+  l2clk          rng_if.l2clk;
+
+  anlg_char_out  rng_if. anlg_char_out;
+  anlg_sel       rng_if.anlg_sel;
+  bypass         rng_if.bypass;
+  ch_sel         rng_if.ch_sel;
+  rng_arst_l     rng_if.rng_arst_l;
+  rng_data       rng_if.rng_data;
+  stop           rng_if.stop;
+  vcoctrl_sel    rng_if.vcoctrl_sel;
+  vdd_hv15       rng_if.vdd_hv15;
+  vreg_selbg_l   rng_if.vreg_selbg_l;
+}
+
+//====== RNG's n2_rng_sampler_cust module ============
+
+port RNG_sampler_port {
+  l2clk;
+  raw_data;    // outputs from noise cells
+  amux_off;
+  amux_sel0;
+  amux_sel1;
+  amux_sel2;
+  vcoctrl_sel0;
+  vcoctrl_sel1;
+  vcoctrl_sel2;
+}
+
+interface rng_sampler_if {
+  input        l2clk          CLOCK        verilog_node "`CPU.rng.l2clk";
+
+  inout  [2:0] raw_data  NHOLD #1 PSAMPLE #-1  verilog_node "`CPU.rng.xs.raw_data";
+
+  input        amux_off       PSAMPLE #-1  verilog_node "`CPU.rng.xs.amux_off";
+  input  [1:0] amux_sel0      PSAMPLE #-1  verilog_node "`CPU.rng.xs.amux_sel0";
+  input  [1:0] amux_sel1      PSAMPLE #-1  verilog_node "`CPU.rng.xs.amux_sel1";
+  input  [1:0] amux_sel2      PSAMPLE #-1  verilog_node "`CPU.rng.xs.amux_sel2";
+  input  [3:0] vcoctrl_sel0   PSAMPLE #-1  verilog_node "`CPU.rng.xs.vcoctrl_sel0";
+  input  [3:0] vcoctrl_sel1   PSAMPLE #-1  verilog_node "`CPU.rng.xs.vcoctrl_sel1";
+  input  [3:0] vcoctrl_sel2   PSAMPLE #-1  verilog_node "`CPU.rng.xs.vcoctrl_sel2";
+}
+
+bind RNG_sampler_port rng_sampler_bind {
+  l2clk         rng_sampler_if.l2clk;
+  raw_data      rng_sampler_if.raw_data;
+  amux_off      rng_sampler_if.amux_off;
+  amux_sel0     rng_sampler_if.amux_sel0;
+  amux_sel1     rng_sampler_if.amux_sel1;
+  amux_sel2     rng_sampler_if.amux_sel2;
+  vcoctrl_sel0  rng_sampler_if.vcoctrl_sel0;
+  vcoctrl_sel1  rng_sampler_if.vcoctrl_sel1;
+  vcoctrl_sel2  rng_sampler_if.vcoctrl_sel2;
+}
+
+#endif

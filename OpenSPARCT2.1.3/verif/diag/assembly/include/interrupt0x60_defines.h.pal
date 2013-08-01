@@ -1,0 +1,453 @@
+/*
+* ========== Copyright Header Begin ==========================================
+* 
+* OpenSPARC T2 Processor File: interrupt0x60_defines.h.pal
+* Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+* 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+*
+* DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License as published by
+* the Free Software Foundation; version 2 of the License.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+*
+* For the avoidance of doubt, and except that if any non-GPL license 
+* choice is available it will apply instead, Sun elects to use only 
+* the General Public License version 2 (GPLv2) at this time for any 
+* software where a choice of GPL license versions is made 
+* available with the language indicating that GPLv2 or any later version 
+* may be used, or where a choice of which version of the GPL is applied is 
+* otherwise unspecified. 
+*
+* Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+* CA 95054 USA or visit www.sun.com if you need additional information or 
+* have any questions. 
+*
+* 
+* ========== Copyright Header End ============================================
+*/
+start_perl
+# $Id: interrupt0x60_defines.h.pal,v 1.10 2006/07/19 15:33:23 kensan Exp $
+print "/* \$Id\$ */\n";
+
+# Hardware constraints:
+$hw_num_ivs = 64;      $hw_max_ivn = $hw_num_ivs - 1;
+$hw_num_threads = 64;  $hw_max_thread_num = $hw_num_threads - 1;
+
+# interrupt0x60 constraints:
+$max_cc_ivns  = 48;  $max_cc_ivns_m1 = $max_cc_ivns - 1;
+$max_niu_ivns = 16; $max_niu_ivns_m1 = $max_niu_ivns - 1;
+$max_msi_idx  =  8;  $max_msi_idx_m1 = $max_msi_idx - 1;
+
+start_text(>)
+/* Defines for interrupt-related registers (TT=0x60) */
+
+/*>>>>>> ONLY EDIT THE .pal VERSION OF THIS FILE <<<<<<<<*/
+
+#ifndef INTERRUPT0x60_DEFINES_H
+#define INTERRUPT0x60_DEFINES_H 1
+
+#define H_HT0_Interrupt_0x60
+/* Note: Must preserve %o7, so save it temporarily in %g7 */
+#define My_HT0_Interrupt_0x60 \
+        mov     %o7, %g7; \
+        call    intr0x60_handler; \
+        nop
+
+
+/*
+ * This is tightly linked with interrupt0x60_init.s
+ *
+ * Here are the supported CPP macros.  In all cases,
+ * <I> stands for an index, allowing multiple uniquely-named macros.
+ * <IVN> stands for an interrupt vector number, 0-${hw_max_ivn}.
+ * <M> stands for PIU mondo number (20-59, 62, 63).
+ * <T> stands for a thread number (0-${hw_max_thread_num}).
+ *
+ *   INTR0x60_BAD_IV=<IVN>
+ *         If defined, interrupt vector <IVN> is used in INT_MAN
+ *         and MONDO_INT_VEC for any interrupts that are not allowed.
+ *         If not defined, interrupt vector 9 will be used.
+ *
+ *   INTR0x60_BAD_THREAD=<T>
+ *         If defined, thread <T> is used in INT_MAN
+ *         for any interrupts that are not allowed.
+ *         If not defined, thread 0 will be used.
+ *
+ *
+ *
+ *   INTR0x60_CC_IV_<I>=<IVN>  (<I> = 0-${max_cc_ivns_m1})
+ *         If defined, interrupt vector <IVN> is permitted to be used
+ *         for cross-call interrupts. (Max of ${max_cc_ivns} interrupt vectors can
+ *         be used for this purpose; could be increased if needed.)
+ *
+ *   INTR0x60_CC_DEST_ALL
+ *         If defined, allow cross-call interrupts to all threads.
+ *         If not defined, check the target thread against
+ *         INTR0x60_CC_DEST_<T>
+ *
+ *   INTR0x60_CC_DEST_<T>
+ *         Ignored if INTR0x60_CC_DEST_ALL is defined.
+ *         If defined to a non-zero value,
+ *         allow cross-call interrupts to thread <T>
+ *         If not defined, or defined as zero,
+ *         do not allow cross-call interrupts to thread <T>
+ *
+ *   INTR0x60_CC_EXTRA_HANDLER
+ *         If defined (as assembler code), the code will be executed
+ *         at the end of the trap handler in hyperprivileged mode.
+ *         The code can assume %g1 is the current thread,
+ *         and %g2 is the received interrupt vector number.
+ *
+ *
+ *
+ *   INTR0x60_MONDO_IV=<IVN>
+ *         If defined, interrupt vector <IVN> is used for mondo interrupts
+ *         (INTx, MSI, PCIe power management).  If not defined, mondo
+ *         interrupts will be assigned to INTR0x60_BAD_IV.
+ *
+ *    INTR0x60_MONDO_<M>_V=1
+ *         If defined to a non-zero value, mondo <M> will be dispatched to
+ *         a thread.  Otherwise, mondo <M> will not be dispatched.  Used to
+ *         set up the PIU Interrupt Mapping Registers.
+ *
+ *    INTR0x60_MONDO_<M>_MODE=1
+ *         If defined to a non-zero value, mondo <M> will bear data (MDO_MODE).
+ *         Otherwise, mondo <M> will not bear data.  Used to set up
+ *         the PIU Interrupt Mapping Registers.
+ *
+ *    INTR0x60_MONDO_BAD_THREAD=<T>
+ *         If defined, any unused mondo will be assigned to thread <T>.
+ *         Otherwise, any unused mondo will be assigned to INTR0x60_BAD_THREAD.
+ *         Used to set up the PIU Interrupt Mapping Registers when
+ *         INTR0x60_MONDO_<M>_THREAD is not defined.
+ *
+ *    INTR0x60_MONDO_<M>_THREAD=<T>
+ *         If defined, mondo <M> will be assigned to thread <T>.
+ *         Otherwise, mondo <M> will be assigned to INTR0x60_MONDO_BAD_THREAD.
+ *         Used to set up the PIU Interrupt Mapping Registers.
+ *
+ *    INTR0x60_MONDO_<M>_CNTRL=<N>  (<N> = 0-3)
+ *         If defined, mondo <M> will be assigned to interrupt controller <N>.
+ *         Otherwise, mondo <M> will be assigned to interrupt controller 0.
+ *         Used to set up the PIU Interrupt Mapping Registers.
+ *
+ *    INTR0x60_MONDO_<M>_DMAEPT_ENGINE=<N>  (<N> = 1-4)
+ *         Unused for Denali endpoint; used for DMAEPT/PEP (FC_NO_PEU_VERA).
+ *         If defined, mondo <M> will be generated by DMA engine <N>.
+ *         Default is 1+modulo(<M>,4).
+ *         Used when clearing INTX.
+ *
+ *    INTR0x60_MSI_<I>_NUM=<MSI>  (<I> = 0-${max_msi_idx_m1}, <MSI> = 0-255)
+ *    INTR0x60_MSI_<I>_EQN=<EQN>  (<I> = 0-${max_msi_idx_m1}, <EQN> = 0-35)
+ *         If defined, MSI <MSI> will be written to event queue <EQN>.
+ *         Otherwise, MSI <MSI> will be treated as an error.
+ *         Note that INTR0x60_MONDO_<M>_* must be defined, where
+ *         <M> is equal to <EQN> plus 24.
+ *         Used to set up the PIU MSI Mapping Registers.
+ *
+ *    INTR0x60_PM_PME_EQN=<EQN>  (<EQN> = 0-35)
+ *         If defined, PM_PME messages will be written to event queue <EQN>.
+ *         Otherwise, PM_PME messages will be treated as an error.
+ *         Note that INTR0x60_MONDO_<M>_* must be defined, where
+ *         <M> is equal to <EQN> plus 24.
+ *         Used to set up the PIU PM_PME Mapping Registers.
+ *
+ *    INTR0x60_PME_TO_ACK_EQN=<EQN>  (<EQN> = 0-35)
+ *         If defined, PME_TO_ACK messages will be written to event queue <EQN>.
+ *         Otherwise, PME_TO_ACK messages will be treated as an error.
+ *         Note that INTR0x60_MONDO_<M>_* must be defined, where
+ *         <M> is equal to <EQN> plus 24.
+ *         Used to set up the PIU PME_TO_ACK Mapping Registers.
+ *
+ *    INTR0x60_EVENT_QUEUE_BASE
+ *         Label of data area for the event queue.
+ *         Must be 512KB aligned (19 lowest bits must be 0).
+ *         Must be defined if using MSI, PM_PME or PME_TO_ACK.
+ *
+ *    INTR0x60_MSI_START_ADDRESS
+ *         Starting PCI-E address for MSI messages.
+ *         Must be 64KB aligned (16 lowest bits must be 0).
+ *         Must be defined if using MSI.
+ *
+ *    INTR0x60_INTX_DEASSERT_TIMEOUT
+ *         Maximum number of iterations while waiting for
+ *         the interrupt status bit in PCI_E_INTX_STATUS_ADDR
+ *         to be cleared after requesting the PCI-E endpoint
+ *         to send the deassert message.
+ *
+ *    INTR0x60_INT<x>_EXTRA_HANDLER (<x> = A, B, C or D)
+ *         If defined (as assembler code), the code will be executed
+ *         at the end of the trap handler in hyperprivileged mode.
+ *         The code can assume %g1 is the current thread, and
+ *         %g2 is the received interrupt vector number.
+ *
+ *    INTR0x60_MSI_<I>_EXTRA_HANDLER_WHILE_BUSY
+ *         If defined (as assembler code), the code will be executed
+ *         in the trap handler in hyperprivileged mode while the
+ *         mondo busy flag (MONDO_INT_ABUSY) is still asserted.
+ *         The code can assume %g1 is the current thread,
+ *         %g2 is the received interrupt vector number, and
+ *         %g3 is the mondo number.
+ *
+ *    INTR0x60_MSI_EXTRA_HANDLER_WHILE_EQ_DISABLED
+ *         If defined (as assembler code), the code will be executed
+ *         in the trap handler in hyperprivileged mode while the
+ *         event queue is disabled.
+ *         The code can assume %g1 is the current thread,
+ *         %g2 is the received interrupt vector number, and
+ *         %g3 is the mondo number.
+ *
+ *    INTR0x60_MSI_EXTRA_HANDLER
+ *         If defined (as assembler code), the code will be executed
+ *         at the end of the trap handler in hyperprivileged mode.
+ *         The code can assume %g1 is the current thread,
+ *         %g2 is the received interrupt vector number, and
+ *         %g3 is the mondo number.
+ *
+ *    INTR0x60_PM_PME_EXTRA_HANDLER_WHILE_EQ_DISABLED
+ *         If defined (as assembler code), the code will be executed
+ *         in the trap handler in hyperprivileged mode while the
+ *         event queue is disabled.
+ *         The code can assume %g1 is the current thread,
+ *         %g2 is the received interrupt vector number, and
+ *         %g3 is the mondo number.
+ *
+ *    INTR0x60_PM_PME_EXTRA_HANDLER
+ *         If defined (as assembler code), the code will be executed
+ *         at the end of the trap handler in hyperprivileged mode.
+ *         The code can assume %g1 is the current thread,
+ *         %g2 is the received interrupt vector number, and
+ *         %g3 is the mondo number.
+ *
+ *    INTR0x60_PME_TO_ACK_EXTRA_HANDLER_WHILE_EQ_DISABLED
+ *         If defined (as assembler code), the code will be executed
+ *         in the trap handler in hyperprivileged mode while the
+ *         event queue is disabled.
+ *         The code can assume %g1 is the current thread,
+ *         %g2 is the received interrupt vector number, and
+ *         %g3 is the mondo number.
+ *
+ *    INTR0x60_PME_TO_ACK_EXTRA_HANDLER
+ *         If defined (as assembler code), the code will be executed
+ *         at the end of the trap handler in hyperprivileged mode.
+ *         The code can assume %g1 is the current thread,
+ *         %g2 is the received interrupt vector number, and
+ *         %g3 is the mondo number.
+ *
+ *
+ *
+ *   INTR0x60_NIU_RX_IV_<I>=<IVN>  (<I> = 0-${max_niu_ivns_m1})
+ *         If defined, interrupts coming from NIU Logical Device Group <IVN>
+ *         are permitted and will be assigned to interrupt vector <IVN>.
+ *         The interrupt must be caused by RX DMA.
+ *         (Max of ${max_niu_ivns} interrupt vectors can be used for this purpose;
+ *         could be increased if needed.)
+ *         NOTE: The interrupt vector number is always the same
+ *               as the Logical Device Group.  The System Interrupt
+ *               Data register in the NIU for the LDG will be
+ *               initialized to <IVN>+64
+ *
+ *   INTR0x60_NIU_RX_DMA_<I>=<N>  (<I> = 0-${max_niu_ivns_m1}; <N> = 0-15)
+ *         Must be defined if INTR0x60_NIU_RX_IV_<I> is defined (same <I>).
+ *         Interrupts coming from NIU RX DMA Channel <N>
+ *         will be assigned to the NIU Logical Device Group specified
+ *         by INTR0x60_NIU_RX_IV_<I> (same <I>).
+ *
+ *   INTR0x60_NIU_RX_THREAD_<I>=<T>  (<I> = 0-${max_niu_ivns_m1})
+ *         If defined, interrupts coming from NIU Logical Device Group
+ *         specified by INTR0x60_NIU_RX_IV_<I> (same <I>) will be sent to
+ *         thread <T>.  If not defined, those interrupts
+ *         will be sent to INTR0x60_NIU_BAD_THREAD.
+ *
+ *   INTR0x60_NIU_RX_EXTRA_HANDLER
+ *         If defined (as assembler code), the code will be executed
+ *         at the end of the trap handler in hyperprivileged mode.
+ *         The code can assume %g1 is the current thread,
+ *         %g2 is the received interrupt vector number, and
+ *         %g3 is the RX DMA channel number.
+ *
+ *   INTR0x60_NIU_RX_FATAL_HANDLER
+ *         If defined (as assembler code), the code will be executed
+ *         (in hyperprivileged mode) as soon as the trap handler
+ *         determines that the NIU RX interrupt was caused by a
+ *         fatal error.  The code must finish with a "retry" instruction.
+ *         The code can assume %g1 is the current thread,
+ *         %g2 is the received interrupt vector number,
+ *         %g3 is the RX DMA channel number,
+ *         %g4 is the address of the RX_DMA_CTL_STAT register, and
+ *         %g5 is the value of the RX_DMA_CTL_STAT register.
+ *
+ *   INTR0x60_NIU_RX_CLEAR_FATAL_FOR_TSOTOOL
+ *         If defined, and the trap handler determines that the
+ *         NIU RX interrupt was caused by a fatal error, the RX DMA
+ *         channel will be reset in a way that is compatible with
+ *         the tsotool NIU RX interrupt macro.  Afterward, the
+ *         INTR0x60_NIU_RX_EXTRA_HANDLER code (if any) will be executed.
+ *         INTR0x60_NIU_RX_FATAL_HANDLER preempts this macro.
+ *   If the trap handler determines that an NIU RX interrupt was
+ *   caused by a fatal error and neither INTR0x60_NIU_RX_FATAL_HANDLER
+ *   nor INTR0x60_NIU_RX_CLEAR_FATAL_FOR_TSOTOOL are defined, then the
+ *   trap handler will execute EXIT_BAD.
+ *
+ *
+ *
+ *   INTR0x60_NIU_TX_IV_<I>=<IVN>  (<I> = 0-${max_niu_ivns_m1})
+ *         If defined, interrupts coming from NIU Logical Device Group <IVN>
+ *         are permitted and will be assigned to interrupt vector <IVN>.
+ *         The interrupt must be caused by TX DMA.
+ *         (Max of ${max_niu_ivns} interrupt vectors can be used for this purpose;
+ *         could be increased if needed.)
+ *         NOTE: The interrupt vector number is always the same
+ *               as the Logical Device Group.  The System Interrupt
+ *               Data register in the NIU for the LDG will be
+ *               initialized to <IVN>+64
+ *
+ *   INTR0x60_NIU_TX_DMA_<I>=<N>  (<I> = 0-${max_niu_ivns_m1}; <N> = 0-15)
+ *         Must be defined if INTR0x60_NIU_TX_IV_<I> is defined (same <I>).
+ *         Interrupts coming from NIU TX DMA Channel <N>
+ *         will be assigned to the NIU Logical Device Group specified
+ *         by INTR0x60_NIU_TX_IV_<I> (same <I>).
+ *
+ *   INTR0x60_NIU_TX_THREAD_<I>=<T>  (<I> = 0-${max_niu_ivns_m1})
+ *         If defined, interrupts coming from NIU Logical Device Group
+ *         specified by INTR0x60_NIU_TX_IV_<I> (same <I>) will be sent to
+ *         thread <T>.  If not defined, those interrupts
+ *         will be sent to INTR0x60_NIU_BAD_THREAD.
+ *
+ *   INTR0x60_NIU_TX_EXTRA_HANDLER
+ *         If defined (as assembler code), the code will be executed
+ *         at the end of the trap handler in hyperprivileged mode.
+ *         The code can assume %g1 is the current thread,
+ *         %g2 is the received interrupt vector number, and
+ *         %g3 is the TX DMA channel number.
+ *
+ *
+ *
+ *   INTR0x60_SSI_ERR_IV=<IVN>
+ *         If defined, interrupt vector <IVN> is used for SSI error
+ *         interrupts.  If not defined, SSI error interrupts will
+ *         be assigned to INTR0x60_BAD_IV.
+ *
+ *   INTR0x60_SSI_ERR_THREAD=<T>
+ *         If defined, thread <T> is used for SSI error
+ *         interrupts.  If not defined, SSI error interrupts will
+ *         be assigned to INTR0x60_BAD_THREAD.
+ *
+ *   INTR0x60_SSI_ERR_EXTRA_HANDLER
+ *         If defined (as assembler code), the code will be executed
+ *         at the end of the trap handler in hyperprivileged mode.
+ *         The code can assume %g1 is the current thread, and
+ *         %g2 is the received interrupt vector number
+ *
+ *
+ *
+ *   INTR0x60_SSI_INT_IV=<IVN>
+ *         If defined, interrupt vector <IVN> is used for SSI_EXT_INT_L
+ *         interrupts.  If not defined, SSI_EXT_INT_L interrupts will
+ *         be assigned to INTR0x60_BAD_IV.
+ *
+ *   INTR0x60_SSI_INT_THREAD=<T>
+ *         If defined, thread <T> is used for SSI_EXT_INT_L
+ *         interrupts.  If not defined, SSI_EXT_INT_L interrupts will
+ *         be assigned to INTR0x60_BAD_THREAD.
+ *
+ *   INTR0x60_SSI_INT_EXTRA_HANDLER
+ *         If defined (as assembler code), the code will be executed
+ *         at the end of the trap handler in hyperprivileged mode.
+ *         The code can assume %g1 is the current thread, and
+ *         %g2 is the received interrupt vector number
+ *
+ */
+
+#ifndef INTR0x60_BAD_IV
+#define INTR0x60_BAD_IV 9
+#endif /* INTR0x60_BAD_IV */
+
+#ifndef INTR0x60_BAD_THREAD
+#define INTR0x60_BAD_THREAD 0
+#endif /* INTR0x60_BAD_THREAD */
+
+#ifndef INTR0x60_MONDO_BAD_THREAD
+#define INTR0x60_MONDO_BAD_THREAD INTR0x60_BAD_THREAD
+#endif /* INTR0x60_MONDO_BAD_THREAD */
+
+#ifndef INTR0x60_NIU_BAD_THREAD
+#define INTR0x60_NIU_BAD_THREAD   INTR0x60_BAD_THREAD
+#endif /* INTR0x60_NIU_BAD_THREAD */
+
+
+/****************************************/
+#ifndef INTR0x60_SSI_ERR_IV
+#define INTR0x60_SSI_ERR_IV INTR0x60_BAD_IV
+#endif /* INTR0x60_SSI_ERR_IV */
+
+#ifndef INTR0x60_SSI_ERR_THREAD
+#define INTR0x60_SSI_ERR_THREAD INTR0x60_BAD_THREAD
+#endif /* INTR0x60_SSI_ERR_THREAD */
+
+#ifndef INTR0x60_SSI_INT_IV
+#define INTR0x60_SSI_INT_IV INTR0x60_BAD_IV
+#endif /* INTR0x60_SSI_INT_IV */
+
+#ifndef INTR0x60_SSI_INT_THREAD
+#define INTR0x60_SSI_INT_THREAD INTR0x60_BAD_THREAD
+#endif /* INTR0x60_SSI_INT_THREAD */
+
+>for $mondo_num (20 .. 59, 62, 63) {
+
+
+/****************************************/
+#if INTR0x60_MONDO_${mondo_num}_MODE
+#define INTR0x60_MONDO_${mondo_num}_MODE 1
+#else
+#define INTR0x60_MONDO_${mondo_num}_MODE 0
+#endif /* INTR0x60_MONDO_${mondo_num}_MODE */
+
+#if INTR0x60_MONDO_${mondo_num}_V
+#define INTR0x60_MONDO_${mondo_num}_V 1
+#else
+#define INTR0x60_MONDO_${mondo_num}_V 0
+#endif /* INTR0x60_MONDO_${mondo_num}_V */
+
+#ifndef INTR0x60_MONDO_${mondo_num}_THREAD
+#define INTR0x60_MONDO_${mondo_num}_THREAD INTR0x60_MONDO_BAD_THREAD
+#endif /* INTR0x60_MONDO_${mondo_num}_THREAD */
+
+#ifndef INTR0x60_MONDO_${mondo_num}_CNTRL
+#define INTR0x60_MONDO_${mondo_num}_CNTRL 0
+#endif /* INTR0x60_MONDO_${mondo_num}_CNTRL */
+
+>if ($mondo_num < 60) {
+>$engine = 1+ $mondo_num % 4;
+#ifndef INTR0x60_MONDO_${mondo_num}_DMAEPT_ENGINE
+#define INTR0x60_MONDO_${mondo_num}_DMAEPT_ENGINE ${engine}
+#endif /* INTR0x60_MONDO_${mondo_num}_DMAEPT_ENGINE */
+>}
+>}
+
+
+#ifndef INTR0x60_INTX_DEASSERT_TIMEOUT
+#define INTR0x60_INTX_DEASSERT_TIMEOUT 1000
+#endif /* INTR0x60_INTX_DEASSERT_TIMEOUT */
+
+
+/****************************************/
+#define INTR0x60_IG_UNUSED  0
+#define INTR0x60_IG_CC      1
+#define INTR0x60_IG_SSI_ERR 2
+#define INTR0x60_IG_SSI_INT 3
+#define INTR0x60_IG_NIU_RX  4
+#define INTR0x60_IG_NIU_TX  5
+#define INTR0x60_IG_PIU     6
+
+#endif /* INTERRUPT0x60_DEFINES_H */

@@ -1,0 +1,182 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: mss_l2_qual.diaglist
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#ifndef SYSNAME
+#  ifdef FC8
+//   // FC8 parameters
+#    define SYSNAME fc8
+#    define sys(x) mss_fc8_ ## x
+#  else
+//   // FC1 parameters
+#    define SYSNAME fc1
+#    define sys(x) mss_fc1_ ## x
+#  endif
+#endif
+//
+#ifdef SETMODREL
+#  define MODREL_2c1r -vcs_rel_name=fc1_dimm8_1rank_dual
+#else
+#  define MODREL_2c1r
+#endif
+//
+//==============================================================================
+
+<sys(mss_l2_qualify)>
+<sys(l2_qual) name=sys(l2_qual)>
+
+<sys(build_l2_2c1r) sys=SYSNAME -sunv_run -vcs_build -zeroIn_build -config_rtl=ZIN_USE_CORE_CHECKERS -vcs_build_args=+define+DEBUG_PIPE -vcs_build_args=+define+FBDIMM_NUM_8 -vcs_build_args=+define+DUAL_CHANNEL>
+
+// Always run with TSO_CHECKER enabled
+<runargs MODREL_2c1r -sas_run_args=-DTSO_CHECKER -sas>
+
+#if (!defined FC)
+<sys(all)>
+#endif
+<sys(nightly)>
+<runargs -drm_cpufreq="1200 .." >
+//---------------------------------------------------------------------------
+//  Upto 8-threaded diags to be run on 1 core benches, or
+//  multicore (2,4 core) benches, with PORTABLE_CORE
+//--------------------------------------------------------------------------
+
+//---DMA diags {{{
+<runargs -fast_boot -drm_freeram=1500 -midas_args=-DPART_0_BASE=0x200000000 -midas_args=-DCMP_THREAD_START=ALL -finish_mask=all -midas_args=+allow_tsb_conflicts -vcs_run_args=+l2esr_mon_off -vcs_run_args=+ios_0in_ras_chk_off -sas_run_args=-DNO_TSO_CHECKER>
+#include "dma_qual.diaglist"
+</runargs>
+//---DMA diags }}}
+
+//------------Diags for Non 8 core benches -------------------------------{{{
+#if(!defined FC8 && !defined CCM8 && !defined CMP8)
+
+//---tsotool diag {{{
+<runargs -max_cycle=+3000000 -vcs_run_args=+TIMEOUT=10000 -drm_freeram=2000 -vcs_run_args=+finish_mask=all -midas_args=-DCMP_THREAD_START=ALL -vcs_run_args=+l2esr_mon_off -midas_args=-DPART_0_BASE=0x0 -midas_args=-allow_tsb_conflicts -fast_boot -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+8_FBDIMMS -vcs_run_args=+l2cpx_errmon_off>
+
+n2_8t-blkinit_weight_83078_doff n2_8t-blkinit_weight_83078.s -midas_args=-DCREGS_LSU_CTL_REG_DC=0
+n2_8t-blkinit_weight_83078_ioff n2_8t-blkinit_weight_83078.s -midas_args=-DCREGS_LSU_CTL_REG_IC=0
+n2_8t-blkinit_weight_83078_l2off n2_8t-blkinit_weight_83078.s -midas_args=-DCREGS_L2_CTL_REG_DIS=1 -midas_args=-DCREGS_LSU_CTL_REG_DC=0 -midas_args=-DCREGS_LSU_CTL_REG_IC=0
+n2_8t-blkinit_weight_83078_l2dir n2_8t-blkinit_weight_83078.s -midas_args=-DCREGS_L2_CTL_REG_ASSOCDIS=1
+
+</runargs>
+
+//---tsotool diag }}}
+
+//---indra diag {{{
+<runargs -max_cycle=+3000000 -vcs_run_args=+TIMEOUT=10000 -drm_freeram=2000 -vcs_run_args=+finish_mask=all -midas_args=-DCMP_THREAD_START=ALL -midas_args=-DPART_0_BASE=0x200000000 -midas_args=-allow_tsb_conflicts -fast_boot -vcs_run_args=+8_FBDIMMS>
+
+n2_prefetch_ice n2_prefetch_ice.s 
+n2_blkinit_l2  n2_blkinit_l2.s
+n2_blkinit_l2off  n2_blkinit_l2.s -midas_args=-DCREGS_L2_CTL_REG_DIS=1 -midas_args=-DCREGS_LSU_CTL_REG_DC=0 -midas_args=-DCREGS_LSU_CTL_REG_IC=0
+n2_blkinit_l2_xmask n2_blkinit_l2_xmask.s
+n2_blkinit_l2_ua n2_blkinit_l2_ua.s
+n2_blkinit_l2_stb n2_blkinit_l2_stb.s
+n2_blkinit_l2_sth n2_blkinit_l2_sth.s
+n2_blkinit_l2_stw n2_blkinit_l2_stw.s
+n2_blkinit_l2_stx n2_blkinit_l2_stx.s
+n2_blkinit_l2_std n2_blkinit_l2_std.s
+n2_stpipeline n2_stpipeline.s
+n2_l2replacement n2_l2replacement.s 
+n2_i_n_d n2_i_n_d.s
+// single thread test ensure that all 4ways of dcache are used. Selfchecking test need turn off sas.
+lsu_lru_test_0 lsu_lru_test_0.s -nosas -midas_args=-DCMP_THREAD_START=0x0000000000000001 -finish_mask=01 -midas_args=-DPART_0_BASE=0x200000000
+
+fc1_l2_mcu_intf1 fc1_mcu_106920_ind.s -midas_args=-DCMP_THREAD_START=ALL -vcs_run_args=+DIMM_SIZE_2G -vcs_run_args=+SYSCLK_166 -vcs_run_args=+CMPDR_RATIO_4.25 -midas_args=-DPART_0_BASE=0x0 -midas_args=-DHBOOT_HV_ONLY -midas_args=-DCREGS_LSU_CTL_REG_DC=0 -midas_args=-DCREGS_LSU_CTL_REG_IC=0
+
+fc1_l2_mcu_intf2 fc1_mcu_106860_ind.s -midas_args=-DCMP_THREAD_START=ALL -vcs_run_args=+DIMM_SIZE_2G -vcs_run_args=+SYSCLK_166 -vcs_run_args=+CMPDR_RATIO_4.25 -midas_args=-DPART_0_BASE=0x0 -midas_args=-DHBOOT_HV_ONLY -midas_args=-DCREGS_LSU_CTL_REG_DC=0 -midas_args=-DCREGS_LSU_CTL_REG_IC=0 
+
+fc1_l2_mcu_intf3 fc1_106616_ind.s     -midas_args=-DCMP_THREAD_START=ALL -vcs_run_args=+DIMM_SIZE_2G -vcs_run_args=+SYSCLK_166 -vcs_run_args=+CMPDR_RATIO_4.25 -midas_args=-DPART_0_BASE=0x0 -midas_args=-DHBOOT_HV_ONLY -midas_args=-DCREGS_LSU_CTL_REG_DC=0 -midas_args=-DCREGS_LSU_CTL_REG_IC=0
+
+fc1_l2_mcu_hash1 fc1_mcu_106920_ind.s -midas_args=-DCMP_THREAD_START=ALL -vcs_run_args=+DIMM_SIZE_2G -vcs_run_args=+SYSCLK_166 -vcs_run_args=+CMPDR_RATIO_4.25 -midas_args=-DPART_0_BASE=0x0 -midas_args=-DHBOOT_HV_ONLY -midas_args=-DCREGS_LSU_CTL_REG_DC=0 -midas_args=-DCREGS_LSU_CTL_REG_IC=0 -vcs_run_args=+hash_on
+
+fc1_l2_mcu_hash2 fc1_mcu_106860_ind.s -midas_args=-DCMP_THREAD_START=ALL -vcs_run_args=+DIMM_SIZE_2G -vcs_run_args=+SYSCLK_166 -vcs_run_args=+CMPDR_RATIO_4.25 -midas_args=-DPART_0_BASE=0x0 -midas_args=-DHBOOT_HV_ONLY -midas_args=-DCREGS_LSU_CTL_REG_DC=0 -midas_args=-DCREGS_LSU_CTL_REG_IC=0 -vcs_run_args=+hash_on
+
+fc1_l2_mcu_hash3 fc1_106616_ind.s     -midas_args=-DCMP_THREAD_START=ALL -vcs_run_args=+DIMM_SIZE_2G -vcs_run_args=+SYSCLK_166 -vcs_run_args=+CMPDR_RATIO_4.25 -midas_args=-DPART_0_BASE=0x0 -midas_args=-DHBOOT_HV_ONLY -midas_args=-DCREGS_LSU_CTL_REG_DC=0 -midas_args=-DCREGS_LSU_CTL_REG_IC=0 -vcs_run_args=+hash_on
+
+fc1_cross_inval fc1_cross_inval_ind.s -midas_args=-DCMP_THREAD_START=ALL -vcs_run_args=+finish_mask=all -fast_boot -midas_args=-DPART_0_BASE=0x0 -midas_args=-DHBOOT_HV_ONLY 
+
+fc1_cross_inval_hash fc1_cross_inval_ind.s -midas_args=-DCMP_THREAD_START=ALL -vcs_run_args=+finish_mask=all -fast_boot -midas_args=-DPART_0_BASE=0x0 -midas_args=-DHBOOT_HV_ONLY  -vcs_run_args=+hash_on
+
+</runargs>
+
+//---indra diag }}}
+
+
+//---ccx diag {{{
+<runargs -fast_boot -midas_args=-allow_tsb_conflicts -max_cycle=+3000000 -vcs_run_args=+TIMEOUT=10000 -midas_args=-DCMP_THREAD_START=ALL -finish_mask=all -midas_args=-DCREGS_LSU_CTL_REG_DC=0 -midas_args=-DCREGS_LSU_CTL_REG_IC=0  -vcs_run_args=+l2esr_mon_off -midas_args=-DPART_0_BASE=0x200000000 -vcs_run_args=+8_FBDIMMS -midas_args=-DL2_REG_PROG -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+l2cpx_errmon_off>
+// Add diag here
+</runargs>
+
+//---ccx diag }}}
+
+//---MPGen diags {{{
+<runargs>
+// Add diag here
+</runargs>
+//---MPGen diags }}}
+
+#else
+//------------------------------------------------------------------------}}}
+
+//---------------------------------------------------------------------------
+//  Upto 64-threaded diags to be run on 8 core benches
+//---------------------------------------------------------------------------
+//------------Diags for 8 core benches------------------------------------{{{
+
+// --- tsotool diags // {{{
+<runargs -fast_boot -midas_args=-allow_tsb_conflicts -max_cycle=+3000000 -vcs_run_args=+TIMEOUT=10000 -drm_freeram=2000 -vcs_run_args=+show_load -vcs_run_args=+show_delta -finish_mask=all -midas_args=-DCMP_THREAD_START=ALL -vcs_run_args=+l2esr_mon_off -vcs_run_args=+8_FBDIMMS -midas_args=-DL2_REG_PROG -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+l2cpx_errmon_off>
+// Add diag here
+</runargs>
+// --- tsotool diags // }}}
+
+//---ccx diag real 64 threads {{{
+<runargs -fast_boot -midas_args=-allow_tsb_conflicts -vcs_run_args=+show_delta -max_cycle=+3000000 -vcs_run_args=+TIMEOUT=10000 -finish_mask=all -midas_args=-DCMP_THREAD_START=ALL  -midas_args=-DCREGS_LSU_CTL_REG_DC=0 -midas_args=-DCREGS_LSU_CTL_REG_IC=0 -midas_args=-DPORTABLE_CORE -vcs_run_args=+l2esr_mon_off -midas_args=-DPART_0_BASE=0x200000000 -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+8_FBDIMMS -vcs_run_args=+l2cpx_errmon_off>
+// Add diag here
+</runargs>
+//---ccx diag real 64 threads }}}
+
+#endif
+//========================================================================}}}
+//===========================================================================
+
+</runargs>
+</sys(nightly)>
+#if (!defined FC)
+</sys(all)>
+#endif
+</runargs>
+
+</sys(build_l2_2c1r)>
+
+</sys(l2_qual)>
+
+</sys(mss_l2_qualify)>

@@ -1,0 +1,339 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ccxDevSpcBFM.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// To use this class, you must have in your bench a files called globals.vri
+// that has all global extern declerations in it.
+#include <globals.vri>
+
+#include <ccxDevicesDefines.vri>
+#include <std_display_defines.vri>
+
+#include <std_display_class.vrh>
+#include <basePktClass.vrh>
+#include <cpxPktClass.vrh>
+#include <pcxPktClass.vrh>
+#include <baseParamsClass.vrh>
+#include <sparcParams.vrh>
+#include <ccxDevBaseBFM.vrh>
+
+
+#define CLASSNAME CcxDevSpcBFM
+#define CLASSNAMEQ "CcxDevSpcBFM"
+
+class CLASSNAME extends CcxDevBaseBFM {
+ 
+  // methods
+  task new(integer instatnce, reg passiveIn=0, reg flagUnexpected=0, reg ccxOnly=0);
+  // virtual in base
+  task recv(BasePkt pktHndl);
+  task cancelRecv(BasePkt pktHndl);
+  task sendIntr(reg [5:0] tid,
+                reg [1:0] type,
+                reg [5:0] vect);
+  local task slave();
+}
+
+
+  task CLASSNAME::new (integer instatnce, reg passiveIn=0,
+                       reg flagUnexpected=0, reg ccxOnly=0) {
+
+    super.new(instatnce,passiveIn,CLASSNAMEQ);
+    super.flagUnexpected = flagUnexpected;
+    ccxOnly = ccxOnly; // only testing ccx
+    srandom(gSeed,this);
+    
+    if (!passiveIn) {
+      // Initialize Outputs
+      gPcxPort[myPort].$req = 0;
+      gPcxPort[myPort].$atmo = 0;
+      gPcxPort[myPort].$datao = 0;
+    }
+
+
+//     fork {
+//       monitor();
+//     } join none
+
+    
+    fork {
+      @(posedge gPcxPort[myPort].$clk);
+      gPcxPort[myPort].$gnt == 0;
+      gCpxPort[myPort].$datai == 0;
+    } join none
+    
+
+    // as a slave, we listen to one of two crossbars
+    fork slave();
+    join none
+    
+    // service mailboxes, send packets
+    fork super.serviceSends2(PP_PCX);
+    join none
+
+  }
+
+  
+
+// use to receive an expected packet.
+// mainly for CCX testing.
+//
+// user passes in a packet who's fields are set to match the
+// packet that should show up at this port. When it does, the
+// caller is notified (toggle a var in the passed in packet) and
+// the passed in packet will be populated with what showed up at the
+// destinatin port. Unexpected (not registered via a call to this task)
+// packets will cause failure (if enabled).
+task CLASSNAME::recv(BasePkt pktHndl) {
+
+  //CpxPkt cpxPkt;
+  
+  // assign/cast pktHndl to be of PcxPkt type rather than base
+  //cast_assign(cpxPkt,pktHndl);
+
+  // load signature hash. key is "signature" and data is handle.
+  expectedSig[pktHndl.signature] = pktHndl;
+  
+}
+
+// Mainly for CCX testing. Call when a pkt should no longer arrive.
+// For CCX, a pkt should never intentionally get dropped so this may not get used.
+task CLASSNAME::cancelRecv(BasePkt pktHndl) {
+
+  //CpxPkt cpxPkt;
+
+  // assign/cast pktHndl to be of PcxPkt type rather than base
+  //cast_assign(cpxPkt,pktHndl);
+
+  // clear signature hash.
+  //void = assoc_index(DELETE,expectedSig,pcxPkt.getVector());
+  void = assoc_index(DELETE,expectedSig,pktHndl.signature);
+  
+}
+
+  
+
+  // Wait for data from CPX, we are a SPC
+  task CLASSNAME::slave() {
+
+    CpxPkt pktHndl;
+    ccxPort portVar = gCpxPort[myPort];
+    integer second = 0;
+    reg [145:0] tmpVec;
+    
+//    if (!passive) {
+      
+      while (1) {
+        if (portVar.$datai[145] == 0) @(posedge portVar.$datai[145]);
+        pktHndl = new();
+        pktHndl.loadPkt(portVar.$datai, myPort);
+        pktHndl.ccxSourced = 1;
+
+        // anyone waiting for this packet?
+        // was it expected?       
+        tmpVec = pktHndl.makeSignature();
+        if (assoc_index(CHECK, expectedSig, tmpVec)) {
+          expectedSig[tmpVec].loadPkt(pktHndl.getVector(), myPort);
+          expectedSig[tmpVec].arrivalTime = get_cycle();
+          expectedSig[tmpVec].pktArrived = ~expectedSig[tmpVec].pktArrived;
+        } else if (flagUnexpected) {
+          pktHndl.print(myPort);
+          PR_ERROR(CLASSNAMEQ, MON_ERROR,
+                   psprintf ("Unexpected packet on port %0d, vector=%h",myPort,pktHndl.getVector()));
+        }
+
+        // do something
+        @(negedge portVar.$clk);
+      }
+
+      //     while (1) {
+      //       @(negedge portVar.$clk);
+      //       if (portVar.$datai[145] == 1) {
+      //         pktHndl = new();
+      //         pktHndl.loadPkt(portVar.$datai, myPort);
+      //         pktHndl.ccxSourced = 1;
+      //         //if (gParam.ccxPktPrint[PP_CPX] || gParam.ccxPktPrint[PP_SPC]) pktHndl.print(myPort);
+      //       }
+      //     }
+      
+      
+      
+      //     while (1) {
+      //       @(posedge portVar.$datai[145]);
+      //       pktHndl = new();
+      //       pktHndl.loadPkt(portVar.$datai, myPort);
+      //       if (gParam.ccxPktPrint[PP_CPX] || gParam.ccxPktPrint[PP_SPC]) pktHndl[second].print(myPort);
+      // 
+      //       // deal with 2 ifill return pkts
+      //       if (pktHndl[second].rtntyp == CPX_IFILL &&
+      //           pktHndl[second].wayf4b == 0) {
+      //         second++;
+      //         @(negedge portVar.$clk);
+      //         pktHndl[second] = new();
+      //         pktHndl[second].loadPkt(portVar.$datai, myPort);
+      //         if (gParam.ccxPktPrint[PP_CPX] || gParam.ccxPktPrint[PP_SPC]) pktHndl[second].print(myPort);
+      //       }
+      //       
+      //       @(negedge portVar.$datai[145]);
+      //       second = 0;
+      // 
+      //       // print?
+      //       //printf("\n%0d CcxDevSpcBFM::slavePcx got packet!\n", get_cycle());
+      //       
+      //       //pktHndl.printPkt();
+      // 
+      //       // anyone waiting for this packet?
+      //       // was it expected? review
+      // 
+      //     } // while
+
+//    }
+  }
+
+
+
+
+//   // monitor real devices initiations when we are passive on the bus.
+//   task CLASSNAME::monitor() {
+// 
+//     ccxPort portVar = gPcxPort[myPort];
+//     ccxPort portVarC = gCpxPort[myPort];
+//     CpxPkt pktHndlC;
+//     reg [9:0] atm,req;
+//     integer i;
+// 
+//     if (gParam.ccxPktPrint[PP_PCX] ||
+//         gParam.ccxPktPrint[PP_SPC] ||
+//         gParam.ccxPktPrint[PP_TRG] ||
+//         gParam.ccxPktPrintMask[myPort]) {
+// 
+//       while (get_cycle() < 3) @(posedge CLOCK);
+//       
+//       pktHndlC = new();
+// 
+//       // monitor SPC out going requests.
+//       if (gParam.ccxPktPrint[PP_PCX] ||
+//           gParam.ccxPktPrint[PP_SPC] ||
+//           gParam.ccxPktPrintMask[myPort]) {
+//         fork
+//         {
+//           // monitor SPC out going requests.
+//           // need to detect req changing back to zero here.
+//           while (1) {
+//             
+//             if (!portVar.$req) {
+//               @(portVar.$req);
+//               req = portVar.$req;
+//               if (portVar.$atmo) {
+//                 i = 2;
+//                 atm = portVar.$atmo;
+//               } else {
+//                 i = 1;
+//                 atm = 0;
+//               }
+//             }
+// 
+//             repeat (i) {
+//               // need to fork off to handle streaming/ back to back packets
+//               {
+//                 PcxPkt pktHndl = new(); // keep in block
+//                 fork {
+//                   pktHndl.atm_wire = atm;
+//                   pktHndl.req_wire = req;
+//                   @(negedge portVar.$clk);
+//                   pktHndl.loadPkt(portVar.$datao, myPort);
+//                   // if (gParam.ccxPktPrint[PP_PCX] ||
+//                   //     gParam.ccxPktPrint[PP_SPC] ||
+//                   //     gParam.ccxPktPrintMask[myPort])
+//                     pktHndl.print(myPort);
+//                 } join none
+//               }
+//               @(negedge portVar.$clk);
+//             }// rep
+//           } // while
+//         } join none
+//       }
+//       
+//       fork
+//       {
+//         // monitor SPC incomming packets/responses
+//         if (gParam.ccxPktPrint[PP_CPX] ||
+//             gParam.ccxPktPrint[PP_SPC] ||
+//             gParam.ccxPktPrint[PP_TRG] ||
+//             gParam.ccxPktPrintMask[myPort]) {
+//           
+//           while (1) {
+//             if (portVarC.$datai[145] == 0) @(posedge portVarC.$datai[145]);
+//             pktHndlC.loadPkt(portVarC.$datai, myPort);
+//             // if (gParam.ccxPktPrint[PP_PCX] ||
+//             //     gParam.ccxPktPrint[PP_SPC] ||
+//             //     gParam.ccxPktPrint[PP_TRG] ||
+//             //     gParam.ccxPktPrintMask[myPort])
+//             pktHndlC.print(myPort);
+//             @(negedge portVar.$clk);
+//           }
+//         }
+//         
+//         //       while (1) {
+//         //         @(negedge portVarC.$clk);
+//         //         if (portVarC.$datai[145] == 1) {
+//         //           pktHndlC.loadPkt(portVarC.$datai, myPort);
+//         //           if (gParam.ccxPktPrint[PP_PCX] ||
+//         //               gParam.ccxPktPrint[PP_SPC] ||
+//         //               gParam.ccxPktPrintMask[myPort]) pktHndlC.print(myPort);
+//         //         }
+//         //       }
+//       } join none
+//       
+//     } // if   
+//   }
+// 
+  
+  // Create/config Interrupt Pkt. this is really a store packet to a certain
+  // I/O adddress at the NCU. The NCU then does an interrupt to the target.
+  task CLASSNAME::sendIntr(reg [5:0] tid,
+                           reg [1:0] type,
+                           reg [5:0] vect)
+  {
+    PcxPkt     reqPkt;
+
+    reqPkt = new();
+    reqPkt.createIntr(tid,type,vect);
+    reqPkt.sendPorts = 1 << myPort;
+    reqPkt.targetPorts = 1 << tid[5:3];
+    reqPkt.send(1);
+  }
+  

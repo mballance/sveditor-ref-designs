@@ -1,0 +1,1555 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: l2sat_coverage.vrpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "plusArgMacros.vri"
+#include "std_display_class.vrh"
+#include "std_display_defines.vri"
+#include "l2sat_defines.vrh"
+
+#include "l2sat_cov_ports_binds.vrh"
+#include "l2sat_cov.if.vrh"
+
+class l2sat_intf_coverage_class
+{	
+  // for dispmon
+  StandardDisplay dbg;
+  local string 	  myname;
+  
+  event l2t0_cpx_error_pkt1_evnt_trig;
+  event l2t0_cpx_error_pkt4_evnt_trig;
+  event l2t0_cpx_error_pkt5_evnt_trig;
+  event l2t0_cpx_error_bank0_evnt_trig;
+  event l2t0_cpx_error_bank1_evnt_trig;
+  event l2t0_cpx_error_bank2_evnt_trig;
+  event l2t0_cpx_error_bank3_evnt_trig;
+  event l2t0_cpx_error_bank4_evnt_trig;
+  event l2t0_cpx_error_bank5_evnt_trig;
+  event l2t0_cpx_error_bank6_evnt_trig;
+  event l2t0_cpx_error_bank7_evnt_trig;
+  event l2t0_cpx_anybank_error_evnt_trig;
+  event l2t0_cpx_error_bank2_thread_evnt_trig;
+  event l2t0_cpx_error_bank3_thread_evnt_trig;
+  event l2t0_cpx_error_bank4_thread_evnt_trig;
+  event l2t0_cpx_error_bank5_thread_evnt_trig;
+  event l2t0_cpx_error_bank6_thread_evnt_trig;
+  event l2t0_cpx_error_bank7_thread_evnt_trig;
+  event l2t0_cpx_error_bank8_thread_evnt_trig;
+  event l2t0_cpx_bank_error_evnt_trig;
+
+
+
+  bit l2sat_intf_cov_debug;
+
+
+  //variables that misc_cov triggers through the object handle
+  bit         l2_iq_cas12_samp_trigger; 
+  bit [13:0]  l2_atomic_store_samp_trigger;
+  bit [2:0]   l2_pst1_dataerr_pst2_tagerr_samp_trigger;
+  bit [19:0]  l2_error_vuad_ecc_samp_trigger;
+  bit         l2_single_pcx_WRI_same_addr_samp_trigger;
+  bit         l2_double_pcx_WRI_same_addr_samp_trigger;
+  bit         l2_single_pcx_WR8_same_addr_samp_trigger;
+  bit         l2_double_pcx_WR8_same_addr_samp_trigger;
+  bit         l2_single_pcx_RDD_same_addr_samp_trigger;
+  bit         l2_double_pcx_RDD_same_addr_samp_trigger;
+  bit         l2_single_pcx_WRI_diff_addr_samp_trigger;
+  bit         l2_double_pcx_WRI_diff_addr_samp_trigger;
+  bit         l2_single_pcx_WR8_diff_addr_samp_trigger;
+  bit         l2_double_pcx_WR8_diff_addr_samp_trigger;
+  bit         l2_single_pcx_RDD_diff_addr_samp_trigger;
+  bit         l2_double_pcx_RDD_diff_addr_samp_trigger;
+
+  bit pcx_l2t_atm_px2;
+  bit pcx_l2t_data_rdy_px2;
+
+  bit [1:0]   l2t0_type1;
+  bit [1:0]   l2t0_type2;
+  bit [1:0]   l2t0_type3;
+  bit [1:0]   l2t0_type4;
+  bit [1:0]   l2t0_type5;
+  bit [1:0]   l2t0_bank0;
+  bit [1:0]   l2t0_bank1;
+  bit [1:0]   l2t0_bank2;
+  bit [1:0]   l2t0_bank3;
+  bit [1:0]   l2t0_bank4;
+  bit [1:0]   l2t0_bank5;
+  bit [1:0]   l2t0_bank6;
+  bit [1:0]   l2t0_bank7;
+
+. for ($bank=0; $bank<8; $bank++)
+. {
+  bit [1:0]   l2t${bank}_thread1;
+  bit [1:0]   l2t${bank}_thread2;
+  bit [1:0]   l2t${bank}_thread3;
+  bit [1:0]   l2t${bank}_thread4;
+  bit [1:0]   l2t${bank}_thread5;
+  bit [1:0]   l2t${bank}_thread6;
+  bit [1:0]   l2t${bank}_thread7;
+  bit [1:0]   l2t${bank}_thread8;
+. }
+
+  bit [7:0]     error_bits ;
+  bit [7:0]     thread_bits ;
+
+  integer       counter = 0;
+  integer       counter_2 = 0;
+  integer       counter_3 = 0;
+  integer       counter_4 = 0;
+  integer       counter_5 = 0;
+  integer       counter_6 = 0;
+  integer       counter_7 = 0;
+  integer       error_counter = 0;
+  integer       start_count = 0;
+  integer       counter_bank0 ;
+  integer       counter_bank1 ;
+  integer       counter_bank2 ;
+  integer       counter_bank3 ;
+  integer       counter_bank4 ;
+  integer       counter_bank5 ;
+  integer       counter_bank6 ;
+  integer       counter_bank7 ;
+  integer       counter_2bank ;
+  integer       counter_3bank ;
+  integer       counter_4bank ;
+  integer       counter_5bank ;
+  integer       counter_6bank ;
+  integer       counter_7bank ;
+  integer       counter_8bank ;
+
+
+
+  // ----------- coverage_group ----------------
+
+  coverage_group l2sat_ccx_coverage_group
+  {
+    sample_event = @(posedge CLOCK);
+
+//////////////////////////////////
+// CCX interface coverages
+//////////////////////////////////
+
+    sample ccxl2_intf_pcx_req_cov ({l2sat_coverage_ifc.spc7_pcx_req, l2sat_coverage_ifc.spc6_pcx_req,
+                                    l2sat_coverage_ifc.spc5_pcx_req, l2sat_coverage_ifc.spc4_pcx_req,
+                                    l2sat_coverage_ifc.spc3_pcx_req, l2sat_coverage_ifc.spc2_pcx_req,
+                                    l2sat_coverage_ifc.spc1_pcx_req, l2sat_coverage_ifc.spc0_pcx_req,
+                                    l2sat_coverage_ifc.spc7_pcx_atm, l2sat_coverage_ifc.spc6_pcx_atm,
+                                    l2sat_coverage_ifc.spc5_pcx_atm, l2sat_coverage_ifc.spc4_pcx_atm,
+                                    l2sat_coverage_ifc.spc3_pcx_atm, l2sat_coverage_ifc.spc2_pcx_atm,
+                                    l2sat_coverage_ifc.spc1_pcx_atm, l2sat_coverage_ifc.spc0_pcx_atm}) {
+       // {spc7_pcx_req[7:0], ... , spc0_pcx_req[7:0],
+       // spc7_pcx_atom[7:0], ... , spc0_pcx_atom[7:0]}
+#inc "ccx_pcx_req_sample.vrhpal";
+    }
+
+    sample ccxl2_intf_cpx_req_cov ({l2sat_coverage_ifc.l2t7_cpx_req, l2sat_coverage_ifc.l2t6_cpx_req,
+                                    l2sat_coverage_ifc.l2t5_cpx_req, l2sat_coverage_ifc.l2t4_cpx_req,
+                                    l2sat_coverage_ifc.l2t3_cpx_req, l2sat_coverage_ifc.l2t2_cpx_req,
+                                    l2sat_coverage_ifc.l2t1_cpx_req, l2sat_coverage_ifc.l2t0_cpx_req,
+                                    l2sat_coverage_ifc.l2t7_cpx_atom, l2sat_coverage_ifc.l2t6_cpx_atom,
+                                    l2sat_coverage_ifc.l2t5_cpx_atom, l2sat_coverage_ifc.l2t4_cpx_atom,
+                                    l2sat_coverage_ifc.l2t3_cpx_atom, l2sat_coverage_ifc.l2t2_cpx_atom,
+                                    l2sat_coverage_ifc.l2t1_cpx_atom, l2sat_coverage_ifc.l2t0_cpx_atom}) {
+       // {l2t7_cpx_req[7:0], ... , l2t0_cpx_req[7:0],
+       // l2t7_cpx_atom, ... , l2t0_cpx_atom}
+#inc "ccx_cpx_req_sample.vrhpal";
+    }
+
+#ifdef L2_INTF_COV
+    sample ccxl2_intf_pcx_req_window_cov ({l2sat_coverage_ifc.spc7_pcx_req_d1 || l2sat_coverage_ifc.spc7_pcx_req_d2 || l2sat_coverage_ifc.spc7_pcx_req_d3 || l2sat_coverage_ifc.spc7_pcx_req_d4,
+                                    l2sat_coverage_ifc.spc6_pcx_req_d1 || l2sat_coverage_ifc.spc6_pcx_req_d2 || l2sat_coverage_ifc.spc6_pcx_req_d3 || l2sat_coverage_ifc.spc6_pcx_req_d4,
+                                    l2sat_coverage_ifc.spc5_pcx_req_d1 || l2sat_coverage_ifc.spc5_pcx_req_d2 || l2sat_coverage_ifc.spc5_pcx_req_d3 || l2sat_coverage_ifc.spc5_pcx_req_d4,
+                                    l2sat_coverage_ifc.spc4_pcx_req_d1 || l2sat_coverage_ifc.spc4_pcx_req_d2 || l2sat_coverage_ifc.spc4_pcx_req_d3 || l2sat_coverage_ifc.spc4_pcx_req_d4,
+                                    l2sat_coverage_ifc.spc3_pcx_req_d1 || l2sat_coverage_ifc.spc3_pcx_req_d2 || l2sat_coverage_ifc.spc3_pcx_req_d3 || l2sat_coverage_ifc.spc3_pcx_req_d4,
+                                    l2sat_coverage_ifc.spc2_pcx_req_d1 || l2sat_coverage_ifc.spc2_pcx_req_d2 || l2sat_coverage_ifc.spc2_pcx_req_d3 || l2sat_coverage_ifc.spc2_pcx_req_d4,
+                                    l2sat_coverage_ifc.spc1_pcx_req_d1 || l2sat_coverage_ifc.spc1_pcx_req_d2 || l2sat_coverage_ifc.spc1_pcx_req_d3 || l2sat_coverage_ifc.spc1_pcx_req_d4,
+                                    l2sat_coverage_ifc.spc0_pcx_req_d1 || l2sat_coverage_ifc.spc0_pcx_req_d2 || l2sat_coverage_ifc.spc0_pcx_req_d3 || l2sat_coverage_ifc.spc0_pcx_req_d4,
+                                    l2sat_coverage_ifc.spc7_pcx_atm_d1 || l2sat_coverage_ifc.spc7_pcx_atm_d2 || l2sat_coverage_ifc.spc7_pcx_atm_d3 || l2sat_coverage_ifc.spc7_pcx_atm_d4,
+                                    l2sat_coverage_ifc.spc6_pcx_atm_d1 || l2sat_coverage_ifc.spc6_pcx_atm_d2 || l2sat_coverage_ifc.spc6_pcx_atm_d3 || l2sat_coverage_ifc.spc6_pcx_atm_d4,
+                                    l2sat_coverage_ifc.spc5_pcx_atm_d1 || l2sat_coverage_ifc.spc5_pcx_atm_d2 || l2sat_coverage_ifc.spc5_pcx_atm_d3 || l2sat_coverage_ifc.spc5_pcx_atm_d4,
+                                    l2sat_coverage_ifc.spc4_pcx_atm_d1 || l2sat_coverage_ifc.spc4_pcx_atm_d2 || l2sat_coverage_ifc.spc4_pcx_atm_d3 || l2sat_coverage_ifc.spc4_pcx_atm_d4,
+                                    l2sat_coverage_ifc.spc3_pcx_atm_d1 || l2sat_coverage_ifc.spc3_pcx_atm_d2 || l2sat_coverage_ifc.spc3_pcx_atm_d3 || l2sat_coverage_ifc.spc3_pcx_atm_d4,
+                                    l2sat_coverage_ifc.spc2_pcx_atm_d1 || l2sat_coverage_ifc.spc2_pcx_atm_d2 || l2sat_coverage_ifc.spc2_pcx_atm_d3 || l2sat_coverage_ifc.spc2_pcx_atm_d4,
+                                    l2sat_coverage_ifc.spc1_pcx_atm_d1 || l2sat_coverage_ifc.spc1_pcx_atm_d2 || l2sat_coverage_ifc.spc1_pcx_atm_d3 || l2sat_coverage_ifc.spc1_pcx_atm_d4,
+                                    l2sat_coverage_ifc.spc0_pcx_atm_d1 || l2sat_coverage_ifc.spc0_pcx_atm_d2 || l2sat_coverage_ifc.spc0_pcx_atm_d3 || l2sat_coverage_ifc.spc0_pcx_atm_d4}) {
+#inc "ccxl2_intf_pcx_req_window_sample.vrhpal";
+    }
+
+    sample ccxl2_intf_cpx_req_window_cov ({l2sat_coverage_ifc.l2t7_cpx_req_d1 || l2sat_coverage_ifc.l2t7_cpx_req_d2 || l2sat_coverage_ifc.l2t7_cpx_req_d3 || l2sat_coverage_ifc.l2t7_cpx_req_d4,
+                                    l2sat_coverage_ifc.l2t6_cpx_req_d1 || l2sat_coverage_ifc.l2t6_cpx_req_d2 || l2sat_coverage_ifc.l2t6_cpx_req_d3 || l2sat_coverage_ifc.l2t6_cpx_req_d4,
+                                    l2sat_coverage_ifc.l2t5_cpx_req_d1 || l2sat_coverage_ifc.l2t5_cpx_req_d2 || l2sat_coverage_ifc.l2t5_cpx_req_d3 || l2sat_coverage_ifc.l2t5_cpx_req_d4,
+                                    l2sat_coverage_ifc.l2t4_cpx_req_d1 || l2sat_coverage_ifc.l2t4_cpx_req_d2 || l2sat_coverage_ifc.l2t4_cpx_req_d3 || l2sat_coverage_ifc.l2t4_cpx_req_d4,
+                                    l2sat_coverage_ifc.l2t3_cpx_req_d1 || l2sat_coverage_ifc.l2t3_cpx_req_d2 || l2sat_coverage_ifc.l2t3_cpx_req_d3 || l2sat_coverage_ifc.l2t3_cpx_req_d4,
+                                    l2sat_coverage_ifc.l2t2_cpx_req_d1 || l2sat_coverage_ifc.l2t2_cpx_req_d2 || l2sat_coverage_ifc.l2t2_cpx_req_d3 || l2sat_coverage_ifc.l2t2_cpx_req_d4,
+                                    l2sat_coverage_ifc.l2t1_cpx_req_d1 || l2sat_coverage_ifc.l2t1_cpx_req_d2 || l2sat_coverage_ifc.l2t1_cpx_req_d3 || l2sat_coverage_ifc.l2t1_cpx_req_d4,
+                                    l2sat_coverage_ifc.l2t0_cpx_req_d1 || l2sat_coverage_ifc.l2t0_cpx_req_d2 || l2sat_coverage_ifc.l2t0_cpx_req_d3 || l2sat_coverage_ifc.l2t0_cpx_req_d4,
+                                    l2sat_coverage_ifc.l2t7_cpx_atom_d1 || l2sat_coverage_ifc.l2t7_cpx_atom_d2 || l2sat_coverage_ifc.l2t7_cpx_atom_d3 || l2sat_coverage_ifc.l2t7_cpx_atom_d4,
+                                    l2sat_coverage_ifc.l2t6_cpx_atom_d1 || l2sat_coverage_ifc.l2t6_cpx_atom_d2 || l2sat_coverage_ifc.l2t6_cpx_atom_d3 || l2sat_coverage_ifc.l2t6_cpx_atom_d4,
+                                    l2sat_coverage_ifc.l2t5_cpx_atom_d1 || l2sat_coverage_ifc.l2t5_cpx_atom_d2 || l2sat_coverage_ifc.l2t5_cpx_atom_d3 || l2sat_coverage_ifc.l2t5_cpx_atom_d4,
+                                    l2sat_coverage_ifc.l2t4_cpx_atom_d1 || l2sat_coverage_ifc.l2t4_cpx_atom_d2 || l2sat_coverage_ifc.l2t4_cpx_atom_d3 || l2sat_coverage_ifc.l2t4_cpx_atom_d4,
+                                    l2sat_coverage_ifc.l2t3_cpx_atom_d1 || l2sat_coverage_ifc.l2t3_cpx_atom_d2 || l2sat_coverage_ifc.l2t3_cpx_atom_d3 || l2sat_coverage_ifc.l2t3_cpx_atom_d4,
+                                    l2sat_coverage_ifc.l2t2_cpx_atom_d1 || l2sat_coverage_ifc.l2t2_cpx_atom_d2 || l2sat_coverage_ifc.l2t2_cpx_atom_d3 || l2sat_coverage_ifc.l2t2_cpx_atom_d4,
+                                    l2sat_coverage_ifc.l2t1_cpx_atom_d1 || l2sat_coverage_ifc.l2t1_cpx_atom_d2 || l2sat_coverage_ifc.l2t1_cpx_atom_d3 || l2sat_coverage_ifc.l2t1_cpx_atom_d4,
+                                    l2sat_coverage_ifc.l2t0_cpx_atom_d1 || l2sat_coverage_ifc.l2t0_cpx_atom_d2 || l2sat_coverage_ifc.l2t0_cpx_atom_d3 || l2sat_coverage_ifc.l2t0_cpx_atom_d4}) {
+#inc "ccxl2_intf_cpx_req_sample.vrhpal";
+    }
+#endif
+
+
+/*
+#ifdef L2_INTF_COV
+     sample pcxsiu_intf_pcx_req_cov ({l2sat_coverage_ifc.spc7_pcx_req_d1 && l2sat_coverage_ifc.spc7_pcx_req_d2 && l2sat_coverage_ifc.spc7_pcx_req_d3 && l2sat_coverage_ifc.spc7_pcx_req_d4 && l2sat_coverage_ifc.spc7_pcx_req_d5 && l2sat_coverage_ifc.spc7_pcx_req_d6 && l2sat_coverage_ifc.spc7_pcx_req_d7 && l2sat_coverage_ifc.spc7_pcx_req_d8 && l2sat_coverage_ifc.spc7_pcx_req_d9 && l2sat_coverage_ifc.spc7_pcx_req_d10 && l2sat_coverage_ifc.sii_l2t7_req_vld && (l2sat_coverage_ifc.sii_l2t7_req[26:24] === 3'b100 | l2sat_coverage_ifc.sii_l2t7_req[26:24] === 3'b010 | l2sat_coverage_ifc.sii_l2t7_req[26:24] === 3'b001),
+                                     l2sat_coverage_ifc.spc6_pcx_req_d1 && l2sat_coverage_ifc.spc6_pcx_req_d2 && l2sat_coverage_ifc.spc6_pcx_req_d3 && l2sat_coverage_ifc.spc6_pcx_req_d4 && l2sat_coverage_ifc.spc6_pcx_req_d5 && l2sat_coverage_ifc.spc6_pcx_req_d6 && l2sat_coverage_ifc.spc6_pcx_req_d7 && l2sat_coverage_ifc.spc6_pcx_req_d8 && l2sat_coverage_ifc.spc6_pcx_req_d9 && l2sat_coverage_ifc.spc6_pcx_req_d10 && l2sat_coverage_ifc.sii_l2t6_req_vld && (l2sat_coverage_ifc.sii_l2t6_req[26:24] === 3'b100 | l2sat_coverage_ifc.sii_l2t6_req[26:24] === 3'b010 | l2sat_coverage_ifc.sii_l2t6_req[26:24] === 3'b001),
+                                     l2sat_coverage_ifc.spc5_pcx_req_d1 && l2sat_coverage_ifc.spc5_pcx_req_d2 && l2sat_coverage_ifc.spc5_pcx_req_d3 && l2sat_coverage_ifc.spc5_pcx_req_d4 && l2sat_coverage_ifc.spc5_pcx_req_d5 && l2sat_coverage_ifc.spc5_pcx_req_d6 && l2sat_coverage_ifc.spc5_pcx_req_d7 && l2sat_coverage_ifc.spc5_pcx_req_d8 && l2sat_coverage_ifc.spc5_pcx_req_d9 && l2sat_coverage_ifc.spc5_pcx_req_d10 && l2sat_coverage_ifc.sii_l2t5_req_vld && (l2sat_coverage_ifc.sii_l2t5_req[26:24] === 3'b100 | l2sat_coverage_ifc.sii_l2t5_req[26:24] === 3'b010 | l2sat_coverage_ifc.sii_l2t5_req[26:24] === 3'b001),
+                                     l2sat_coverage_ifc.spc4_pcx_req_d1 && l2sat_coverage_ifc.spc4_pcx_req_d2 && l2sat_coverage_ifc.spc4_pcx_req_d3 && l2sat_coverage_ifc.spc4_pcx_req_d4 && l2sat_coverage_ifc.spc4_pcx_req_d5 && l2sat_coverage_ifc.spc4_pcx_req_d6 && l2sat_coverage_ifc.spc4_pcx_req_d7 && l2sat_coverage_ifc.spc4_pcx_req_d8 && l2sat_coverage_ifc.spc4_pcx_req_d9 && l2sat_coverage_ifc.spc4_pcx_req_d10 && l2sat_coverage_ifc.sii_l2t4_req_vld && (l2sat_coverage_ifc.sii_l2t4_req[26:24] === 3'b100 | l2sat_coverage_ifc.sii_l2t4_req[26:24] === 3'b010 | l2sat_coverage_ifc.sii_l2t4_req[26:24] === 3'b001),
+                                     l2sat_coverage_ifc.spc3_pcx_req_d1 && l2sat_coverage_ifc.spc3_pcx_req_d2 && l2sat_coverage_ifc.spc3_pcx_req_d3 && l2sat_coverage_ifc.spc3_pcx_req_d4 && l2sat_coverage_ifc.spc3_pcx_req_d5 && l2sat_coverage_ifc.spc3_pcx_req_d6 && l2sat_coverage_ifc.spc3_pcx_req_d7 && l2sat_coverage_ifc.spc3_pcx_req_d8 && l2sat_coverage_ifc.spc3_pcx_req_d9 && l2sat_coverage_ifc.spc3_pcx_req_d10 && l2sat_coverage_ifc.sii_l2t3_req_vld && (l2sat_coverage_ifc.sii_l2t3_req[26:24] === 3'b100 | l2sat_coverage_ifc.sii_l2t3_req[26:24] === 3'b010 | l2sat_coverage_ifc.sii_l2t3_req[26:24] === 3'b001),
+                                     l2sat_coverage_ifc.spc2_pcx_req_d1 && l2sat_coverage_ifc.spc2_pcx_req_d2 && l2sat_coverage_ifc.spc2_pcx_req_d3 && l2sat_coverage_ifc.spc2_pcx_req_d4 && l2sat_coverage_ifc.spc2_pcx_req_d5 && l2sat_coverage_ifc.spc2_pcx_req_d6 && l2sat_coverage_ifc.spc2_pcx_req_d7 && l2sat_coverage_ifc.spc2_pcx_req_d8 && l2sat_coverage_ifc.spc2_pcx_req_d9 && l2sat_coverage_ifc.spc2_pcx_req_d10 && l2sat_coverage_ifc.sii_l2t2_req_vld && (l2sat_coverage_ifc.sii_l2t2_req[26:24] === 3'b100 | l2sat_coverage_ifc.sii_l2t2_req[26:24] === 3'b010 | l2sat_coverage_ifc.sii_l2t2_req[26:24] === 3'b001),
+                                     l2sat_coverage_ifc.spc1_pcx_req_d1 && l2sat_coverage_ifc.spc1_pcx_req_d2 && l2sat_coverage_ifc.spc1_pcx_req_d3 && l2sat_coverage_ifc.spc1_pcx_req_d4 && l2sat_coverage_ifc.spc1_pcx_req_d5 && l2sat_coverage_ifc.spc1_pcx_req_d6 && l2sat_coverage_ifc.spc1_pcx_req_d7 && l2sat_coverage_ifc.spc1_pcx_req_d8 && l2sat_coverage_ifc.spc1_pcx_req_d9 && l2sat_coverage_ifc.spc1_pcx_req_d10 && l2sat_coverage_ifc.sii_l2t1_req_vld && (l2sat_coverage_ifc.sii_l2t1_req[26:24] === 3'b100 | l2sat_coverage_ifc.sii_l2t1_req[26:24] === 3'b010 | l2sat_coverage_ifc.sii_l2t1_req[26:24] === 3'b001),
+                                     l2sat_coverage_ifc.spc0_pcx_req_d1 && l2sat_coverage_ifc.spc0_pcx_req_d2 && l2sat_coverage_ifc.spc0_pcx_req_d3 && l2sat_coverage_ifc.spc0_pcx_req_d4 && l2sat_coverage_ifc.spc0_pcx_req_d5 && l2sat_coverage_ifc.spc0_pcx_req_d6 && l2sat_coverage_ifc.spc0_pcx_req_d7 && l2sat_coverage_ifc.spc0_pcx_req_d8 && l2sat_coverage_ifc.spc0_pcx_req_d9 && l2sat_coverage_ifc.spc0_pcx_req_d10 && l2sat_coverage_ifc.sii_l2t0_req_vld && (l2sat_coverage_ifc.sii_l2t0_req[26:24] === 3'b100 | l2sat_coverage_ifc.sii_l2t0_req[26:24] === 3'b010 | l2sat_coverage_ifc.sii_l2t0_req[26:24] === 3'b001),
+                                      l2sat_coverage_ifc.spc7_pcx_atm_d1 && l2sat_coverage_ifc.spc7_pcx_atm_d2 && l2sat_coverage_ifc.spc7_pcx_atm_d3 && l2sat_coverage_ifc.spc7_pcx_atm_d4 && l2sat_coverage_ifc.spc7_pcx_atm_d5 && l2sat_coverage_ifc.spc7_pcx_atm_d6 && l2sat_coverage_ifc.spc7_pcx_atm_d7 && l2sat_coverage_ifc.spc7_pcx_atm_d8 && l2sat_coverage_ifc.spc7_pcx_atm_d9 && l2sat_coverage_ifc.spc7_pcx_atm_d10 && l2sat_coverage_ifc.sii_l2t7_req_vld && (l2sat_coverage_ifc.sii_l2t7_req[26:24] === 3'b100 | l2sat_coverage_ifc.sii_l2t7_req[26:24] === 3'b010 | l2sat_coverage_ifc.sii_l2t7_req[26:24] === 3'b001),
+                                     l2sat_coverage_ifc.spc6_pcx_atm_d1 && l2sat_coverage_ifc.spc6_pcx_atm_d2 && l2sat_coverage_ifc.spc6_pcx_atm_d3 && l2sat_coverage_ifc.spc6_pcx_atm_d4 && l2sat_coverage_ifc.spc6_pcx_atm_d5 && l2sat_coverage_ifc.spc6_pcx_atm_d6 && l2sat_coverage_ifc.spc6_pcx_atm_d7 && l2sat_coverage_ifc.spc6_pcx_atm_d8 && l2sat_coverage_ifc.spc6_pcx_atm_d9 && l2sat_coverage_ifc.spc6_pcx_atm_d10 && l2sat_coverage_ifc.sii_l2t6_req_vld && (l2sat_coverage_ifc.sii_l2t6_req[26:24] === 3'b100 | l2sat_coverage_ifc.sii_l2t6_req[26:24] === 3'b010 | l2sat_coverage_ifc.sii_l2t6_req[26:24] === 3'b001),
+                                     l2sat_coverage_ifc.spc5_pcx_atm_d1 && l2sat_coverage_ifc.spc5_pcx_atm_d2 && l2sat_coverage_ifc.spc5_pcx_atm_d3 && l2sat_coverage_ifc.spc5_pcx_atm_d4 && l2sat_coverage_ifc.spc5_pcx_atm_d5 && l2sat_coverage_ifc.spc5_pcx_atm_d6 && l2sat_coverage_ifc.spc5_pcx_atm_d7 && l2sat_coverage_ifc.spc5_pcx_atm_d8 && l2sat_coverage_ifc.spc5_pcx_atm_d9 && l2sat_coverage_ifc.spc5_pcx_atm_d10 && l2sat_coverage_ifc.sii_l2t5_req_vld && (l2sat_coverage_ifc.sii_l2t5_req[26:24] === 3'b100 | l2sat_coverage_ifc.sii_l2t5_req[26:24] === 3'b010 | l2sat_coverage_ifc.sii_l2t5_req[26:24] === 3'b001),
+                                     l2sat_coverage_ifc.spc4_pcx_atm_d1 && l2sat_coverage_ifc.spc4_pcx_atm_d2 && l2sat_coverage_ifc.spc4_pcx_atm_d3 && l2sat_coverage_ifc.spc4_pcx_atm_d4 && l2sat_coverage_ifc.spc4_pcx_atm_d5 && l2sat_coverage_ifc.spc4_pcx_atm_d6 && l2sat_coverage_ifc.spc4_pcx_atm_d7 && l2sat_coverage_ifc.spc4_pcx_atm_d8 && l2sat_coverage_ifc.spc4_pcx_atm_d9 && l2sat_coverage_ifc.spc4_pcx_atm_d10 && l2sat_coverage_ifc.sii_l2t4_req_vld && (l2sat_coverage_ifc.sii_l2t4_req[26:24] === 3'b100 | l2sat_coverage_ifc.sii_l2t4_req[26:24] === 3'b010 | l2sat_coverage_ifc.sii_l2t4_req[26:24] === 3'b001),
+                                     l2sat_coverage_ifc.spc3_pcx_atm_d1 && l2sat_coverage_ifc.spc3_pcx_atm_d2 && l2sat_coverage_ifc.spc3_pcx_atm_d3 && l2sat_coverage_ifc.spc3_pcx_atm_d4 && l2sat_coverage_ifc.spc3_pcx_atm_d5 && l2sat_coverage_ifc.spc3_pcx_atm_d6 && l2sat_coverage_ifc.spc3_pcx_atm_d7 && l2sat_coverage_ifc.spc3_pcx_atm_d8 && l2sat_coverage_ifc.spc3_pcx_atm_d9 && l2sat_coverage_ifc.spc3_pcx_atm_d10 && l2sat_coverage_ifc.sii_l2t3_req_vld && (l2sat_coverage_ifc.sii_l2t3_req[26:24] === 3'b100 | l2sat_coverage_ifc.sii_l2t3_req[26:24] === 3'b010 | l2sat_coverage_ifc.sii_l2t3_req[26:24] === 3'b001),
+                                     l2sat_coverage_ifc.spc2_pcx_atm_d1 && l2sat_coverage_ifc.spc2_pcx_atm_d2 && l2sat_coverage_ifc.spc2_pcx_atm_d3 && l2sat_coverage_ifc.spc2_pcx_atm_d4 && l2sat_coverage_ifc.spc2_pcx_atm_d5 && l2sat_coverage_ifc.spc2_pcx_atm_d6 && l2sat_coverage_ifc.spc2_pcx_atm_d7 && l2sat_coverage_ifc.spc2_pcx_atm_d8 && l2sat_coverage_ifc.spc2_pcx_atm_d9 && l2sat_coverage_ifc.spc2_pcx_atm_d10 && l2sat_coverage_ifc.sii_l2t2_req_vld && (l2sat_coverage_ifc.sii_l2t2_req[26:24] === 3'b100 | l2sat_coverage_ifc.sii_l2t2_req[26:24] === 3'b010 | l2sat_coverage_ifc.sii_l2t2_req[26:24] === 3'b001),
+                                     l2sat_coverage_ifc.spc1_pcx_atm_d1 && l2sat_coverage_ifc.spc1_pcx_atm_d2 && l2sat_coverage_ifc.spc1_pcx_atm_d3 && l2sat_coverage_ifc.spc1_pcx_atm_d4 && l2sat_coverage_ifc.spc1_pcx_atm_d5 && l2sat_coverage_ifc.spc1_pcx_atm_d6 && l2sat_coverage_ifc.spc1_pcx_atm_d7 && l2sat_coverage_ifc.spc1_pcx_atm_d8 && l2sat_coverage_ifc.spc1_pcx_atm_d9 && l2sat_coverage_ifc.spc1_pcx_atm_d10 && l2sat_coverage_ifc.sii_l2t1_req_vld && (l2sat_coverage_ifc.sii_l2t1_req[26:24] === 3'b100 | l2sat_coverage_ifc.sii_l2t1_req[26:24] === 3'b010 | l2sat_coverage_ifc.sii_l2t1_req[26:24] === 3'b001),
+                                     l2sat_coverage_ifc.spc0_pcx_atm_d1 && l2sat_coverage_ifc.spc0_pcx_atm_d2 && l2sat_coverage_ifc.spc0_pcx_atm_d3 && l2sat_coverage_ifc.spc0_pcx_atm_d4 && l2sat_coverage_ifc.spc0_pcx_atm_d5 && l2sat_coverage_ifc.spc0_pcx_atm_d6 && l2sat_coverage_ifc.spc0_pcx_atm_d7 && l2sat_coverage_ifc.spc0_pcx_atm_d8 && l2sat_coverage_ifc.spc0_pcx_atm_d9 && l2sat_coverage_ifc.spc0_pcx_atm_d10 && l2sat_coverage_ifc.sii_l2t0_req_vld && (l2sat_coverage_ifc.sii_l2t0_req[26:24] === 3'b100 | l2sat_coverage_ifc.sii_l2t0_req[26:24] === 3'b010 | l2sat_coverage_ifc.sii_l2t0_req[26:24] === 3'b001)}) {
+#inc "pcxsiu_intf_cpx_req_sample.vrhpal";
+     }
+#endif
+*/
+    sample ccxsiu_intf_pcx_sii_req_cov({l2_single_pcx_WRI_same_addr_samp_trigger, 
+					l2_double_pcx_WRI_same_addr_samp_trigger, 
+					l2_single_pcx_WR8_same_addr_samp_trigger,
+					l2_double_pcx_WR8_same_addr_samp_trigger,
+   					l2_single_pcx_RDD_same_addr_samp_trigger,
+   					l2_double_pcx_RDD_same_addr_samp_trigger,
+   					l2_single_pcx_WRI_diff_addr_samp_trigger,
+   					l2_double_pcx_WRI_diff_addr_samp_trigger,
+   					l2_single_pcx_WR8_diff_addr_samp_trigger,
+   					l2_double_pcx_WR8_diff_addr_samp_trigger,
+   					l2_single_pcx_RDD_diff_addr_samp_trigger,
+  					l2_double_pcx_RDD_diff_addr_samp_trigger}){
+#inc "ccxsiu_intf_pcx_sii_req_samp.vrhpal";
+    }
+
+    sample ccxl2_intf_pcx_sequence_cov ({l2sat_coverage_ifc.spc0_pcx_req,
+                                         l2sat_coverage_ifc.spc0_pcx_atm,
+                                         l2sat_coverage_ifc.pcx_spc0_grant}) {
+       // {spc0_pcx_req[7:0],spc0_pcx_atm[7:0],pcx_spc0_grant[7:0]}
+#inc "ccx_pcx_sequence_sample.vrhpal";
+    }
+
+// End of CCX interface coverages
+
+////////////////////////////
+// CCX internal coverages
+////////////////////////////
+
+    // added to FC following 2; 10/25/05
+    sample ccx_pcx_qfull_cov ({l2sat_coverage_ifc.pcx_arb7_qfull, l2sat_coverage_ifc.pcx_arb6_qfull,
+                                      l2sat_coverage_ifc.pcx_arb5_qfull, l2sat_coverage_ifc.pcx_arb4_qfull,
+                                      l2sat_coverage_ifc.pcx_arb3_qfull, l2sat_coverage_ifc.pcx_arb2_qfull,
+                                      l2sat_coverage_ifc.pcx_arb1_qfull, l2sat_coverage_ifc.pcx_arb0_qfull}) {
+       // {pcx_arb7_qfull[7:0]...pcx_arb0_qfull[7:0]}
+#inc "ccx_pcx_qfull_sample.vrhpal";
+    }
+
+    sample ccx_cpx_qfull_cov ({l2sat_coverage_ifc.cpx_arb7_qfull, l2sat_coverage_ifc.cpx_arb6_qfull,
+                                      l2sat_coverage_ifc.cpx_arb5_qfull, l2sat_coverage_ifc.cpx_arb4_qfull,
+                                      l2sat_coverage_ifc.cpx_arb3_qfull, l2sat_coverage_ifc.cpx_arb2_qfull,
+                                      l2sat_coverage_ifc.cpx_arb1_qfull, l2sat_coverage_ifc.cpx_arb0_qfull}) {
+       // {cpx_arb7_qfull[7:0]...cpx_arb0_qfull[7:0]}
+#inc "ccx_cpx_qfull_sample.vrhpal";
+    }
+
+
+    // added to FC following 2; 10/25/05
+    sample ccx_pcx_stallatom_cov ({l2sat_coverage_ifc.pcx_arb0_atom,
+                                          l2sat_coverage_ifc.pcx_arb0_grant_a,
+                                          l2sat_coverage_ifc.pcx_arb0_stall_a_}) {
+       // {pcx_arb0_atom[7:0],pcx_arb0_grant_a[7:0],pcx_arb0_stall_a_}
+#inc "ccx_pcx_stallatom_sample.vrhpal";
+    }
+
+    sample ccx_cpx_stallatom_cov ({l2sat_coverage_ifc.cpx_arb0_atom,
+                                          l2sat_coverage_ifc.cpx_arb0_grant_a,
+                                          l2sat_coverage_ifc.cpx_arb0_stall_a_}) {
+       // {cpx_arb0_atom[7:0],cpx_arb0_grant_a[7:0],cpx_arb0_stall_a_}
+#inc "ccx_cpx_stallatom_sample.vrhpal";
+    }
+
+// end of CCX internal coverages
+
+
+///////////////////////////////////
+// L2 interface coverages
+///////////////////////////////////
+
+    sample ccxl2_intf_pcx_fields_cov ({l2sat_coverage_ifc.pcx_l2t0_data_rdy,
+                                l2sat_coverage_ifc.pcx_l2t0_data[129:64]}) {
+#inc "l2_pcx_fields_sample.vrhpal";
+    }
+
+    sample ccxl2_intf_cpx_fields_cov (l2sat_coverage_ifc.l2t0_cpx_data[145:123]) {
+#inc "l2_cpx_fields_sample.vrhpal";
+    }
+
+    sample ccxl2_intf_inv_vector_cov ({l2sat_coverage_ifc.l2t0_cpx_data[145:141],
+                                l2sat_coverage_ifc.l2t0_cpx_data[111:0]}) {
+#inc "l2_inv_vector_sample.vrhpal";
+    }
+
+// end of L2 interface coverages
+
+/////////////////////////////
+// L2 Internal coverages
+/////////////////////////////
+
+#ifndef L2_INTF_COV
+    sample l2_addr_cov ({l2sat_coverage_ifc.arbctl_inst_vld_c2_0,
+                             l2sat_coverage_ifc.arbctl_inst_diag_c2_0,
+                             l2sat_coverage_ifc.arbctl_inval_inst_c2_0,
+                             l2sat_coverage_ifc.arb_decdp_inst_int_c2_0,
+                             l2sat_coverage_ifc.arbdp_addr_c2_0}) {
+#inc "l2sat_addr_sample.vrhpal";
+    }
+#endif
+
+  } // end of "coverage_group l2sat_ccx_coverage_group"
+
+
+  coverage_group l2sat_input_queue_coverage_group 
+  {
+
+    sample_event = @(posedge CLOCK);
+
+    // added to FC following 2; 10/25/05
+    sample l2_iq_count_cov (l2sat_coverage_ifc.iq_count_0) { 
+#inc "l2_iq_count_sample.vrhpal";
+    }
+
+    sample l2_iq_cas12_cov (l2_iq_cas12_samp_trigger) { //coverage in misc_cov
+#inc "l2_iq_cas12_sample.vrhpal";
+    }
+
+  } // end of "coverage_group l2sat_input_queue_coverage_group"
+
+
+  coverage_group l2sat_output_queue_coverage_group
+  {
+
+    sample_event = @(posedge CLOCK);
+
+    // added to FC following 2; 10/25/05
+    sample l2_oq_count_cov (l2sat_coverage_ifc.oq_count_0) {
+#inc "l2_oq_count_sample.vrhpal";
+    }
+
+    sample l2_oq_fill12_cov ({l2sat_coverage_ifc.imiss1_to_xbarq_c6_0,
+                              l2sat_coverage_ifc.sel_old_req_0}) {
+#inc "l2_oq_ifill12_sample.vrhpal";
+    }
+
+  } // end of "coverage_group l2sat_output_queue_coverage_group"
+
+
+  coverage_group l2sat_directory_coverage_group
+  {
+    sample_event = @(posedge CLOCK);
+
+
+    //added to FC following TWO for PM targeted 11/16
+    sample l2_dir_write_cov ({l2sat_coverage_ifc.ic_wr_en_c4_0,
+                               l2sat_coverage_ifc.dir_panel_icd_c4_0[4:3],
+                               l2sat_coverage_ifc.dir_panel_icd_c4_0[1:0],
+                               l2sat_coverage_ifc.wr_ic_dir_entry_c4_0,
+                               l2sat_coverage_ifc.dc_wr_en_c4_0,
+                               l2sat_coverage_ifc.dir_panel_dcd_c4_0[4:3],
+                               l2sat_coverage_ifc.dir_panel_dcd_c4_0[1:0],
+                               l2sat_coverage_ifc.wr_dc_dir_entry_c4_0}) {
+#inc "l2_dir_write_sample.vrhpal";
+    }
+	
+    sample l2_dir_lookup_cov ({l2sat_coverage_ifc.ic_lkup_row_dec_c4_0,
+                                l2sat_coverage_ifc.lkup_row_addr_icd_c4_0,
+                                l2sat_coverage_ifc.dc_lkup_row_dec_c4_0,
+                                l2sat_coverage_ifc.lkup_row_addr_dcd_c4_0}) {
+#inc "l2_dir_lookup_sample.vrhpal";
+    }
+
+  } // end of 'coverage_group l2sat_directory_coverage_group"
+  
+
+  coverage_group l2sat_missbuffer_coverage_group 
+  {
+
+    sample_event = @(posedge CLOCK);
+
+#ifndef L2_INTF_COV
+
+    sample l2_mb_count_cov (l2sat_coverage_ifc.mb_count_0) {
+#inc "l2_mb_count_sample.vrhpal";
+    }
+
+    sample l2_mb_sameindex_cov (l2sat_coverage_ifc.mb_sameindex_count_0) {
+#inc "l2_mb_sameindex_sample.vrhpal";
+    }
+
+    sample l2_mb_hit_bypass_cov ({l2sat_coverage_ifc.mbctl_hit_c2_0,
+                                   l2sat_coverage_ifc.tmp_hit_unqual_c2_0,
+                                   l2sat_coverage_ifc.tmp_cam_hit_c2_0,
+                                   l2sat_coverage_ifc.mbf_insert_c3_tmp_0,
+                                   l2sat_coverage_ifc.cam_hit_vec_c1_0}) {
+#inc "l2_mb_hit_bypass_sample.vrhpal";
+    }
+#endif
+  } // end of "coverage_group l2sat_missbuffer_coverage_group"
+
+
+  coverage_group l2sat_fillbuffer_coverage_group 
+  {
+
+    sample_event = @(posedge CLOCK);
+
+    // added to FC following 2; 10/25/05
+    sample l2_fb_count_cov (l2sat_coverage_ifc.fb_count_0) {
+#inc "l2_fb_count_sample.vrhpal";
+    }
+
+    sample l2_fbmb_miss_entries_cov ({l2sat_coverage_ifc.fbf_ready_miss_r1_0,
+                                       l2sat_coverage_ifc.dram_rd_req_id_r0_d1_0,
+                                       l2sat_coverage_ifc.fbf_enc_ld_mbid_r1_0}) {
+#inc "l2_fbmb_miss_entries_sample.vrhpal";
+    }
+
+#ifndef L2_INTF_COV
+    sample l2_fbmb_stdep_entries_cov ({l2sat_coverage_ifc.fbf_st_or_dep_rdy_c4_0,
+                                        l2sat_coverage_ifc.fill_complete_c4_0,
+                                        l2sat_coverage_ifc.fbf_enc_dep_mbid_c4_0}) {
+#inc "l2_fbmb_stdep_entries_sample.vrhpal";
+    }
+
+    sample l2_fb_bypass_entries_cov ({l2sat_coverage_ifc.fbctl_hit_c2_0,
+                                       l2sat_coverage_ifc.fb_hit_vec_c2_0}) {
+#inc "l2_fb_bypass_entries_sample.vrhpal";
+    }
+
+    sample l2_fb_bypass_insts_cov ({l2sat_coverage_ifc.fbctl_hit_c2_0,
+                                     l2sat_coverage_ifc.arbctl_inst_diag_c2_0,
+                                     l2sat_coverage_ifc.arbdp_inst_c2_0[25:19],
+                                     l2sat_coverage_ifc.arbdp_inst_c2_0[12:11], //review how to get INV and PF bits?
+                                     l2sat_coverage_ifc.arbdp_addr_c2_0[5:4]}) {
+#inc "l2_fb_bypass_insts_sample.vrhpal";
+    }
+
+    sample l2_fill_complete_cov ({l2sat_coverage_ifc.dec_fill_entry_c3_0,
+                                   l2sat_coverage_ifc.no_fill_entry_dequeue_c3_0,
+                                   l2sat_coverage_ifc.en_hit_dequeue_c2_0,
+                                   l2sat_coverage_ifc.rdma_inst_c2_0,
+                                   l2sat_coverage_ifc.mbctl_rdma_reg_vld_c2_0}) {
+#inc "l2_fill_complete_sample.vrhpal";
+    }
+#endif
+
+  } // end of "coverage_group l2sat_fillbuffer_coverage_group"
+
+
+  coverage_group l2sat_write_back_buffer_group
+  {
+
+    sample_event = @(posedge CLOCK);
+
+    // added to FC following 1; 10/25/05
+    sample l2_wb_count_cov (l2sat_coverage_ifc.wb_count_0) {
+#inc "l2_wb_count_sample.vrhpal";
+    }
+
+#ifndef L2_INTF_COV
+    sample l2_wb_hit_bypass_cov ({l2sat_coverage_ifc.wbctl_hit_qual_c2_0,
+                                   l2sat_coverage_ifc.bypass_hit_en_c2_0,
+                                   l2sat_coverage_ifc.wb_cam_hit_vec_tmp_c2_0}) {
+#inc "l2_wb_hit_bypass_sample.vrhpal";
+    }
+#endif
+  } // end of "coverage_group l2sat_write_back_buffer_group"
+
+
+  coverage_group l2sat_pipeline_coverage_group
+  {
+
+    sample_event = @(posedge CLOCK);
+
+#ifndef L2_INTF_COV
+    sample l2_pipeline_full_cov ({l2sat_coverage_ifc.arbctl_inst_vld_c1_0,
+                                   l2sat_coverage_ifc.arbctl_inst_vld_c2_0}) {
+#inc "l2_pipeline_full_sample.vrhpal";
+    }
+  
+    sample l2_atomic_store_cov (l2_atomic_store_samp_trigger) {
+#inc "l2_atomic_store_sample.vrhpal";
+    }
+
+    sample l2_stalled_insts1_cov ({l2sat_coverage_ifc.same_col_stall_c1_0,      //17
+                                    l2sat_coverage_ifc.imiss_stall_op_c1inc1_0, //16
+                                    l2sat_coverage_ifc.arbctl_evict_vld_c2_0,   //15
+                                    l2sat_coverage_ifc.arbctl_fill_vld_c2_0,    //14
+                                    l2sat_coverage_ifc.arbctl_fill_vld_c3_0,    //13
+                                    l2sat_coverage_ifc.rdma_64B_stall_0,        //11
+                                    l2sat_coverage_ifc.arbctl_inval_inst_c2_0,  //11
+                                    l2sat_coverage_ifc.inval_inst_vld_c3_0,     //10
+                                    l2sat_coverage_ifc.inval_inst_vld_c4_0,     //9
+                                    l2sat_coverage_ifc.ic_inval_vld_c5_0,       //21
+                                    l2sat_coverage_ifc.ic_inval_vld_c52_0,      //20
+                                    l2sat_coverage_ifc.ic_inval_vld_c6_0,       //19
+                                    l2sat_coverage_ifc.arb_ic_inval_vld_c7_0,   //18
+                                    l2sat_coverage_ifc.inst_l2data_vld_c2_0,    //8
+                                    l2sat_coverage_ifc.inst_l2tag_vld_c2_0,     //7
+                                    l2sat_coverage_ifc.inst_l2tag_vld_c3_0,     //6
+                                    l2sat_coverage_ifc.inst_l2vuad_vld_c2_0,    //5
+                                    l2sat_coverage_ifc.inst_l2vuad_vld_c3_0,    //4
+                                    l2sat_coverage_ifc.inst_l2vuad_vld_c4_0,    //3
+                                    l2sat_coverage_ifc.inc_tag_ecc_cnt_c2_0,    //2
+                                    l2sat_coverage_ifc.inc_tag_ecc_cnt_c3_0,    //1
+                                    l2sat_coverage_ifc.data_ecc_active_c4_0,    //0
+                                    l2sat_coverage_ifc.arbctl_inst_vld_c1_0,
+                                    l2sat_coverage_ifc.arbctl_inst_diag_c1_0,
+                                    l2sat_coverage_ifc.arbdp_inst_c1_0[25:10]}) {
+#inc "l2_stalled_insts1_sample.vrhpal";
+    }
+
+    sample l2_stalled_insts2_cov ({l2sat_coverage_ifc.arbctl_inst_diag_c1_0,  //7
+                                    l2sat_coverage_ifc.arbdp_evict_c1_0,       //6
+                                    l2sat_coverage_ifc.arbdp_inst_fb_c1_0,     //5 
+                                    l2sat_coverage_ifc.decdp_imiss_inst_c1_0,  //4
+                                    l2sat_coverage_ifc.decdp_ic_inval_c1_0,    //3
+                                    l2sat_coverage_ifc.decdp_dc_inval_c1_0,    //2
+                                    l2sat_coverage_ifc.arbdp_tecc_c1_0,        //1
+                                    l2sat_coverage_ifc.arbdp_inst_rsvd_c1_0,   //0
+                                    l2sat_coverage_ifc.arbctl_stall_c2_0,
+                                    l2sat_coverage_ifc.arbctl_inst_vld_c1_0,
+                                    l2sat_coverage_ifc.arbctl_inst_diag_c1_0,
+                                    l2sat_coverage_ifc.arbdp_inst_c1_0[25:10]}) {
+#inc "l2_stalled_insts2_sample.vrhpal";
+    }
+
+    sample l2_stalled_scrub1_cov ({l2sat_coverage_ifc.same_col_stall_c1_0,     //17
+                                    l2sat_coverage_ifc.imiss_stall_op_c1inc1_0, //16
+                                    l2sat_coverage_ifc.arbctl_evict_vld_c2_0,   //15
+                                    l2sat_coverage_ifc.arbctl_fill_vld_c2_0,    //14
+                                    l2sat_coverage_ifc.arbctl_fill_vld_c3_0,    //13
+                                    l2sat_coverage_ifc.rdma_64B_stall_0,        //12
+                                    l2sat_coverage_ifc.arbctl_inval_inst_c2_0,  //11
+                                    l2sat_coverage_ifc.inval_inst_vld_c3_0,     //10
+                                    l2sat_coverage_ifc.inval_inst_vld_c4_0,     //9
+                                    l2sat_coverage_ifc.inst_l2data_vld_c2_0,    //8
+                                    l2sat_coverage_ifc.inst_l2tag_vld_c2_0,     //7
+                                    l2sat_coverage_ifc.inst_l2tag_vld_c3_0,     //6
+                                    l2sat_coverage_ifc.inst_l2vuad_vld_c2_0,    //5
+                                    l2sat_coverage_ifc.inst_l2vuad_vld_c3_0,    //4
+                                    l2sat_coverage_ifc.inst_l2vuad_vld_c4_0,    //3
+                                    l2sat_coverage_ifc.inc_tag_ecc_cnt_c2_0,    //2
+                                    l2sat_coverage_ifc.inc_tag_ecc_cnt_c3_0,    //1
+                                    l2sat_coverage_ifc.data_ecc_active_c4_0,    //0
+                                    l2sat_coverage_ifc.arbctl_inst_vld_c1_0,
+                                    l2sat_coverage_ifc.arbdp_inst_fb_c1_0,
+                                    l2sat_coverage_ifc.arbdp_tecc_c1_0}) {
+#inc "l2_stalled_scrub1_sample.vrhpal";
+    }
+
+    sample l2_stalled_scrub2_cov ({l2sat_coverage_ifc.arbctl_inst_diag_c1_0,  //7
+                                    l2sat_coverage_ifc.arbdp_evict_c1_0,       //6
+                                    l2sat_coverage_ifc.arbdp_inst_fb_c1_0,     //5
+                                    l2sat_coverage_ifc.decdp_imiss_inst_c1_0,  //4
+                                    l2sat_coverage_ifc.decdp_ic_inval_c1_0,    //3
+                                    l2sat_coverage_ifc.decdp_dc_inval_c1_0,    //2
+                                    l2sat_coverage_ifc.arbdp_tecc_c1_0,        //1
+                                    l2sat_coverage_ifc.arbdp_inst_rsvd_c1_0,   //0
+                                    l2sat_coverage_ifc.arbctl_stall_c2_0,
+                                    l2sat_coverage_ifc.arbctl_inst_vld_c1_0,
+                                    l2sat_coverage_ifc.arbdp_inst_fb_c1_0,
+                                    l2sat_coverage_ifc.arbdp_tecc_c1_0}) {
+#inc "l2_stalled_scrub2_sample.vrhpal";
+    }
+
+    sample l2_vuad_bypass_cov ({l2sat_coverage_ifc.arbctl_inst_vld_c1_0,
+                                 l2sat_coverage_ifc.vuad_sel_c2orc3_0,
+                                 l2sat_coverage_ifc.vuad_sel_c2_0,
+                                 l2sat_coverage_ifc.vuad_sel_c4orc5_0,
+                                 l2sat_coverage_ifc.vuad_sel_c4_0}) {
+#inc "l2_vuad_bypass_sample.vrhpal";
+    }
+#endif
+
+    // added to FC following 1; 10/25/05
+    sample l2_inst_flow_cov ({l2sat_coverage_ifc.tagctl_hit_l2orfb_c2_0,
+                               l2sat_coverage_ifc.mbctl_hit_c2_0,
+                               l2sat_coverage_ifc.arbdp_inst_mb_c2_0,
+                               l2sat_coverage_ifc.arbctl_evict_vld_c2_0,
+                               l2sat_coverage_ifc.arbctl_inst_vld_c2_0,
+                               l2sat_coverage_ifc.arbctl_inst_diag_c2_0,
+                               l2sat_coverage_ifc.arbdp_inst_c2_0[25:10]}) {
+#inc "l2_inst_flow_sample.vrhpal";
+    }
+
+
+#ifndef L2_INTF_COV
+    sample l2_buffer_hits_cov ({l2sat_coverage_ifc.mbctl_hit_c2_0,
+                                 l2sat_coverage_ifc.fbctl_mbctl_match_c2_0,
+                                 l2sat_coverage_ifc.wbctl_hit_qual_c2_0,
+                                 l2sat_coverage_ifc.rdmatctl_hit_qual_c2_0,
+                                 l2sat_coverage_ifc.arbctl_inst_vld_c2_0,
+                                 l2sat_coverage_ifc.arbctl_inst_diag_c2_0,
+                                 l2sat_coverage_ifc.arbdp_inst_c2_0[25:10]}) { //review check all references to inst19:5
+#inc "l2_buffer_hits_sample.vrhpal";
+    }
+
+    sample l2_pipeline_arbiter_cov ({l2sat_coverage_ifc.mbf_valid_px2_0,
+				     l2sat_coverage_ifc.fbf_valid_px2_0,
+				     l2sat_coverage_ifc.snp_valid_px2_0,
+				     l2sat_coverage_ifc.ique_iq_arb_atm_px2_0,
+				     l2sat_coverage_ifc.arb_stall_c2_0,
+				     l2sat_coverage_ifc.iqu_iq_arb_vld_px2_0}){
+#inc "l2_pipeline_arbiter_sample.vrhpal";
+    }
+#endif
+
+    // added to FC following 1; but commented out; 10/25/05
+// - new cov obj
+ /*   sample l2_dram_arbiter_cov ({}){
+    }*/
+
+#ifndef L2_INTF_COV
+    sample l2_store_pipelining_cov ({l2sat_coverage_ifc.arbctl_inst_vld_c3_0,
+				     l2sat_coverage_ifc.arb_decdp_st_inst_c3_0,
+				     l2sat_coverage_ifc.misbuf_dep_inst_c3_0,
+				     l2sat_coverage_ifc.mbf_insert_c3_0,
+				     l2sat_coverage_ifc.tag_hit_c3_0,
+				     l2sat_coverage_ifc.arb_vuad_ce_err_c3_0}){
+#inc "l2_store_pipelining_sample.vrhpal";
+    }
+#endif
+  } // end of "coverage_group l2sat_pipeline_coverage_group"
+
+
+  coverage_group l2sat_offmode_directmap_coverage_group
+  {
+
+    sample_event = @(posedge CLOCK);
+
+    // added to FC following 1; 10/25/05
+    sample l2_offmode_directmap_insts_cov ({l2sat_coverage_ifc.l2_bypass_mode_on_d1_0,
+                                             l2sat_coverage_ifc.l2_dir_map_on_d1_0,
+                                             l2sat_coverage_ifc.arbctl_inst_vld_c2_0,
+                                             l2sat_coverage_ifc.arbctl_inst_diag_c2_0,
+                                             l2sat_coverage_ifc.arbdp_inst_c2_0[25:10]}) {
+#inc "l2_offmode_directmap_insts_sample.vrhpal";
+    }
+   } // end of "coverage_group l2sat_offmode_directmap_coverage_group"
+     
+
+  coverage_group l2sat_intf_coverage_group 
+  {
+
+    sample_event = @(posedge CLOCK);
+
+/////////////////////////////////
+// L2->SIU interface coverages
+/////////////////////////////////
+
+    sample l2siu_intf_fields_cov ({l2sat_coverage_ifc.sii_l2t0_req_vld,
+                                l2sat_coverage_ifc.sii_l2t0_req[31:0]}) {
+#inc "l2_siu_fields_sample.vrhpal";
+    }
+
+    sample l2siu_intf_ctagecc_cov({l2sat_coverage_ifc.sii_l2t0_req_vld, 
+			       l2sat_coverage_ifc.sii_l2b0_ecc}){
+wildcard state SIU_CTAG_ECC_BIT0_0 ({1'b1, 5'bx, 1'b0});
+wildcard state SIU_CTAG_ECC_BIT0_1 ({1'b1, 5'bx, 1'b1});
+wildcard state SIU_CTAG_ECC_BIT1_0 ({1'b1, 4'bx, 1'b0, 1'bx});
+wildcard state SIU_CTAG_ECC_BIT1_1 ({1'b1, 4'bx, 1'b1, 1'bx});
+wildcard state SIU_CTAG_ECC_BIT2_0 ({1'b1, 3'bx, 1'b0, 2'bx});
+wildcard state SIU_CTAG_ECC_BIT2_1 ({1'b1, 3'bx, 1'b1, 2'bx});
+wildcard state SIU_CTAG_ECC_BIT3_0 ({1'b1, 2'bx, 1'b0, 3'bx});
+wildcard state SIU_CTAG_ECC_BIT3_1 ({1'b1, 2'bx, 1'b1, 3'bx});
+wildcard state SIU_CTAG_ECC_BIT4_0 ({1'b1, 1'bx, 1'b0, 4'bx});
+wildcard state SIU_CTAG_ECC_BIT4_1 ({1'b1, 1'bx, 1'b1, 4'bx});
+wildcard state SIU_CTAG_ECC_BIT5_0 ({1'b1, 1'b0, 5'bx});
+wildcard state SIU_CTAG_ECC_BIT5_1 ({1'b1, 1'b1, 5'bx});
+    }
+
+//#ifndef SIU_INTF_COV
+    sample l2siu_intf_bytemask_cov({l2sat_coverage_ifc.sii_l2t0_req_vld, 
+			       l2sat_coverage_ifc.sii_l2t0_req[15:8]}){
+m_state SIU_BYTEMASK(256:511);
+}
+//#else
+//sample l2siu_intf_bytemask_cov({(l2sat_coverage_ifc.sii_l2t0_req_vld || l2sat_coverage_ifc.sii_l2t1_req_vld || l2sat_coverage_ifc.sii_l2t2_req_vld || l2sat_coverage_ifc.sii_l2t3_req_vld || l2sat_coverage_ifc.sii_l2t4_req_vld || l2sat_coverage_ifc.sii_l2t5_req_vld || l2sat_coverage_ifc.sii_l2t6_req_vld || l2sat_coverage_ifc.sii_l2t7_req_vld),
+ //                              (l2sat_coverage_ifc.sii_l2t0_req_pkt[15:8] || l2sat_coverage_ifc.sii_l2t1_req_pkt[15:8] || l2sat_coverage_ifc.sii_l2t2_req_pkt[15:8] || l2sat_coverage_ifc.sii_l2t3_req_pkt[15:8] || l2sat_coverage_ifc.sii_l2t4_req_pkt[15:8] || l2sat_coverage_ifc.sii_l2t5_req_pkt[15:8] || l2sat_coverage_ifc.sii_l2t6_req_pkt[15:8] || l2sat_coverage_ifc.sii_l2t7_req_pkt[15:8])})
+//{
+//m_state SIU_BYTEMASK(256:511);
+//}
+//#endif
+
+
+// End of L2->SIU interface coverages
+
+
+///////////////////////////
+// L2 internal coverages
+////////////////////////////
+
+    // added to FC following 2; 10/25/05
+    sample l2_snpiq_valid_cov (l2sat_coverage_ifc.snpq_valid_0) {
+#inc "l2_snpiq_valid_sample.vrhpal";
+    }
+
+    sample l2_rdmawb_valid_cov (l2sat_coverage_ifc.rdma_valid_0) {
+#inc "l2_rdmawb_valid_sample.vrhpal";
+    }
+  } // end of 'coverage_group l2sat_intf_coverage_group"
+
+
+  coverage_group l2sat_error_coverage_group
+  {
+
+    sample_event = @(posedge CLOCK);
+
+    sample l2_error_status_reg_cov ({l2sat_coverage_ifc.err_state_new_c9_0[63:32], 
+                                      l2sat_coverage_ifc.err_status_in_0[63:32]}) {
+#inc "l2_error_status_reg_sample.vrhpal";
+    }
+
+    sample l2_notdata_error_reg_cov ({l2sat_coverage_ifc.err_state_notdata_new_c9_0, 
+                                      l2sat_coverage_ifc.err_status_notdata_in_0}) {
+#inc "l2_notdata_error_reg_sample.vrhpal";
+    }
+#ifdef L2_INTF_COV
+
+// added to FC following 1; 11/16/05
+    sample l2_error_in_offmode_cov ({l2sat_coverage_ifc.l2_bypass_mode_on_d1_0,
+                                   l2sat_coverage_ifc.fbuerr0_d1_0,
+                                   l2sat_coverage_ifc.fbcerr0_d1_0,
+                                   l2sat_coverage_ifc.fbctl_hit_c2_0,
+                                   l2sat_coverage_ifc.arbctl_inst_vld_c2_0,
+                                   l2sat_coverage_ifc.arbctl_inst_diag_c2_0,
+                                   l2sat_coverage_ifc.arbdp_inst_c2_0[25:10]}) {
+#inc "l2_error_offmode_sample_fc.vrhpal";
+    }
+#endif
+
+
+
+#ifndef L2_INTF_COV
+    sample l2_error_trans_cov ({l2sat_coverage_ifc.csr_l2_errstate_reg_0[63:62],  // MEU, MEC review double check these bit slices
+                                 l2sat_coverage_ifc.csr_l2_errstate_reg_0[35],     // VEU
+                                 l2sat_coverage_ifc.csr_l2_errstate_reg_0[36]}) {  // VEC
+#inc "l2_error_trans_sample.vrhpal";
+    }
+
+    sample l2_notdata_error_trans_cov ({l2sat_coverage_ifc.csr_l2_notdata_reg_0[45:44], l2sat_coverage_ifc.csr_l2_notdata_reg_0[47]}) {  // VEC
+#inc "l2_notdata_error_trans_sample.vrhpal";
+    }
+
+    sample l2_error_tag_cov ({l2sat_coverage_ifc.mbctl_hit_c2_0,
+                               l2sat_coverage_ifc.tecc_c2_0,
+                               l2sat_coverage_ifc.tagctl_hit_l2orfb_c2_0,
+                               l2sat_coverage_ifc.par_err_c2_0,
+                               l2sat_coverage_ifc.arbctl_inst_vld_c2_0,
+                               l2sat_coverage_ifc.arbctl_inst_diag_c2_0,
+                               l2sat_coverage_ifc.arbdp_pst_with_ctrue_c2_0,
+                               l2sat_coverage_ifc.arbdp_inst_c2_0[25:10]}) {
+#inc "l2_error_tag_sample.vrhpal";
+    }
+
+
+    // added to FC following 1; 10/25/05
+    sample l2_error_offmode_cov ({l2sat_coverage_ifc.l2_bypass_mode_on_d1_0,
+                                   l2sat_coverage_ifc.fbuerr0_d1_0,
+                                   l2sat_coverage_ifc.fbcerr0_d1_0, 
+                                   l2sat_coverage_ifc.fbctl_hit_c2_0,
+                                   l2sat_coverage_ifc.arbctl_inst_vld_c2_0,
+                                   l2sat_coverage_ifc.arbctl_inst_diag_c2_0,
+                                   l2sat_coverage_ifc.arbdp_inst_c2_0[25:10]}) {
+#inc "l2_error_offmode_sample.vrhpal";
+    }
+
+    sample l2_scrub_stall_cov ({l2sat_coverage_ifc.arbctl_inst_vld_c1_0,
+                                 l2sat_coverage_ifc.arbdp_inst_fb_c1_0,
+                                 l2sat_coverage_ifc.arbdp_tecc_c1_0,
+                                 l2sat_coverage_ifc.arbctl_inst_vld_c2_0,
+                                 l2sat_coverage_ifc.arbctl_fill_vld_c2_0,
+                                 l2sat_coverage_ifc.tecc_c2_0}) {
+#inc "l2_scrub_stall_sample.vrhpal";
+    }
+
+    sample l2_pst1_dataerr_pst2_tagerr_cov (l2_pst1_dataerr_pst2_tagerr_samp_trigger) {
+#inc "l2_pst1_dataerr_pst2_tagerr_sample.vrhpal";
+    }
+
+    sample l2_tecc_writeback_cov ({l2sat_coverage_ifc.arbctl_inst_vld_c2_0,
+                                    l2sat_coverage_ifc.par_err_c2_0,
+                                    l2sat_coverage_ifc.tecc_c2_0,
+                                    l2sat_coverage_ifc.wbctl_hit_qual_c2_0,
+                                    l2sat_coverage_ifc.rdmatctl_hit_qual_c2_0}) {
+#inc "l2_tecc_writeback_sample.vrhpal";
+    }
+/*
+    sample l2_error_vuad_ce_cov({l2sat_coverage_ifc.vlddir_valid_c2_0[0],
+				 l2sat_coverage_ifc.vlddir_valid_corr_c2_0[0],
+				 l2sat_coverage_ifc.l2t_l2d_way_sel_c2_0[0],
+				 l2sat_coverage_ifc.tag_hit_unqual_c2_0,
+				 l2sat_coverage_ifc.arb_vuad_ce_err_c2_0}){
+//#inc "l2_error_vuad_ce_samp.vrhpal";
+    }
+*/
+
+    sample l2_error_vuad_ecc_inst_cov(l2_error_vuad_ecc_samp_trigger){
+#inc "l2_error_vuad_ecc_sample.vrhpal";
+    }
+
+    sample l2_two_simultaneous_errors_cov({l2sat_coverage_ifc.err_state_new_c9_0[53:37],
+    					   l2sat_coverage_ifc.err_state_new_c9_0[34],
+    					   l2sat_coverage_ifc.err_state_notdata_new_c9_0} ){
+#inc "l2_two_simultaneous_errors_sample.vrhpal";
+    }
+	
+    sample l2_two_successive_errors_cov({l2sat_coverage_ifc.err_state_new_c9_0[53:45],
+					 l2sat_coverage_ifc.err_state_new_c9_0[42:37],
+					 l2sat_coverage_ifc.err_state_new_c9_0[34],
+    					 l2sat_coverage_ifc.err_state_notdata_new_c9_0,
+    					 l2sat_coverage_ifc.csr_l2_errstate_reg_0[53:45],
+					 l2sat_coverage_ifc.csr_l2_errstate_reg_0[42:37],
+    					 l2sat_coverage_ifc.csr_l2_errstate_reg_0[34],
+    					 l2sat_coverage_ifc.csr_l2_notdata_reg_0[45:44]}){
+. &two_errors(18);
+    }
+#endif
+
+    //added to FC following one for PM targeted 11/16 
+    sample l2_dir_scrub_cov({l2sat_coverage_ifc.dir_addr_cnt_0}){
+trans DIR_CNT_WRAP_AROUND (11'b111_1111_1111 -> 11'h0);
+    }
+
+#ifndef L2_INTF_COV
+    sample l2_tag_scrub_cov({l2sat_coverage_ifc.arb_tecc_way_c2_0, l2sat_coverage_ifc.tecc_st_cnt_0}){ 
+wildcard state TECC_WAY_15 (12'b1111_xxxx_xxxx);
+wildcard trans TECC_CNT_WRAP_AROUND (12'bxxxx_1000_0000 -> 12'bxxxx_0000_0000);
+    }
+
+    sample l2_data_scrub_cov({l2sat_coverage_ifc.arbadr_data_ecc_idx_0}){
+wildcard trans DECC_CNT_WRAP_AROUND (9'b1_1111_1111 -> 9'h0);
+    }
+#endif
+
+  }  // end of "coverage_group l2sat_error_coverage_group"
+
+
+// #ifdef L2_INTF_COV
+  coverage_group l2_cpx_packet_coverage_group
+  {
+    const_sample_reference = 1;  // ref. to sample vars. is constant
+    sample_event           = sync (ANY, l2t0_cpx_error_pkt1_evnt_trig, l2t0_cpx_error_pkt4_evnt_trig, l2t0_cpx_error_pkt5_evnt_trig );
+    #include "l2_fc_error_allpkttype_sample.vrh"
+
+  } // l2_cpx_packet_coverage_group
+
+  coverage_group l2_cpx_packet_bank_coverage_group
+  {
+    const_sample_reference = 1;  // ref. to sample vars. is constant
+    sample_event           = sync (ANY, l2t0_cpx_error_bank0_evnt_trig, l2t0_cpx_error_bank1_evnt_trig, l2t0_cpx_error_bank2_evnt_trig, l2t0_cpx_error_bank3_evnt_trig, l2t0_cpx_error_bank4_evnt_trig, l2t0_cpx_error_bank5_evnt_trig, l2t0_cpx_error_bank6_evnt_trig, l2t0_cpx_error_bank7_evnt_trig );
+    #include "l2_fc_error_allbank_sample.vrh"
+
+  } // l2_cpx_packet_bank_coverage_group
+
+  coverage_group l2_cpx_packet_anybank_coverage_group
+  {
+    const_sample_reference = 1;  // ref. to sample vars. is constant
+    sample_event           = sync (ANY, l2t0_cpx_anybank_error_evnt_trig );
+    #include "l2_fc_error_allbankerror_sample.vrh"
+
+  } // l2_cpx_packet_anybank_coverage_group
+
+  coverage_group l2_cpx_packet_bank_thread_coverage_group
+  {
+    const_sample_reference = 1;  // ref. to sample vars. is constant
+    sample_event           = sync (ANY, l2t0_cpx_error_bank2_thread_evnt_trig, l2t0_cpx_error_bank3_thread_evnt_trig, l2t0_cpx_error_bank4_thread_evnt_trig, l2t0_cpx_error_bank5_thread_evnt_trig, l2t0_cpx_error_bank6_thread_evnt_trig, l2t0_cpx_error_bank7_thread_evnt_trig, l2t0_cpx_error_bank8_thread_evnt_trig );
+    #include "l2_fc_error_allbank_thread_sample.vrh"
+
+  } // l2_cpx_packet_bank_thread_coverage_group
+
+  coverage_group l2_cpx_packet_bank_error_coverage_group
+  {
+    const_sample_reference = 1;  // ref. to sample vars. is constant
+    sample_event           = sync (ANY,  l2t0_cpx_bank_error_evnt_trig );
+    #include "l2_fc_error_allbank_error_sample.vrh"
+
+  } // l2_cpx_packet_bank_error_coverage_group
+
+
+
+// #endif
+
+  coverage_group l2sat_partial_corebank_coverage_group
+  {
+    sample_event = @(posedge CLOCK);
+
+/////////////////////////////////
+// NCU->L2 interface coverages
+/////////////////////////////////
+
+    sample l2_two_banks_combo ({l2sat_coverage_ifc.ncu_l2t_pm_0,
+                                  l2sat_coverage_ifc.ncu_l2t_ba01_0,
+                                  l2sat_coverage_ifc.ncu_l2t_ba23_0,
+                                  l2sat_coverage_ifc.ncu_l2t_ba45_0,
+                                  l2sat_coverage_ifc.ncu_l2t_ba67_0}){
+       state b01   (5'b10001);
+       state b23   (5'b10010);
+       state b45   (5'b10100);
+       state b67   (5'b11000);
+       cov_weight = 0;
+    }
+
+    sample l2_four_banks_combo ({l2sat_coverage_ifc.ncu_l2t_pm_0,
+                                  l2sat_coverage_ifc.ncu_l2t_ba01_0,
+                                  l2sat_coverage_ifc.ncu_l2t_ba23_0,
+                                  l2sat_coverage_ifc.ncu_l2t_ba45_0,
+                                  l2sat_coverage_ifc.ncu_l2t_ba67_0}){
+       state b0123 (5'b10011);
+       state b0145 (5'b10101);
+       state b2345 (5'b10110);
+       state b0167 (5'b11001);
+       state b2367 (5'b11010);
+       state b4567 (5'b11100);
+       cov_weight = 0;
+    }
+
+//    sample l2_eight_banks_combo ({l2sat_coverage_ifc.ncu_l2t_pm_0,
+//                                  l2sat_coverage_ifc.ncu_l2t_ba01_0,
+//                                  l2sat_coverage_ifc.ncu_l2t_ba23_0,
+//                                  l2sat_coverage_ifc.ncu_l2t_ba45_0,
+//                                  l2sat_coverage_ifc.ncu_l2t_ba67_0}){
+//       state all_banks (5'b11111);
+//       cov_weight = 0;
+//    }
+
+/////////////////////////////////
+// NCU->CORE interface coverages
+/////////////////////////////////
+
+//    sample l2_eight_cores_combo ({l2sat_coverage_ifc.ncu_spc0_core_enable_status_0,
+//                                  l2sat_coverage_ifc.ncu_spc1_core_enable_status_0,
+//                                  l2sat_coverage_ifc.ncu_spc2_core_enable_status_0,
+//                                  l2sat_coverage_ifc.ncu_spc3_core_enable_status_0,
+//                                  l2sat_coverage_ifc.ncu_spc4_core_enable_status_0,
+//                                  l2sat_coverage_ifc.ncu_spc5_core_enable_status_0,
+//                                  l2sat_coverage_ifc.ncu_spc6_core_enable_status_0,
+//                                  l2sat_coverage_ifc.ncu_spc7_core_enable_status_0}) {
+//        cov_weight = 0;
+//        m_state (0:255);
+//       //wildcard state (8'bxxxxxxxx);
+//    } 
+
+    sample l2_four_cores_combo ({l2sat_coverage_ifc.ncu_spc0_core_enable_status_0,
+                                  l2sat_coverage_ifc.ncu_spc1_core_enable_status_0,
+                                  l2sat_coverage_ifc.ncu_spc2_core_enable_status_0,
+                                  l2sat_coverage_ifc.ncu_spc3_core_enable_status_0,
+                                  l2sat_coverage_ifc.ncu_spc4_core_enable_status_0,
+                                  l2sat_coverage_ifc.ncu_spc5_core_enable_status_0,
+                                  l2sat_coverage_ifc.ncu_spc6_core_enable_status_0,
+                                  l2sat_coverage_ifc.ncu_spc7_core_enable_status_0}) {
+       cov_weight = 0;
+.&partial_cores(8, 4);
+    }
+
+    sample l2_two_cores_combo ({l2sat_coverage_ifc.ncu_spc0_core_enable_status_0,
+                                  l2sat_coverage_ifc.ncu_spc1_core_enable_status_0,
+                                  l2sat_coverage_ifc.ncu_spc2_core_enable_status_0,
+                                  l2sat_coverage_ifc.ncu_spc3_core_enable_status_0,
+                                  l2sat_coverage_ifc.ncu_spc4_core_enable_status_0,
+                                  l2sat_coverage_ifc.ncu_spc5_core_enable_status_0,
+                                  l2sat_coverage_ifc.ncu_spc6_core_enable_status_0,
+                                  l2sat_coverage_ifc.ncu_spc7_core_enable_status_0}) {
+       cov_weight = 0;
+.&partial_cores(8, 2);
+    }
+
+       cross l2_two_banks_partial_cores_cov (l2_two_banks_combo, l2_two_cores_combo);
+       cross l2_four_banks_partial_cores_cov (l2_four_banks_combo, l2_four_cores_combo);
+ //      cross l2_eight_banks_partial_cores_cov (l2_eight_banks_combo, l2_eight_cores_combo);
+
+  } // end of "coverage_group l2sat_partial_corebank_coverage_group"
+// end of NCU interface coverages
+
+
+  coverage_group l2sat_buffers_CAM_coverage_group
+  {
+
+    sample_event = @(posedge CLOCK);
+
+#ifndef L2_INTF_COV
+    sample l2_fb_wb_iowb_cam_results_cov ({l2sat_coverage_ifc.fb_cam_match[7:0], 
+                                           l2sat_coverage_ifc.fb_valid[7:0],
+                                           l2sat_coverage_ifc.wb_cam_match_c2[7:0], 
+                                           l2sat_coverage_ifc.wb_valid[7:0], 
+                                           l2sat_coverage_ifc.rdmat_cam_match_c2[3:0], 
+                                           l2sat_coverage_ifc.rdma_valid[3:0]}){
+#inc "l2_fb_wb_iowb_cam_results_sample.vrhpal";
+    }
+#endif
+  } // end of "coverage_group l2sat_buffers_CAM_coverage_group"
+
+
+  task new(StandardDisplay dbg);
+  task set_cov_cond_bits ();
+  task count_coverage();
+
+} //class l2sat_intf_coverage_class
+
+/////////////////////////////////////////////////////////////////
+// Class creation 
+/////////////////////////////////////////////////////////////////
+task l2sat_intf_coverage_class::count_coverage() {
+   
+   l2sat_intf_coverage_group.set_cov_weight(1);
+   l2sat_ccx_coverage_group.set_cov_weight(1);
+   l2sat_input_queue_coverage_group.set_cov_weight(1);
+   l2sat_output_queue_coverage_group.set_cov_weight(1);
+   l2sat_directory_coverage_group.set_cov_weight(1);
+   l2sat_missbuffer_coverage_group.set_cov_weight(1);
+   l2sat_fillbuffer_coverage_group.set_cov_weight(1);
+   l2sat_write_back_buffer_group.set_cov_weight(1);
+   l2sat_pipeline_coverage_group.set_cov_weight(1);
+//if(get_plus_arg(CHECK, "directmapped_mode") || get_plus_arg(CHECK, "off_mode") || get_plus_arg(CHECK, "l2_mode"))
+   l2sat_offmode_directmap_coverage_group.set_cov_weight(1);
+//else
+//   l2sat_offmode_directmap_coverage_group.set_cov_weight(0);
+   l2sat_error_coverage_group.set_cov_weight(1);
+//if(get_plus_arg(CHECK, "twobanks_mode") || get_plus_arg(CHECK, "fourbanks_mode") || get_plus_arg(CHECK, "l2_mode"))
+   l2sat_partial_corebank_coverage_group.set_cov_weight(1);
+//else
+//   l2sat_partial_corebank_coverage_group.set_cov_weight(0);
+   l2sat_buffers_CAM_coverage_group.set_cov_weight(1);
+
+   coverage_save_database(1);
+   printf("COVERAGE: coverage database saved\n");
+
+}
+
+
+task l2sat_intf_coverage_class::new(StandardDisplay dbg)
+{
+  bit coverage_on;
+  integer j;
+
+  // for dispmon
+  myname = "l2sat_intf_coverage_class";
+  this.dbg = dbg;
+
+  if (mChkPlusarg(l2sat_intf_coverage) || mChkPlusarg(coverage_on)) {
+
+    coverage_on = 1;
+    if (mChkPlusarg(l2sat_intf_cov_debug)) {
+      l2sat_intf_cov_debug = 1'b1;
+    }
+  } else {
+    coverage_on = 0;
+  }
+
+  if (coverage_on) {
+    l2sat_intf_coverage_group 			= new();
+    l2sat_ccx_coverage_group                    = new();
+    l2sat_input_queue_coverage_group            = new();
+    l2sat_output_queue_coverage_group           = new();            
+    l2sat_directory_coverage_group              = new();
+    l2sat_missbuffer_coverage_group             = new();
+    l2sat_fillbuffer_coverage_group             = new();
+    l2sat_write_back_buffer_group               = new();
+    l2sat_pipeline_coverage_group               = new();
+    l2sat_offmode_directmap_coverage_group      = new();
+    l2sat_error_coverage_group                  = new();
+    l2sat_partial_corebank_coverage_group	= new();    
+    l2sat_buffers_CAM_coverage_group		= new();
+   
+    set_cov_cond_bits();
+
+ 
+    //set_cov_cond_bits ();
+
+    printf("COVERAGE: flag coverage_on==%d\n",coverage_on);
+    dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :COVERAGE turned on for L2SAT l2sat_intf_coverage_group\n\n", get_time(LO)));
+
+    //fork {
+    //   @ (posedge l2sat_coverage_ifc.cmp_diag_done);
+    //   l2sat_intf_coverage_group.set_cov_weight(1);
+    //   coverage_save_database(1);
+    //   dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Coverage for L2SAT objects generated\n\n", get_time(LO)));
+    //} join none
+  } // if coverage_on
+} // l2sat_intf_coverage::new()
+
+// **************************************************************************************
+//  Adding Internal coverage objects of FC for L2       MAQ
+// **************************************************************************************
+
+class fc_l2_internal_coverage
+{
+  // for dispmon
+  StandardDisplay dbg;
+  local string    myname;
+        reg     l2_gnt_active_list = 0;
+        reg     l2_gnt_active_0 = 0;
+        reg     l2_gnt_active_1 = 0;
+        reg     l2_gnt_active_2 = 0;
+        reg     l2_gnt_active_3 = 0;
+        reg     l2_gnt_active_4 = 0;
+        reg     l2_gnt_active_5 = 0;
+        reg     l2_gnt_active_6 = 0;
+        reg     l2_gnt_active_7 = 0;
+
+  // ----------- coverage_group ----------------
+        coverage_group l2_gnt_activity_coverage_group
+        {
+          const_sample_reference = 1;  // ref. to sample vars. is constant
+          sample_event = @(posedge l2_siu_ccx_intf.clk);
+. for ($z=0; $z < 8; $z++)
+. {
+
+          sample l2_gnt_active_bank${z} (l2_gnt_active_${z})
+          {
+                state l2_ccx_siu_activity_${z} (1'b1);
+          }
+. }
+
+        }
+
+  task new(StandardDisplay dbg);
+  task set_cov_cond_bits ();
+  task l2_gnt_active_task();
+
+} //class fc_l2_internal_coverage
+
+task fc_l2_internal_coverage::new(StandardDisplay dbg)
+{
+  bit coverage_on = 0;
+  integer j;
+
+  // for dispmon
+  myname = "fc_l2_internal_coverage";
+  this.dbg = dbg;
+
+  if (mChkPlusarg(fc_l2_internal_coverage) || mChkPlusarg(coverage_on)) {
+    coverage_on = 1;
+//    printf("MAQ-Debug: CPU Internal Coverage Turned On \n");
+  }
+
+  if (coverage_on) {
+    dbg.dispmon(myname, MON_INFO, psprintf("\n\n %d :Internal Coverage turned on for SIU/L2 objects\n\n", get_time(LO)));
+    set_cov_cond_bits ();
+  }
+}
+
+task fc_l2_internal_coverage:: set_cov_cond_bits ()
+{
+fork
+        l2_gnt_active_task();
+join none
+
+} // task fc_l2_internal_coverage:: set_cov_cond_bits
+
+task fc_l2_internal_coverage::l2_gnt_active_task()
+{
+
+    while(1)
+    {
+        @(negedge l2_siu_ccx_intf.clk);
+        {
+                l2_gnt_active_0 = (|(l2_siu_ccx_intf.sctag0_cpx_req_cq[7:0])) & (l2_siu_ccx_intf.l2b0_sio_ctag_vld);
+                l2_gnt_active_1 = (|(l2_siu_ccx_intf.sctag1_cpx_req_cq[7:0])) & (l2_siu_ccx_intf.l2b1_sio_ctag_vld);
+                l2_gnt_active_2 = (|(l2_siu_ccx_intf.sctag2_cpx_req_cq[7:0])) & (l2_siu_ccx_intf.l2b2_sio_ctag_vld);
+                l2_gnt_active_3 = (|(l2_siu_ccx_intf.sctag3_cpx_req_cq[7:0])) & (l2_siu_ccx_intf.l2b3_sio_ctag_vld);
+                l2_gnt_active_4 = (|(l2_siu_ccx_intf.sctag4_cpx_req_cq[7:0])) & (l2_siu_ccx_intf.l2b4_sio_ctag_vld);
+                l2_gnt_active_5 = (|(l2_siu_ccx_intf.sctag5_cpx_req_cq[7:0])) & (l2_siu_ccx_intf.l2b5_sio_ctag_vld);
+                l2_gnt_active_6 = (|(l2_siu_ccx_intf.sctag6_cpx_req_cq[7:0])) & (l2_siu_ccx_intf.l2b6_sio_ctag_vld);
+                l2_gnt_active_7 = (|(l2_siu_ccx_intf.sctag7_cpx_req_cq[7:0])) & (l2_siu_ccx_intf.l2b7_sio_ctag_vld);
+                l2_gnt_active_list = (|{l2_gnt_active_0, l2_gnt_active_1, l2_gnt_active_2, l2_gnt_active_3, l2_gnt_active_4, l2_gnt_active_5, l2_gnt_active_6, l2_gnt_active_7});
+                if(l2_gnt_active_list == 1)
+                  dbg.dispmon(myname, MON_ALWAYS, psprintf("\n\n %d :l2_gnt_active_list HIT \n\n", get_time(LO)));
+        }
+    } // While
+
+}
+
+
+// **************************************************************************************
+
+
+task l2sat_intf_coverage_class:: set_cov_cond_bits () 
+{
+
+fork
+        {
+           while (1)
+           {
+                @(posedge l2_ras_intf.clk);
+                  l2t0_type1       = l2_ras_intf.l2t0_cpx_data[139:138] ;
+                  if ( l2_ras_intf.l2t0_cpx_data[145] === 1'b1 && l2_ras_intf.l2t0_cpx_data[144:141] === 4'b0000 )
+                  trigger (l2t0_cpx_error_pkt1_evnt_trig);
+
+                  l2t0_type4       = l2_ras_intf.l2t0_cpx_data[139:138] ;
+                  if ( l2_ras_intf.l2t0_cpx_data[145] === 1'b1 && l2_ras_intf.l2t0_cpx_data[144:141] === 4'b1100 )
+                  trigger (l2t0_cpx_error_pkt4_evnt_trig);
+
+                  l2t0_type5       = l2_ras_intf.l2t0_cpx_data[139:138] ;
+                  if ( l2_ras_intf.l2t0_cpx_data[145] === 1'b1 && l2_ras_intf.l2t0_cpx_data[144:141] === 4'b1101 )
+                  trigger (l2t0_cpx_error_pkt5_evnt_trig);
+
+                  l2t0_bank0       = l2_ras_intf.l2t0_cpx_data[139:138] ;
+                  if ( l2_ras_intf.l2t0_cpx_data[145] === 1'b1 && (l2_ras_intf.l2t0_cpx_data[136:134] === 3'b000 | l2_ras_intf.l2t0_cpx_data[136:134] === 3'b001 | l2_ras_intf.l2t0_cpx_data[136:134] === 3'b010 | l2_ras_intf.l2t0_cpx_data[136:134] === 3'b011 | l2_ras_intf.l2t0_cpx_data[136:134] === 3'b100 | l2_ras_intf.l2t0_cpx_data[136:134] === 3'b101 | l2_ras_intf.l2t0_cpx_data[136:134] === 3'b110 | l2_ras_intf.l2t0_cpx_data[136:134] === 3'b111 ))
+                  trigger (l2t0_cpx_error_bank0_evnt_trig);
+
+                  l2t0_bank1       = l2_ras_intf.l2t1_cpx_data[139:138] ;
+                  if ( l2_ras_intf.l2t1_cpx_data[145] === 1'b1 && (l2_ras_intf.l2t1_cpx_data[136:134] === 3'b000 | l2_ras_intf.l2t1_cpx_data[136:134] === 3'b001 | l2_ras_intf.l2t1_cpx_data[136:134] === 3'b010 | l2_ras_intf.l2t1_cpx_data[136:134] === 3'b011 | l2_ras_intf.l2t1_cpx_data[136:134] === 3'b100 | l2_ras_intf.l2t1_cpx_data[136:134] === 3'b101 | l2_ras_intf.l2t1_cpx_data[136:134] === 3'b110 | l2_ras_intf.l2t1_cpx_data[136:134] === 3'b111 ))
+                  trigger (l2t0_cpx_error_bank1_evnt_trig);
+
+                  l2t0_bank2       = l2_ras_intf.l2t2_cpx_data[139:138] ;
+                  if ( l2_ras_intf.l2t2_cpx_data[145] === 1'b1 && (l2_ras_intf.l2t2_cpx_data[136:134] === 3'b000 | l2_ras_intf.l2t2_cpx_data[136:134] === 3'b001 | l2_ras_intf.l2t2_cpx_data[136:134] === 3'b010 | l2_ras_intf.l2t2_cpx_data[136:134] === 3'b011 | l2_ras_intf.l2t2_cpx_data[136:134] === 3'b100 | l2_ras_intf.l2t2_cpx_data[136:134] === 3'b101 | l2_ras_intf.l2t2_cpx_data[136:134] === 3'b110 | l2_ras_intf.l2t2_cpx_data[136:134] === 3'b111 ))
+                  trigger (l2t0_cpx_error_bank2_evnt_trig);
+
+                  l2t0_bank3       = l2_ras_intf.l2t3_cpx_data[139:138] ;
+                  if ( l2_ras_intf.l2t3_cpx_data[145] === 1'b1 && (l2_ras_intf.l2t3_cpx_data[136:134] === 3'b000 | l2_ras_intf.l2t3_cpx_data[136:134] === 3'b001 | l2_ras_intf.l2t3_cpx_data[136:134] === 3'b010 | l2_ras_intf.l2t3_cpx_data[136:134] === 3'b011 | l2_ras_intf.l2t3_cpx_data[136:134] === 3'b100 | l2_ras_intf.l2t3_cpx_data[136:134] === 3'b101 | l2_ras_intf.l2t3_cpx_data[136:134] === 3'b110 | l2_ras_intf.l2t3_cpx_data[136:134] === 3'b111 ))              
+                  trigger (l2t0_cpx_error_bank3_evnt_trig);
+                  
+                  l2t0_bank4       = l2_ras_intf.l2t4_cpx_data[139:138] ;
+                  if ( l2_ras_intf.l2t4_cpx_data[145] === 1'b1 && (l2_ras_intf.l2t4_cpx_data[136:134] === 3'b000 | l2_ras_intf.l2t4_cpx_data[136:134] === 3'b001 | l2_ras_intf.l2t4_cpx_data[136:134] === 3'b010 | l2_ras_intf.l2t4_cpx_data[136:134] === 3'b011 | l2_ras_intf.l2t4_cpx_data[136:134] === 3'b100 | l2_ras_intf.l2t4_cpx_data[136:134] === 3'b101 | l2_ras_intf.l2t4_cpx_data[136:134] === 3'b110 | l2_ras_intf.l2t4_cpx_data[136:134] === 3'b111 ))              
+                  trigger (l2t0_cpx_error_bank4_evnt_trig);
+                  
+                  l2t0_bank5       = l2_ras_intf.l2t5_cpx_data[139:138] ;
+                  if ( l2_ras_intf.l2t5_cpx_data[145] === 1'b1 && (l2_ras_intf.l2t5_cpx_data[136:134] === 3'b000 | l2_ras_intf.l2t5_cpx_data[136:134] === 3'b001 | l2_ras_intf.l2t5_cpx_data[136:134] === 3'b010 | l2_ras_intf.l2t5_cpx_data[136:134] === 3'b011 | l2_ras_intf.l2t5_cpx_data[136:134] === 3'b100 | l2_ras_intf.l2t5_cpx_data[136:134] === 3'b101 | l2_ras_intf.l2t5_cpx_data[136:134] === 3'b110 | l2_ras_intf.l2t5_cpx_data[136:134] === 3'b111 ))              
+                  trigger (l2t0_cpx_error_bank5_evnt_trig);
+                  
+                  l2t0_bank6       = l2_ras_intf.l2t6_cpx_data[139:138] ;
+                  if ( l2_ras_intf.l2t6_cpx_data[145] === 1'b1 && (l2_ras_intf.l2t6_cpx_data[136:134] === 3'b000 | l2_ras_intf.l2t6_cpx_data[136:134] === 3'b001 | l2_ras_intf.l2t6_cpx_data[136:134] === 3'b010 | l2_ras_intf.l2t6_cpx_data[136:134] === 3'b011 | l2_ras_intf.l2t6_cpx_data[136:134] === 3'b100 | l2_ras_intf.l2t6_cpx_data[136:134] === 3'b101 | l2_ras_intf.l2t6_cpx_data[136:134] === 3'b110 | l2_ras_intf.l2t6_cpx_data[136:134] === 3'b111 ))              
+                  trigger (l2t0_cpx_error_bank6_evnt_trig);
+                  
+                  l2t0_bank7       = l2_ras_intf.l2t7_cpx_data[139:138] ;
+                  if ( l2_ras_intf.l2t7_cpx_data[145] === 1'b1 && (l2_ras_intf.l2t7_cpx_data[136:134] === 3'b000 | l2_ras_intf.l2t7_cpx_data[136:134] === 3'b001 | l2_ras_intf.l2t7_cpx_data[136:134] === 3'b010 | l2_ras_intf.l2t7_cpx_data[136:134] === 3'b011 | l2_ras_intf.l2t7_cpx_data[136:134] === 3'b100 | l2_ras_intf.l2t7_cpx_data[136:134] === 3'b101 | l2_ras_intf.l2t7_cpx_data[136:134] === 3'b110 | l2_ras_intf.l2t7_cpx_data[136:134] === 3'b111 ))              
+                  trigger (l2t0_cpx_error_bank7_evnt_trig);
+
+                  if ( (l2_ras_intf.l2t0_cpx_data[145] === 1'b1 | l2_ras_intf.l2t1_cpx_data[145] === 1'b1 | l2_ras_intf.l2t2_cpx_data[145] === 1'b1 | l2_ras_intf.l2t3_cpx_data[145] === 1'b1 | l2_ras_intf.l2t4_cpx_data[145] === 1'b1 | l2_ras_intf.l2t5_cpx_data[145] === 1'b1 | l2_ras_intf.l2t6_cpx_data[145] === 1'b1 | l2_ras_intf.l2t7_cpx_data[145] === 1'b1) && ((l2_ras_intf.l2t0_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t0_cpx_data[139:138] === 2'b10 | l2_ras_intf.l2t0_cpx_data[139:138] === 2'b11) | (l2_ras_intf.l2t1_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t1_cpx_data[139:138] === 2'b10 | l2_ras_intf.l2t1_cpx_data[139:138] === 2'b11) | (l2_ras_intf.l2t2_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t2_cpx_data[139:138] === 2'b10 | l2_ras_intf.l2t2_cpx_data[139:138] === 2'b11) | (l2_ras_intf.l2t3_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t3_cpx_data[139:138] === 2'b10 | l2_ras_intf.l2t3_cpx_data[139:138] === 2'b11) | (l2_ras_intf.l2t4_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t4_cpx_data[139:138] === 2'b10 | l2_ras_intf.l2t4_cpx_data[139:138] === 2'b11) | (l2_ras_intf.l2t5_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t5_cpx_data[139:138] === 2'b10 | l2_ras_intf.l2t5_cpx_data[139:138] === 2'b11) | (l2_ras_intf.l2t6_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t6_cpx_data[139:138] === 2'b10 | l2_ras_intf.l2t6_cpx_data[139:138] === 2'b11) | (l2_ras_intf.l2t7_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t7_cpx_data[139:138] === 2'b10 | l2_ras_intf.l2t7_cpx_data[139:138] === 2'b11)))
+                  trigger (l2t0_cpx_anybank_error_evnt_trig);
+
+           }
+        }
+join none
+
+fork
+        {
+          integer i ;
+           while (1)
+           {
+                @(posedge CLOCK);
+                   counter_2bank = counter_2bank + 1 ;
+                    {
+                     thread_bits [0] = ((l2_ras_intf.l2t0_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t0_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t0_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t0_cpx_data[139:138] === 2'b10));
+                     thread_bits [1] = ((l2_ras_intf.l2t1_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t1_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t1_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t1_cpx_data[139:138] === 2'b10));
+                     thread_bits [2] = ((l2_ras_intf.l2t2_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t2_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t2_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t2_cpx_data[139:138] === 2'b10));
+                     thread_bits [3] = ((l2_ras_intf.l2t3_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t3_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t3_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t3_cpx_data[139:138] === 2'b10));
+                     thread_bits [4] = ((l2_ras_intf.l2t4_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t4_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t4_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t4_cpx_data[139:138] === 2'b10));
+                     thread_bits [5] = ((l2_ras_intf.l2t5_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t5_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t5_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t5_cpx_data[139:138] === 2'b10));
+                     thread_bits [6] = ((l2_ras_intf.l2t6_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t6_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t6_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t6_cpx_data[139:138] === 2'b10));
+                     thread_bits [7] = ((l2_ras_intf.l2t7_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t7_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t7_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t7_cpx_data[139:138] === 2'b10));
+                   }
+                   for (i=0 ; i<8 ; i++)
+                     {
+                       if (thread_bits[i] == 1)
+                       error_counter = error_counter + 1 ;
+                     }
+
+                    if (counter_2bank == 20)
+                     {
+                       if (error_counter ==2)
+                         trigger (l2t0_cpx_error_bank2_thread_evnt_trig );
+                         error_counter = 0 ;
+                         counter_2bank = 0 ;
+                     }
+         }
+        }
+join none
+
+fork
+        {
+          integer i ;
+           while (1)
+           {
+                @(posedge CLOCK);
+                   counter_3bank = counter_3bank + 1 ;
+                    {
+                     thread_bits [0] = ((l2_ras_intf.l2t0_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t0_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t0_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t0_cpx_data[139:138] === 2'b10));
+                     thread_bits [1] = ((l2_ras_intf.l2t1_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t1_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t1_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t1_cpx_data[139:138] === 2'b10));
+                     thread_bits [2] = ((l2_ras_intf.l2t2_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t2_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t2_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t2_cpx_data[139:138] === 2'b10));
+                     thread_bits [3] = ((l2_ras_intf.l2t3_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t3_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t3_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t3_cpx_data[139:138] === 2'b10));
+                     thread_bits [4] = ((l2_ras_intf.l2t4_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t4_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t4_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t4_cpx_data[139:138] === 2'b10));
+                     thread_bits [5] = ((l2_ras_intf.l2t5_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t5_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t5_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t5_cpx_data[139:138] === 2'b10));
+                     thread_bits [6] = ((l2_ras_intf.l2t6_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t6_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t6_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t6_cpx_data[139:138] === 2'b10));
+                     thread_bits [7] = ((l2_ras_intf.l2t7_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t7_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t7_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t7_cpx_data[139:138] === 2'b10));
+                   }
+                   for (i=0 ; i<8 ; i++)
+                     {
+                       if (thread_bits[i] == 1)
+                       error_counter = error_counter + 1 ;
+                     }
+
+                    if (counter_3bank == 20)
+                     {
+                       if (error_counter ==3)
+                         trigger (l2t0_cpx_error_bank3_thread_evnt_trig );
+                         error_counter = 0 ;
+                         counter_3bank = 0 ;
+                     }
+         }
+        }
+join none
+
+fork
+        {
+          integer i ;
+           while (1)
+           {
+                @(posedge CLOCK);
+                   counter_4bank = counter_4bank + 1 ;
+                    {
+                     thread_bits [0] = ((l2_ras_intf.l2t0_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t0_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t0_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t0_cpx_data[139:138] === 2'b10));
+                     thread_bits [1] = ((l2_ras_intf.l2t1_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t1_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t1_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t1_cpx_data[139:138] === 2'b10));
+                     thread_bits [2] = ((l2_ras_intf.l2t2_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t2_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t2_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t2_cpx_data[139:138] === 2'b10));
+                     thread_bits [3] = ((l2_ras_intf.l2t3_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t3_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t3_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t3_cpx_data[139:138] === 2'b10));
+                     thread_bits [4] = ((l2_ras_intf.l2t4_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t4_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t4_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t4_cpx_data[139:138] === 2'b10));
+                     thread_bits [5] = ((l2_ras_intf.l2t5_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t5_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t5_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t5_cpx_data[139:138] === 2'b10));
+                     thread_bits [6] = ((l2_ras_intf.l2t6_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t6_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t6_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t6_cpx_data[139:138] === 2'b10));
+                     thread_bits [7] = ((l2_ras_intf.l2t7_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t7_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t7_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t7_cpx_data[139:138] === 2'b10));
+                   }
+                   for (i=0 ; i<8 ; i++)
+                     {
+                       if (thread_bits[i] == 1)
+                       error_counter = error_counter + 1 ;
+                     }
+
+                    if (counter_4bank == 40)
+                     {
+                       if (error_counter ==4)
+                         trigger (l2t0_cpx_error_bank4_thread_evnt_trig );
+                         error_counter = 0 ;
+                         counter_4bank = 0 ;
+                     }
+         }
+        }
+join none
+
+fork
+        {
+          integer i ;
+           while (1)
+           {
+                @(posedge CLOCK);
+                   counter_5bank = counter_5bank + 1 ;
+                    {
+                     thread_bits [0] = ((l2_ras_intf.l2t0_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t0_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t0_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t0_cpx_data[139:138] === 2'b10));
+                     thread_bits [1] = ((l2_ras_intf.l2t1_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t1_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t1_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t1_cpx_data[139:138] === 2'b10));
+                     thread_bits [2] = ((l2_ras_intf.l2t2_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t2_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t2_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t2_cpx_data[139:138] === 2'b10));
+                     thread_bits [3] = ((l2_ras_intf.l2t3_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t3_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t3_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t3_cpx_data[139:138] === 2'b10));
+                     thread_bits [4] = ((l2_ras_intf.l2t4_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t4_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t4_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t4_cpx_data[139:138] === 2'b10));
+                     thread_bits [5] = ((l2_ras_intf.l2t5_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t5_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t5_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t5_cpx_data[139:138] === 2'b10));
+                     thread_bits [6] = ((l2_ras_intf.l2t6_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t6_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t6_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t6_cpx_data[139:138] === 2'b10));
+                     thread_bits [7] = ((l2_ras_intf.l2t7_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t7_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t7_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t7_cpx_data[139:138] === 2'b10));
+                   }
+                   for (i=0 ; i<8 ; i++)
+                     {
+                       if (thread_bits[i] == 1)
+                       error_counter = error_counter + 1 ;
+                     }
+
+                    if (counter_5bank == 40)
+                     {
+                       if (error_counter ==5)
+                         trigger (l2t0_cpx_error_bank5_thread_evnt_trig );
+                         error_counter = 0 ;
+                         counter_5bank = 0 ;
+                     }
+         }
+        }
+join none
+
+fork
+        {
+          integer i ;
+           while (1)
+           {
+                @(posedge CLOCK);
+                   counter_6bank = counter_2bank + 1 ;
+                    {
+                     thread_bits [0] = ((l2_ras_intf.l2t0_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t0_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t0_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t0_cpx_data[139:138] === 2'b10));
+                     thread_bits [1] = ((l2_ras_intf.l2t1_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t1_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t1_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t1_cpx_data[139:138] === 2'b10));
+                     thread_bits [2] = ((l2_ras_intf.l2t2_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t2_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t2_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t2_cpx_data[139:138] === 2'b10));
+                     thread_bits [3] = ((l2_ras_intf.l2t3_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t3_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t3_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t3_cpx_data[139:138] === 2'b10));
+                     thread_bits [4] = ((l2_ras_intf.l2t4_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t4_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t4_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t4_cpx_data[139:138] === 2'b10));
+                     thread_bits [5] = ((l2_ras_intf.l2t5_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t5_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t5_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t5_cpx_data[139:138] === 2'b10));
+                     thread_bits [6] = ((l2_ras_intf.l2t6_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t6_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t6_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t6_cpx_data[139:138] === 2'b10));
+                     thread_bits [7] = ((l2_ras_intf.l2t7_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t7_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t7_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t7_cpx_data[139:138] === 2'b10));
+                   }
+                   for (i=0 ; i<8 ; i++)
+                     {
+                       if (thread_bits[i] == 1)
+                       error_counter = error_counter + 1 ;
+                     }
+
+                    if (counter_2bank == 60)
+                     {
+                       if (error_counter ==6)
+                         trigger (l2t0_cpx_error_bank6_thread_evnt_trig );
+                         error_counter = 0 ;
+                         counter_6bank = 0 ;
+                     }
+         }
+        }
+join none
+
+
+fork
+        {
+          integer i ;
+           while (1)
+           {
+                @(posedge CLOCK);
+                   counter_7bank = counter_3bank + 1 ;
+                    {
+                     thread_bits [0] = ((l2_ras_intf.l2t0_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t0_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t0_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t0_cpx_data[139:138] === 2'b10));
+                     thread_bits [1] = ((l2_ras_intf.l2t1_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t1_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t1_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t1_cpx_data[139:138] === 2'b10));
+                     thread_bits [2] = ((l2_ras_intf.l2t2_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t2_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t2_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t2_cpx_data[139:138] === 2'b10));
+                     thread_bits [3] = ((l2_ras_intf.l2t3_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t3_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t3_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t3_cpx_data[139:138] === 2'b10));
+                     thread_bits [4] = ((l2_ras_intf.l2t4_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t4_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t4_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t4_cpx_data[139:138] === 2'b10));
+                     thread_bits [5] = ((l2_ras_intf.l2t5_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t5_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t5_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t5_cpx_data[139:138] === 2'b10));
+                     thread_bits [6] = ((l2_ras_intf.l2t6_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t6_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t6_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t6_cpx_data[139:138] === 2'b10));
+                     thread_bits [7] = ((l2_ras_intf.l2t7_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t7_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t7_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t7_cpx_data[139:138] === 2'b10));
+                   }
+                   for (i=0 ; i<8 ; i++)
+                     {
+                       if (thread_bits[i] == 1)
+                       error_counter = error_counter + 1 ;
+                     }
+
+                    if (counter_7bank == 80)
+                     {
+                       if (error_counter ==7)
+                         trigger (l2t0_cpx_error_bank7_thread_evnt_trig );
+                         error_counter = 0 ;
+                         counter_7bank = 0 ;
+                     }
+         }
+        }
+join none
+
+
+fork
+        {
+          integer i ;
+           while (1)
+           {
+                @(posedge CLOCK);
+                   counter_8bank = counter_8bank + 1 ;
+                    {
+                     thread_bits [0] = ((l2_ras_intf.l2t0_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t0_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t0_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t0_cpx_data[139:138] === 2'b10));
+                     thread_bits [1] = ((l2_ras_intf.l2t1_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t1_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t1_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t1_cpx_data[139:138] === 2'b10));
+                     thread_bits [2] = ((l2_ras_intf.l2t2_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t2_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t2_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t2_cpx_data[139:138] === 2'b10));
+                     thread_bits [3] = ((l2_ras_intf.l2t3_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t3_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t3_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t3_cpx_data[139:138] === 2'b10));
+                     thread_bits [4] = ((l2_ras_intf.l2t4_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t4_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t4_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t4_cpx_data[139:138] === 2'b10));
+                     thread_bits [5] = ((l2_ras_intf.l2t5_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t5_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t5_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t5_cpx_data[139:138] === 2'b10));
+                     thread_bits [6] = ((l2_ras_intf.l2t6_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t6_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t6_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t6_cpx_data[139:138] === 2'b10));
+                     thread_bits [7] = ((l2_ras_intf.l2t7_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t7_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t7_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t7_cpx_data[139:138] === 2'b10));
+                   }
+                   for (i=0 ; i<8 ; i++)
+                     {
+                       if (thread_bits[i] == 1)
+                       error_counter = error_counter + 1 ;
+                     }
+
+                    if (counter_8bank == 100)
+                     {
+                       if (error_counter ==8)
+                         trigger (l2t0_cpx_error_bank8_thread_evnt_trig );
+                         error_counter = 0 ;
+                         counter_8bank = 0 ;
+                     }
+         }
+        }
+join none
+
+fork
+. for ($bank=0; $bank<8; $bank++)
+. {
+        {
+          integer i ;
+           while (1)
+           {
+                @(posedge CLOCK);
+                   counter_bank${bank} = counter_bank${bank} + 1 ;
+                    {
+                     error_bits [0] = ((l2_ras_intf.l2t${bank}_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t${bank}_cpx_data[136:134] === 3'b000 ) && ( l2_ras_intf.l2t${bank}_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t${bank}_cpx_data[139:138] === 2'b10));
+                     error_bits [1] = ((l2_ras_intf.l2t${bank}_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t${bank}_cpx_data[136:134] === 3'b001 ) && ( l2_ras_intf.l2t${bank}_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t${bank}_cpx_data[139:138] === 2'b10));
+                     error_bits [2] = ((l2_ras_intf.l2t${bank}_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t${bank}_cpx_data[136:134] === 3'b010 ) && ( l2_ras_intf.l2t${bank}_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t${bank}_cpx_data[139:138] === 2'b10));
+                     error_bits [3] = ((l2_ras_intf.l2t${bank}_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t${bank}_cpx_data[136:134] === 3'b011 ) && ( l2_ras_intf.l2t${bank}_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t${bank}_cpx_data[139:138] === 2'b10));
+                     error_bits [4] = ((l2_ras_intf.l2t${bank}_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t${bank}_cpx_data[136:134] === 3'b100 ) && ( l2_ras_intf.l2t${bank}_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t${bank}_cpx_data[139:138] === 2'b10));
+                     error_bits [5] = ((l2_ras_intf.l2t${bank}_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t${bank}_cpx_data[136:134] === 3'b101 ) && ( l2_ras_intf.l2t${bank}_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t${bank}_cpx_data[139:138] === 2'b10));
+                     error_bits [6] = ((l2_ras_intf.l2t${bank}_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t${bank}_cpx_data[136:134] === 3'b110 ) && ( l2_ras_intf.l2t${bank}_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t${bank}_cpx_data[139:138] === 2'b10));
+                     error_bits [7] = ((l2_ras_intf.l2t${bank}_cpx_data[145] === 1'b1 ) && (l2_ras_intf.l2t${bank}_cpx_data[136:134] === 3'b111 ) && ( l2_ras_intf.l2t${bank}_cpx_data[139:138] === 2'b01 | l2_ras_intf.l2t${bank}_cpx_data[139:138] === 2'b10));
+                   }
+                   for (i=0 ; i<8 ; i++)
+                     {
+                       if (error_bits[i] == 1)
+                       error_counter = error_counter + 1 ;
+                     }
+
+                    if (counter_bank${bank} == 30)
+                     {
+                       if (error_counter ==1)
+                         trigger (l2t0_cpx_bank_error_evnt_trig );
+                         error_counter = 0 ;
+                         counter_bank${bank} = 0 ;
+                     }
+         }
+        }
+. }
+join none
+
+} // task l2sat_intf_coverage

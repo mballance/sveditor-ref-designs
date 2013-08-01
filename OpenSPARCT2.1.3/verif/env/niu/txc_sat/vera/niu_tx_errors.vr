@@ -1,0 +1,144 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_tx_errors.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "hostErrInjTab.vrh"
+#include "hostRdCbMgr.vrh"
+#include "niu_cbclass.vrh"
+#include "niu_txtoken.vrh"
+#include "niu_tx_pktconfig.vrh"
+
+extern CHostErrInjTab HostErrInj;
+
+
+
+class CSetTxError {
+
+	function integer set_up_errors(TxPacketGenConfig PktGenConfig, CTxToken TxToken);
+	task set_host_err_callback(bit [39:0] call_bk_addr, integer host_err_code);
+	task new(){
+	}
+
+}
+
+task CSetTxError::set_host_err_callback(bit [39:0] call_bk_addr, integer host_err_code)
+{
+
+ integer status;
+ CcbErrDfn HostErrorDfn;
+ HostErrorDfn = new();
+ HostErrorDfn.address = {24'h0,call_bk_addr};
+ HostErrorDfn.error_code = host_err_code;
+ status = HostErrInj.SetErrorDfn(HostErrorDfn);
+ printf("CSetTxError::set_host_err_callback: Address - %x code - %d \n",call_bk_addr,host_err_code);
+}
+
+function integer CSetTxError::set_up_errors(TxPacketGenConfig PktGenConfig, CTxToken TxToken){
+
+  CNiuErrors error_info;
+  integer host_errors,packet_errors;
+  integer dma_errors;
+  bit[63:0] address;
+  set_up_errors = 0;
+
+  if(PktGenConfig.error_info.isErrSet() ==0) {
+        // Do Nothing
+  } else {
+        // Parse Through the Error and start setting up things
+        // Create a local copy - easy to work with
+   error_info = PktGenConfig.error_info.object_copy();
+   host_errors = error_info.hosterrors.isErrSet();
+   if(host_errors) {
+        packet_errors = error_info.hosterrors.packet_errors;
+        dma_errors = error_info.hosterrors.dma_errors;
+
+        if(packet_errors == NACK_PKT_RD_SOP) {
+          address = TxToken.xlate_gather_address[0];
+          set_host_err_callback(address[39:0],error_info.hosterrors.host_error_code);
+        } 
+
+        if(packet_errors == NACK_PKT_RD_EOP) {
+          address = TxToken.xlate_gather_address[TxToken.NoofGathers-1] +  TxToken.gather_pkt_length[TxToken.NoofGathers-1];
+          set_host_err_callback(address[39:0],error_info.hosterrors.host_error_code);
+        } 
+
+        if(packet_errors == NACK_PKT_RD_MID) {
+          // Pick some location randomly
+          address = TxToken.xlate_gather_address[0] +  TxToken.gather_pkt_length[0];
+          set_host_err_callback(address[39:0],error_info.hosterrors.host_error_code);
+          
+        }
+
+        if(packet_errors == PKT_SPURIOUS_RESP) {
+           address = TxToken.xlate_gather_address[0];
+           set_host_err_callback(address[39:0],error_info.hosterrors.host_error_code);
+           error_info.hosterrors.packet_errors = 0;
+           printf("Inducing spurious respones on Pkt Responses\n");
+        }
+
+        if(dma_errors == NACK_PREF_ERROR) {
+           address = TxToken.xlate_desc_addr;
+           set_host_err_callback(address[39:0],error_info.hosterrors.host_error_code);
+           printf("Inducing nack_pref_err\n");
+        }
+
+        if(dma_errors == MBOX_ERROR) {
+           address = TxToken.xlate_mb_addr;
+           set_host_err_callback(address[39:0],error_info.hosterrors.host_error_code);
+           printf("Inducing Mbox_nack_err\n");
+        }
+
+        if(dma_errors == PREF_SPURIOUS_RESP) {
+           address = TxToken.xlate_desc_addr;
+           set_host_err_callback(address[39:0],error_info.hosterrors.host_error_code);
+           printf("Inducing spurious respones on Descriptor fetch\n");
+           error_info.hosterrors.dma_errors = 0;
+        }
+            
+	set_up_errors = 1;
+       if(host_errors&SIU_CtagSingleBitEccErr) {
+	set_up_errors = 0;
+       } else {
+	set_up_errors = 1;
+       }
+        TxToken.error_info = error_info.object_copy();
+        
+
+
+   } 
+   // DO SOME MORE HERE
+
+  }
+}
+
+

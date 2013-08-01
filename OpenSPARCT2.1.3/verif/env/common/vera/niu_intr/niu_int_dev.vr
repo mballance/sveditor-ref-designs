@@ -1,0 +1,124 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_int_dev.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "pio_memory_map.vri"
+#include "pio_driver.vrh"
+
+
+extern niu_gen_pio gen_pio_drv;
+
+
+class CNiuIntrDev {
+ bit[1:0] ldf_mask;
+ integer dev_id;
+ integer ErrId;
+ integer group_bind_no;
+ integer active;
+ integer no_of_isrs_spawned;
+ integer isr_done;
+ local integer pending_flag;
+
+  task new(integer i);
+  function integer getid() ;
+
+  function integer getErrId(){ getErrId = ErrId; }
+
+  task SetErrId(integer i){ ErrId = i;}
+  task setGid(integer i) ;
+  task pioSetMasks( bit[1:0] m) ;
+  function bit[31:0] getErrState () ;
+  task incIsrCnt() { no_of_isrs_spawned++;
+  printf("CNiuIntrDev:incIsrCnt  id - %d cnt - %d \n",dev_id,no_of_isrs_spawned);
+  }
+  task setIsrCnt() { no_of_isrs_spawned = 0;
+  printf("CNiuIntrDev:Reset IsrCnt  id - %d cnt - %d \n",dev_id,no_of_isrs_spawned);
+  }
+  task SetPendingFlag() {pending_flag=1;}
+  task ClrPendingFlag() {pending_flag=0;}
+  function integer getIsrCnt() { getIsrCnt = no_of_isrs_spawned;
+  printf("CNiuIntrDev:getIsrCnt id - %d cnt - %d \n",dev_id,no_of_isrs_spawned);}
+  virtual function integer isr(( bit[1:0] ldf_flags = 0) ){}
+  virtual task bind_to_group(integer g){}
+  function integer isPending() {isPending = pending_flag;}
+
+}
+function bit[31:0] CNiuIntrDev::getErrState () {
+  bit [63:0] address, rdata;
+  if(dev_id ==68) {
+     address = SYS_ERR_STAT;
+     gen_pio_drv.pio_rd(address,rdata);
+     getErrState = rdata[31:0];
+  } else {
+    printf("TB ERROR DeviceID - %d Cannot access SYS_ERR_STAT !! \n");
+    getErrState = 0;
+  }
+}
+task CNiuIntrDev::new(integer i) {
+  dev_id = i;
+  active = 0;
+  isr_done = 0;
+  pending_flag = 0;
+  no_of_isrs_spawned = 0;
+  ErrId = -1;
+}
+task CNiuIntrDev::setGid(integer i) {
+  bit [63:0] address;
+  bit [63:0] wdata;
+  group_bind_no = i;
+  address = LDG_NUM + 8* dev_id;
+  wdata = i;
+  printf("CNiuIntrDev::setGid Address - %x Data - %x DevId - %d \n",address,wdata,dev_id);
+  gen_pio_drv.pio_wr(address,wdata);
+}
+
+function integer CNiuIntrDev::getid() {
+   getid = dev_id;
+}
+task CNiuIntrDev::pioSetMasks( bit[1:0] m) {
+ bit [63:0] address;
+ bit [63:0] wdata;
+ integer status;
+ if(dev_id<64) {
+   address = LD_IM0 + dev_id * 8192;
+ } else {
+   address = LD_IM1 + (dev_id-64) * 8192;
+ } 
+ wdata = {62'h0,m};
+ printf(" CNiuIntrDev::pioSetMasks DeviceID - %d Mask - %x Address - %x \n",dev_id,m,address);
+ gen_pio_drv.pio_wr(address,wdata);
+ ldf_mask = m;
+ 
+}
+

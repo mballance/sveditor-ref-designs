@@ -1,0 +1,424 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: pio_driver.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "pio.port.vri"
+#include "cMesg.vrh"
+// #include "ncu_stub.vrh"
+#include "niu_gen_pio.vrh"
+
+extern Mesg be_msg;
+// extern Cncu_stub ncu_driver;
+extern niu_gen_pio gen_pio_drv;
+
+class  pio_drv {
+
+  bit [39:0] address;   	// msb = 0 real access
+                        	// msb = 1 force register
+  bit [31:0] wr_data;   	// data for pio_wr/pio_cfg_wr
+  bit [31:0] rd_data;   	// data returned for pio_rd/pio_cfg_rd
+  bit rd_wr;            	// 1 = read; 0 = write
+  bit cfg_access;       	// 1 = cfg_access; 0 = register access
+  bit ht_pio = 1'b0;       	// 1 = ht_bus_access to register; 0 = pio_driver access
+  integer pio_access;   	// flag to prevent multiple use of database
+  event pio_start;      	// signal to start the primary task
+  event pio_complete;   	// return signal to initiator
+  event pio_checker_start; 	// signal to have the pio checker
+                        	// anticipate pending activity
+  bit   expect_pio_err = 1'b0;	// = 1'b1, when where is a pio_error expected.
+
+  task new((pio_port port_bind = null)) ;
+
+  task init_outputs(pio_port port_bind) ;
+
+  task float_outputs(pio_port port_bind) ;
+
+  task ht_reset( pio_port port_bind, 
+                 (integer no_of_clocks = 110)
+	       ) ;
+
+  task pio_wr( bit [39:0] addr, bit [31:0] write_data,
+	       (bit exp_pio_err = 1'b0) ) ;
+
+  task pio_rd( bit [39:0] addr, var bit [31:0] read_data,
+	       (bit [31:0] exp_data = 32'b0),
+               (bit [31:0] data_mask = 32'hFFFF_FFFF),
+               bit exp_data_valid,
+	       (bit exp_pio_err = 1'b0) );
+
+  task pio(pio_port port_bind) ;
+
+  task pio_handshake (pio_port port_bind) ;
+
+  task ht_pio_enable () ;
+
+}
+
+/* **********************************************************
+   init_outputs
+   Initialize the output signals
+   ********************************************************** */
+task pio_drv::new((pio_port port_bind = null)) {
+
+
+  pio_port my_port = port_bind ;
+  // create a sempahore for this class
+  pio_access  = alloc(SEMAPHORE, 0, 1, 1);
+  if(!ht_pio) {
+   // execute primary tasks
+   fork
+//     init_outputs(my_port);
+      pio(my_port);
+   join none
+
+  }
+  // ht_reset(my_port);
+}
+
+
+/* **********************************************************
+   init_outputs
+   Initialize the output signals
+   ********************************************************** */
+
+task pio_drv::init_outputs(pio_port port_bind) {
+
+  port_bind.$reg_offset 	= 0;
+  port_bind.$write_data	= 32'h0000_0000;
+  port_bind.$rd_wr      	= 0;
+  port_bind.$mod_select  	= 0;
+  port_bind.$reset  		= 1'b0;
+
+}
+
+task pio_drv::float_outputs(pio_port port_bind) {
+
+  port_bind.$reg_offset         = 24'hz;
+  port_bind.$write_data         = 32'hz;
+  port_bind.$rd_wr              = 1'bz;
+  port_bind.$mod_select         = 1'bz;
+
+  repeat(5) @(posedge CLOCK);
+
+}
+
+/* **********************************************************
+   ht_reset
+   All the blocks within Vega (FFL, ILC, IRX, ITX, MAC, NRX, NTX, 
+   PHY, PSEUDO_DDR_IO) are reset by "reset" signal from HT.
+   The "ht_reset" task mimics that functionality.
+   ********************************************************** */
+
+task pio_drv::ht_reset( pio_port port_bind, 
+		        (integer no_of_clocks = 110) 
+		      )
+{
+ printf(" Entering ht_reset \n");
+ if (!ht_pio) {
+  // MAC requirement that the reset is applied two times and
+  // for a minimum duration of 440ns (110 clock cycles) each time.
+
+  if (no_of_clocks < 110) no_of_clocks = 110;
+  port_bind.$reset = 1'b0;
+  repeat (10) @(posedge port_bind.$clock);
+  
+  repeat (no_of_clocks) {
+        port_bind.$reset = 1'b1;
+        @(posedge port_bind.$clock);
+  }
+
+  repeat (no_of_clocks) {
+        port_bind.$reset = 1'b0;
+        @(posedge port_bind.$clock);
+  }
+
+  repeat (no_of_clocks) {
+        port_bind.$reset = 1'b1;
+        @(posedge port_bind.$clock);
+  }
+
+  port_bind.$reset = 1'b0;
+  repeat (5) @(posedge port_bind.$clock);
+ } // end of if (!ht_pio)
+
+}
+
+
+/* ***********************************************************
+   pio_wr
+   This task performs a PIO write of a VEGA register.  In asic
+   simulation the write is performed across the HT interface;
+   In module simulation, the driver module will simulate the 
+   GPIO interface.
+
+   The "addr" field is a 33 bit field.  If the msb is set to
+   zero, then the lower 32 bits are used to access the memory
+   mapped VEGA register.  If the msb is set to one, then a
+   case statement will determine the functionality -- in most
+   situations the "phony" addresses will (1) access items not
+   in the memory map, (2) directly force registers to save
+   simulation time, or (3) access multiple registers in one
+   command.
+
+   The "wr_data" field is a 32 bit field which contains the
+   data to be written.
+
+   All writes using this task updates the shadow space.
+   ********************************************************** */
+
+task pio_drv::pio_wr(bit [39:0] addr, bit [31:0] write_data,
+		     (bit exp_pio_err = 1'b0) ) {
+
+  semaphore_get(WAIT, pio_access, 1);
+
+  address    = addr;
+  wr_data    = write_data;
+  rd_wr      = 1'b0;
+  cfg_access = 1'b0;
+  expect_pio_err = exp_pio_err;
+
+  if (ht_pio) { 
+    // Do nothing!
+  }
+  else {
+    // if msb is one, then access does not go to core
+    //if (addr[32] != 1) {
+      trigger(ONE_SHOT, pio_start);
+      sync(ALL, pio_complete);
+    //}
+  }
+
+  semaphore_put(pio_access, 1);
+
+}
+
+/* **********************************************************
+   pio_rd
+   This task performs a PIO read of a VEGA register.  In asic
+   simulation the read is performed across the HT interface;
+   in module simulation, the pio driver will simulate the GIO++
+   interface.
+
+   The "addr" field is a 33 bit field.  If the msb is set to
+   zero, then the lower 32 bits are used to access the memory
+   mapped VEGA register.  If the msb is set to one, then a
+   case statement will determine the functionality -- in most
+   situations the "phony" addresses will (1) access items not
+   in the memory map, (2) directly read registers to save
+   simulation time, or (3) access multiple registers in one
+   command.
+
+   The "rd_data" field is a 32 bit field which will be loaded
+   with the data read from the register.
+
+   If a corresponding address exists in the shadow space, then
+   a comparison will be made with the shadow copy.
+   ********************************************************** */
+
+task pio_drv::pio_rd(bit [39:0] addr, var bit [31:0] read_data, 
+                     (bit [31:0] exp_data = 32'b0), 
+	             (bit [31:0] data_mask = 32'hFFFF_FFFF),
+		     bit exp_data_valid,
+		     (bit exp_pio_err = 1'b0) ) {
+
+  bit [31:0] reg_data;
+  semaphore_get(WAIT, pio_access, 1);
+  address    = addr;
+  rd_wr      = 1'b1;
+  cfg_access = 1'b0;
+  expect_pio_err = exp_pio_err;
+
+  if (ht_pio) {
+     // Do nothing!!
+  }
+  else {
+   // if msb is one, then access does not go to core
+  // if (addr[32] != 1) {
+     trigger(ONE_SHOT, pio_start);
+     sync(ALL, pio_complete);
+  // }
+   read_data = rd_data;
+   if ( exp_data_valid) {
+       if ((rd_data & data_mask) !== (exp_data & data_mask)) {
+           printf("PIO: pio_rd failure: Data miscompare\n");
+           be_msg.print(e_mesg_error, "pio_rd", "pio_driver",
+                        "Data miscompare: Addr: 0x%h, expected: %h, observed: %h, mask: %h \n ", 
+                        address, exp_data, rd_data, data_mask);
+       }
+   }
+
+  }
+
+  semaphore_put(pio_access, 1);
+
+}
+
+/* **********************************************************
+   pio
+   Primary task for the pio driver.
+   Flow: (1) Enter continuous while loop
+         (2) Make sure that system is out of reset
+             This is ensured through pio_tasks.vr
+         (3) Wait for pio command
+         (4) Send pio_token to checker
+         (5) Decode address and perform pio with appropriate
+             port
+         (6) signal the originating task that the operation
+             is complete
+         (7) add a one clock delay
+   ********************************************************** */
+
+task pio_drv::pio(pio_port port_bind) {
+
+  pio_port my_port = port_bind;
+
+  // eventually replace (1) with a system variable that can turn task on/off
+  while (1) {   
+
+    // Wait for the testbench to issue a pio command
+    sync(ALL, pio_start);
+
+    // Once the token is received, it should be passed on to the checker.
+
+    trigger(ONE_SHOT, pio_checker_start);
+
+    cfg_access = 0;
+
+    if (cfg_access == 0) {
+
+      pio_handshake (my_port) ;
+
+    }    // end of if (cfg_access == 0)
+
+    // Tell the originating task that the pio operation has been completed.
+
+    trigger(ONE_SHOT, pio_complete);
+
+  }  // end of while (1)
+
+}   // end of pio task
+
+
+/* **********************************************************
+   pio_handshake
+
+   Perform the 250 Mhz handshake across the pio interface.
+   This task has to drive the proper signals at the proper
+   time.  The checker will verify incoming signals such
+   as rd_data.
+
+   NOTE: The delay between select asserted and select deasserted
+         should be programmable between 3 and 4.
+   ********************************************************** */
+/**************************
+task pio_drv::pio_handshake (pio_port port_bind) {
+  integer MAX_DELAY = 1000;
+  bit	  ht_pio_error ;
+
+  @1 port_bind.$reg_offset 	= address;
+     port_bind.$write_data    	= wr_data;
+     port_bind.$rd_wr      	= rd_wr;
+     port_bind.$mod_select     	= 1;   	// select must be active for at least
+
+  // $pio_err should be driven by all modules and is active high signal.
+  // $pio_err should be asserted high only when there is a PIO error condition.
+  @1,MAX_DELAY port_bind.$pio_ack == 1'b1;
+     ht_pio_error = port_bind.$pio_err;
+
+  rd_data        		= port_bind.$read_data;
+  @(posedge port_bind.$clock);
+  port_bind.$pio_ack            == 1'b0;
+  if (expect_pio_err != 1'b1) {
+    port_bind.$pio_err            == 1'b0;
+  }
+  port_bind.$mod_select     	= 0;   	// three clock cycles.
+  repeat (3) {          		// make sure process is complete
+    @(port_bind.$clock);
+  }
+
+  // Error if the $pio_err signal is asserted with expect_pio_err bit is not set!
+  if ( (expect_pio_err != 1'b1) & (ht_pio_error == 1'b1) ) {
+      be_msg.print(e_mesg_error, "pio_handshake", "pio_driver",
+                   "PIO ERROR Asserted for Address = %0h \n ", address);
+  }
+
+  // Error if the $pio_err signal is NOT asserted with expect_pio_err bit is set!
+  if ( (expect_pio_err == 1'b1) & (ht_pio_error != 1'b1) ) {
+      be_msg.print(e_mesg_error, "pio_handshake", "pio_driver",
+                   "PIO ERROR Expected for Address = %0h \n ", address);
+  }
+}
+*******************************************/
+
+task pio_drv::pio_handshake (pio_port port_bind) {
+  integer MAX_DELAY = 1000;
+  bit	  ht_pio_error ;
+  integer status;
+  bit [63:0] local_read_data;
+  bit [63:0] local_write_data;
+   local_read_data = {32'h0000_0000,rd_data};
+   local_write_data = {32'h0000_0000,wr_data};
+
+	if(rd_wr == 1)  // Read
+	{
+	// ncu_driver.read_data(address,local_read_data,status);
+	gen_pio_drv.pio_rd(address,local_read_data);
+		/* if((expect_pio_err == 0) && (status != 1))
+			printf("ERROR: pio_rd error seen when not expected\n");
+		if((expect_pio_err == 1) && (status == 1))
+			printf("ERROR: pio_rd error not seen when expected\n"); */
+	rd_data = local_read_data[31:0];
+	}
+	else
+	{
+	// ncu_driver.write_data(address,local_write_data);
+	gen_pio_drv.pio_wr(address,local_write_data);
+	wr_data = local_write_data[31:0];
+	}
+}
+
+/* **********************************************************
+   ht_pio_enable
+   Enable the ht_pio bit to indicate that the register 
+   acceses will be done from HT interface and not the PIO
+   slave interface driver.
+   ********************************************************** */
+task pio_drv::ht_pio_enable() {
+
+  // set the ht_pio bit to enable HT interface access
+  ht_pio  = 1'b1;
+
+}
+
+

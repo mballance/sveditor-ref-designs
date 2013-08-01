@@ -1,0 +1,512 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: denali_root_monitor_PCIEXactorBuilder.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+// XactorFmwork and XactorComponents libraries
+#include "XactorBaseBuilder.vrh"
+#include "XactorBasePacket.vrh"
+#include "XactorBaseSignalInterface.vrh"
+#include "XactorBaseManager.vrh"
+#include "XactorManager.vrh"
+#include "XactorHash.vrh"
+#include "XactorBinTree.vrh"
+#include "XactorList.vrh"
+#include "XactorListWildCard.vrh"
+#include "XactorCtrl.vrh"
+#include "XactorUtilities.vrh"
+#include "XactorDefines.vri"
+#include "XactorClk.port.vri"
+
+// DenaliPCIE libary
+#include "DenaliPCIE.vri"
+
+// FNXPCIEXactor library
+#include "FNXPCIEXactorDefines.vri"
+// #include "FNXPCIEXactorPorts.vri"
+#include "denali_root_monitor_PCIEXactorPorts.vri"
+
+// report library
+#include "cReport.vrh"
+#include "FNXPCIEXactorReportMacros.vri"
+
+class denali_root_monitor_PCIEXactorBuilder extends XactorBaseBuilder {
+  
+  // Inherited Members
+  // MyReport declared in XactorBaseBuilder
+
+  // Base Class and Method Names For QR Macros
+  local string ClassName  = "denali_root_monitor_PCIEXactorBuilder";
+  local string MethodName = null;
+
+  local FNXPCIEXactorManager Manager;
+//   local FNXPCIEXactorSignalInterface SignalInterface;
+
+  local denali_root_monitor_PCIEXactorSignalInterface SignalInterface;
+
+  local string XactorName;  // Name of transactor
+  local integer PortNum;    // PCIE Port Number
+
+  local XactorClk                  ClkPort;        // Clock port
+//   local FNXPCIEXactorDenaliClkPort DenaliClkPort;  // Denali PCIE Clocks
+// 3/4/04
+  local denali_root_monitor_PCIEXactorDenaliClkPort DenaliClkPort;  // Denali PCIE Clocks
+  denali_root_monitor_PCIEXactorMiscPort      MiscPort;       // 3/4/04
+
+  local bit AssertCovEnabled;
+  local FNXPCIEXactorAssertCovDatabase AssertCovDatabase;
+
+  // Denali PCIE Device Reference For This Transactor
+//   FNXPCIEXactorDenaliDevice PCIEDevice;
+  denali_root_monitor_PCIEXactorDenaliDevice PCIEDevice;
+
+  // Flow Control Engine
+  FNXPCIEXactorFCEngine FCEngine;
+
+  // Utilities
+  static FNXPCIEXactorUtilities Util;
+
+  // SelfExpect members
+  bit SelfExpectEnable;
+  integer MinSelfExpectDly;
+  integer MaxSelfExpectDly;
+
+  task new( ReportClass                _Report,
+	    XactorClk                  _ClkPort,
+// 	    FNXPCIEXactorDenaliClkPort _DenaliClkPort,
+// 	    FNXPCIEXactorDenaliDevice  _PCIEDevice,
+// 	    FNXPCIEXactorMiscPort      _MiscPort,
+	    denali_root_monitor_PCIEXactorDenaliClkPort _DenaliClkPort,
+	    denali_root_monitor_PCIEXactorDenaliDevice  _PCIEDevice,
+	    denali_root_monitor_PCIEXactorMiscPort      _MiscPort,
+	    integer                    _PortNum,
+	    string                     _XactorName = "denali_root_monitor_PCIEXactorBuilder" );
+
+  // public methods
+  virtual function string CreateName();
+  virtual function XactorBasePacket CreatePacket();
+  virtual function XactorBaseManager CreateManager();
+  virtual function XactorBaseSignalInterface CreateSignalInterface();
+  virtual function XactorBaseExpectDataStruct CreateExpectDataStruct();
+  virtual function XactorBaseExpectDataStruct CreateXExpectDataStruct();
+  virtual function XactorBaseExpectDataStruct CreateHashElement();
+  virtual function ReportClass CreateReport();
+  virtual function XactorClk CreateClock();
+  virtual task AddDenaliCbk( denaliPcieCbReasonT DenCbk );
+  virtual task EnableAssertCov();
+  virtual function bit GetAssertCovEnabled();
+  virtual task ResetAssertCov();
+  virtual task AddAssertPt( denaliPcieErrorTypeT covPt );
+  virtual function bit IsAssertPtCovered( denaliPcieErrorTypeT covPt );
+  virtual function integer GetAssertPtCnt( denaliPcieErrorTypeT covPt );
+  virtual task DisplayAssertCov( ReportType rptType );
+  virtual task SetUnexpectedTLPErr();
+  virtual task SuppressUnexpectedTLPErr();
+  virtual task SomaSet( string somaParm, string somaValue );
+  virtual task Epilogue( ReportType rptType );
+
+  //Made Public since all errors need to be supressed if a Denali reset is asserted
+  task DenaliMemoryModelInit();
+  // protected methods
+  local task EnableDefaultDenaliCbks();
+  
+} // end of builder sub-class
+
+// constructor
+task denali_root_monitor_PCIEXactorBuilder::new( ReportClass                _Report,
+				XactorClk                  _ClkPort,
+// 				FNXPCIEXactorDenaliClkPort _DenaliClkPort,
+// 				FNXPCIEXactorDenaliDevice  _PCIEDevice,
+//                                 FNXPCIEXactorMiscPort      _MiscPort,
+				denali_root_monitor_PCIEXactorDenaliClkPort _DenaliClkPort,
+				denali_root_monitor_PCIEXactorDenaliDevice  _PCIEDevice,
+                                denali_root_monitor_PCIEXactorMiscPort      _MiscPort,
+				integer                    _PortNum,
+				string                     _XactorName = "denali_root_monitor_PCIEXactorBuilder" )
+
+{
+  sprintf( XactorName, "%s_%0d", _XactorName, _PortNum );
+  ClkPort       = _ClkPort;
+  DenaliClkPort = _DenaliClkPort;
+  MyReport      = _Report;
+  PCIEDevice    = _PCIEDevice;
+  PortNum       = _PortNum;
+  MiscPort      = _MiscPort;
+
+  if ( Util == null )
+    Util = new( MyReport, XactorName );
+
+  // Create Xactor Manager
+  Manager = new( this, 
+		 ClkPort );
+
+  // Create Assertion Coverage Database and Default Assertion Coverage to Disabled
+  AssertCovDatabase = new( MyReport, XactorName );
+  AssertCovEnabled = 0;
+
+  // Create Signal Interface
+  SignalInterface = new( Manager.ExpectFifo,      // incoming TLP transactions Fifo
+			 Manager.DllpExpectFifo,  // incoming DLLP transactions Fifo
+			 Manager.DriveFifo,       // outgoing TLP/DLLP transactions Fifo
+			 Manager.RetryPktFifo,    // retried TLP transactions Fifo
+			 MyReport,                // Report reference
+			 XactorName,              // Name of transactor
+			 Manager._XactorCtrl,     // control (Enable/Disable xactor)
+			 ClkPort,                 // Transactor clock port
+			 DenaliClkPort,           // Denali PCIE Clock Port
+			 PCIEDevice,              // Denali PCIE Device reference
+			 MiscPort,                // Port for Denali reset and Receive Detect signals 
+			 Util,                    // Xactor Utilities
+			 AssertCovDatabase,       // Assertion Coverage Database
+			 PortNum                  // PCIE Port Number (only used for reporting)
+			 );
+
+  // Flow Control Engine
+//   FCEngine = new( MyReport, SignalInterface, DenaliClkPort, Util, XactorName );
+
+  // Default Self-Expect Members
+  SelfExpectEnable = 1'b0;
+  MinSelfExpectDly = 0;
+  MaxSelfExpectDly = 50;
+
+// 5-24-05 The same callbacks for the Denali end point device are used
+// so unless extra callbacks need to be enabled here there is no need 
+// to call EnableDefaultDenaliCbks()
+  // Register Default Denali Callbacks For This PCIE Device
+//   EnableDefaultDenaliCbks();
+
+  // Initialize ReqID and BAR Setup of Denali Memory Model
+  DenaliMemoryModelInit();
+}
+
+function string denali_root_monitor_PCIEXactorBuilder::CreateName()
+{
+  CreateName = XactorName;
+}
+
+function XactorBasePacket denali_root_monitor_PCIEXactorBuilder::CreatePacket()
+{
+  FNXPCIEXactorPacket Packet = new( MyReport, 
+				    XactorName,
+				    Util,
+				    PortNum );
+  CreatePacket = Packet;
+}
+
+function XactorBaseManager denali_root_monitor_PCIEXactorBuilder::CreateManager()
+{
+  CreateManager = Manager;
+}
+
+function XactorBaseSignalInterface denali_root_monitor_PCIEXactorBuilder::CreateSignalInterface()
+{
+  CreateSignalInterface = SignalInterface;
+}
+
+function XactorBaseExpectDataStruct denali_root_monitor_PCIEXactorBuilder::CreateExpectDataStruct()
+{
+  XactorList DataStruct = new;
+  CreateExpectDataStruct = DataStruct;
+}
+
+function XactorBaseExpectDataStruct denali_root_monitor_PCIEXactorBuilder::CreateXExpectDataStruct()
+{
+  XactorListWildCard XDataStruct = new;
+  CreateXExpectDataStruct = XDataStruct;
+}
+
+function XactorBaseExpectDataStruct denali_root_monitor_PCIEXactorBuilder::CreateHashElement()
+{
+  XactorList HashElement = new;
+  CreateHashElement = HashElement;
+}
+
+function ReportClass denali_root_monitor_PCIEXactorBuilder::CreateReport()
+{
+  CreateReport = MyReport;
+}
+
+function XactorClk denali_root_monitor_PCIEXactorBuilder::CreateClock()
+{
+  CreateClock = ClkPort;
+}
+
+task denali_root_monitor_PCIEXactorBuilder::AddDenaliCbk( denaliPcieCbReasonT DenCbk )
+{
+  string MethodName = "AddDenaliCbk";
+  integer status;
+  status = PCIEDevice.addCb( DenCbk );
+  if (status < 0)
+    PCIEX_QR_ERR( "%s-> Failed to Add Callback=%s",
+		  XactorName, DenCbk );
+}
+
+// This task should enabled all Denali callback points for which
+// this Xactor has handlers for in the Signal Interface
+task denali_root_monitor_PCIEXactorBuilder::EnableDefaultDenaliCbks()
+{
+  // User Queue Callbacks (Packets Generated By Model)
+  AddDenaliCbk( PCIE_CB_TL_user_queue_enter );
+  AddDenaliCbk( PCIE_CB_TL_user_queue_exit );
+  
+  // Transaction Layer Xmit Callbacks
+  // AddDenaliCbk( PCIE_CB_TL_transmit_queue_enter );
+  // AddDenaliCbk( PCIE_CB_TL_transmit_queue_exit );
+  AddDenaliCbk( PCIE_CB_TL_to_DL );
+  
+  // DLL Xmit Callbacks
+  // AddDenaliCbk( PCIE_CB_DL_TX_queue_enter );
+  // AddDenaliCbk( PCIE_CB_DL_TX_queue_exit );
+  AddDenaliCbk( PCIE_CB_DL_to_PL );
+  
+  // Physical Layer Xmit Callbacks
+  AddDenaliCbk( PCIE_CB_PL_TX_start_packet ); // Drive Start
+  AddDenaliCbk( PCIE_CB_PL_TX_end_packet );   // Drive End
+  
+  // Transmission Related Callbacks
+  // AddDenaliCbk( PCIE_CB_TX_trans_done );
+
+  // DLL Replay Callbacks
+  // AddDenaliCbk( PCIE_CB_DL_TX_retry_buffer_enter );
+  AddDenaliCbk( PCIE_CB_DL_TX_retry_buffer_exit );
+  // AddDenaliCbk( PCIE_CB_DL_TX_retry_buffer_purge );
+  
+  // Physical Layer Recv Callbacks
+  // AddDenaliCbk( PCIE_CB_PL_RX_start_packet );
+  // AddDenaliCbk( PCIE_CB_PL_RX_end_packet );
+  AddDenaliCbk( PCIE_CB_PL_to_DL );
+  
+  // DLL Recv Callbacks
+  AddDenaliCbk( PCIE_CB_DL_RX_queue_enter );
+  AddDenaliCbk( PCIE_CB_DL_RX_queue_exit );
+  // AddDenaliCbk( PCIE_CB_DL_to_TL );
+  
+  // Transaction Layer Recv Callbacks
+  // AddDenaliCbk( PCIE_CB_TL_RX_packet );
+  
+  // Reception Related Callbacks
+  // AddDenaliCbk( PCIE_CB_RX_trans_done );
+
+  // Completion Related Callbacks
+  // AddDenaliCbk( PCIE_CB_TL_TX_completion_queue_enter );
+  // AddDenaliCbk( PCIE_CB_TL_TX_completion_queue_exit );
+  // AddDenaliCbk( PCIE_CB_TL_RX_completion_queue_enter );
+  // AddDenaliCbk( PCIE_CB_TL_RX_completion_queue_exit );
+
+  // Error Related Callbacks
+  AddDenaliCbk( PCIE_CB_TX_error );
+  AddDenaliCbk( PCIE_CB_RX_error );
+  AddDenaliCbk( PCIE_CB_error );
+  AddDenaliCbk( PCIE_CB_unknown );
+}
+
+task denali_root_monitor_PCIEXactorBuilder::EnableAssertCov()
+{
+  string MethodName = "EnableAssertCov";
+  AssertCovEnabled = 1;
+  AddDenaliCbk( PCIE_CB_assert_pass );
+  PCIEX_QR_I( "%s-> Denali Assertion Coverage Enabled.", XactorName );
+}
+
+function bit denali_root_monitor_PCIEXactorBuilder::GetAssertCovEnabled()
+{
+  GetAssertCovEnabled = AssertCovEnabled;
+}
+
+task denali_root_monitor_PCIEXactorBuilder::DenaliMemoryModelInit()
+{
+  // Setup Default ReqID for Denali Model in DEV_CTRL Register
+  // NOTE: The FNX PCIE Xactor Does Not Make Use of the Denali Memory Model So The Value 
+  //       Set For a Xactor's ReqID is Unimportant Other Than to Make The Model Happy
+  SignalInterface.SetReqID( FNX_PCIE_XTR_DEFAULT_BUS_NUM,
+			    PCIEDevice.getId(), // uniquify across Xactor instances
+			    FNX_PCIE_XTR_DEFAULT_FUNC_NUM );
+  
+  // Setup Default 64-bit BAR for Denali Model in REG0_BASE_0 and REG0_BASE_1 Registers
+  SignalInterface.SetupBAR64( PCIE_REG0_BASE_0,
+			      PCIE_REG0_BASE_1,
+			      FNX_PCIE_XTR_DEFAULT_BAR_64_SIZE, // NOTE: Should match width in default SOMA file
+			      FNX_PCIE_XTR_DEFAULT_BAR_64_OFFSET );
+
+
+  /////////////////////////////////////////////////////////
+  // Begin -> Suppress Denali Error Checks
+  //
+  // Disable Self-Addressing TLP Check
+  SignalInterface.SuppressDenaliErr( PCIE_TL_COR_TLP_ADDRSELF_2);
+    
+  // Disable Device Number Matches Stored Device Number Check
+  SignalInterface.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlRidDev );
+
+  // Disable Bus Number Matches Stored Bus Number Check
+  SignalInterface.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlRidBus );
+
+  // Disable Function Number Matches Stored Function Number Check
+  SignalInterface.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlRidFunc );
+
+  // Disable Completion's BCM must not be set by PCI Express completer.
+  SignalInterface.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlCplBCM0 );
+    
+  // Disable BAR Address Check For a Device in Specified Memory/IO Range
+  SignalInterface.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_ADNON_1 );
+
+  // Disable Check For a Device with Specified ID
+  SignalInterface.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_IDNON_2 );
+
+  // Disable  Check For 64-bit Addresses That Are Below 4GB
+  SignalInterface.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlAddr4GB );
+
+  // Disable Check That Received Cpl/CplD Packets Have a Matching Request
+  SignalInterface.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLQ0_1 );
+
+  // Disable Check That Request Is Not Supported By Device
+  SignalInterface.SuppressDenaliErr( PCIE_TL_COR_TLP_UR_1 );
+
+  // Disable Check That Request Address/Length Combination Crosses 4K Boundary
+  SignalInterface.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLen4KB );
+
+  // Discard the data embedded in CplD for an earlier CfgRd, because the RequesterID 
+  // was changed unexpectedly after the request packet [transId=0x%06x] was sent. 
+  SignalInterface.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLUDN ); 
+
+  // Disable Check That Completer ID Is Not Same As Requester ID
+  SignalInterface.SuppressDenaliErr( PCIE_TL_COR_TLP_IDSELF_2 );
+
+  // Disable Check That Port Function is defined as Configuration 0.
+  SignalInterface.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlCfg1 ); 
+
+  // Disable Check That Completion is Supplied For Every Driven Request
+  SignalInterface.SuppressDenaliErr( PCIE_TL_COR_TLP_CPLTO_2 );
+
+  // Disable Check two different devices write the same data to a config. register
+  SignalInterface.SuppressDenaliErr(  PCIE_TL_NONFATAL_TLP_CPLUN );
+
+  // Allow FNXPCIEXtr to send any ReqID in Cfg requests. Added by RFT. Approved by JCB. 
+  SignalInterface.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlCfgBus);
+  SignalInterface.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlCfgDev);
+  SignalInterface.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlCfgFun);
+
+  // Allow usage of any requester ID by Xactor regardless of pending
+  // requests in Denali's User/TX Queues
+  SignalInterface.SuppressDenaliErr( PCIE_TL_FATAL_CFG_DID_TXQ);
+  SignalInterface.SuppressDenaliErr( PCIE_TL_FATAL_CFG_DID_USERQ);
+  SignalInterface.SuppressDenaliErr( PCIE_TL_FATAL_CFG_DID_RXCPLQ);
+
+  // Transactions pending in various Denali Q's need not conform to the BAR 
+  // configuration associated with new requests since the Xactor is being 
+  // used as a traffic generator
+  SignalInterface.SuppressDenaliErr( PCIE_TL_FATAL_CFG_MID_TXCPLQ);
+  SignalInterface.SuppressDenaliErr( PCIE_TL_FATAL_CFG_MID_TXCPLQ0);
+  SignalInterface.SuppressDenaliErr( PCIE_TL_FATAL_CFG_MID_RXCPLQ);
+  SignalInterface.SuppressDenaliErr( PCIE_TL_FATAL_CFG_MID_RXCPLQ0);
+  SignalInterface.SuppressDenaliErr( PCIE_TL_FATAL_CFG_MID_TXQ );
+  SignalInterface.SuppressDenaliErr( PCIE_TL_FATAL_CFG_MID_TXQ0);
+  SignalInterface.SuppressDenaliErr( PCIE_TL_FATAL_CFG_MID_USERQ);
+  SignalInterface.SuppressDenaliErr( PCIE_TL_FATAL_CFG_MID_USERQ0);
+
+  // [review jcb 2/9/04] [DEN #17235] Workaround For Issue w/ Denali v1.000-14, Denali Claims CplH/CplD
+  //                                 Credits Advertised During FC Init by an EP Must be Infinite
+  SignalInterface.SuppressDenaliErr( PCIE_TL_FATAL_FCPE_INI_CPLH );
+  SignalInterface.SuppressDenaliErr( PCIE_TL_FATAL_FCPE_INI_CPLD );
+
+  // Request size is greater than Max_Read_Request_Size in Device Control Register.
+  SignalInterface.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLenMRR);
+  //
+  // End -> Suppress Denali Error Checks
+  /////////////////////////////////////////////////////////
+}
+
+task denali_root_monitor_PCIEXactorBuilder::ResetAssertCov()
+{
+  AssertCovDatabase.Reset();  
+}
+
+task denali_root_monitor_PCIEXactorBuilder::AddAssertPt( denaliPcieErrorTypeT covPt )
+{
+  AssertCovDatabase.Add( covPt );
+}
+
+function bit denali_root_monitor_PCIEXactorBuilder::IsAssertPtCovered( denaliPcieErrorTypeT covPt )
+{
+  IsAssertPtCovered = AssertCovDatabase.Covered( covPt );
+}
+
+function integer denali_root_monitor_PCIEXactorBuilder::GetAssertPtCnt( denaliPcieErrorTypeT covPt )
+{
+  GetAssertPtCnt = AssertCovDatabase.Count( covPt );
+}
+
+task denali_root_monitor_PCIEXactorBuilder::DisplayAssertCov( ReportType rptType )
+{
+  AssertCovDatabase.Display( rptType );
+}
+
+task denali_root_monitor_PCIEXactorBuilder::Epilogue( ReportType rptType )
+{
+  string MethodName = "Epilogue";
+  
+  PCIEX_QR_Type( rptType, "%s -> Begin\n%s", XactorName, SignalInterface.GetEpilogueStr() );
+  PCIEX_QR_Type( rptType, "%s -> End", XactorName );
+}
+
+task denali_root_monitor_PCIEXactorBuilder::SetUnexpectedTLPErr()
+{
+  string MethodName = "SetUnexpectedTLPErr";
+  
+  Manager.UnexpectedTLPIsErr = 1;
+  PCIEX_QR_I( "%s -> Unexpected TLP Errors Enabled.", XactorName );
+}
+
+task denali_root_monitor_PCIEXactorBuilder::SuppressUnexpectedTLPErr()
+{
+  string MethodName = "SuppressUnexpectedTLPErr";
+  
+  Manager.UnexpectedTLPIsErr = 0;
+  PCIEX_QR_I("%s -> Unexpected TLP Errors Suppressed.", XactorName );
+}
+
+task denali_root_monitor_PCIEXactorBuilder::SomaSet( string somaParm, string somaValue )
+{
+  string MethodName = "SomaSet";
+  string somaSetStr;
+  integer status;
+  
+  status = DenaliDDVTclEval( { "mmsomaset", " ", PCIEDevice.GetInstanceName(), " ", somaParm, " ", somaValue } );
+  if (status >= 0)
+    PCIEX_QR_I( "Inst=%s  Parm=%s  Val=%s",
+		PCIEDevice.GetInstanceName(), somaParm, somaValue );
+  else
+    PCIEX_QR_ERR( "mmsomaset Failed. Inst=%s  Parm=%s  Val=%s",
+		  PCIEDevice.GetInstanceName(), somaParm, somaValue );
+}

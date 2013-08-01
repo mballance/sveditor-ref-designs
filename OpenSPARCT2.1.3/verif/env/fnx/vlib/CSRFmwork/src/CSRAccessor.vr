@@ -1,0 +1,429 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: CSRAccessor.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "report_macros.vri"
+
+class CSRAccessor extends AccessorBase {
+
+  //=================================================
+  //	Constructor
+  //=================================================
+
+  task new ( CSRState                          ShadowState,
+	     bit [CSRT_ADDR_OFFSET_WIDTH-1:0]	input_addr_offset ,
+	     bit [CSRT_DATA_WIDTH-1:0]		input_por_value ,
+	     bit [CSRT_DATA_WIDTH-1:0]		input_rmask ,
+	     bit [CSRT_DATA_WIDTH-1:0]		input_read_only_mask ,
+	     bit [CSRT_DATA_WIDTH-1:0]		input_write_mask ,
+	     bit [CSRT_DATA_WIDTH-1:0]		input_clear_mask ,
+	     bit [CSRT_DATA_WIDTH-1:0]		input_set_mask ,
+	     bit [CSRT_DATA_WIDTH-1:0]		input_toggle_mask ,
+	     string				input_name ,
+	     integer				input_num_fields ,
+	     CSRAccessMethod                   input_access_methods[],
+	     integer				input_access_level[],
+	     string				input_access_name[],	      
+	     integer                           input_default_access_method
+	     ) {
+
+
+    super.new ( ShadowState,
+		input_addr_offset,
+		input_por_value,
+		input_rmask,
+		input_read_only_mask,
+		input_write_mask,
+		input_clear_mask,
+		input_set_mask,
+		input_toggle_mask,
+		input_name,
+		input_num_fields);
+
+    csr_check_enabled		= CSRT_CHECK_ENABLED;
+
+    set_method_array(input_access_methods, input_access_level, input_access_name);
+
+    DefaultMethod             = input_default_access_method;
+  } // end task new
+
+
+  //=================================================
+  //	Read function
+  //=================================================
+  function bit [CSRT_DATA_WIDTH-1:0] read (integer method = CSRT_USE_DEFAULT_METHOD){
+
+    if (method == CSRT_USE_DEFAULT_METHOD)
+      method = DefaultMethod;
+
+
+    QuickReport(CSRReport, RTYP_CSR_DEBUG_1,"CSRAccessor: %s read(): %s register: Addr %0h", 
+		get_method_name(method),
+		get_name(), 
+		get_addr_offset());
+
+
+    check_method(method);
+
+    if (method == CSRT_STUB) {
+      QuickReport(CSRReport, RTYP_CSR_DEBUG_1,"CSRAccessor: Stub read of %s register: ", get_name());
+    } // end if CSRT_STUB
+    else {
+      read = access_methods[method].read(get_addr_offset());
+    }
+  }  // end function read
+
+
+  //=================================================
+  //	Write task
+  //=================================================
+  task write (bit [CSRT_DATA_WIDTH-1:0] csr_data, integer method = CSRT_USE_DEFAULT_METHOD ){
+
+    if (method == CSRT_USE_DEFAULT_METHOD)
+      method = DefaultMethod;
+
+    QuickReport(CSRReport, RTYP_CSR_DEBUG_1,"CSRAccessor: %s write(): %s register: Addr %0h : data %0h",
+		get_method_name(method),
+		get_name(),
+		get_addr_offset(),
+		csr_data);
+
+    check_method(method);
+
+    // Ensure only one modifying transaction per register
+    semaphore_get (WAIT, ShadowState.csr_write_trans_sem, 1);
+
+    // Perform Hardware Write
+    if (method != CSRT_STUB)
+      access_methods[method].write(get_addr_offset(), csr_data);
+
+    if (access_level[method] == CSRT_FULL_ACCESS || method == CSRT_OMNI) {
+      update_shadow_data (csr_data);
+    }
+    else if (access_level[method] == CSRT_HW_ACCESS) {
+      //Can not reliably update shadow state when register supports
+      //HW access control. It is up to the user to use set_shadow_csr.
+      //Setting X value will provide a trival match when comparing shadow state
+      update_shadow_data (64'hx);
+    }
+    else
+      QuickReport(CSRReport, RTYP_CSR_ALERT,"CSRAccessor::write: Unable to update shadow state for %s register using current access method ",
+		  get_name());
+
+    semaphore_put (ShadowState.csr_write_trans_sem, 1);
+
+    QuickReport(CSRReport, RTYP_CSR_DEBUG_3,"%0d:CSRAccessor::write: %s register:\t%0h\n",get_cycle(),get_name(),csr_data);
+  } // end task write
+
+
+  //=================================================
+  //	Check Register Function
+  //=================================================
+  // The following change was made on 9/21/01 -RFT
+  // This function should really be based on a wild card match, allowing
+  // a don't care setting for the shadow data. This is necessary for registers
+  // that don't have a specific POR value because they are not connected to
+  // reset.
+  // 
+  function integer check_register (integer method = CSRT_USE_DEFAULT_METHOD) {
+
+    bit [CSRT_DATA_WIDTH-1:0]        actual_data;
+    bit [CSRT_DATA_WIDTH-1:0]        expected_data;
+    bit [CSRT_DATA_WIDTH-1:0]        diff_vector = 64'h0;
+    integer                          index = 0;
+    bit                              success = 1;
+
+    if (method == CSRT_USE_DEFAULT_METHOD)
+      method = DefaultMethod;
+
+    if (csr_check_enabled) {
+      printf("inside csr_check_enabled \n"); 
+      actual_data   = read(method);
+      expected_data = get_shadow_data();
+
+      while (index < CSRT_DATA_WIDTH) {
+
+	//If expected_data indicates a wildcard, then skip comparison
+	if (expected_data[index] !== 1'bx)
+	  if (actual_data[index] !==  expected_data[index]) {
+	    diff_vector[index] = 1'b1;
+	    success = 1'b0;
+	  }
+
+	++index;
+      }
+      // After the actual data is screened for X's it is okay to apply a wildcard 
+      // comparision. This allows expected data to contain the wildcards.
+      if (!success) {
+
+	//These are not report calls because there is no good way to print leading
+	//zeros in data without printing 512 bits by default.
+	QuickReport(CSRReport, RTYP_CSR_ERROR, "CSRAccessor::check_register:ERROR - %s REGISTER MISMATCHED.",
+		    get_name() );
+	printf("\tACTUAL      = 64'h%h\n\tEXPECTED    = 64'h%h\n\tDiff Vector = 64'h%h\n",
+	       actual_data, 
+	       expected_data,
+	       diff_vector);
+	
+	check_register = CSRT_MISMATCH_RETURN_CODE;
+      }
+      else
+	check_register = CSRT_SUCCESSFUL_RETURN_CODE;
+	printf("Data match: \tACTUAL      = 64'h%h\n\tEXPECTED    = 64'h%h\n\t",
+	       actual_data, 
+	       expected_data);
+    } //check enabled
+
+    else {
+      QuickReport(CSRReport, RTYP_CSR_ALERT,"CSR %s REGISTER CHECKING DISABLED", get_name());
+      check_register = CSRT_SUCCESSFUL_RETURN_CODE;
+    }
+  } // end function check_register
+
+
+  //=================================================
+  //	Reset Task
+  //=================================================
+
+  task reset () {
+
+    QuickReport(CSRReport, RTYP_CSR_DEBUG_3,"%0d:CSRAccessor::reset: %s register\t%0h",
+		get_cycle(),get_name(),get_por_value());
+     
+    semaphore_get (WAIT, ShadowState.csr_write_trans_sem, 1);
+    set_shadow_data(get_por_value());
+    semaphore_put (ShadowState.csr_write_trans_sem, 1);
+  } // end task reset
+
+
+  //=================================================
+  //      Read Field Function
+  //=================================================
+  function bit [CSRT_DATA_WIDTH-1:0] read_field ( integer field_id,
+                                                  integer method = CSRT_USE_DEFAULT_METHOD) {
+    bit [CSRT_DATA_WIDTH-1:0] temp_data;
+
+    if (method == CSRT_USE_DEFAULT_METHOD)
+      method = DefaultMethod;
+
+    if (field_id < get_max_num_fields()) {
+      QuickReport(CSRReport, RTYP_CSR_DEBUG_3,"%0d:CSR read_field(): %s register %s field:\t%0h",
+		  get_cycle(),get_name(),reg_field[field_id].get_field_name(),read_field);
+
+      temp_data  = read(method);
+      temp_data  = temp_data & reg_field[field_id].get_field_mask();
+      temp_data  = temp_data >> reg_field[field_id].get_field_position();
+      read_field = temp_data;
+    }
+    else {
+      QuickReport(CSRReport, RTYP_CSR_ERROR, "CSRAccessor::read_field: Invalid field_id %0h", field_id);
+    }
+  } // end function read_field
+
+
+  //=================================================
+  //      Write Field Task
+  //=================================================
+  task write_field ( integer			field_id,
+		     bit [CSRT_DATA_WIDTH-1:0]	field_data,
+		     integer			method = CSRT_USE_DEFAULT_METHOD )  {
+
+    bit [CSRT_DATA_WIDTH-1:0] curr_data;
+    bit [CSRT_DATA_WIDTH-1:0] revised_data;
+    bit [CSRT_DATA_WIDTH-1:0] field_positioned_data;
+    bit [CSRT_DATA_WIDTH-1:0] zero_field_mask;
+    bit [CSRT_DATA_WIDTH-1:0] refresh_bit_mask;
+
+    if (method == CSRT_USE_DEFAULT_METHOD)
+      method = DefaultMethod;
+
+    if (field_id < get_max_num_fields()) {
+
+      QuickReport(CSRReport, RTYP_CSR_DEBUG_3,"%0d:CSR write_field(): %s register %s field:\t%0h",
+		  get_cycle(),get_name(),reg_field[field_id].get_field_name(),field_data);
+
+
+      semaphore_get (WAIT, ShadowState.csr_write_trans_sem, 1);
+
+      field_positioned_data	= reg_field[field_id].get_field_mask() & (field_data << reg_field[field_id].get_field_position());
+      curr_data		= read(method);
+      zero_field_mask	= ~(reg_field[field_id].get_field_mask());
+      refresh_bit_mask	= zero_field_mask & get_write_mask ();
+      revised_data		= (curr_data & refresh_bit_mask) | field_positioned_data;
+
+      if (access_level[method] == CSRT_FULL_ACCESS || method == CSRT_OMNI) {
+	update_shadow_data (revised_data);
+      }
+      else if (access_level[method] == CSRT_HW_ACCESS) {
+	//Can not reliably update shadow state when register supports
+	//HW access control. It is up to the user to use set_shadow_csr.
+	//Setting X value will provide a trival match when comparing shadow state
+	update_shadow_data (64'hx);
+      }
+      else
+	QuickReport(CSRReport, RTYP_CSR_ALERT,"CSRAccessor::write_field: Unable to update shadow state for %s register using current access method ",
+		    get_name());
+
+      access_methods[method].write(get_addr_offset(), revised_data);
+
+      semaphore_put (ShadowState.csr_write_trans_sem, 1);
+    }
+    else {
+      QuickReport(CSRReport, RTYP_CSR_ERROR, "CSRAccessor::write_field: Invalid field_id %0h", field_id);
+    }
+  } // end task write_field
+
+
+  //=================================================
+  //      Write Fields Task
+  //=================================================
+  task write_fields(CSRFieldAggregate field_aggregate, integer method = CSRT_USE_DEFAULT_METHOD, bit use_method_read = 0) {
+    bit [CSRT_DATA_WIDTH-1:0] curr_data;
+    bit [CSRT_DATA_WIDTH-1:0] revised_data;
+    bit [CSRT_DATA_WIDTH-1:0] field_positioned_data = 0;
+    bit [CSRT_DATA_WIDTH-1:0] zero_field_mask = 0;
+    bit [CSRT_DATA_WIDTH-1:0] refresh_bit_mask = 0;
+
+    CSRAggregateContainer field_container;
+
+    zero_field_mask = ~zero_field_mask;
+
+    if (method == CSRT_USE_DEFAULT_METHOD)
+      method = DefaultMethod;
+
+    semaphore_get (WAIT, ShadowState.csr_write_trans_sem, 1);
+
+    if (use_method_read)
+      curr_data = read(method);
+    else
+      curr_data = get_shadow_data();
+
+    field_container = field_aggregate.pop();
+
+    while (field_container != null) {
+      if (field_container.field_id < get_max_num_fields()) {
+	 
+	//	 CSRReport.report(RTYP_INFO,"%0d:CSR write_fields(): %s register %s field:\t%0h\n", get_cycle(), get_name(), 
+	//			  reg_field[field_container.field_id].get_field_name(), field_container.field_data);
+
+	field_positioned_data |= (reg_field[field_container.field_id].get_field_mask() & 
+				  (field_container.field_data << reg_field[field_container.field_id].get_field_position()));
+	zero_field_mask       &= ~(reg_field[field_container.field_id].get_field_mask());
+	refresh_bit_mask      |= zero_field_mask & get_write_mask();
+      } else {
+	QuickReport(CSRReport, RTYP_CSR_ERROR, "CSRAccessor::write_fields: Invalid field_id %0h", field_container.field_id);
+      }
+      field_container = field_aggregate.pop();
+    }
+
+    revised_data = (curr_data & refresh_bit_mask) | field_positioned_data;
+
+    if (access_level[method] == CSRT_FULL_ACCESS || method == CSRT_OMNI) {
+      update_shadow_data (revised_data);
+    } else if (access_level[method] == CSRT_HW_ACCESS) {
+      //Can not reliably update shadow state when register supports HW access control. It is up to the user to use set_shadow_csr.
+      //Setting X value will provide a trival match when comparing shadow state
+      update_shadow_data (64'hx);
+    } else
+      QuickReport(CSRReport, RTYP_CSR_ALERT,"CSRAccessor: (write_fields) Unable to update shadow state for %s register using current access method",
+		  get_name());
+
+    if (curr_data !== revised_data) {
+      QuickReport(CSRReport, RTYP_CSR_DEBUG_1,"CSRAccessor: %s write_fields(): %s register: Addr %0h : data %0h", get_method_name(method), get_name(), 
+		  get_addr_offset(), revised_data);
+      access_methods[method].write(get_addr_offset(), revised_data);
+    } else {
+      QuickReport(CSRReport, RTYP_CSR_DEBUG_1,"CSRAccessor: %s write_fields(): %s register: Addr %0h : data %0h %s", get_method_name(method), 
+		  get_name(), get_addr_offset(), revised_data, " -- Not writing due to current_data == new_data");
+    }
+
+    semaphore_put (ShadowState.csr_write_trans_sem, 1);
+  } // end task write_fields
+
+
+  //=================================================
+  //		Set Shadow CSR Task
+  //=================================================
+  task set_shadow_csr(bit [CSRT_DATA_WIDTH-1:0] new_data, integer field_id = -1) {
+    bit [CSRT_DATA_WIDTH-1:0] curr_data;
+    bit [CSRT_DATA_WIDTH-1:0] revised_data;
+    bit [CSRT_DATA_WIDTH-1:0] field_positioned_data;
+    bit [CSRT_DATA_WIDTH-1:0] zero_field_mask;
+
+    semaphore_get (WAIT, ShadowState.csr_write_trans_sem, 1);
+
+    QuickReport(CSRReport, RTYP_CSR_DEBUG_1, "CSRAccessor: set_shadow_csr(): %s register: Addr %0h : data %0h", 
+		get_name(), get_addr_offset(), new_data);
+
+    if (field_id == -1)
+      //No field specfied - set entire CSR
+      set_shadow_data (new_data);
+    else {
+      if (field_id < get_max_num_fields()) {
+	field_positioned_data = reg_field[field_id].get_field_mask() & (new_data << reg_field[field_id].get_field_position());
+	curr_data = get_shadow_data();
+	zero_field_mask	= ~(reg_field[field_id].get_field_mask());
+	revised_data		= (curr_data & zero_field_mask) | field_positioned_data;
+	set_shadow_data (revised_data);
+      }
+      else
+	QuickReport(CSRReport, RTYP_CSR_ALERT,"CSRAccessor::set_shadow_csr: Field ID out of range\n");
+    }
+
+    semaphore_put (ShadowState.csr_write_trans_sem, 1);
+  } // end task set_shadow_csr()
+
+
+  //=================================================
+  //		Get Shadow CSR Function
+  //=================================================
+  function bit [CSRT_DATA_WIDTH-1:0] get_shadow_csr(integer field_id = -1) {
+    bit [CSRT_DATA_WIDTH-1:0] temp_data;
+
+    QuickReport(CSRReport, RTYP_CSR_DEBUG_1, "CSRAccessor: get_shadow_csr(): %s register: Addr %0h", get_name(), get_addr_offset());
+
+    if (field_id == -1)
+      //No field specfied - return entire CSR
+      get_shadow_csr = get_shadow_data();
+    else {
+      temp_data  = get_shadow_data();
+      temp_data  = temp_data & reg_field[field_id].get_field_mask();
+      temp_data  = temp_data >> reg_field[field_id].get_field_position();
+      get_shadow_csr = temp_data;
+    }
+  } // end function get_shadow_csr()
+
+} // end class CSRAccessor
+
+
+

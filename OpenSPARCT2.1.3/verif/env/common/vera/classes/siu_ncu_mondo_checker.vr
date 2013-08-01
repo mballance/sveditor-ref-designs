@@ -1,0 +1,298 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: siu_ncu_mondo_checker.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <VeraListProgram.vrh>
+#include <ListMacros.vrh>
+//#include <globals.vri>
+
+#define STD_DISP gDbg
+
+#include "top_defines.vrh"
+#include "siu_ncu_mondo.if.vrh"
+#include "siu_ncu_mondo_ports_binds.vrh"
+#include <std_display_defines.vri>
+#include <std_display_class.vrh>
+/////////////////////////////////////////////////////////////////////////////////
+class mondoPacket 
+{
+   bit                   req;
+   bit [31:0]            header;
+   bit [127:0]           data;
+   bit [5:0]             thread;
+
+   bit [5:0]             mondo_id;
+   bit                   ack; 
+   bit                   nack; 
+
+   task new(
+               (bit          req      = 1'bx),
+               (bit [31:0]   header   = 128'hx),
+               (bit [127:0]  data     = 32'hx),
+               (bit [5:0]    thread   = 6'bx),
+               (bit [5:0]    mondo_id = 6'hx),
+               (bit          ack      = 1'bx),
+               (bit          nack     = 1'bx)
+         );
+
+  function bit checkMondo(mondoPacket mondoAckNack);
+  task     print_pkt(mondoPacket Pkt);
+}
+
+////////////////////////////////////////////////////////////////////////////
+
+task mondoPacket::new(   
+               (bit          req      = 1'bx),
+               (bit [31:0]   header   = 128'hx),
+               (bit [127:0]  data     = 32'hx),
+               (bit [5:0]    thread   = 6'bx),
+               (bit [5:0]    mondo_id = 6'hx),
+               (bit          ack      = 1'bx),
+               (bit          nack     = 1'bx))
+
+{
+   this.req        = 1'bx;
+   this.header     = 32'hx;
+   this.data       = 127'hx;
+   this.thread     = 6'bx;
+   this.mondo_id   = 6'hx;
+   this.ack        = 1'bx;
+   this.nack       = 1'bx;
+}
+
+////////////////////////////////////////////////////////////////////////////
+// compare mondo req and ack
+function bit mondoPacket::checkMondo(mondoPacket mondoAckNack) 
+{
+  if((mondoAckNack.ack) || (mondoAckNack.nack))
+  {
+     if(this.mondo_id == mondoAckNack.mondo_id)
+     {
+       checkMondo = 1;
+     }
+     else
+     {
+       checkMondo = 0;
+     }
+   }
+}
+
+///////////////////////////////////////////////////////////////////
+extern StandardDisplay gDbg;
+MakeVeraList(mondoPacket)
+
+class siu_ncu_mondo_checker 
+{
+   integer              mondo_queue_sem;
+   mondo_ncu_port       mondo_port;
+   VeraList_mondoPacket mondo_pkt_queue;
+
+   task new(mondo_ncu_port portvar);
+   task collectMondoReq();
+   task collectMondoAck();
+   task collectMondoNack();
+   task dumpExpects();
+   task checkMondoAckNack(mondoPacket Pkt);
+}
+
+task siu_ncu_mondo_checker::new(mondo_ncu_port portvar) 
+{
+   integer i;
+
+   mondo_port = portvar;
+   mondo_pkt_queue = new();
+   mondo_queue_sem = alloc(SEMAPHORE, 0, 1, 1);
+   fork
+   {
+      collectMondoReq();
+   }
+   {
+      collectMondoAck();
+   }
+   {
+      collectMondoNack();
+   }
+   join none
+}
+
+task siu_ncu_mondo_checker::collectMondoReq()
+{
+  mondoPacket  reqPkt;
+  mondoPacket  pendReqPkt;
+  bit [31:0]   header;
+  bit [128:0]  data;
+  integer size,i; 
+
+   while (1) 
+   {
+     @(posedge mondo_port.$req);
+     @(posedge mondo_port.$grant);
+     @(posedge mondo_port.$clk);
+     header[31:0] = mondo_port.$data; 
+       reqPkt = new();
+       reqPkt.req = header[15:15];
+       reqPkt.header = header;
+       reqPkt.mondo_id = {header[14:11], header[2:1]};
+     @(posedge mondo_port.$clk);
+     data[127:96] = mondo_port.$data; 
+     @(posedge mondo_port.$clk);
+     data[95:64] = mondo_port.$data; 
+     fork 
+     {
+       @(posedge mondo_port.$clk);
+       data[63:32] = mondo_port.$data; 
+       @(posedge mondo_port.$clk);
+       data[31:0] = mondo_port.$data; 
+       reqPkt.data = data;
+       reqPkt.thread = data[11:6];
+       semaphore_get(WAIT, mondo_queue_sem, 1);
+
+        PR_NORMAL ("siu_ncu_mondo_checker", MON_NORMAL, psprintf("Received Mondo Interrupt : Header %8h : Data %32h : mondo_id %2h",reqPkt.header, reqPkt.data, reqPkt.mondo_id));
+           
+       size = mondo_pkt_queue.size();
+       if(size > 4)
+       {
+          PR_ERROR ("siu_ncu_mondo_checker", MON_ERROR, psprintf("Already 4 Mondo Interrupts are pending : Unexpecvted Mondo Interrupt with mondo id : %2h",pendReqPkt.mondo_id));
+       } 
+
+        for(i = 0; i < size; i++)
+        {
+           pendReqPkt      = mondo_pkt_queue.front();
+           mondo_pkt_queue.pop_front();
+           if(pendReqPkt.mondo_id  == reqPkt.mondo_id)
+           {
+              PR_ERROR ("siu_ncu_mondo_checker", MON_ERROR, psprintf("Mondo Interrupt with mondo id : %2h already pending",pendReqPkt.mondo_id));
+           }
+           mondo_pkt_queue.push_back(pendReqPkt);
+        }
+        mondo_pkt_queue.push_back(reqPkt);
+        semaphore_put(mondo_queue_sem, 1);
+     }
+     join none
+   }
+}
+
+
+task siu_ncu_mondo_checker::collectMondoAck()
+{
+  mondoPacket  ackPkt;
+
+   while (1) 
+   {
+     @(posedge mondo_port.$clk);
+     if(mondo_port.$ack == 1'b1)
+     {
+       ackPkt = new();
+       ackPkt.ack      =  1'b1;    
+       ackPkt.mondo_id =  mondo_port.$mondo_id;    
+       checkMondoAckNack(ackPkt);
+     }
+   }
+}
+
+task siu_ncu_mondo_checker::collectMondoNack()
+{
+  mondoPacket  nackPkt;
+
+   while (1)
+   {
+     @(posedge mondo_port.$clk);
+     if(mondo_port.$nack == 1'b1)
+     {
+       nackPkt = new();
+       nackPkt.nack      =  1'b1;    
+       nackPkt.mondo_id =  mondo_port.$mondo_id;
+       checkMondoAckNack(nackPkt);
+     }
+   }
+}
+
+///////////////////////////////////////////////////////////////////////
+task siu_ncu_mondo_checker::checkMondoAckNack(mondoPacket Pkt)
+{
+    mondoPacket reqPkt; 
+    integer size,i;
+    bit found = 0;
+
+    size = mondo_pkt_queue.size();
+    
+
+    reqPkt      = mondo_pkt_queue.front();
+    if(reqPkt.checkMondo(Pkt))
+    {
+      mondo_pkt_queue.pop_front();
+      found = 1;
+      if(Pkt.ack)
+      {
+         PR_NORMAL("siu_ncu_mondo_checker", MON_NORMAL, psprintf ("Received Ack for mondo Id : %2h \n", Pkt.mondo_id));
+      } 
+      else if(Pkt.nack)
+      {
+        PR_NORMAL("siu_ncu_mondo_checker", MON_NORMAL, psprintf ("Received Nack for mondo Id : %2h \n", Pkt.mondo_id));
+      }
+    } 
+    else
+    {
+       dumpExpects();
+       if(Pkt.ack)
+       {
+         PR_ERROR ("siu_ncu_mondo_checker", MON_ERROR, psprintf ("Received unexpected mondo Ack with mondo Id : %2h \n", Pkt.mondo_id));
+       }
+       else if(Pkt.nack)
+       {
+         PR_ERROR ("siu_ncu_mondo_checker", MON_ERROR, psprintf ("Received unexpected mondo Nack with mondo Id : %2h \n", Pkt.mondo_id));
+       }
+    }
+    semaphore_put(mondo_queue_sem, 1);
+}
+
+
+///////////////////////////////////////////////////////////////////////
+task siu_ncu_mondo_checker::dumpExpects()
+{
+    mondoPacket reqPkt; 
+    integer size,i;
+
+    printf ("------  Dumping Expects for Mondo requests from SIU to NCU ------ \n");
+
+    for(i = 0; i < size; i++)
+    {
+        reqPkt      = mondo_pkt_queue.front();
+        mondo_pkt_queue.pop_front();
+        printf (" %d : Mondo Id  %2h :  Header %8h : Data %32h \n", i, reqPkt.mondo_id, reqPkt.header, reqPkt.data);
+    } 
+
+   printf("------------------------------------------------------------------ \n");
+}
+

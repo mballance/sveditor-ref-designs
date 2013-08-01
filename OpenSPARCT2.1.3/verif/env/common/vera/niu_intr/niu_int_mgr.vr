@@ -1,0 +1,565 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_int_mgr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "niu_int_dev.vrh"
+#include "niu_int_ldg.vrh"
+#include "niu_int_qmgr.vrh"
+#include "niu_int_sidmgr.vrh"
+#include "pio_driver.vrh"
+#ifdef NEPTUNE
+#include "Pcie_defines.vri"
+#include "Pcie_intr_util.vrh"
+#else
+#endif
+
+extern niu_gen_pio gen_pio_drv;
+#define DEASSERT_SEEN 100
+
+
+
+#ifdef NEPTUNE
+extern  Pcie_intr_util  pcie_intr_util;
+#else
+#endif
+
+extern CNiuIntrQMgr NiuIntrQ;
+
+class CNiuIntrMgr {
+
+	CSidShadowTab SidTab;
+	CNiuLdg ldg[64];
+	bit [63:0] active_ldg;
+      
+  // Neptune Specific
+	// event intx_sync[4];
+        integer INTX_BUG_FIX=0;
+	integer  intx_sync[4];
+        bit[63:0] ldg_func_map[4];
+        local integer deasset_mbox[4];
+	integer masks_before_isrs=0;
+
+        task new();
+        task initLdg(bit [63:0] active_list);
+        task SetTmrRes(bit[63:0] wdata);
+        local task spGetIntMsg(); 
+        local task parseIntx(bit[3:0] assert_msg, bit[3:0] deassert_msg,CniuGenIntrMsg IntrMsg) ;
+        local task procIntDevId(CniuGenIntrMsg IntrMsg) ;
+	local task procIntMsi(CniuGenIntrMsg IntrMsg) ;
+        local task procIntx(integer func,CniuGenIntrMsg IntrMsg) ;
+        local task spawnprocIntx(integer func,CniuGenIntrMsg IntrMsg) ;
+	function integer getFuncionNo(bit[3:0] msg);
+        task bindLdgFunc(bit [63:0] list,integer func);
+	task updateSidTab(integer gid, bit[6:0] sid);
+        task invalidateSidTab(integer gid );
+        function integer  get_DevIsr_Cnt(integer group_bind_no, integer dev_id) ;
+	task CheckPendingFlags();
+        function integer CheckDevPendingFlag(integer device_no) ;
+}
+
+// Set up Tasks
+task CNiuIntrMgr::SetTmrRes(bit[63:0] wdata) {
+ bit[63:0] address;
+ address = LDGITMRES;
+ gen_pio_drv.pio_wr(address,wdata);
+}
+
+
+task CNiuIntrMgr::new() {
+   integer i;
+   active_ldg = 0;
+   SidTab = new();
+   for(i=0;i<4;i++) {
+    // trigger(ON,intx_sync[i]);
+    intx_sync[i] = alloc(SEMAPHORE,0,1,0);
+    semaphore_put(intx_sync[i],1);
+
+    ldg_func_map[i] = 0;
+    deasset_mbox[i] =  alloc(MAILBOX,0,1);
+   }
+   fork {
+      spGetIntMsg();
+   } join none
+
+   if(get_plus_arg(CHECK,"MASK_BEFORE_ISR")) {
+	masks_before_isrs = 1;
+   } 
+   if(get_plus_arg(CHECK,"INTX_BUG_FIX")) {
+	INTX_BUG_FIX = 1;
+   } 
+}
+
+
+// SID Setup Tasks
+// LDG Setup Tasks
+task CNiuIntrMgr::initLdg(bit [63:0] active_list) {
+integer i;
+#ifdef NEPTUNE
+    pcie_intr_util.setup_neptune_interrupts();
+#else
+#endif
+  for(i=0;i<64;i++) {
+    if(active_list[i]) {
+       ldg[i] = new(i);
+       active_ldg[i] = 1;
+    }
+  }
+  // bindLdgFunc(active_list,0); // TMP 
+}
+task CNiuIntrMgr::invalidateSidTab(integer gid ){
+ SidTab.RemoveSidTab(gid);
+}
+
+task CNiuIntrMgr::updateSidTab(integer gid, bit[6:0] sid){
+ 	integer func;
+	func = sid[6:5];
+	ldg_func_map[func] =ldg_func_map[func] | ( 1<<gid);
+	if(ldg[gid]==null){
+	printf("ERROR ldg- %d Not active!! Cannot update SID for this group\n",gid);
+	} else {
+	 ldg[gid].setSid(sid);
+	}
+	SidTab.pio_writeSidTab(gid,sid);
+
+}
+task CNiuIntrMgr::bindLdgFunc(bit [63:0] list,integer func){
+  ldg_func_map[func] = list;
+  printf("CNiuIntrMgr::bindLdgFunc: list - %x function - %d \n",ldg_func_map[func],func);
+}
+
+// Queue Management tasks
+//  - SID Look up tasks
+//  - Get LDG Number
+//  - Call LDG's ISR
+
+task CNiuIntrMgr::spGetIntMsg() {
+
+CniuGenIntrMsg IntrMsg;
+shadow integer status,gid;
+shadow bit [6:0] sid;
+integer message;
+bit[3:0] assert_msg,deassert_msg;
+shadow integer i;
+integer nep_msi_intr;
+/* free running task  */
+
+
+  while(1) {
+   /*Wait for a message in the intrQueue*/
+
+     while(NiuIntrQ.isQEmpty() ) {
+       repeat(10) @(posedge CLOCK);
+     } 
+     IntrMsg = NiuIntrQ.getIntrMsg(status);
+     if(status ==0) {
+      printf("spGetIntMsg TB ERROR \n");
+      return;
+     }
+
+    // Parse the message and get the SID information from this
+        assert_msg = 0;
+        deassert_msg = 0;
+        nep_msi_intr =0;
+#ifdef NEPTUNE
+	// First get the type of message
+        message = IntrMsg.int_message;
+	printf(" Message - %x \n",message);
+        if(message == -1) {
+	  // not an intx message
+        } else {
+         assert_msg = 0;
+         deassert_msg = 0;
+	 nep_msi_intr = 0;
+
+         if(message== PCIE_MSG_CODE_INTX_ASSERT_A) {
+		assert_msg[0] = 1;
+	 } else if(message == PCIE_MSG_CODE_INTX_DEASSERT_A) {
+		deassert_msg[0] = 1;
+         } else if(message== PCIE_MSG_CODE_INTX_ASSERT_B) {
+		assert_msg[1] = 1;
+	 } else if(message == PCIE_MSG_CODE_INTX_DEASSERT_B) {
+		deassert_msg[1] = 1;
+         } else if(message== PCIE_MSG_CODE_INTX_ASSERT_C) {
+		assert_msg[2] = 1;
+	 } else if(message == PCIE_MSG_CODE_INTX_DEASSERT_C) {
+		deassert_msg[2] = 1;
+         } else if(message== PCIE_MSG_CODE_INTX_ASSERT_D) {
+		assert_msg[3] = 1;
+	 } else if(message == PCIE_MSG_CODE_INTX_DEASSERT_D) {
+		deassert_msg[3] = 1;
+         } else if(message== PCIE_MSI) {
+	    printf("CNiuIntrMgr::spGetIntMsg Received PCIE_MSI Message Vector - %x  NoOfIntrs - %d \n",IntrMsg.int_message,IntrMsg.no_of_intr_alloc);
+	    nep_msi_intr = 1;
+         } else if(message== PCIE_MSIX) {
+	    printf("CNiuIntrMgr::spGetIntMsg Received PCIE_MSIX Message Vector - %x  NoOfIntrs - %d \n",IntrMsg.int_message,IntrMsg.no_of_intr_alloc);
+         }
+
+        }
+#else
+#endif
+
+   if(assert_msg|deassert_msg) {
+	// any Intx Message seen
+    parseIntx(assert_msg,deassert_msg,IntrMsg);
+   } else if(nep_msi_intr) {
+     procIntMsi(IntrMsg);
+   } else {
+     procIntDevId(IntrMsg);
+   }
+  } // end while
+}
+function integer CNiuIntrMgr::getFuncionNo(bit[3:0] msg) {
+// According to Babu - IntA is for function0 , IntB for funtion 1 and so on
+
+   if(msg[0])
+    getFuncionNo = 0;
+   else if(msg[1]) 
+    getFuncionNo = 1;
+   else if(msg[2]) 
+    getFuncionNo = 2;
+   else if(msg[3]) 
+    getFuncionNo = 3;
+   else getFuncionNo = -1;
+}
+
+
+task CNiuIntrMgr:: parseIntx(bit[3:0] assert_msg, bit[3:0] deassert_msg,CniuGenIntrMsg IntrMsg) {
+ 
+  integer func;
+   // get function number based upon the msg
+   func = getFuncionNo(assert_msg | deassert_msg);
+   if(deassert_msg!=0) {
+    mailbox_put(deasset_mbox[func],DEASSERT_SEEN);
+   } else {
+     fork{
+      spawnprocIntx(func,IntrMsg);
+    } join none
+   }
+}
+
+task CNiuIntrMgr:: spawnprocIntx(integer func,CniuGenIntrMsg IntrMsg) {
+  
+ integer status, message,end_Intx;
+ end_Intx = 0;
+ while(end_Intx == 0) {
+   procIntx(func,IntrMsg);
+   printf("Done with assert - all Waiting for deassert Function - %d Time - %d\n",func, {get_time(HI), get_time(LO)});
+   repeat(50)@(posedge CLOCK);
+   // Wait for some time to see if deasset was seen, if not continue
+   status = mailbox_get(NO_WAIT, deasset_mbox[func], message);
+   if((status!=0) && (message == DEASSERT_SEEN)) {
+   printf("Done with deassert - Killing spawnprocIntx Function - %d Time - %d\n",func,{get_time(HI), get_time(LO)});
+    end_Intx = 1; 
+   }
+ }
+}
+task CNiuIntrMgr:: procIntx(integer func,CniuGenIntrMsg IntrMsg) {
+
+  integer blanket_interrupt;
+  integer fixed_group_no;
+  shadow integer i;
+  // sync(ALL, intx_sync[func]);
+  // trigger(OFF,intx_sync[func]);
+   semaphore_get(WAIT,intx_sync[func],1);
+
+
+  // 
+  /* Do we need to disable any more generation of interrupts here*/
+  // 
+  blanket_interrupt = 1;
+  printf("CNiuIntrMgr:: procIntx Start Function - %d Time - %d\n",func,{get_time(HI), get_time(LO)});
+
+  if(INTX_BUG_FIX) {
+    fixed_group_no = 16*func;
+    if(masks_before_isrs) {
+         if(active_ldg[fixed_group_no] && ldg_func_map[func][fixed_group_no] && (ldg[fixed_group_no].active_devices!=0) ) {
+	  ldg[fixed_group_no].mask_all_devices();
+	}
+    }
+    if(active_ldg[fixed_group_no] && ldg_func_map[func][fixed_group_no] && (ldg[fixed_group_no].active_devices!=0) ) {
+      printf("Start ldgIsr Group - %d \n",fixed_group_no);
+      ldg[fixed_group_no].ldgIsr(blanket_interrupt,IntrMsg);
+    }
+    if(masks_before_isrs) {
+         if(active_ldg[fixed_group_no] && ldg_func_map[func][fixed_group_no] && (ldg[fixed_group_no].active_devices!=0) ) {
+	  ldg[fixed_group_no].unmask_all_devices();
+	}
+    }
+  } else { 
+    if(masks_before_isrs) {
+        for(i=0;i<64;i++) {
+         if(active_ldg[i] && ldg_func_map[func][i] && (ldg[i].active_devices!=0) ) {
+	  ldg[i].mask_all_devices();
+         }
+        }
+    }
+    fork {
+        for(i=0;i<64;i++) {
+  //printf("Start ldgIsr Group xxxxx %d, %d, %d, %d\n", i, active_ldg[i], ldg_func_map[func][i], ldg[i].active_devices);
+         if(active_ldg[i] && ldg_func_map[func][i] && (ldg[i].active_devices!=0) ) {
+	  printf("Start ldgIsr Group - %d \n",i);
+           ldg[i].ldgIsr(blanket_interrupt,IntrMsg);
+          }
+         }
+    } join all
+    if(masks_before_isrs) {
+        for(i=0;i<64;i++) {
+         if(active_ldg[i] && ldg_func_map[func][i] && (ldg[i].active_devices!=0) ) {
+	  ldg[i].unmask_all_devices();
+         }
+        }
+    }
+  } 
+    printf("Done with assert - all Waiting for deassert Time - %d\n",{get_time(HI), get_time(LO)});
+  // trigger(ON,intx_sync[func]);
+  semaphore_put(intx_sync[func],1);
+
+  
+}
+task CNiuIntrMgr::procIntMsi(CniuGenIntrMsg IntrMsg) {
+
+bit[6:0] device_id;
+bit[1:0] function_no;
+bit[4:0] sid;
+integer no_of_in_masked;
+bit[6:0] valid_sids[*];
+integer valid_gids[*];
+integer mask,no_of_gids,status;
+integer no_of_bits_valid;
+integer no_of_bits_masked;
+shadow integer gid,i,n;
+integer blanket_interrupt;
+integer no_of_intr_alloc;
+integer no_of_possible_intr;
+
+// In this case, the message contains the no_of_possible interrupts along with the device_id
+// first get the device_id and no_of_interrupts_allocated from this
+
+/* notes: 
+   no_of_intr_alloc = 32 - means all bits are valid
+   no_of_intr_alloc = 16 - only 4 lsb are valid, 1 msb is masked out and hence there are 2 possible intr
+   no_of_intr_alloc = 8  - only 3 lsb are valid, 2 msb is masked out and hence there are 4 possible intr
+   no_of_intr_alloc = 4  - only 2 lsb are valid, 3 msb is masked out and hence there are 8 possible intr
+   no_of_intr_alloc = 2  - only 1 lsb are valid, 4 msb is masked out and hence there are 16 possible intr
+   no_of_intr_alloc = 1  - only 0 lsb are valid, 5 msb is masked out and hence there are 32 possible intr
+   no_of_intr_alloc = 0  - illegal case
+
+
+*/
+   device_id = IntrMsg.device_id;
+   no_of_intr_alloc = IntrMsg.no_of_intr_alloc;
+   function_no = device_id[6:5];
+   sid = device_id[4:0];
+   valid_sids = new[32];
+   valid_gids = new[32];
+
+printf("CNiuIntrMgr::procIntMsi IntrMsg.no_of_intr_alloc - %d IntrMsg.device_id - %x \n",IntrMsg.no_of_intr_alloc,IntrMsg.device_id);
+
+// from the no_of_intr_alloc, there are lot more possible SIDs. The top bits from this SID would have been masked
+// off and therefore they need to be tested for valid SID
+   no_of_bits_valid = -1;
+   while(no_of_intr_alloc) {
+	no_of_bits_valid++;
+	no_of_intr_alloc = no_of_intr_alloc>>1;
+   }
+
+   if(( no_of_bits_valid > 5) ) {
+	printf("ERROR CNiuIntrMgr::procIntMsi Incorrect value for IntrMsg.no_of_intr_alloc!! FIX THIS!! - %d\n",IntrMsg.no_of_intr_alloc);
+   }
+      no_of_intr_alloc = IntrMsg.no_of_intr_alloc;
+   if(no_of_intr_alloc==0) {
+     no_of_bits_valid = 0;
+   }
+   
+   mask = 0;
+   no_of_bits_masked = 5 - no_of_bits_valid ;
+   no_of_possible_intr = 1<<no_of_bits_masked ;
+
+   for(n=0;n<no_of_bits_valid;n++) 
+    mask = mask | (1<<n);
+
+
+   no_of_gids = 0;
+   for(n=0;n<no_of_possible_intr;n++) {
+	valid_sids[n] = ((sid & mask) | ( n << no_of_bits_valid)) | (function_no<<5)  ;
+	status = SidTab.getGid(gid,valid_sids[n]);
+	if(status!=0) {
+	  valid_gids[no_of_gids++] = gid;
+	}
+	printf("CNiuIntrMgr::procIntMsi n - %d valid_sid - %x valid_gid - %d \n",n,valid_sids[n] ,gid);
+   }
+
+// now that we have all the possible SIDs from where this interrupt would have originated, check for various gids
+// some of these may be invalids too so look for those and spawn off the various ISRs
+
+ if(masks_before_isrs) {
+       for(i=0;i<no_of_gids;i++) {
+        gid = valid_gids[i];
+        if(active_ldg[gid] && (ldg[gid].active_devices!=0) ) {
+	ldg[gid].mask_all_devices();
+       }
+      }
+  }
+  blanket_interrupt = 1;
+  fork {
+   for(i=0;i<no_of_gids;i++) {
+    gid = valid_gids[i];
+    if(active_ldg[gid] && /*ldg_func_map[func][igid] &&*/ (ldg[gid].active_devices!=0) ) {
+      ldg[gid].ldgIsr(blanket_interrupt,IntrMsg);
+    }
+   } 
+  } join all
+
+ if(masks_before_isrs) {
+       for(i=0;i<no_of_gids;i++) {
+        gid = valid_gids[i];
+        if(active_ldg[gid] && (ldg[gid].active_devices!=0) ) {
+	ldg[gid].unmask_all_devices();
+       }
+      }
+  }
+	
+
+}
+
+task CNiuIntrMgr::procIntDevId(CniuGenIntrMsg IntrMsg) {
+
+integer status,gid;
+bit [6:0] sid;
+
+ 
+    sid = IntrMsg.device_id[6:0]; 
+    printf("CNiuIntrMgr::spGetIntMsg: IntrMsg.device_id  %x Time - %d  \n",IntrMsg.device_id[6:0],{get_time(HI), get_time(LO)});
+    status = SidTab.getGid(gid,sid);
+    printf("CNiuIntrMgr::spGetIntMsg: IntrMsg.sid - %x gid - %x status - %d active - %d  Time - %d \n",sid,gid,status,active_ldg[gid],{get_time(HI), get_time(LO)});
+    if(status ==0) {
+      printf("CNiuIntrMgr::spGetIntMsg: Illegal SID from Hardware ERROR \n");
+      return;
+    }
+    // check if this gid is an active one 
+    // if not flag errors 
+    if(active_ldg[gid]!==1) {
+      printf("CNiuIntrMgr::procIntDevId: LDG Num - %d Not bound TB ERROR \n",gid);
+      return;
+    }
+    // spawn task with ldg to check all the interrupting devices so that
+    // they can run their ISRs
+
+     fork {
+
+        if(masks_before_isrs) 
+	  ldg[gid].mask_all_devices();
+
+        ldg[gid].ldgIsr(0,IntrMsg);
+
+        if(masks_before_isrs) 
+	  ldg[gid].unmask_all_devices();
+
+     } join none
+}
+
+function integer CNiuIntrMgr :: get_DevIsr_Cnt(integer group_bind_no, integer dev_id) {
+
+  integer isr_count = 0;
+
+  if(active_ldg[group_bind_no]) {
+    isr_count = ldg[group_bind_no].getDevIsrCnt(dev_id);
+  } else { 
+   isr_count = -1;
+   printf("CNiuIntrMgr :: get_DevIsr_Cnt TEST ERROR - Group - %d Not Active!!\n",group_bind_no);
+  }
+
+  get_DevIsr_Cnt = isr_count; 
+} 
+
+task CNiuIntrMgr :: CheckPendingFlags(){
+shadow integer i;
+bit[63:0] done;
+shadow integer pending_flags;
+bit[63:0] restart_pending_flags;
+bit[63:0] active_grps;
+
+
+for(i=0;i<64;i++) 
+  active_grps[i] =  (active_ldg[i] & (ldg[i].active_devices!=0)) ;
+
+restart_pending_flags = 0;
+while(restart_pending_flags!= active_grps) {
+ done = 64'h0;
+ for(i=0;i<64;i++) {
+   if(active_ldg[i] & (ldg[i].active_devices!=0)) {
+   fork {
+    printf("CNiuIntrMgr :: CheckPendingFlags Checking LDG# - %d for pending interrupts \n",i);
+    pending_flags = ldg[i].isPending();
+    if(pending_flags==-1) {
+	printf("CNiuIntrMgr :: CheckPendingFlags Group - %d Returned ERROR!!! \n",i);
+    }
+    done[i] = 1;
+   } join none
+  }else done[i] = 1;
+ } 
+ wait_child();
+ printf(" CNiuIntrMgr :: CheckPendingFlags! Exiting, All Interrupts done!! first Iteration \n");
+ // check to see if anything is stillpending
+for(i=0;i<64;i++) {
+ if(active_grps[i]) {
+  restart_pending_flags[i] = (ldg[i].pending_flag==0);
+ } 
+}
+printf("CNiuIntrMgr :: CheckPendingFlags restart_pending_flags - %x \n",restart_pending_flags);
+
+}// while
+
+}
+
+function integer CNiuIntrMgr:: CheckDevPendingFlag(integer device_no) {
+  // first get the group to which this is bound
+  integer i;
+  integer pending_flags;
+  i=0;
+  while(i<64) {
+    if(active_ldg[i] & (ldg[i].active_devices[device_no])) {
+     break;
+    } else i++;
+  }
+  if(i==64) {
+   printf("CNiuIntrMgr:: CheckDevPendingFlag device_no - %d Not bound to any group!! ERROR \n",device_no);
+   return;
+  } 
+  pending_flags = ldg[i].isPending();
+  if(pending_flags==-1) {
+    printf("CNiuIntrMgr :: CheckDevPendingFlag Group - %d Returned ERROR!!! \n",i);
+  }
+  CheckDevPendingFlag = pending_flags;
+}

@@ -1,0 +1,217 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: siu_drv_ports.if.vri
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#ifdef SMX_TEST
+#else
+#include "neptune_defines.vri"
+#endif
+
+/* Port defines for SIU Stub interface to NIU */
+
+#define OUTPUT_EDGE PHOLD
+#define INPUT_EDGE PSAMPLE #-1
+#define OUTPUT_SKEW #1
+
+interface Idebug {
+ #ifdef NIU_GATE
+  input   clk             CLOCK        verilog_node TDS_DUV_PATH.iol2clk";
+ #else
+  input   clk             CLOCK        verilog_node TDS_DUV_PATH.niu_smx.niu_clk";
+ #endif
+
+  input   niu_stall_ack   INPUT_EDGE   verilog_node TDS_DUV_PATH.niu_dbg1_stall_ack";
+  output  niu_stall       OUTPUT_EDGE  verilog_node TDS_DUV_PATH.dbg1_niu_stall";
+  output  niu_resume      OUTPUT_EDGE  verilog_node TDS_DUV_PATH.dbg1_niu_resume";
+  input   niu_sii_datareq INPUT_EDGE   verilog_node TDS_DUV_PATH.niu_sii_datareq";    // rx
+  input   niu_sii_hdr_vld INPUT_EDGE   verilog_node TDS_DUV_PATH.niu_sii_hdr_vld";  // tx
+}
+
+
+#ifdef SMX_TEST
+
+interface niu_siu_drv {
+
+ // Connects to NIU-DMC's RX/TX
+ input  	clk CLOCK verilog_node "smx_tb.clk";
+
+ input 	 	niu_sii_hdr_vld		INPUT_EDGE verilog_node "smx_tb.niu_sii_hdr_vld";   		// Ethernet requesting to send packet to SIU
+ input 	 	niu_sii_reqbypass	INPUT_EDGE verilog_node "smx_tb.niu_sii_reqbypass"; 		// Ethernet requesting to send packet to bypass queue of SIU
+ input 		niu_sii_datareq		INPUT_EDGE verilog_node "smx_tb.niu_sii_datareq";   		// Ethernet requesting to send packet w/data to SIU
+ input [127:0]	niu_sii_data		INPUT_EDGE verilog_node "smx_tb.niu_sii_data";	    	// Packet from Ethernet to SIU
+ input [7:0] 	niu_sii_parity		INPUT_EDGE verilog_node "smx_tb.niu_sii_parity";    		// Packet parity from Ethernet to SIU
+
+ output 		sii_niu_oqdq		OUTPUT_EDGE verilog_node "smx_tb.sii_niu_oqdq" ;      	// Asserted when SIU dqs an "smx_tb entry from Ordered Queue
+ output 		sii_niu_bqdq		OUTPUT_EDGE verilog_node "smx_tb.sii_niu_bqdq" ;      	// Asserted when SIU dqs an "smx_tb entry from Bypass Queue 		
+ output 		sio_niu_hdr_vld		OUTPUT_EDGE verilog_node "smx_tb.sio_niu_hdr_vld" ;	// SIO requesting to send packet to Ethernet
+ output 		sio_niu_datareq		OUTPUT_EDGE verilog_node "smx_tb.sio_niu_datareq" ;	// Valid during header phase only - 1=current request is a read data return
+ output [127:0] 	sio_niu_data		OUTPUT_EDGE verilog_node "smx_tb.sio_niu_data" ;		// Packet from SIO to Ethernet
+ output [7:0]   	sio_niu_parity		OUTPUT_EDGE verilog_node "smx_tb.sio_niu_parity" ;		// Packet parity from SIO to Ethernet
+
+}
+
+#else 
+
+interface niu_siu_drv {
+
+ // Connects to NIU-DMC's RX/TX
+ #ifdef NIU_GATE
+ input          clk CLOCK verilog_node TDS_DUV_PATH.iol2clk";
+ #else
+ input          clk CLOCK verilog_node TDS_DUV_PATH.niu_smx.niu_clk";
+ #endif
+
+ input          niu_sii_hdr_vld         INPUT_EDGE verilog_node TDS_DUV_PATH.niu_sii_hdr_vld";                  // Ethernet requesting to send packet to SIU
+ input          niu_sii_reqbypass       INPUT_EDGE verilog_node TDS_DUV_PATH.niu_sii_reqbypass";                // Ethernet requesting to send packet to bypass queue of SIU
+ input          niu_sii_datareq         INPUT_EDGE verilog_node TDS_DUV_PATH.niu_sii_datareq";                  // Ethernet requesting to send packet w/data to SIU
+ input [127:0]  niu_sii_data            INPUT_EDGE verilog_node TDS_DUV_PATH.niu_sii_data";             // Packet from Ethernet to SIU
+ input [7:0]    niu_sii_parity          INPUT_EDGE verilog_node TDS_DUV_PATH.niu_sii_parity";                   // Packet parity from Ethernet to SIU
+ input 	        niu_sio_dq              INPUT_EDGE verilog_node TDS_DUV_PATH.niu_sio_dq";                        //  dq signal for output queue        
+
+ input 	        niu_reset_l              INPUT_EDGE verilog_node TDS_DUV_PATH.rst_por_";                        //  dq signal for output queue        VJH
+
+ output                 sii_niu_oqdq            OUTPUT_EDGE verilog_node TDS_DUV_PATH.sii_niu_oqdq" ;           // Asserted when SIU dqs an NIU entry from Ordered Queue
+ output                 sii_niu_bqdq            OUTPUT_EDGE verilog_node TDS_DUV_PATH.sii_niu_bqdq" ;           // Asserted when SIU dqs an NIU entry from Bypass Queue
+ output                 sio_niu_hdr_vld         OUTPUT_EDGE verilog_node TDS_DUV_PATH.sio_niu_hdr_vld" ;        // SIO requesting to send packet to Ethernet
+ output                 sio_niu_datareq         OUTPUT_EDGE verilog_node TDS_DUV_PATH.sio_niu_datareq" ;        // Valid during header phase only - 1=current request is a read data return
+ output [127:0]         sio_niu_data            OUTPUT_EDGE verilog_node TDS_DUV_PATH.sio_niu_data" ;           // Packet from SIO to Ethernet
+ output [7:0]           sio_niu_parity          OUTPUT_EDGE verilog_node TDS_DUV_PATH.sio_niu_parity" ;         // Packet parity from SIO to Ethernet
+
+}
+
+
+// RAS Interface signals
+
+interface ncu_smx_drv {
+ #ifdef NIU_GATE
+ input          clk CLOCK verilog_node TDS_DUV_PATH.iol2clk";
+ #else
+ input          clk CLOCK verilog_node TDS_DUV_PATH.niu_smx.niu_clk";
+ #endif
+ 
+ output         ncu_niu_ctag_uei  OUTPUT_EDGE verilog_node TDS_DUV_PATH.ncu_niu_ctag_uei";
+ output         ncu_niu_ctag_cei  OUTPUT_EDGE verilog_node TDS_DUV_PATH.ncu_niu_ctag_cei";
+ output         ncu_niu_d_pei     OUTPUT_EDGE verilog_node TDS_DUV_PATH.ncu_niu_d_pei   ";
+
+ input          niu_ncu_ctag_ue    INPUT_EDGE verilog_node TDS_DUV_PATH.niu_ncu_ctag_ue";
+ input          niu_ncu_ctag_ce    INPUT_EDGE verilog_node TDS_DUV_PATH.niu_ncu_ctag_ce";
+ input          niu_ncu_d_pe       INPUT_EDGE verilog_node TDS_DUV_PATH.niu_ncu_d_pe   ";
+
+}
+#endif
+
+
+// ports and binds to be moved to a different file
+port niu_siu_drv_iface {
+
+		clk;
+		niu_reset_l;
+		niu_sii_hdr_vld;
+		niu_sii_reqbypass;
+		niu_sii_datareq;
+		niu_sii_data;
+		niu_sii_parity;
+		niu_sio_dq;
+		sii_niu_oqdq;
+		sii_niu_bqdq;
+		sio_niu_hdr_vld;
+		sio_niu_datareq;
+		sio_niu_data;
+		sio_niu_parity;
+		
+
+}
+
+bind niu_siu_drv_iface niu_siu_drv_pbind {
+
+	clk  			niu_siu_drv.clk;
+ 	niu_reset_l     	niu_siu_drv.niu_reset_l;
+	niu_sii_hdr_vld 	niu_siu_drv.niu_sii_hdr_vld;
+	niu_sii_reqbypass 	niu_siu_drv.niu_sii_reqbypass;
+	niu_sii_datareq 	niu_siu_drv.niu_sii_datareq;
+	niu_sii_data		niu_siu_drv.niu_sii_data;
+	niu_sii_parity		niu_siu_drv.niu_sii_parity;
+	niu_sio_dq              niu_siu_drv.niu_sio_dq;
+
+	sii_niu_oqdq		niu_siu_drv.sii_niu_oqdq;
+	sii_niu_bqdq    	niu_siu_drv.sii_niu_bqdq;
+	sio_niu_hdr_vld		niu_siu_drv.sio_niu_hdr_vld;
+	sio_niu_datareq		niu_siu_drv.sio_niu_datareq;
+	sio_niu_data		niu_siu_drv.sio_niu_data;
+	sio_niu_parity		niu_siu_drv.sio_niu_parity;
+
+}
+port ncu_smx_drv_iface {
+      	clk;
+	ncu_niu_ctag_uei;
+	ncu_niu_ctag_cei;
+	ncu_niu_d_pei;
+	niu_ncu_ctag_ue;
+	niu_ncu_ctag_ce;
+	niu_ncu_d_pe;
+}
+bind ncu_smx_drv_iface ncu_smx_ras_pbind {
+      	clk		 	 ncu_smx_drv.clk		;
+	ncu_niu_ctag_uei	 ncu_smx_drv.ncu_niu_ctag_uei;
+	ncu_niu_ctag_cei	 ncu_smx_drv.ncu_niu_ctag_cei;
+	ncu_niu_d_pei	 	 ncu_smx_drv.ncu_niu_d_pei	;
+	niu_ncu_ctag_ue	 	 ncu_smx_drv.niu_ncu_ctag_ue	;
+	niu_ncu_ctag_ce	 	 ncu_smx_drv.niu_ncu_ctag_ce	;
+	niu_ncu_d_pe    	 ncu_smx_drv.niu_ncu_d_pe    ;
+
+}
+
+
+
+
+/* Description of Signls from siu.sv 
+
+    // ================== NIU  =================
+    input 	 niu_sii_hdr_vld;   // Ethernet requesting to send packet to SIU
+    input 	 niu_sii_reqbypass; // Ethernet requesting to send packet to bypass queue of SIU
+    input 	 niu_sii_datareq;   // Ethernet requesting to send packet w/data to SIU
+    // input 	 niu_sii_datareq16; // Ethernet requesting to send packet w/16B only
+    input [127:0] niu_sii_data;	    // Packet from Ethernet to SIU
+    input [7:0]  niu_sii_parity;    // Packet parity from Ethernet to SIU
+    // input [15:0]  niu_sii_be;	    // Packet byte enables from NIU to SIU
+    output 	 sii_niu_oqdq;      // Asserted when SIU dqs an NIU entry from Ordered Queue
+    output 	 sii_niu_bqdq;      // Asserted when SIU dqs an NIU entry from Bypass Queue 		
+    // ================== NIU  =================
+
+   output 	sio_niu_hdr_vld;	// SIO requesting to send packet to Ethernet
+   output 	sio_niu_datareq;	// Valid during header phase only - 1=current request is a read data return
+   output [127:0] sio_niu_data;		// Packet from SIO to Ethernet
+   output [7:0]   sio_niu_parity;	// Packet parity from SIO to Ethernet
+  
+*/
+

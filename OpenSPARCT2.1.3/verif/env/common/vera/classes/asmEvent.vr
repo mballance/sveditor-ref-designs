@@ -1,0 +1,289 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: asmEvent.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+// This class holds a list of event classes (other instances of self).
+// All of the additional (>1) user events for a pc are in the associative array/list.
+// The top event class can just be a holder for the associative array/list once
+// the initial event is done. It also operates on the associative array/list.
+// NOTE the done bit below.
+class  EventClass {
+
+  // for general use
+  reg [63:0] misc64A = 64'hffffffffffffffff; // misc 64 bit reg
+  reg [63:0] misc64B = 64'hffffffffffffffff;
+  reg [63:0] misc64C = 64'hffffffffffffffff;
+  reg [63:0] misc64D = 64'hffffffffffffffff;
+  reg [63:0] misc64E = 64'hffffffffffffffff;
+  reg misc01A = 0;         // misc 1 bit reg
+  reg misc01B = 0;         // misc 1 bit reg
+  reg misc01C = 0;         // misc 1 bit reg
+  reg misc01D = 0;         // misc 1 bit reg
+  integer miscIntA = -1;       // misc integer
+  integer miscIntB = -1;       // misc integer
+  integer miscIntC = -1;       // misc integer
+  integer miscIntD = -1;       // misc integer
+  integer miscIntE = -1;       // misc integer
+  string  miscStrA = "-";
+  string  miscStrB = "-";
+  string  miscStrC = "-";
+  reg [127:0] misc128A = 128'hffffffffffffffffffffffffffffffff;
+  
+  // for somewhat specific use
+  reg [63:0] tid = 64'hffffffffffffffff; // target tid
+  reg [63:0] intType = 64'hffffffffffffffff; // intp type/data/etc
+  reg [63:0] tidMask = 0;  // a selection of which threads will get an interrupt
+  reg [63:0] thisTid = 64; //  Event is ignored unless PC & thread match.
+  reg multiShot = 0;       // The user event will be acted apon many times, not discarded.
+  integer wait = 0;        // delay/wait
+  integer src = 16;        // driving or sending port.
+  string routine = "-";    // task
+  reg [63:0] pc = 64'hffffffffffffffff;
+
+
+  // internal use
+
+  // each object uses these
+  protected reg done; // this event is done if not multiShot.
+  protected EventClass next;  // pointer to next event obj for this pc 
+  protected EventClass head;  // pointer always points to head obj of list
+  
+  // used in head object only
+  protected integer remain; // total items left to process
+  protected integer count; // total items in list
+  protected EventClass tail;  // pointer always points to tail obj of list
+  protected EventClass doingEvent; // points to next item to process. circular.
+  
+  // static
+  protected static reg [31:0] eventCount; // total events
+
+  task new (reg noCount = 0) {
+    // init statics
+    if (eventCount !== 32'bxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx) {
+      if (!noCount) eventCount++;
+    } else {
+      eventCount = 1; // first time
+    }
+
+    head = this;
+    tail = this;
+    doingEvent = this;
+    remain = 1;
+    count = 1;
+    done = 0;
+    next = null;
+
+  }
+
+  
+  // add additional events for this same pc.
+  // every event has head pointing to same head.
+  // this can only be called from head object.
+  task push(EventClass newEvent) {
+    if (this !== head)
+      error("asmEvent: push can only be called from the head object\n");
+    
+    newEvent.head = this.head;
+    tail.next = newEvent;
+    head.tail = newEvent;
+    head.remain++;
+    head.count++;
+
+
+    // only tracked in head object
+    newEvent.count = 999999999;
+    newEvent.remain = 999999999;
+    newEvent.doingEvent = null;
+    newEvent.tail = null;
+
+#ifdef DEBUGEVENTCLASS    
+    newEvent.printSelf();
+#endif
+  }
+
+
+  // get head pointer and reset doingEvent
+  function EventClass getHeadEvent() {
+    getHeadEvent = head;
+    head.doingEvent = head;
+  }
+  
+  
+  /*
+  When processing, it is assumed that ALL events will be done for PC at
+  once in some sort of zero time loop. Events are never added after
+  the initial events.ev file parsing is done.  multiShot events are
+  never consumed/done. If the functions returned EventClass value is
+  null, then all events for this single PC's encounter are processed
+  (but not actually consumed if multiShot).  Everything is finished
+  for this PC when remaining = 0 (inplies no multishots). if notDone
+  is set, consider this event "not done yet" no matter what.
+  Called after an event has been handled.
+  */
+  function EventClass getNextEvent(var integer remaining,
+                                   reg notDone = 0,
+                                   var integer evCount) {
+
+    if (!remain)
+      error("Can't call getNextEvent after remaining goes to zero\n");
+    if (this !== head)
+      error("asmEvent: getNextEvent can only be called from the head object\n");
+    
+    // default return
+    getNextEvent = null;
+
+    // doingEvent will be done if not multishot and notDone was not passed
+    if (head.doingEvent.multiShot == 0 && notDone == 0) {
+      head.doingEvent.done = 1;
+      head.remain--; // track in head only
+      eventCount--;  // static
+    }
+
+    // figure out which event in list is next. always starts w/ head.
+    // doingEvent starts at head. if doingEvent == head, we are finishing head event.
+    if (head.remain) {
+      
+      // find next event that is not done, or hit tail  
+      while (head.doingEvent.next !== null) {
+        head.doingEvent = head.doingEvent.next;
+        if (!head.doingEvent.done) {
+          getNextEvent = head.doingEvent;
+          break;
+        }
+      }
+
+    } else {
+      // no remaining events in this PCs list
+      head.doingEvent = null;
+      getNextEvent = null;
+    }
+    
+    // return values
+    remaining = head.remain;
+    evCount = eventCount;
+
+  }
+
+
+
+  
+  function EventClass getHead() {
+    getHead = head;
+  }
+  
+  function integer remaining() {
+    remaining = remain;
+  }
+
+  function integer getEventCount() {
+    getEventCount = eventCount;
+  }
+  
+  task setDone(reg done) {
+    this.done = done;
+  }
+
+  // null all pointers for this PC's list
+  task delete() {
+    EventClass localNext;
+    localNext = next;
+    while (localNext !== null) {
+      next = null;
+      localNext = localNext.next;
+    }
+    localNext = null;
+    this.next = null;
+  }
+
+
+  task printSelf() {
+    printf("---self start--------------------------------------------------------\n"); 
+    printLines();
+    printf("---self end ---------------------------------------------------------\n");    
+  }
+
+  // print from this node down
+  task printList() {
+    integer i;
+    EventClass tmpPtr;
+    
+    // printf("--------------------------------------------------------------\n");
+    printf("---list start-------------------------------------------------\n");
+    this.printLines();
+    tmpPtr = this.next;
+    while (tmpPtr !== null) {  
+      printf("----\n");
+      tmpPtr.printLines();
+      tmpPtr = tmpPtr.next;
+    }
+    printf("---list end---------------------------------------------------\n");
+    // printf("--------------------------------------------------------------\n");
+  }
+  
+  task printLines() {
+    printf("EventClass: routine = %s\n", routine);
+    printf("EventClass: pc[63:0] = 0x%h\n", pc);
+    printf("EventClass: tid[5:0] = 0x%0h\n", tid);
+    printf("EventClass: tidMask[63:0] = 0x%h\n",tidMask);
+    printf("EventClass: wait = %0d\n", wait);
+    printf("EventClass: src = %0d\n", src);
+    printf("EventClass: multiShot = %0d\n", multiShot);
+    printf("EventClass: intType[63:0] = 0x%0h\n", intType);
+    printf("EventClass: misc64A[63:0] = 0x%0h\n", misc64A);
+    printf("EventClass: misc64B[63:0] = 0x%0h\n", misc64B);
+    printf("EventClass: misc64C[63:0] = 0x%0h\n", misc64C);
+    printf("EventClass: misc64D[63:0] = 0x%0h\n", misc64D);
+    printf("EventClass: misc64E[63:0] = 0x%0h\n", misc64E);
+    printf("EventClass: misc01A = %0b\n", misc01A);
+    printf("EventClass: misc01B = %0b\n", misc01B);
+    printf("EventClass: misc01C = %0b\n", misc01C);
+    printf("EventClass: misc01D = %0b\n", misc01D);
+    printf("EventClass: miscIntA = %0d\n", miscIntA);
+    printf("EventClass: miscIntB = %0d\n", miscIntB);
+    printf("EventClass: miscIntC = %0d\n", miscIntC);
+    printf("EventClass: miscIntD = %0d\n", miscIntD);
+    printf("EventClass: miscIntE = %0d\n", miscIntE);
+    printf("EventClass: miscStrA = %s\n", miscStrA);
+    printf("EventClass: miscStrB = %s\n", miscStrB);
+    printf("EventClass: miscStrC = %s\n", miscStrC);
+    printf("EventClass: head.remain = %0d\n", head.remain); //head == this ? remain : -99);
+    printf("EventClass: head.count = %0d\n", head.count);
+    printf("EventClass: eventCount = %0d\n", eventCount);
+    printf("EventClass: done = %0d\n", done);
+    printf("EventClass: head = %s\n", head == this ? "I AM HEAD":"NOT HEAD");
+    printf("EventClass: next = %s\n", next == null ? "NULL":"-->");
+    printf("EventClass: doingEvent = %s\n", doingEvent == null ? "NULL":"-->");
+  }
+}

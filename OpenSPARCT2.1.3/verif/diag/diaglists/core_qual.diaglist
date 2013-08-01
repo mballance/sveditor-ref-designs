@@ -1,0 +1,205 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: core_qual.diaglist
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+<sys(core_qualify)>
+
+
+<sys(core_qual) name=sys(core_qual)>
+// Always run with TSO_CHECKER enabled
+<runargs -sas_run_args=-DTSO_CHECKER>
+
+#if (!defined FC)
+<sys(all)>
+<sys(all_T2)>
+#endif
+<sys(nightly)>
+// <runargs -drm_cpufreq="1200 .." >
+//---------------------------------------------------------------------------
+//  Upto 8-threaded diags to be run on 1 core benches, or
+//  multicore (2,4 core) benches, with PORTABLE_CORE
+//--------------------------------------------------------------------------
+
+//------------Diags for Non 8 core benches -------------------------------{{{
+#if(!defined FC8 && !defined CCM8 && !defined CMP8)
+
+//---tsotool diag {{{
+<runargs -max_cycle=+3000000 -vcs_run_args=+TIMEOUT=10000 -vcs_run_args=+finish_mask=all -midas_args=-DCMP_THREAD_START=ALL -vcs_run_args=+l2esr_mon_off -midas_args=-DPART_0_BASE=0x200000000 -midas_args=-allow_tsb_conflicts -fast_boot -vcs_run_args=+DISABLE_OOB_CHECK -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+8_FBDIMMS -vcs_run_args=+l2cpx_errmon_off>
+n2_8tcasxa_2 n2_8tcasxa_2.s
+n2_8t_ldst1_7 n2_8t_ldst1_7.s
+n2_8t_bstbld_1 n2_8t_bstbld_1.s
+</runargs>
+
+//---tsotool diag }}}
+
+//---ccx diag {{{
+<runargs -fast_boot -midas_args=-allow_tsb_conflicts -max_cycle=+3000000 -vcs_run_args=+TIMEOUT=10000 -midas_args=-DCMP_THREAD_START=ALL -finish_mask=all -midas_args=-DCREGS_LSU_CTL_REG_DC=0 -midas_args=-DCREGS_LSU_CTL_REG_IC=0  -vcs_run_args=+l2esr_mon_off -midas_args=-DPART_0_BASE=0x200000000 -vcs_run_args=+8_FBDIMMS -midas_args=-DL2_REG_PROG -vcs_run_args=+DISABLE_OOB_CHECK -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+l2cpx_errmon_off>
+n2_cpx_fill_io_8b n2_cpx_fill_io_8b.s
+n2_cpx_ifill8b    n2_cpx_ifill8b.s
+</runargs>
+//---ccx diag }}}
+
+//---gendiag diag {{{
+<runargs -vcs_run_args=+DISABLE_OOB_CHECK -vcs_run_args=+l2esr_mon_off>
+#include "diaglists/isa/v9_gendiag.diaglist"
+</runargs>
+//---gendiag diag }}}
+
+//---blimp diag {{{
+//---blimp diag }}}
+
+//---MPGen diags {{{
+<runargs -vcs_run_args=+finish_mask=all -midas_args=-DCMP_THREAD_START=ALL -midas_args=-allow_tsb_conflicts>
+mpgen_semi_full_isa_1   mpgen_semi_full_isa_1.s  
+mpgen_semi_full_isa_2   mpgen_semi_full_isa_2.s  
+mpgen_semi_full_isa_3   mpgen_semi_full_isa_3.s  
+mpgen_ldst_mix          mpgen_ldst_mix.s       
+mpgen_ldst_int_no_asi   mpgen_ldst_int_no_asi.s
+mpgen_ldst_all_l2_banks mpgen_ldst_all_l2_banks.s
+mpgen_smc_1              mpgen_smc_1.s
+mpgen_smc_2              mpgen_smc_2.s
+mpgen_smc_3              mpgen_smc_3.s
+mpgen_smc_4              mpgen_smc_4.s
+mpgen_dynamic_spec_cache mpgen_dynamic_spec_cache.s
+mpgen_tso_atomic_1_bank  mpgen_tso_atomic_1_bank.s
+</runargs>
+//---MPGen diags }}}
+
+//---TLU_RAND5 diags {{{
+<runargs -vcs_run_args=+finish_mask=all -midas_args=-DCMP_THREAD_START=ALL -vcs_run_args=+l2esr_mon_off -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+DISABLE_OOB_CHECK -vcs_run_args=+l2cpx_errmon_off>
+<sys(fcrand05)>
+<runargs -rtl_timeout=20000 -vcs_run_args=+skt_timeout=20000 -vcs_run_args=+th_timeout=50000>
+tlu_fcrand05_ind_14   tlu_fcrand05_ind_14.s
+// fcrand05_rand_38   fcrand05_rand_38.s  -midas_args=-DMULTIPASS=2
+fcrand05_rand_88   fcrand05_rand_88.s -midas_args=-DMULTIPASS=2
+// fcrand05_rand_4    fcrand05_rand_4.s -midas_args=-DMULTIPASS=2
+// fcrand05_rand_37   fcrand05_rand_37.s -midas_args=-DMULTIPASS=2
+// fcrand05_rand_43   fcrand05_rand_43.s -midas_args=-DMULTIPASS=2
+tlu_rand5fc_8149597 tlu_rand5fc_8149597.s -midas_args=-DMULTIPASS=1 
+</runargs>
+</sys(fcrand05)>
+</runargs>
+//---TLU_RAND5 diags }}}
+
+#else
+//------------------------------------------------------------------------}}}
+
+//---------------------------------------------------------------------------
+//  Upto 64-threaded diags to be run on 8 core benches
+//---------------------------------------------------------------------------
+//------------Diags for 8 core benches------------------------------------{{{
+
+// --- tsotool diags // {{{
+<runargs -fast_boot -midas_args=-allow_tsb_conflicts -max_cycle=+3000000 -vcs_run_args=+TIMEOUT=10000 -vcs_run_args=+show_load -vcs_run_args=+show_delta -finish_mask=all -midas_args=-DCMP_THREAD_START=ALL -vcs_run_args=+l2esr_mon_off -vcs_run_args=+8_FBDIMMS -midas_args=-DL2_REG_PROG -vcs_run_args=+DISABLE_OOB_CHECK -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+l2cpx_errmon_off>
+n2_8t-fullraw n2_8t-fullraw.s
+n2_8t-bstld n2_8t-bstld.s
+niagara2_bldst niagara2_bldst.s
+n2_64t_ldcasxa_8bank n2_64t_ldcasxa_8bank.s
+</runargs>
+// --- tsotool diags // }}}
+
+//---ccx diag real 64 threads {{{
+<runargs -fast_boot -midas_args=-allow_tsb_conflicts -vcs_run_args=+show_delta -max_cycle=+3000000 -vcs_run_args=+TIMEOUT=10000 -finish_mask=all -midas_args=-DCMP_THREAD_START=ALL  -midas_args=-DCREGS_LSU_CTL_REG_DC=0 -midas_args=-DCREGS_LSU_CTL_REG_IC=0 -midas_args=-DPORTABLE_CORE -vcs_run_args=+l2esr_mon_off -midas_args=-DPART_0_BASE=0x200000000 -vcs_run_args=+DISABLE_OOB_CHECK -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+8_FBDIMMS -vcs_run_args=+l2cpx_errmon_off>
+#if(!defined FC8 && !defined CMP8)
+n2_st_atomic_8t8b n2_st_atomic_8t8b.s
+#endif
+</runargs>
+//---ccx diag real 64 threads }}}
+
+//---gendiag diag {{{
+<runargs -vcs_run_args=+DISABLE_OOB_CHECK -vcs_run_args=+l2esr_mon_off>
+#include "diaglists/isa/v9_gendiag.diaglist"
+</runargs>
+//---gendiag diag }}}
+
+//---blimp diag {{{
+//---blimp diag }}}
+
+//---MPGen diags {{{
+<runargs -vcs_run_args=+finish_mask=all -midas_args=-DCMP_THREAD_START=ALL -midas_args=-allow_tsb_conflicts>
+mpgen_dynamic_caches           mpgen_dynamic_caches.s
+mpgen_dynamic_pwr_mgmt         mpgen_dynamic_pwr_mgmt.s
+mpgen_tso_one_bank             mpgen_tso_one_bank.s
+mpgen_tso_all_banks            mpgen_tso_all_banks.s
+mpgen_tso_ba_all_banks         mpgen_tso_ba_all_banks.s
+mpgen_tso_atomic_one_bank      mpgen_tso_atomic_one_bank.s
+mpgen_tso_atomic_all_banks     mpgen_tso_atomic_all_banks.s
+
+#if(!defined FC && !defined CMP8)
+mpgen_semi_full_isa_1   mpgen_semi_full_isa_1.s  
+mpgen_semi_full_isa_2   mpgen_semi_full_isa_2.s  
+mpgen_semi_full_isa_3   mpgen_semi_full_isa_3.s  
+mpgen_ldst_mix          mpgen_ldst_mix.s 
+mpgen_ldst_all_l2_banks mpgen_ldst_all_l2_banks.s      
+mpgen_ldst_int_no_asi   mpgen_ldst_int_no_asi.s
+mpgen_tso_ba_one_bank          mpgen_tso_ba_one_bank.s
+mpgen_tso_atomic_asi_one_bank  mpgen_tso_atomic_asi_one_bank.s
+mpgen_tso_atomic_asi_all_banks mpgen_tso_atomic_asi_all_banks.s
+#endif
+
+</runargs>
+//---MPGen diags }}}
+
+//---TLU_RAND5 diags {{{
+<runargs -vcs_run_args=+finish_mask=all -midas_args=-DCMP_THREAD_START=ALL -vcs_run_args=+l2esr_mon_off -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+DISABLE_OOB_CHECK -vcs_run_args=+l2cpx_errmon_off>
+<sys(fcrand05)>
+tlu_fcrand05_ind_14   tlu_fcrand05_ind_14.s
+fcrand05_rand_38   fcrand05_rand_38.s  -midas_args=-DMULTIPASS=1
+
+#if(!defined FC && !defined CMP8 )
+fcrand05_rand_4    fcrand05_rand_4.s -midas_args=-DMULTIPASS=1
+fcrand05_rand_37   fcrand05_rand_37.s -midas_args=-DMULTIPASS=1
+fcrand05_rand_43   fcrand05_rand_43.s -midas_args=-DMULTIPASS=1
+fcrand05_rand_88   fcrand05_rand_88.s -midas_args=-DMULTIPASS=1
+#endif
+
+</sys(fcrand05)>
+</runargs>
+//---TLU_RAND5 diags }}}
+
+
+#endif
+//========================================================================}}}
+//===========================================================================
+
+// </runargs>
+</sys(nightly)>
+#if (!defined FC)
+</sys(all_T2)>
+</sys(all)>
+#endif
+</runargs>
+</sys(core_qual)>
+
+</sys(core_qualify)>
+

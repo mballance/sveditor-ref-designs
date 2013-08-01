@@ -1,0 +1,1843 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: rx_rand_test.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "neptune_memory_map.vri"
+#include "xpcs_memory_map.vri"
+#include "txc_memory_map.vri"
+#include "dmc_memory_map.vri"
+#include "ipp_memory_map.vri"
+#include "fflp_memory_map.vri"
+#include "mac_defines.vri"
+#include "pio_driver.vrh"
+#include "mac_pio_class.vrh"
+#include "cMesg.vrh"
+#include "xmac_util.vrh"
+#include "bmac_util.vrh"
+#include "niu_mem.vrh"
+#include "niu_rx_descp.vrh"
+#include "niu_rxdmc.vrh"
+#include "pcg_defines.vri"
+#include "pcg_types.vri"
+#include "pack_db.vrh"
+#include "flow_db.vrh"
+#include "flow_db_tasks.vrh"
+#include "pg_top_pp.vrh"
+#include "pc_top_pp.vrh"
+#include "mbox_class.vrh"
+#include "get_mbox_id.vrh"
+#include "xmac_util.vrh"
+#include "bmac_util.vrh"
+#include "pcs_util.vrh"
+#include "xpcs_util.vrh"
+#include "pkt_configurator.vrh"
+#include "rand_packet.vrh"
+#include "rand_defines.vri"
+
+extern mac_util_class mac_util;
+extern bmac_util_class bmac_util;
+extern pio_drv pio_driver_class;
+extern mac_pio_cl mac_pio_class;
+extern bit[3:0] rtl_mac;
+extern Mesg    be_msg;
+extern RxDMAChannel rx_dma[32];
+extern CRDMC rdmc;
+extern hdl_task backdoor_init_tcam ();
+
+#define BYTES_PER_DESCR 4
+#define DO_INTERNAL_RAND_KICKS 1
+#define CCODE_V4_TCP 8
+#define CCODE_V4_UDP 9
+#define CCODE_V4_AHESP 10
+#define CCODE_V4_SCTP 11
+#define CCODE_V6_TCP 12
+#define CCODE_V6_UDP 13
+#define CCODE_V6_AHESP 14
+#define CCODE_V6_SCTP 15
+#define CCODE_ARP 16
+#define CCODE_RARP 17
+
+class rx_rand_test {
+  //integer test_gen_rx_pkts_debug, quick_test, test_mac_verbose;
+  rand_packet rx_rand_packet;
+  integer num_of_mac_ports=0;
+  integer num_pkts_port[4];
+  bit [15:0] initial_kick[16];
+  integer dring_len[16], cring_len[16];
+  flow_desc flow0[], flow1[], flow2[], flow3[];
+  integer port_rate[4];      //in Ghz
+  integer pkt_len_param[4];
+  integer byte_sweep;
+  integer pkt_max_len[4], pkt_min_len[4];
+  rx_rand_dma_parameters rand_dma_parameters;   //each dma channel can have different parameters
+  pkt_configurator pktC;
+  integer cs_crc_err[4];
+  integer num_tcam_entries, num_tcam_repeats;
+  integer frag_id, frag_id_tcp;
+  bit hdr_18B_en;
+  bit kick_mul16;
+  static bit[3:0] second_to_last_packet_sent=0;
+  static bit end_flushed=0; 
+  bit sending_pkts=1;
+  integer DringMargin;
+  integer kick_more_min, kick_more_max;
+  bit do_frag, do_rand_def_dma, do_rand_vld, do_wred, do_rand_mask;
+  integer wred_thre=0;
+  bit do_rand_key_disc, reset_disc=0;
+  bit do_rand_ad_disc;
+  bit do_rand_hash_mask, set_errchkdisable, corrupt_vlan_parity, promis, da_mismatch;
+  bit no_pad;
+  integer l4_proto_err, send_pause;
+  integer do_flush, do_rand_dis_dma, dma_off_time, poll_interval;
+  integer send_runts=0;
+  bit weights_50_1=0;      //50:50:1:1   else 10:10:1:1
+  integer base_weight01;
+  integer weight_margin;   //percent
+  bit[15:0] thr_timer_int_en;   //one bit per dma
+  bit[15:0] rcr_pkt_threshold;
+  bit[5:0] rcr_timer_value;
+  bit rx_init_done=0;
+
+  task new();
+  task run();
+  task config_mac(integer mac_id);
+  task config_zvt();	   //zcprdc, vlan, tcam
+  task send_rx_pkts(integer mac_id, integer num_pkts);
+  task close();
+  task rx_control();
+  task rx_dma_config(integer dma_ch);
+  task reg_access();
+  task rand_flush();
+  task rand_weights();
+  task rand_dis_dma();
+  task monitor_descriptors();
+  function integer set_pkt_len(integer len_param, integer max_len, integer min_len, integer num);
+  function integer ipg_in_ns(integer rate_in_Mhz, integer pkt_len, integer header_len);
+  function bit[47:0] get_l2dest_from_Trdc(bit[2:0] Trdc, integer mac_id);
+  function bit[11:0] get_vlan_from_Trdc(bit[2:0] Trdc, integer mac_id);
+  task setup_vlan_table();   //since backdoor vlan does not work right
+  task tcam_compare();
+}
+/////////////////////////////////////////
+task rx_rand_test::new() {
+  pktC = new;
+  printf("rxTEST newed\n");
+}
+/////////////////////////////////////////
+task rx_rand_test::run() {
+  shadow integer ii;
+  bit[15:0] wred_init;
+
+  for(ii=0; ii<4; ii++) {if(rtl_mac[ii]) num_of_mac_ports++;}
+  printf("rxTEST number of ports enabled = %0d\n", num_of_mac_ports);
+
+  rx_control();
+
+  if(do_wred) {
+    wred_init=random();
+    gen_pio_drv.pio_wr(RED_RAN_INIT, {1'b1, wred_init});
+  }
+
+  rand_dma_parameters = new();
+
+  for(ii=0; ii<16; ii++) {
+     rx_dma_config(ii);
+     if(!DO_INTERNAL_RAND_KICKS) 
+       fork
+         rdmc.rx_dma[ii].periodic_kick(); //(interval=3000, num_desc=-1(rand), threshold=256);
+       join none
+  }
+  rand_dma_parameters = null;
+
+  for(ii=0; ii<4; ii++) if(rtl_mac[ii]) {
+    config_mac(ii);
+  }
+
+  config_zvt();
+  repeat (2000) {@(CLOCK);}  //delay to allow complete setup
+  rx_init_done=1;
+  printf("rxTEST done setup ======================== time=%0d\n", get_time(LO));
+
+  rx_rand_packet = new();
+  fork
+    {
+      fork
+        if(rtl_mac[0]) { send_rx_pkts(0, num_pkts_port[0]); }
+        if(rtl_mac[1]) { send_rx_pkts(1, num_pkts_port[1]); }
+        if(rtl_mac[2]) { send_rx_pkts(2, num_pkts_port[2]); }
+        if(rtl_mac[3]) { send_rx_pkts(3, num_pkts_port[3]); }
+      join all
+      printf("rxTEST done sending packets %0d\n", get_time(LO));
+      sending_pkts=0;
+    }
+    if(DO_INTERNAL_RAND_KICKS) monitor_descriptors();
+    reg_access();
+    rand_weights();
+    if(do_flush>0) rand_flush();
+    if(do_rand_dis_dma>0) rand_dis_dma();
+  join all
+
+  close();
+
+  printf("rxTEST End time=%0d\n", get_time(LO));
+}
+//////////////////////////////////////////////
+task rx_rand_test::send_rx_pkts(integer mac_id, integer num_pkts) {
+  shadow integer n, jj;
+  integer last_packet, dma, ipg=600;
+  integer pkt_len, header_len;
+  integer L2head_len, L3head_len, L4head_len, CRC_len=4;
+  bit[7:0] tmp;
+  flow_desc tmp_flow;
+  integer index;
+  bit[199:0] key;
+  bit[2:0] Trdc;
+  bit[11:0] vlan;
+  bit[47:0] mac_l2_dest;
+  integer llcsnap_max;
+  string type;
+  bit anul_tcam_match;
+  bit is_runt=0;
+
+  printf("rxTEST send_rx_pkts starting mac_id=%0d time=%0d\n", mac_id, get_time(LO));
+  delay((random()%550)*mac_id);   //stagger port starting time
+ 
+#define CLS_CODE  199:195
+#define L2RDC_V4  189:187
+#define NOPORT    186
+#define ESP_AH    111
+#define TOS_V4    111:104
+#define PID_V4    103:96
+#define TCP_SP_V4 95:80
+#define TCP_DP_V4 79:64
+#define SPI_V4    95:64
+#define IP_SA_V4  63:32
+#define IP_DA_V4  31:0
+#define L2RDC_V6  189:187
+#define TOS_V6    175:168
+#define NXT_HDR   167:160
+#define TCP_SP_V6 159:144
+#define TCP_DP_V6 143:128
+#define SPI_V6    159:128
+#define IP_V6     127:0
+#define B11_AFTER_ETHER 191:104
+
+  for(n=0; n<num_pkts; n++) {
+    tmp_flow=new;
+    void=rx_rand_packet.randomize();
+
+    last_packet = (n==num_pkts-1);
+    is_runt=0;
+    if(send_runts!==0) {
+      if((random()%100) < send_runts) is_runt=1;
+    }
+
+    index=random()%num_tcam_entries;
+    if(do_frag) { if(((random()%100)>2) && ((random()%100)<6)) index=frag_id;  //3,4,5
+                  if((random()%100)<3) index=frag_id_tcp;                    //0,1,2
+                }
+    
+    key=pktC.get_tcam_shadow(index);
+     printf("rxTEST send frame ==========tcam_key: index=%0d cl_code=%0d key=0x%h\n", index, key[CLS_CODE], key);
+
+     //print information about selected key
+     if(key[CLS_CODE]>=8 && key[CLS_CODE]<=11)   //v4
+       printf("rxTEST send frame v4 Trdc=%0d Tpid=%0d Tnoport=%0d Tl4src=0x%h Tl4dst=0x%h\n", key[L2RDC_V4], key[PID_V4], key[NOPORT], key[TCP_SP_V4], key[TCP_DP_V4]);
+     else if(key[CLS_CODE]>=12 && key[CLS_CODE]<=15)   //v6
+       printf("rxTEST send frame v6 Trdc=%0d Tnxt_hdr=%0d\n", key[L2RDC_V6], key[NXT_HDR]);
+     else printf("rxTEST send frame other (ARP/RARP, userdefined, dummy)\n");
+
+     if(do_frag && (index==frag_id || index==frag_id_tcp)) {
+       if(index==frag_id)
+         case(random()%2) {
+           0: tmp_flow.frame.frame_class = CL_UDP_FRAG;
+           1: tmp_flow.frame.frame_class = CL_SCTP_FRAG;            }
+       else tmp_flow.frame.frame_class = CL_TCP_FRAG;
+     } else
+     case(key[CLS_CODE]) {
+       CCODE_V4_TCP:   tmp_flow.frame.frame_class = CL_TCP;
+       CCODE_V4_UDP:   tmp_flow.frame.frame_class = CL_UDP;
+       CCODE_V4_AHESP: tmp_flow.frame.frame_class = (key[PID_V4]==51)?CL_IP_SEC_AH:CL_IP_SEC_ESP;
+       CCODE_V4_SCTP:  tmp_flow.frame.frame_class = CL_SCTP;
+       CCODE_V6_TCP:   tmp_flow.frame.frame_class = CL_TCP_IP_V6;
+       CCODE_V6_UDP:   tmp_flow.frame.frame_class = CL_UDP_IP_V6;
+       CCODE_V6_AHESP: tmp_flow.frame.frame_class = (key[NXT_HDR]==51)?CL_IP_V6_SEC_AH:CL_IP_V6_SEC_ESP;
+       CCODE_V6_SCTP:  tmp_flow.frame.frame_class = CL_SCTP_IP_V6;
+       CCODE_ARP:      tmp_flow.frame.frame_class = CL_ARP;
+       CCODE_RARP:     tmp_flow.frame.frame_class = CL_RARP;
+     }
+
+     case(key[CLS_CODE]) {
+       CCODE_V4_TCP, CCODE_V4_UDP, CCODE_V4_AHESP, CCODE_V4_SCTP: {
+         tmp_flow.src_node.tos = key[TOS_V4];
+         if(key[CLS_CODE]==CCODE_V4_SCTP) {
+                tmp_flow.sctp.src_sctp_port = key[TCP_SP_V4];
+                tmp_flow.sctp.dst_sctp_port = key[TCP_DP_V4];
+         }
+         else { tmp_flow.tup.src_tcp_udp_port = key[TCP_SP_V4];
+                tmp_flow.tup.dst_tcp_udp_port = key[TCP_DP_V4];
+         }
+         tmp_flow.src_node.ip_addr = key[IP_SA_V4];
+         tmp_flow.dst_node.ip_addr = key[IP_DA_V4];
+         tmp_flow.src_node.spi = key[SPI_V4];
+         tmp_flow.dst_node.spi = random();
+         tmp_flow.src_node.nxthdr = random();
+         tmp_flow.dst_node.nxthdr = random();
+         tmp_flow.frame.frame_type = 5'b00010;
+       }
+       CCODE_V6_TCP, CCODE_V6_UDP, CCODE_V6_AHESP, CCODE_V6_SCTP: {
+         tmp_flow.src_node.tos = key[TOS_V6];
+         if(key[CLS_CODE]==CCODE_V6_SCTP) {
+                tmp_flow.sctp.src_sctp_port = key[TCP_SP_V6];
+                tmp_flow.sctp.dst_sctp_port = key[TCP_DP_V6];
+                  tmp_flow.tup.src_tcp_udp_port = key[TCP_SP_V6]; //for fflp_model
+                  tmp_flow.tup.dst_tcp_udp_port = key[TCP_DP_V6]; //for fflp_model
+         }
+         else { tmp_flow.tup.src_tcp_udp_port = key[TCP_SP_V6];
+                tmp_flow.tup.dst_tcp_udp_port = key[TCP_DP_V6];
+         }
+         tmp_flow.src_node.ipv6_addr = {random(), random(), random(), random()};
+         tmp_flow.dst_node.ipv6_addr = {random(), random(), random(), random()};
+         if(pktC.FFLP_Model.tcam_key_reg[ key[CLS_CODE]-4 ].tcam_ipaddr)
+              tmp_flow.src_node.ipv6_addr = key[IP_V6];
+         else tmp_flow.dst_node.ipv6_addr = key[IP_V6];
+         tmp_flow.src_node.spi = key[SPI_V6];
+         tmp_flow.dst_node.spi = random();
+         tmp_flow.src_node.nxthdr = random();
+         tmp_flow.dst_node.nxthdr = random();
+         tmp_flow.frame.frame_type = 5'b01010;
+       }
+       CCODE_ARP, CCODE_RARP: {
+       }
+     }
+
+     tmp=random();
+     if(tmp[0]) tmp_flow.frame.frame_type[0]=1;   //llc-snap
+
+     //find l2_dest_addr from TCAM rdc match//////////////////////
+     Trdc = (tmp_flow.frame.frame_type[3])? key[L2RDC_V6] : key[L2RDC_V4];
+     mac_l2_dest=get_l2dest_from_Trdc(Trdc, mac_id);
+     if(mac_l2_dest===48'hXXXXXXXXXXXX) {
+       printf("rxTEST send frame mac_l2_dest returned X from Tcam match -> randomize and do vlan\n");
+       if(mac_id==0 || mac_id==1) mac_l2_dest=rx_rand_packet.xmac_l2_dest_addr;
+       else mac_l2_dest=rx_rand_packet.bmac_l2_dest_addr;
+     }
+     tmp_flow.dst_node.l2_addr =	mac_l2_dest;
+
+     if(da_mismatch) 
+       if(random()%100<5) {
+         printf("TEST da_mismatch old=0x%h\n", tmp_flow.dst_node.l2_addr);
+         tmp_flow.dst_node.l2_addr={tmp_flow.dst_node.l2_addr[47:1], ~tmp_flow.dst_node.l2_addr[0]}; //48 bit
+         printf("TEST da_mismatch new=0x%h\n", tmp_flow.dst_node.l2_addr);
+       }
+
+     //find vlan from TCAM rdc match//////////////////////
+     if(!(key[CLS_CODE]==CCODE_V4_AHESP || key[CLS_CODE]==CCODE_V6_AHESP)) {//if AH/ESP no vlan
+       tmp=random();
+       if(tmp[1] || tmp[0]) {
+         tmp_flow.frame.frame_type[2]=1;   //vlan
+         vlan = get_vlan_from_Trdc(Trdc, mac_id);
+         //tmp_flow.src_node.tci = vlan;
+         tmp_flow.src_node.tci = {random(), vlan};   //randomize upper 4 bits
+       }
+     }
+
+     tmp_flow.src_node.l2_addr =  rx_rand_packet.l2_src_addr;
+     tmp_flow.src_node.src_port =  rx_rand_packet.node_src_port;
+     tmp_flow.dst_node.src_port =  rx_rand_packet.node_src_port;
+   
+     tmp_flow.frame.type = -1;
+     tmp_flow.frame.class_mask = 0;
+     tmp_flow.frame.class_funct = rx_rand_packet.rx_frame_class_funct;
+     tmp_flow.frame.data_type = rx_rand_packet.rx_frame_data_type;
+     tmp_flow.frame.data_seed = 128;   //random();  //128;
+     tmp_flow.rx_param.rcv_isn = rx_rand_packet.rx_param_rcv_isn;
+     tmp_flow.fl_state.tcp_flags = rx_rand_packet.rx_tcp_flags;
+     tmp_flow.flow_no = 0;
+     tmp_flow.frame.l2_pad_length = 0;
+
+     //checksum computed for L4:TCP,UDP and L3: IPv4, IPv6 - non-frag
+     if(cs_crc_err[mac_id]!==0 & !last_packet & !is_runt) {
+       if((random()%100) < cs_crc_err[mac_id]) {
+         tmp=random()%3;
+         case(tmp) {
+          0: { tmp_flow.frame.error_code = PG_CHKSUM_ERR;
+               tmp_flow.frame.frame_class = 16;	 //CL_TCP
+               tmp_flow.frame.frame_type[1] = 1;
+               tmp_flow.frame.frame_type[3] = 0;
+               //tmp_flow.frame.frame_type = 5'b00010;
+             }
+          1: tmp_flow.frame.error_code = PG_CRC_ERR;
+          2: { tmp_flow.frame.error_code = PG_CHKSUM_ERR | PG_CRC_ERR;
+               tmp_flow.frame.frame_class = 16;	 //CL_TCP
+               tmp_flow.frame.frame_type[1] = 1;
+               tmp_flow.frame.frame_type[3] = 0;  
+               //tmp_flow.frame.frame_type = 5'b00010;
+             }
+         }
+         printf("rxTEST send frame err %s mac.seq=%0d.%0d\n", (tmp==0)?"CKSUM":(tmp==1)?"CRC":"CKSUM&CRC", mac_id, n);
+       }
+       else tmp_flow.frame.error_code = 0;
+     }
+     
+     //     flow.frame.error_type_len = 16'h1234; //type/length field replaced with 0x1234. Use with caution!
+     if(l4_proto_err!==0 & !last_packet & !is_runt) {
+       //printf("TEST loop l4_proto_err=%0d last_packet=%0d is_runt=%0d\n", l4_proto_err, last_packet, is_runt);
+       if((random()%100) < l4_proto_err) {
+         tmp_flow.frame.error_code = PG_L4_PROTO_USER_MODE;
+         tmp_flow.frame.l4_proto_field = 8'd138; // Choose as appropriate
+         printf("rxTEST send frame err %s mac.seq=%0d.%0d\n", "L4_PROTO", mac_id, n);
+       }
+     }
+     if(send_pause!==0) {
+       if((random()%100) < send_pause) {
+         tmp_flow.dst_node.l2_addr = l2_dest_pause;
+         tmp_flow.frame.frame_type = 5'b00000;
+         tmp_flow.frame.frame_class = CL_L2;
+         tmp_flow.frame.data_type = DAT_FC_PAUSE;
+         tmp_flow.frame.data_seed = 32'hffff0100;
+         printf("rxTEST send pause mac.seq=%0d.%0d\n", mac_id, n);
+       }
+     }
+     ////////////////////////
+
+     //L2head_len
+     L2head_len=14;   // DA=6 + SA=2 + len/type=2
+     if(tmp_flow.frame.frame_type[0]) L2head_len+=8; //llc-snap
+     if(tmp_flow.frame.frame_type[2]) L2head_len+=4; //vlan
+
+     //L3head_len
+     if( !tmp_flow.frame.frame_type[3] && tmp_flow.frame.frame_type[1] ) {    // ipv4 - add options
+       tmp_flow.frame.header_length = (random()%11)+5;  // 5<=ipv4_header_len<=15
+       L3head_len=(tmp_flow.frame.header_length*4);
+     }
+     else {                                    // ipv6
+       L3head_len=40;
+     }
+
+     //L4head_len
+     if(tmp_flow.frame.frame_class==CL_TCP || 
+        tmp_flow.frame.frame_class==CL_TCP_FRAG ||
+        tmp_flow.frame.frame_class==CL_TCP_IP_V6)
+          L4head_len=20;
+     else if(tmp_flow.frame.frame_class==CL_UDP || 
+             tmp_flow.frame.frame_class==CL_UDP_FRAG ||
+             tmp_flow.frame.frame_class==CL_UDP_IP_V6)
+          L4head_len=8;
+     else if(tmp_flow.frame.frame_class==CL_IP_SEC_AH || 
+             tmp_flow.frame.frame_class==CL_IP_V6_SEC_AH)
+          L4head_len=16;
+     else if(tmp_flow.frame.frame_class==CL_IP_SEC_ESP || 
+             tmp_flow.frame.frame_class==CL_IP_V6_SEC_ESP )
+          L4head_len=12;
+     else if(tmp_flow.frame.frame_class==CL_SCTP || 
+             tmp_flow.frame.frame_class==CL_SCTP_FRAG || 
+             tmp_flow.frame.frame_class==CL_SCTP_IP_V6 )
+          L4head_len=12;
+     else L4head_len=0;
+
+     header_len = L2head_len + L3head_len + L4head_len + CRC_len;
+     //printf("rxTEST send frame max=%0d L2head=%0d L3head=%0d L4head=%0d tot(inc crc)=%0d\n", pkt_max_len[mac_id], L2head_len, L3head_len, L4head_len, header_len);
+
+     ////////////pkt_len
+     if(last_packet) {
+         pkt_len=200;
+         tmp_flow.frame.l2_pad_length = 0;
+     }
+     else if(is_runt) {
+         //pkt_len=(random()%2)+1;
+         pkt_len=(random()%62)+1;                                   // 1<= runt_length < 64
+         if(pkt_len<18) tmp_flow.frame.frame_class = CL_L2_RUNT;    // len < 18
+         else tmp_flow.frame.frame_class = CL_L2;                   // 18 <= len < 64
+         tmp_flow.frame.frame_type = 5'b00000;
+         tmp_flow.frame.l2_pad_length = 0;
+         printf("rxTEST send frame pkt is_runt len=%0d mac.seq=%0d.%0d\n", pkt_len, mac_id, n);
+     }
+     else if(key[CLS_CODE]==CCODE_ARP || key[CLS_CODE]==CCODE_RARP) {	//ARP/RARP length=64
+        //pkt_len=64;
+ 	pkt_len=pkt_min_len[mac_id];
+     }
+     else if(tmp_flow.frame.frame_type[0]) {		//llc-snap length <600h=1536
+       if(pkt_min_len[mac_id]>1536) {
+         pkt_len=1536;
+         tmp_flow.frame.l2_pad_length = 0;
+       }
+       else {
+         llcsnap_max=(pkt_max_len[mac_id]<'h600)?pkt_max_len[mac_id]:1536;
+         pkt_len=set_pkt_len(pkt_len_param[mac_id], llcsnap_max, pkt_min_len[mac_id], n);
+         tmp_flow.frame.l2_pad_length = no_pad ? 0 : (random()%(llcsnap_max-pkt_min_len[mac_id]/2));
+         if(pkt_len+tmp_flow.frame.l2_pad_length>llcsnap_max) tmp_flow.frame.l2_pad_length = 0;
+       }
+     }
+    else {
+      pkt_len=set_pkt_len(pkt_len_param[mac_id], pkt_max_len[mac_id], pkt_min_len[mac_id], n);
+      // TCP/UDP add padding
+      if(!no_pad & ( tmp_flow.frame.frame_class==CCODE_V4_TCP || tmp_flow.frame.frame_class==CCODE_V4_UDP ||
+                     tmp_flow.frame.frame_class==CCODE_V6_TCP || tmp_flow.frame.frame_class==CCODE_V6_UDP)) {
+           while(pkt_len+tmp_flow.frame.l2_pad_length>pkt_max_len[mac_id]) {
+             tmp_flow.frame.l2_pad_length = (random()%pkt_max_len[mac_id]/2);
+           }
+      }
+    }
+
+    if((pkt_len<header_len) & !is_runt) {    // make sure pkt size does not go negative
+      //adjust pad
+      llcsnap_max=header_len-pkt_len;  //reuse variable
+      if(tmp_flow.frame.l2_pad_length-llcsnap_max <0) tmp_flow.frame.l2_pad_length=0;
+      else tmp_flow.frame.l2_pad_length-=llcsnap_max;
+      //adjust pkt_len
+      printf("rxTEST send frame  pkt_len<header_len, pkt-len changed was=%0d new=%0d\n", pkt_len, header_len);
+      pkt_len=header_len;
+    }
+    ////////////////////////
+
+    if(n==num_pkts-2) {
+      second_to_last_packet_sent[mac_id]=1;
+    }
+
+    
+    
+    
+    anul_tcam_match=random();
+    if(anul_tcam_match & index!==frag_id & index!==frag_id_tcp & !last_packet) {  //sometimes, don't let tcam match - corrupt this key
+      if( tmp_flow.frame.frame_type[3] && tmp_flow.frame.frame_type[1] ) {    // ipv6
+        tmp=key[TOS_V6];
+        key[TOS_V6]={tmp[7:1],~tmp[0]};
+        tmp_flow.src_node.tos = key[TOS_V6];
+        printf("rxTEST send frame anul_tcam_match key[TOS_V6] old=0x%h new=0x%h\n", tmp, tmp_flow.src_node.tos);
+      }
+      else {       //ipv4
+        tmp=key[TOS_V4];
+        key[TOS_V4]={tmp[7:1],~tmp[0]};
+        tmp_flow.src_node.tos = key[TOS_V4];
+        printf("rxTEST send frame anul_tcam_match key[TOS_V4] old=0x%h new=0x%h\n", tmp, tmp_flow.src_node.tos);
+      }
+    }
+
+    case(tmp_flow.frame.frame_class) {
+      CL_TCP:           type = "TCP";
+      CL_TCP_FRAG:      type = "TCP_FRAG";
+      CL_UDP:           type = "UDP";
+      CL_UDP_FRAG:      type = "UDP_FRAG";
+      CL_IP_SEC_AH:     type = "AH";
+      CL_IP_SEC_ESP:    type = "ESP";
+      CL_SCTP:          type = "SCTP";
+      CL_SCTP_FRAG:     type = "SCTP_FRAG";
+      CL_TCP_IP_V6:     type = "TCP_V6";
+      CL_UDP_IP_V6:     type = "UDP_V6";
+      CL_IP_V6_SEC_AH:  type = "AH_V6";
+      CL_IP_V6_SEC_ESP: type = "ESP_V6";
+      CL_SCTP_IP_V6:    type = "SCTP_V6";   //not defined
+      CL_ARP:           type = "ARP";
+      CL_RARP:          type = "RARP";
+      CL_L2:            type = "L2";
+      CL_L2_RUNT:       type = "L2_RUNT";
+      default: type = "xxxx";
+    }
+    printf("rxTEST send frame mac.seq=%0d.%0d pad=%3d len=%4d vlan=0x%0x d_l2addr=0x%0h f_class=%s f_type=%b time=%0d\n", mac_id, n, tmp_flow.frame.l2_pad_length, pkt_len, tmp_flow.src_node.tci, tmp_flow.dst_node.l2_addr, type, tmp_flow.frame.frame_type, get_time(LO));
+    //printf("rxTEST send frame mac.seq=%0d.%0d pad=%3d len=%4d vlan=0x%0x d_l2addr=0x%0h f_class=%s f_type=%b ip_sa=0x%0h ip_da=0x%0h time=%0d\n", mac_id, n, tmp_flow.frame.l2_pad_length, pkt_len, tmp_flow.src_node.tci, tmp_flow.dst_node.l2_addr, type, tmp_flow.frame.frame_type, tmp_flow.src_node.ip_addr, tmp_flow.dst_node.ip_addr, get_time(LO));
+    case(mac_id) {
+      0: { flow0[n]=tmp_flow;
+           //pc 			 path	    dma=not_used
+           pktC.pkt_configurator_genPkt(0, pkt_len, 3'hx,   mac_id, last_packet, flow0[n]);
+         }
+      1: { flow1[n]=tmp_flow;
+           pktC.pkt_configurator_genPkt(0, pkt_len, 3'hx,   mac_id, last_packet, flow1[n]);
+         }
+      2: { flow2[n]=tmp_flow;
+           pktC.pkt_configurator_genPkt(0, pkt_len, 3'hx,   mac_id, last_packet, flow2[n]);
+         }
+      3: { flow3[n]=tmp_flow;
+           pktC.pkt_configurator_genPkt(0, pkt_len, 3'hx,   mac_id, last_packet, flow3[n]);
+         }
+    }
+
+    ipg=ipg_in_ns(port_rate[mac_id], (pkt_len+tmp_flow.frame.l2_pad_length), tmp_flow.frame.header_length);
+    delay(ipg);
+    tmp_flow=null;
+
+    if(second_to_last_packet_sent==={rtl_mac[3], rtl_mac[2], rtl_mac[1], rtl_mac[0]} && !end_flushed) {
+      if(do_rand_key_disc & !reset_disc) {  //don't drop last pkt
+                                            //don't do tcam lookup (in case as_data.disc=1)
+        printf("rxTEST tcam_key_reg second_to_last_packet  disc=0x000  tsel=0x000  ipaddr=0xfff\n");
+        pktC.program_tcam_key_reg(12'h0, 12'h000, 12'hfff);
+        reset_disc=1;
+      }
+
+      end_flushed=1;
+      repeat(1000) @(posedge CLOCK);
+      printf("rxTEST flushing all 16 Crings after second to last packet time=%0d\n", get_time(LO));
+      for(jj=0; jj<16; jj++) 
+        rdmc.rx_dma[jj].flush_rcr(1);
+      printf("rxTEST waiting after flushing all 16 Crings after second to last packet time=%0d\n", get_time(LO));
+      repeat(5000) @(posedge CLOCK);
+      printf("rxTEST done waiting after flushing all 16 Crings after second to last packet time=%0d\n", get_time(LO));
+    }
+  }
+}
+/////////////////////////////////////////
+task rx_rand_test::monitor_descriptors() {
+  integer ii;
+  integer kick_more;
+  integer max, min;
+  integer currDringSize, spaceAvail;
+
+  while(sending_pkts) {
+    for(ii=0; ii<16; ii++) {
+      repeat(40) @(posedge CLOCK);
+      currDringSize=rdmc.rx_dma[ii].get_curr_ring_size();
+      printf("rxTEST dma=%0d currDringSize=0x%0h DringMargin=0x%0h\n", ii, currDringSize, DringMargin);
+
+      if(currDringSize < DringMargin) {
+        spaceAvail=dring_len[ii]-currDringSize;
+        max=(kick_more_max>spaceAvail) ? spaceAvail : kick_more_max;
+        min=(kick_more_min>max) ? max : kick_more_min;
+
+        if(kick_mul16) kick_more=(((random()%(max-min+1)) + min)/16)*16;
+        else kick_more=(random()%(max-min+1)) + min;
+
+        printf("rxTEST dma=%0d kick_more=0x%0h currDringSize=0x%0h dring_len=0x%0h time=%0d\n", ii, kick_more, currDringSize, dring_len[ii], get_time(LO));
+        rdmc.rx_dma[ii].setRxRingKick(kick_more);
+      }
+    }
+  }
+}
+//////////////////////////////////////////
+task rx_rand_test::config_mac(integer mac_id) {
+  shadow integer n;
+  integer jj;
+  bit[39:0] base_addr;
+  bit[31:0] rd_data;
+  bit[63:0] rd_data64;
+  bit[35:0] tmp;
+  bit [31:0] bmac_rd_data;
+
+  base_addr = bmac_util.get_mac_reg_base(mac_id);
+  //printf("rxTEST config mac_id=%0d base_addr=0x%h\n", mac_id, base_addr);
+
+  mac_pio_class.xmac_pio_rd( base_addr + XMAC_CONFIG, rd_data, 1'b0 );
+    if(promis) rd_data[10:9]=2'b01;      //promiscuous
+    else rd_data[10:9]=2'b00;            //non-promiscuous
+    rd_data[16]=1;        //addr_filter_en
+    if(set_errchkdisable) rd_data[11]=1;    //ErrChkdisable 1:send to def dma
+    else rd_data[11]=0;                     //ErrChkdisable 0:set abort(drop) bit
+    rd_data[12]=0;        //rx_crc_chk_dis	0:do crc checking
+  mac_pio_class.xmac_pio_wr(base_addr + XMAC_CONFIG, rd_data);
+  printf("rxTEST mac_id=%0d XMAC_CONFIG=0x%0h\n", mac_id, rd_data);
+
+  //gen_pio_drv.pio_rd(IPP_ADDRESS_RANGE+IPP_CONFIG+(mac_id*32'h8000), rd_data64);
+  //printf("rxTEST mac_id=%0d IPP_CONFIG=0x%0h addr=0x%0h\n", mac_id, rd_data64, IPP_ADDRESS_RANGE+IPP_CONFIG+(mac_id*32'h8000));
+
+  // program default dma for each port
+  if(do_rand_def_dma) {
+    jj=random()%16;
+    printf("rxTEST mac_id=%0d default dma=%0d\n", mac_id, jj);
+    rdmc.ProgramPortDefDma(mac_id, jj);
+  }
+
+  
+  // format: pktC.prog_mac_reg( mac_id, index, {pri,rdc,macda} )
+  tmp=random();
+  if(mac_id==0) {
+    pktC.prog_mac_reg(0, 0, {tmp[0], 3'd0, xmac_l2_dest_addr0});
+    pktC.prog_mac_reg(0, 1, {tmp[1], 3'd1, xmac_l2_dest_addr1});
+    pktC.prog_mac_reg(0, 2, {tmp[2], 3'd2, xmac_l2_dest_addr2});
+    pktC.prog_mac_reg(0, 3, {tmp[3], 3'd3, xmac_l2_dest_addr3});
+    pktC.prog_mac_reg(0, 4, {tmp[4], 3'd4, xmac_l2_dest_addr4});
+    pktC.prog_mac_reg(0, 5, {tmp[5], 3'd5, xmac_l2_dest_addr5});
+    pktC.prog_mac_reg(0, 6, {tmp[6], 3'd6, xmac_l2_dest_addr6});
+    pktC.prog_mac_reg(0, 7, {tmp[7], 3'd7, xmac_l2_dest_addr7});
+    pktC.prog_mac_reg(0, 8, {tmp[8], 3'd0, xmac_l2_dest_addr8});
+    pktC.prog_mac_reg(0, 9, {tmp[9], 3'd1, xmac_l2_dest_addr9});
+    pktC.prog_mac_reg(0, 10,{tmp[10],3'd2, xmac_l2_dest_addr10});
+    pktC.prog_mac_reg(0, 11,{tmp[11],3'd3, xmac_l2_dest_addr11});
+    pktC.prog_mac_reg(0, 12,{tmp[12],3'd4, xmac_l2_dest_addr12});
+    pktC.prog_mac_reg(0, 13,{tmp[13],3'd5, xmac_l2_dest_addr13});
+    pktC.prog_mac_reg(0, 14,{tmp[14],3'd6, xmac_l2_dest_addr14});
+    if(send_pause==0) pktC.prog_mac_reg(0, 15,{tmp[15],3'd7, xmac_l2_dest_addr15});
+    else pktC.prog_mac_reg(0, 15,{tmp[15],3'd7, l2_dest_pause});
+  }
+  if(mac_id==1) {
+    pktC.prog_mac_reg(1, 0, {tmp[16],3'd7, xmac_l2_dest_addr0});
+    pktC.prog_mac_reg(1, 1, {tmp[17],3'd6, xmac_l2_dest_addr1});
+    pktC.prog_mac_reg(1, 2, {tmp[18],3'd5, xmac_l2_dest_addr2});
+    pktC.prog_mac_reg(1, 3, {tmp[18],3'd4, xmac_l2_dest_addr3});
+    pktC.prog_mac_reg(1, 4, {tmp[20],3'd3, xmac_l2_dest_addr4});
+    pktC.prog_mac_reg(1, 5, {tmp[21],3'd2, xmac_l2_dest_addr5});
+    pktC.prog_mac_reg(1, 6, {tmp[22],3'd1, xmac_l2_dest_addr6});
+    pktC.prog_mac_reg(1, 7, {tmp[23],3'd0, xmac_l2_dest_addr7});
+    pktC.prog_mac_reg(1, 8, {tmp[24],3'd7, xmac_l2_dest_addr8});
+    pktC.prog_mac_reg(1, 9, {tmp[25],3'd6, xmac_l2_dest_addr9});
+    pktC.prog_mac_reg(1, 10,{tmp[26],3'd5, xmac_l2_dest_addr10});
+    pktC.prog_mac_reg(1, 11,{tmp[27],3'd4, xmac_l2_dest_addr11});
+    pktC.prog_mac_reg(1, 12,{tmp[28],3'd3, xmac_l2_dest_addr12});
+    pktC.prog_mac_reg(1, 13,{tmp[29],3'd2, xmac_l2_dest_addr13});
+    pktC.prog_mac_reg(1, 14,{tmp[30],3'd1, xmac_l2_dest_addr14});
+    if(send_pause==0) pktC.prog_mac_reg(1, 15,{tmp[31],3'd0, xmac_l2_dest_addr15});
+    else pktC.prog_mac_reg(1, 15,{tmp[31],3'd0, l2_dest_pause});
+  }
+  if(mac_id==2) {
+    pktC.prog_mac_reg(2, 0, {tmp[0], 3'd2, bmac_l2_dest_addr0});
+    pktC.prog_mac_reg(2, 1, {tmp[1], 3'd4, bmac_l2_dest_addr1});
+    pktC.prog_mac_reg(2, 2, {tmp[2], 3'd6, bmac_l2_dest_addr2});
+    pktC.prog_mac_reg(2, 3, {tmp[3], 3'd0, bmac_l2_dest_addr3});
+    pktC.prog_mac_reg(2, 4, {tmp[4], 3'd3, bmac_l2_dest_addr4});
+    pktC.prog_mac_reg(2, 5, {tmp[5], 3'd5, bmac_l2_dest_addr5});
+    pktC.prog_mac_reg(2, 6, {tmp[6], 3'd7, bmac_l2_dest_addr6});
+    if(send_pause==0) pktC.prog_mac_reg(2, 7, {tmp[7], 3'd1, bmac_l2_dest_addr7});
+    else pktC.prog_mac_reg(2, 7, {tmp[7], 3'd1, l2_dest_pause});
+    // Disable ERR_CHK_DIS bit in RxMAC_CONFIG register, so MAC sets abort bit for bad pkts
+     mac_pio_class.bmac_pio_rd(base_addr + RxMAC_CONFIG, bmac_rd_data, 0);
+     bmac_rd_data[7] = 0; // Turn off the ERR_CHK_DIS bit
+     mac_pio_class.bmac_pio_wr(base_addr + RxMAC_CONFIG, bmac_rd_data);
+    // Program the minimum size in bmac to be 64B
+     mac_pio_class.bmac_pio_wr(base_addr + BMAC_MIN, 64'h40);
+  }
+  if(mac_id==3) {
+    pktC.prog_mac_reg(3, 0, {tmp[16],3'd3, bmac_l2_dest_addr0});
+    pktC.prog_mac_reg(3, 1, {tmp[17],3'd5, bmac_l2_dest_addr1});
+    pktC.prog_mac_reg(3, 2, {tmp[18],3'd7, bmac_l2_dest_addr2});
+    pktC.prog_mac_reg(3, 3, {tmp[18],3'd1, bmac_l2_dest_addr3});
+    pktC.prog_mac_reg(3, 4, {tmp[20],3'd2, bmac_l2_dest_addr4});
+    pktC.prog_mac_reg(3, 5, {tmp[21],3'd4, bmac_l2_dest_addr5});
+    pktC.prog_mac_reg(3, 6, {tmp[22],3'd6, bmac_l2_dest_addr6});
+    if(send_pause==0) pktC.prog_mac_reg(3, 7, {tmp[23],3'd0, bmac_l2_dest_addr7});
+    else pktC.prog_mac_reg(3, 7, {tmp[23],3'd0, l2_dest_pause});
+    // Disable ERR_CHK_DIS bit in RxMAC_CONFIG register, so MAC sets abort bit for bad pkts
+     mac_pio_class.bmac_pio_rd(base_addr + RxMAC_CONFIG, bmac_rd_data, 0);
+     bmac_rd_data[7] = 0; // Turn off the ERR_CHK_DIS bit
+     mac_pio_class.bmac_pio_wr(base_addr + RxMAC_CONFIG, bmac_rd_data);
+    // Program the minimum size in bmac to be 64B
+     mac_pio_class.bmac_pio_wr(base_addr + BMAC_MIN, 64'h40);
+  } 
+  /* 
+  //read to check
+  if(rtl_mac[0] || rtl_mac[1]) {
+    mac_pio_class.xmac_pio_rd(base_addr + XMAC_HOST_INFO0, rd_data, 1'b0);
+     printf("rxTEST XMAC_HOST_INFO0 read=0x%h time=%0d\n", rd_data, get_time(LO));
+    mac_pio_class.xmac_pio_rd(base_addr + XMAC_HOST_INFO1, rd_data, 1'b0);
+     printf("rxTEST XMAC_HOST_INFO1 read=0x%h time=%0d\n", rd_data, get_time(LO));
+    mac_pio_class.xmac_pio_rd(base_addr + XMAC_HOST_INFO2, rd_data, 1'b0);
+     printf("rxTEST XMAC_HOST_INFO2 read=0x%h time=%0d\n", rd_data, get_time(LO));
+    mac_pio_class.xmac_pio_rd(base_addr + XMAC_HOST_INFO3, rd_data, 1'b0);
+     printf("rxTEST XMAC_HOST_INFO3 read=0x%h time=%0d\n", rd_data, get_time(LO));
+    mac_pio_class.xmac_pio_rd(base_addr + XMAC_HOST_INFO4, rd_data, 1'b0);
+     printf("rxTEST XMAC_HOST_INFO4 read=0x%h time=%0d\n", rd_data, get_time(LO));
+    mac_pio_class.xmac_pio_rd(base_addr + XMAC_HOST_INFO5, rd_data, 1'b0);
+     printf("rxTEST XMAC_HOST_INFO5 read=0x%h time=%0d\n", rd_data, get_time(LO));
+    mac_pio_class.xmac_pio_rd(base_addr + XMAC_HOST_INFO6, rd_data, 1'b0);
+     printf("rxTEST XMAC_HOST_INFO6 read=0x%h time=%0d\n", rd_data, get_time(LO));
+    mac_pio_class.xmac_pio_rd(base_addr + XMAC_HOST_INFO7, rd_data, 1'b0);
+     printf("rxTEST XMAC_HOST_INFO7 read=0x%h time=%0d\n", rd_data, get_time(LO));
+    mac_pio_class.xmac_pio_rd(base_addr + XMAC_HOST_INFO8, rd_data, 1'b0);
+     printf("rxTEST XMAC_HOST_INFO8 read=0x%h time=%0d\n", rd_data, get_time(LO));
+    mac_pio_class.xmac_pio_rd(base_addr + XMAC_HOST_INFO9, rd_data, 1'b0);
+     printf("rxTEST XMAC_HOST_INFO9 read=0x%h time=%0d\n", rd_data, get_time(LO));
+    mac_pio_class.xmac_pio_rd(base_addr + XMAC_HOST_INFO10, rd_data, 1'b0);
+     printf("rxTEST XMAC_HOST_INFO10 read=0x%h time=%0d\n", rd_data, get_time(LO));
+    mac_pio_class.xmac_pio_rd(base_addr + XMAC_HOST_INFO11, rd_data, 1'b0);
+     printf("rxTEST XMAC_HOST_INFO11 read=0x%h time=%0d\n", rd_data, get_time(LO));
+    mac_pio_class.xmac_pio_rd(base_addr + XMAC_HOST_INFO12, rd_data, 1'b0);
+     printf("rxTEST XMAC_HOST_INFO12 read=0x%h time=%0d\n", rd_data, get_time(LO));
+    mac_pio_class.xmac_pio_rd(base_addr + XMAC_HOST_INFO13, rd_data, 1'b0);
+     printf("rxTEST XMAC_HOST_INFO13 read=0x%h time=%0d\n", rd_data, get_time(LO));
+    mac_pio_class.xmac_pio_rd(base_addr + XMAC_HOST_INFO14, rd_data, 1'b0);
+     printf("rxTEST XMAC_HOST_INFO14 read=0x%h time=%0d\n", rd_data, get_time(LO));
+    mac_pio_class.xmac_pio_rd(base_addr + XMAC_HOST_INFO15, rd_data, 1'b0);
+     printf("rxTEST XMAC_HOST_INFO15 read=0x%h time=%0d\n", rd_data, get_time(LO));
+  }
+  if(rtl_mac[2] || rtl_mac[3]) {
+    
+    //mac_pio_class.bmac_pio_rd(base_addr + BMAC_HOST_INF0, rd_data, 1'b0);
+    // printf("rxTEST BMAC_HOST_INFO0 read=0x%h time=%0d\n", rd_data, get_time(LO));
+  }
+  */
+}
+//////////////////////////////////////////
+task rx_rand_test::config_zvt() {
+  bit[35:0] tmp;
+  integer Zdma, ii, jj;
+integer kk;
+  integer tcam_type;
+  bit [2:0] rand_rdc;
+  bit[199:0] key, mask;
+  bit[63:0] rd_data64, assoc_data;
+  bit[9:0] htmp;
+  bit frontdoor=0;
+
+  ////////////// ZCP-RDC
+  printf("rxTEST program zcp-rdc tables\n");
+  ii=0;
+  for(jj=0; jj<128; jj++) {
+    if(jj%16==0) Zdma=ii++;
+    else Zdma=random();
+    pktC.zcp_rdc(jj, Zdma);
+  }
+  ////////////// VLAN
+  printf("rxTEST setup vlan table\n");
+  //pktC.setup_vlan_table();
+  setup_vlan_table();	 //task in test
+
+  ////////////// TCAM
+  printf("rxTEST setup tcam tables\n");
+  backdoor_init_tcam();  //verilog task in n2_niu_tb_task.v, forces keys=0, masks=1
+
+  //gen_pio_drv.pio_rd(FFLP_TCP_CFLAG_MASK+FFLP_ADDRESS_RANGE, rd_data64);
+  //printf("rxTEST FFLP flag mask=0x%0h\n", rd_data64);
+
+#define CAM_LATENCY 19:16
+#define LLCSNAP 0
+  gen_pio_drv.pio_rd(fullFFLP_CONFIG, rd_data64);
+  rd_data64[CAM_LATENCY] = 4;
+  rd_data64[LLCSNAP] = 1;
+  printf("rxTEST Set FFLP Config cam_lat=%0d llc_snap=%0d\n", rd_data64[CAM_LATENCY], rd_data64[LLCSNAP]);
+  gen_pio_drv.pio_wr(fullFFLP_CONFIG, rd_data64);
+
+  tmp={12'h000, 12'hfff, 12'hfff}; //disc[34:24], tsel[23:12], ipaddr[11:0]
+  tmp[23:0]=random();  //tsel, ipaddr
+  if(do_frag) tmp[19:16]=4'b1111;   //do tcam lookup for frag pkts (frag only v4)
+  if(get_plus_arg(CHECK, "DISABLE_TCAM")) tmp[23:12] = 0;
+  if(do_rand_key_disc) tmp[35:24]=random() && random();
+  printf("rxTEST tcam_key_reg disc=0x%3h  tsel=0x%3h  ipaddr=0x%3h\n", tmp[35:24], tmp[23:12], tmp[11:0]);
+  pktC.program_tcam_key_reg(tmp[35:24], tmp[23:12], tmp[11:0]);
+
+#define PID_ESP 50
+#define PID_AH 51
+#define PID_TCP 6
+#define PID_UDP 17
+#define PID_SCTP 132
+
+  for(jj=0; jj<num_tcam_entries; jj++) {
+    //////////////////key
+    key=200'h0;
+
+    if(do_frag && (jj==frag_id || jj==frag_id_tcp)) {
+      key[NOPORT] = 1;
+      key[CLS_CODE] = CCODE_V4_TCP;
+      key[PID_V4] = PID_TCP;
+      key[L2RDC_V4] = random()%8; //l2_drc_table_num, 0-7
+      key[TOS_V4] = random();	  //TOS
+      key[TCP_SP_V4] = random();  //TCP SPort or SPI_hi
+      key[TCP_DP_V4] = random();  //TCP DPort or SPI_lo
+      key[IP_SA_V4] = random();   //IPv4 SA
+      key[IP_DA_V4] = random();   //IPv4 DA
+    }
+    else {
+      //key[ESP_AH]=random();
+      tcam_type=random()%6;	//give more priority to IPv4
+      case(tcam_type) {
+        0,1,2: { //IPv4
+	  key[L2RDC_V4] = random()%8; //l2_drc_table_num, 0-7
+ 	  key[NOPORT] = 0;	      //noport
+	  key[TOS_V4] = random();     //TOS
+	  key[TCP_SP_V4] = random();  //TCP SPort or SPI_hi
+	  key[TCP_DP_V4] = random();  //TCP DPort or SPI_lo
+	  key[IP_SA_V4] = random();   //IPv4 SA
+	  key[IP_DA_V4] = random();   //IPv4 DA
+  	  key[CLS_CODE] = CCODE_V4_TCP+random()%4;  //hdr class index, 8=TCP 9=UDP 10=AH/ESP 11=SCTP
+          case(key[CLS_CODE]) {
+            CCODE_V4_TCP: key[PID_V4] = PID_TCP;
+            CCODE_V4_UDP: key[PID_V4] = PID_UDP;
+            CCODE_V4_AHESP: key[PID_V4] = key[ESP_AH]? PID_ESP:PID_AH;
+            CCODE_V4_SCTP: key[PID_V4] = PID_SCTP;
+          }
+        }
+        3,4: { //IPv6
+          key[L2RDC_V6] = random()%8; //l2_drc_table_num, 0-7
+          key[TOS_V6] = random();     //TOS
+	  key[TCP_SP_V6] = random();  //TCP SPort or SPI_hi
+	  key[TCP_DP_V6] = random();  //TCP DPort or SPI_lo
+	  key[IP_V6] = {random(), random(), random(), random()};	//IPv6 DA or SA
+          key[CLS_CODE] = CCODE_V6_TCP+random()%4; //hdr class index, 12=TCP 13=UDP 14=AH/ESP 15=SCTP
+          case(key[CLS_CODE]) {
+            CCODE_V6_TCP: key[NXT_HDR] = PID_TCP;
+            CCODE_V4_UDP: key[NXT_HDR] = PID_UDP;
+            CCODE_V6_AHESP: key[NXT_HDR] = key[ESP_AH]? PID_ESP:PID_AH;
+            CCODE_V6_SCTP: key[NXT_HDR] = PID_SCTP;
+          }
+        }
+        5: { //EtherType (ARP/RARP)
+          key[CLS_CODE] = 16+random()%2;   //header class index, 16=ARP 17=RARP
+          key[B11_AFTER_ETHER] = {random(),random(),random()}; //first 11B after EtherType
+        }
+    }
+  }
+    //////////////////assoc_data
+#define ASSOC_RDC 9:7
+#define ASSOC_OFFSET 6:2
+#define TRES 11:10
+#define DISC 12
+#define V4_ECC_CHK 13
+#define ZFVLD 1	   //used in Neptune
+     assoc_data={random(),random()};
+     assoc_data[ZFVLD]=0;   //set zero because we aren't doing zero copy function
+     if(do_rand_ad_disc && (random()%100)<10) assoc_data[DISC]=1;
+     else assoc_data[DISC]=0;
+     if(key[NOPORT]) {
+       assoc_data[TRES]='b11;
+     }
+     else assoc_data[TRES]=random()%4;
+			//b01=use offset specified, terminate flow
+			//b10=override L2 RDC num, continue flow lookup
+			//b11=override L2 RDC num, use offset specified
+			//b00=use L2 RDC num, continue flow lookup
+    //The last entry (=frag_id) which has noport bit set should not
+    //have do_ecc bit set. We dont do ecc for wildcard entries.
+    if(do_frag && (jj==frag_id)) {
+	assoc_data[V4_ECC_CHK]='b0;
+    }
+    //////////////////mask
+     if(do_rand_mask) mask={random(), random(), random(), random(), random(), random(), random()};
+     else mask={200{1'b1}};
+     if(do_frag && jj==frag_id) {
+       mask=0;
+       mask[NOPORT]=1;
+       frontdoor=1;    //frontdoor load this entry/mask in tcam
+     }
+     else if(do_frag && jj==frag_id_tcp) {
+       mask=0;
+       mask[NOPORT]=1;
+       mask[CLS_CODE]=6'h3f;
+       frontdoor=1;    //frontdoor load this entry/mask in tcam
+     }
+     else { frontdoor=0; }
+
+     //printf("rxTEST program_tcam Index=%0d key=0x%0h data=0x%0h mask=0x%0h time=%0d\n", jj, key, assoc_data, mask, get_time(LO));
+     pktC.program_tcam_key_asdata(jj, key, assoc_data, mask, frontdoor);
+  }
+  for(jj=0; jj<num_tcam_repeats; jj++) {
+    ii=random()%(num_tcam_entries-2);   //just don't do last 2 even if !do_frag
+    key=pktC.get_tcam_shadow(ii);          //get from shadows
+    assoc_data=pktC.get_assoc_data(ii);
+    mask=pktC.get_tcam_mask(ii);
+    frontdoor=1;    //frontdoor these now
+
+    Zdma=(random()%4)+1;  //(dummy var) number of entries to write to 1-4
+    printf("rxTEST Index=%0d asdata=0x%0h repeat=%0d\n", ii, assoc_data, Zdma);
+    rand_rdc = random()%8;
+    repeat(Zdma) {    //write to 1-4 other locations
+      kk=random()%(num_tcam_entries-2);
+      printf("Avoid Table Aliasing: making sure all identical entries have different TCAM-resulted rdc/offset\n");
+      assoc_data[ASSOC_RDC] = rand_rdc ++;
+      printf("rxTEST to Index=%0d num_tcam_entries=%0d\n", kk, num_tcam_entries);
+      pktC.program_tcam_key_asdata(kk, key, assoc_data, mask, frontdoor);
+    }
+  }
+
+  //////////////////HASH1
+  // program the flow_key_reg for all 8 classes
+#define L4_0 3:2    // 'b01 is reserved
+#define L4_1 1:0    // 'b01 is reserved
+  if(do_rand_hash_mask) {
+    htmp=random(); if(htmp[L4_0]=='b01) htmp[L4_0]='b11;
+                   if(htmp[L4_1]=='b01) htmp[L4_1]='b10;
+                   pktC.prog_flow_key(8,  htmp); // TCP
+      printf("rxTEST prog_flow_key 8  TCP=0x%h\n", htmp);
+
+    htmp={random(), 4'b1010}; pktC.prog_flow_key(9,  htmp); 
+      printf("rxTEST prog_flow_key 9  TCP=0x%h\n", htmp);
+
+    htmp={random(), 4'b1111}; pktC.prog_flow_key(10, htmp); 
+      printf("rxTEST prog_flow_key 10  TCP=0x%h\n", htmp);
+
+    htmp=random(); if(htmp[L4_0]=='b01) htmp[L4_0]='b11;
+                   if(htmp[L4_1]=='b01) htmp[L4_1]='b00;
+                   pktC.prog_flow_key(11, htmp); // SCTP 
+      printf("rxTEST prog_flow_key 11  TCP=0x%h\n", htmp);
+
+    htmp=random(); if(htmp[L4_0]=='b01) htmp[L4_0]='b00;
+                   if(htmp[L4_1]=='b01) htmp[L4_1]='b11;
+                   pktC.prog_flow_key(12, htmp); // TCPV6 
+      printf("rxTEST prog_flow_key 12  TCP=0x%h\n", htmp);
+
+    htmp={random(), 4'b1010}; pktC.prog_flow_key(13, htmp); 
+      printf("rxTEST prog_flow_key 13  TCP=0x%h\n", htmp);
+
+    htmp={random(), 4'b1111}; pktC.prog_flow_key(14, htmp); 
+      printf("rxTEST prog_flow_key 14  TCP=0x%h\n", htmp);
+
+    htmp=random();  if(htmp[L4_0]=='b01) htmp[L4_0]='b10;
+                    if(htmp[L4_1]=='b01) htmp[L4_1]='b00;
+                    pktC.prog_flow_key(15, htmp); // SCTPV6
+      printf("rxTEST prog_flow_key 15  TCP=0x%h\n", htmp);
+  }
+  else {
+    pktC.prog_flow_key(8,  10'h3ff); // TCP
+    pktC.prog_flow_key(9,  10'h3fa); 
+    pktC.prog_flow_key(10, 10'h3ff); 
+    pktC.prog_flow_key(11, 10'h3ff); // SCTP 
+    pktC.prog_flow_key(12, 10'h3ff); // TCPV6 
+    pktC.prog_flow_key(13, 10'h3fa); 
+    pktC.prog_flow_key(14, 10'h3ff); 
+    pktC.prog_flow_key(15, 10'h3ff); // SCTPV6
+  }
+  /*
+  //check shadow
+  for(jj=0; jj<12; jj++) {
+    printf("rxTEST pktC.FFLP_Model.tcam_key_reg %0d disc=%0d sel=%0d, ipaddr=%0d\n", jj,
+    pktC.FFLP_Model.tcam_key_reg[jj].tcam_disc, \
+    pktC.FFLP_Model.tcam_key_reg[jj].tcam_sel, \
+    pktC.FFLP_Model.tcam_key_reg[jj].tcam_ipaddr);
+  }
+  */
+  /*
+  //read to check
+  for(jj=0; jj<128; jj++) {
+    gen_pio_drv.pio_rd(ZCP_RDC_TBL+(8*jj), rd_data64);
+    printf("rxTEST read ZCP_RDC_TBL %0d=%0d\n", jj, rd_data64);
+  }
+  */
+  /*
+  //read to check
+  for(jj=0; jj<num_tcam_entries; jj++) {
+    printf("rxTEST shadow %0d = 0x%h\n", jj, pktC.get_tcam_shadow(jj));
+  }
+  */
+}
+////////////////////////////////////////////////////////////
+task rx_rand_test::setup_vlan_table() {
+  bit[2:0] rdctbl0, rdctbl1, rdctbl2, rdctbl3;
+  bit parity0, parity1;
+  bit vpr0, vpr1, vpr2, vpr3;
+  integer ii;
+  bit[17:0] vlan_entry;
+  bit[3:0] tmp;
+
+#define BACKDOOR 1
+  for(ii=0; ii<4096; ii++) {
+    rdctbl0 = random();
+    rdctbl1 = random();
+    rdctbl2 = random();
+    rdctbl3 = random();
+    tmp=random();
+    vpr3=tmp[3]; vpr2=tmp[2]; vpr1=tmp[1]; vpr0=tmp[0];
+    parity0 = ^{vpr1, rdctbl1, vpr0, rdctbl0};
+    parity1 = ^{vpr3, rdctbl3, vpr2, rdctbl2};
+    if(corrupt_vlan_parity) 
+      if(random()%100<5) {
+        tmp=random();
+        printf("TEST corrupt_vlan_parity old0=%b old1=%b\n", parity0, parity1);
+        if(tmp[0]) parity0=~parity0;
+        else parity1=~parity1;
+        printf("TEST corrupt_vlan_parity new0=%b new1=%b\n", parity0, parity1);
+      }
+    vlan_entry = {vpr3,rdctbl3,vpr2,rdctbl2,vpr1,rdctbl1,vpr0,rdctbl0};
+    pktC.prog_vlan_entry(ii, vlan_entry, BACKDOOR);
+    //printf("rxTEST VLAN i=%0d vpr1=%d rdctbl1=%0d vpr0=%d rdctbl0=%0d 0x%h\n", ii, vpr1, rdctbl1, vpr0, rdctbl0, vlan_entry);
+    //printf("rxTEST VLAN i=%0d vpr3=%d rdctbl3=%0d vpr2=%d rdctbl2=%0d 0x%h\n", ii, vpr3, rdctbl3, vpr2, rdctbl2, vlan_entry);
+  }
+
+}
+////////////////////////////////////////////////////////////
+function integer rx_rand_test::set_pkt_len(integer param, integer max, integer min, integer pkt_num) {
+  //printf("rxTEST set_pkt_len  min=%0d max=%0d param=%0d\n", min, max, param);
+  case(param) {
+    0: set_pkt_len = min + random()%(max-min);   //random between min and max
+    1: set_pkt_len = min + ((pkt_num*byte_sweep)%(max-min+1)); //byte sweep between min and max
+    2: set_pkt_len = min;                          //constant size
+  }
+  printf("rxTEST set_pkt_len=%0d\n", set_pkt_len);
+}
+////////////////////////////////////////////////////////////
+task rx_rand_test::close() {
+  bit[39:0] base_addr;
+  bit[31:0] rd_data;
+  bit[63:0] rd_data64;
+  bit[15:0] ipp_step='h8000;
+  integer ii, mac_id;
+
+  if(get_plus_arg(CHECK, "RX_LAST_PKT_LATENCY="))
+    repeat(get_plus_arg(NUM, "RX_LAST_PKT_LATENCY=")) @(posedge CLOCK);
+  else repeat(5000) @(posedge CLOCK);
+
+  if(send_runts==0) {
+    if(rtl_mac[0]) {
+      base_addr=XPCS0_BASE;
+      mac_id=0;
+      gen_pio_drv.pio_rd(FZC_IPP_BASE_ADDRESS+IPP_TCP_CHKSUM_ERR_COUNTER+(mac_id*ipp_step), rd_data64);
+      printf("rxTEST mac_id=%0d IPP_TCP_CHKSUM_ERR_COUNTER(%0h)=%0d\n", mac_id, FZC_IPP_BASE_ADDRESS+IPP_TCP_CHKSUM_ERR_COUNTER+(mac_id*ipp_step), rd_data64[13:0]);
+
+      mac_pio_class.xmac_pio_rd(base_addr + XPCS_PACKET_COUNTER, rd_data, 1'b0);
+      printf("rxTEST mac_id=%0d XPCS_PACKET_COUNTER(%0h)=%0d\n", mac_id, base_addr + XPCS_PACKET_COUNTER, rd_data[15:0]);
+      if(rd_data[15:0] != num_pkts_port[mac_id])
+        be_msg.print(e_mesg_error, "niu_rx_rand_template", "close", "mac=%0d XPCS_PACKET_COUNTER exp=%0d got=%0d\n", mac_id, num_pkts_port[mac_id], rd_data[15:0]);
+    }
+    if(rtl_mac[1]) {
+      base_addr=XPCS1_BASE;
+      mac_id=1;
+      gen_pio_drv.pio_rd(FZC_IPP_BASE_ADDRESS+IPP_TCP_CHKSUM_ERR_COUNTER+(mac_id*ipp_step), rd_data64);
+      printf("rxTEST mac_id=%0d IPP_TCP_CHKSUM_ERR_COUNTER(%0h)=%0d\n", mac_id, FZC_IPP_BASE_ADDRESS+IPP_TCP_CHKSUM_ERR_COUNTER+(mac_id*ipp_step), rd_data64[13:0]);
+
+      mac_pio_class.xmac_pio_rd(base_addr + XPCS_PACKET_COUNTER, rd_data, 1'b0);
+      printf("rxTEST mac_id=%0d XPCS_PACKET_COUNTER(%0h)=%0d\n", mac_id, base_addr + XPCS_PACKET_COUNTER, rd_data[15:0]);
+      if(rd_data[15:0] != num_pkts_port[mac_id])
+        be_msg.print(e_mesg_error, "niu_rx_rand_template", "close", "mac=%0d XPCS_PACKET_COUNTER exp=%0d got=%0d\n", mac_id, num_pkts_port[mac_id], rd_data[15:0]);
+    }
+    if(rtl_mac[2] || rtl_mac[3]) {
+      printf("rxTEST Bmacs(2,3) do not have packet counter\n");
+    }
+
+    mac_pio_class.xmac_pio_rd(base_addr+XPCS_STATUS1, rd_data, 1'b0);
+    printf("rxTEST XPCS_STATUS1 = 0x%h\n", rd_data);
+    if(rd_data[2] != 1)
+      be_msg.print(e_mesg_error, "niu_rx_rand_template", "close", "mac=%0d Link not up\n", mac_id);
+  }
+
+  for(ii=0; ii<16; ii++) {  //misc drop counters
+    rdmc.rx_dma[ii].pio_rd_RX_MISC_DROP(rd_data64);
+    printf("rxTEST read addr=0x%0h dma%0d_misc_drop data=%0d time=%0d\n", RX_MISC_START + RXDMA_STEP*ii, ii, rd_data64, get_time(LO));
+  }
+  for(ii=0; ii<16; ii++) {
+    gen_pio_drv.pio_rd(RX_DMA_CTL_STAT_START + RXDMA_STEP*ii, rd_data64);
+    printf("rxTEST read addr=0x%0h dma%0d_stat data=0x%0h time=%0d\n", RX_DMA_CTL_STAT_START + RXDMA_STEP*ii, ii, rd_data64, get_time(LO));
+  }
+
+  
+  //MAC_CRC_ER_CNT
+
+  if(do_wred) {
+    for(ii=0; ii<16; ii++) {  //wred drop counters
+      rdmc.rx_dma[ii].pio_rd_RED_DISC(rd_data64);
+      printf("rxTEST read addr=0x%0h dma%0d_wred_drop data=%0d time=%0d\n", RED_DIS_CNT_START+RED_DIS_CNT_STEP*ii, ii, rd_data64, get_time(LO));
+    }
+  }
+}
+/////////////////////////////////////////////////////////
+task rx_rand_test::rand_weights() {
+  integer mac_id;
+  bit[15:0] weight;
+  bit is_alive[4]=4'b0;
+  integer slop=0, base=base_weight01;
+  bit add_slop=1;
+
+  for(mac_id=0; mac_id<4; mac_id++) is_alive[mac_id]=0;   //initialize
+  if(rtl_mac[0]) is_alive[0]=1;
+  if(rtl_mac[1]) is_alive[1]=1;
+  if(rtl_mac[2]) is_alive[2]=1;
+  if(rtl_mac[3]) is_alive[3]=1;
+  while(sending_pkts) {     // program weights for each port
+    mac_id=random()%4;
+    if(is_alive[mac_id]) {   //only do for active port
+      if(!weights_50_1) {    //10:10:1:1
+        base=base_weight01;
+        if(mac_id==2 || mac_id==3) base=base_weight01/10;
+      }
+      else {                   //50:50:1:1
+        base=base_weight01;
+        if(mac_id==2 || mac_id==3) base=base_weight01/50;
+      }
+
+      slop=(base*weight_margin)/100;
+      add_slop=random();
+      if(add_slop) weight=base+(random()%slop);
+      else weight=base-(random()%slop);
+
+      printf("rxTEST mac_id=%0d base=0x%0h slop=0x%0d weight=0x%0h time=%0d\n", mac_id, base, slop, weight, get_time(LO));
+      //printf("rxTEST mac_id=%0d weight=0x%0h time=%0d\n", mac_id, weight, get_time(LO));
+      rdmc.RxDrrIntf.ProgramDRRWeight(mac_id, weight);
+    }
+    delay(random()%2000);
+  }
+}
+/////////////////////////////////////////////////////////
+task rx_rand_test::rand_flush() {
+  integer dma;
+
+  while(sending_pkts) {
+    delay(do_flush);
+    dma=random()%16;
+    printf("rxTEST rand flush dma=%0d time=%0d\n", dma, get_time(LO));
+    rdmc.rx_dma[dma].flush_rcr(1);
+  }
+}
+/////////////////////////////////////////////////////////
+task rx_rand_test::rand_dis_dma() {
+  integer dma;
+  bit[63:0] rd_data64;
+#define EN 31
+#define QST 29
+
+  //while(sending_pkts) {
+  while(second_to_last_packet_sent!=={rtl_mac[3], rtl_mac[2], rtl_mac[1], rtl_mac[0]}) {
+    dma=random()%16;
+    delay(do_rand_dis_dma);
+    printf("rxTEST rand_disable dma=%0d disable time=%0d\n", dma, get_time(LO));
+    rdmc.rx_dma[dma].pio_rd_RXDMA_CFIG1(rd_data64);
+    rd_data64[EN]=0;
+    rdmc.rx_dma[dma].pio_wr_RXDMA_CFIG1(rd_data64);
+
+    delay(dma_off_time);
+    printf("rxTEST rand_disable dma=%0d enable time=%0d\n", dma, get_time(LO));
+    rd_data64[EN]=1;
+    rdmc.rx_dma[dma].pio_wr_RXDMA_CFIG1(rd_data64);
+  }
+}
+/////////////////////////////////////////////////////////
+#define TCAM_READ  3'b001
+#define TCAM_WRITE 3'b000
+#define ASSO_READ  3'b101
+#define ASSO_WRITE 3'b100
+#define TCAM_COMP  3'b010
+#define STAT 17
+#define MATCH 16
+#define LOC 9:0
+
+task rx_rand_test::tcam_compare() {
+  bit[63:0] data64;
+  bit[9:0] tcam_index;
+  bit[199:0] key, mask;
+  bit status=0;
+  integer ii;
+
+    status=0;
+    while(status==0) {
+      gen_pio_drv.pio_rd(fullFFLP_CAM_CONTROL, data64);
+      status=data64[STAT];
+    }
+    tcam_index=random()%(num_tcam_entries-1);   
+    printf("rxTEST reg_access tcam_compare index=%0d\n", tcam_index);
+    key=pktC.get_tcam_shadow(tcam_index);
+    mask=pktC.get_tcam_mask(tcam_index);
+
+    //search and compare for lowest entry - use mask&key
+    for(ii=0; ii<num_tcam_entries; ii++) {
+      //printf("rxTEST reg_access %0d skey=0x%0h smask=0x%0h\n",ii, pktC.get_tcam_shadow(ii), pktC.get_tcam_mask(ii));
+      //printf("rxTEST reg_access %0d ikey=0x%0h imask=0x%0h\n",ii, key, mask);
+      if( pktC.get_tcam_shadow(ii)==key && pktC.get_tcam_mask(ii)==mask ) {
+        tcam_index=ii;
+        break;
+      }
+    }
+    printf("rxTEST reg_access tcam_compare index=%0d key=0x%h mask=0x%h\n", tcam_index, key, mask);
+
+    gen_pio_drv.pio_wr(fullFFLP_CAM_KEY_REG0, key[199:192]);
+    gen_pio_drv.pio_wr(fullFFLP_CAM_KEY_REG1, key[191:128]);
+    gen_pio_drv.pio_wr(fullFFLP_CAM_KEY_REG2, key[127:64]);
+    gen_pio_drv.pio_wr(fullFFLP_CAM_KEY_REG3, key[63:0]);
+    gen_pio_drv.pio_wr(fullFFLP_CAM_MASK_REG0, mask[199:192]);
+    gen_pio_drv.pio_wr(fullFFLP_CAM_MASK_REG1, mask[191:128]);
+    gen_pio_drv.pio_wr(fullFFLP_CAM_MASK_REG2, mask[127:64]);
+    gen_pio_drv.pio_wr(fullFFLP_CAM_MASK_REG3, mask[63:0]);
+
+    data64={43'h0, TCAM_COMP, 8'h0, tcam_index};
+    gen_pio_drv.pio_wr(fullFFLP_CAM_CONTROL, data64);
+    status=0;
+    while(status==0) {
+      gen_pio_drv.pio_rd(fullFFLP_CAM_CONTROL, data64);
+      status=data64[STAT];
+    }
+    if(data64[MATCH]!==1) printf("rxTEST reg_access tcam compare match=0 ERROR time=%0d\n", get_time(LO));
+    if(data64[LOC]!==tcam_index) printf("rxTEST reg_access tcam compare loc=%0d exp=%0d ERROR time=%0d\n", data64[LOC], tcam_index, get_time(LO));
+}
+////////////////////////////////////////
+task rx_rand_test::reg_access() {
+  bit[39:0] address;
+  bit[63:0] data64;
+  bit[9:0] tcam_index;
+  bit[199:0] key, mask;
+  integer misc_drop_index=0, wred_drop_index=0, cfig1_index=0, status_index=0;
+#define EN 31
+
+  while(sending_pkts) {
+
+    tcam_compare();
+
+      tcam_index=random()%num_tcam_entries;
+      key=fflp_util.pio_rd_tcam_key(tcam_index, mask);
+      printf("rxTEST reg_access tcam_read index=%0d key=0x%0h mask=0x%0h time=%0d\n", 
+                                          tcam_index, key, mask, get_time(LO));
+
+      printf("rxTEST reg_access tcam_write index=%0d key=0x%0h mask=0x%0h time=%0d\n", 
+                                           tcam_index, key, mask, get_time(LO));
+      fflp_util.pio_wr_tcam_key(tcam_index, key, mask);
+
+
+      tcam_index=random()%num_tcam_entries;
+      data64=fflp_util.pio_rd_tcam_asdata(tcam_index);
+      printf("rxTEST reg_access tcam_read_asdata=0x%0h index=%0d time=%0d\n", data64, tcam_index, get_time(LO));
+
+      printf("rxTEST reg_access tcam_read_asdata=0x%0h index=%0d time=%0d\n", data64, tcam_index, get_time(LO));
+      fflp_util.pio_wr_tcam_asdata(tcam_index, data64);
+
+    //misc drop counters
+    rdmc.rx_dma[misc_drop_index].pio_rd_RX_MISC_DROP(data64);
+    printf("rxTEST reg_access read addr=0x%0h dma%0d_misc_drop data=%0d time=%0d\n", RX_MISC_START + RXDMA_STEP*misc_drop_index, misc_drop_index, data64, get_time(LO));
+    if(data64!==0)
+      printf("rxTEST reg_access read WARNING dma%0d MISC DROP=%0d time=%0d\n", misc_drop_index, data64, get_time(LO));
+    if(misc_drop_index==15) misc_drop_index=0;
+    else misc_drop_index++;
+
+
+    //wred drop counters
+    if(do_wred) {
+      rdmc.rx_dma[wred_drop_index].pio_rd_RED_DISC(data64);
+      printf("rxTEST read addr=0x%0h dma%0d_wred_drop data=%0d time=%0d\n", RED_DIS_CNT_START+RED_DIS_CNT_STEP*wred_drop_index, wred_drop_index, data64, get_time(LO));
+      if(wred_drop_index==15) wred_drop_index=0;
+      else wred_drop_index++;
+    }
+
+
+    //check if dma gets disabled
+    rdmc.rx_dma[cfig1_index].pio_rd_RXDMA_CFIG1(data64);
+    printf("rxTEST reg_access read addr=0x%0h dma%0d_cfigA data=%0d time=%0d\n", RXDMA_CFIG1+RXDMA_STEP*cfig1_index, cfig1_index, data64, get_time(LO));
+    if(data64[EN]==0 && do_rand_dis_dma==0)
+      printf("rxTEST reg_access read FATAL ERROR dma%0d disabled time=%0d\n", cfig1_index, get_time(LO));
+    if(cfig1_index==15) cfig1_index=0;
+    else cfig1_index++;
+
+
+    //status regs
+    gen_pio_drv.pio_rd(RX_DMA_CTL_STAT_START + RXDMA_STEP*status_index, data64);
+    printf("rxTEST reg_access read addr=0x%0h dma%0d status data=0x%h_%h time=%0d\n", RX_MISC_START + RXDMA_STEP*status_index, status_index, data64[63:32], data64[31:0], get_time(LO));
+    if(data64[32]==1) printf("rxTEST reg_access FATAL ERROR dma%0d STATUS_CFIGLOGPAGE=1 time=%0d\n", status_index, get_time(LO));
+    if(data64[33]==1) printf("rxTEST reg_access FATAL ERROR dma%0d STATUS_RBRLOGPAGE=1 time=%0d\n", status_index, get_time(LO));
+    if(data64[34]==1) printf("rxTEST reg_access FATAL ERROR dma%0d STATUS_RBRFULL=1 time=%0d\n", status_index, get_time(LO));
+    //if(data64[35]==1) printf("rxTEST reg_access ERROR dma%0d STATUS_RBR_EMPTY=1 time=%0d\n", status_index, get_time(LO));
+    if(data64[36]==1) printf("rxTEST reg_access FATAL ERROR dma%0d STATUS_RCRFULL=1 time=%0d\n", status_index, get_time(LO));
+    if(data64[37]==1) printf("rxTEST reg_access FATAL ERROR dma%0d STATUS_RCRINCON=1 time=%0d\n", status_index, get_time(LO));
+    if(data64[38]==1) printf("rxTEST reg_access ERROR dma%0d STATUS_CONFIG_ERR=1 time=%0d\n", status_index, get_time(LO));
+    if(data64[39]==1) printf("rxTEST reg_access WARN dma%0d STATUS_RCR_SHADOW_FULL=1 time=%0d\n", status_index, get_time(LO));
+    if(data64[40]==1) printf("rxTEST reg_access WARNING dma%0d STATUS_RBR_PRE_EMTY=1 time=%0d\n", status_index, get_time(LO));
+    if(data64[43]==1) printf("rxTEST reg_access FATAL ERROR dma%0d STATUS_RBR_PRE_PAR=1 time=%0d\n", status_index, get_time(LO));
+    if(data64[44]==1) printf("rxTEST reg_access FATAL ERROR dma%0d STATUS_CR_SHA_PAR=1 time=%0d\n", status_index, get_time(LO));
+    if(data64[49]==1) printf("rxTEST reg_access FATAL ERROR dma%0d STATUS_RCR_ACK_ERR=1 time=%0d\n", status_index, get_time(LO));
+    if(data64[50]==1) printf("rxTEST reg_access FATAL ERROR dma%0d STATUS_RSP_DAT_ERR=1 time=%0d\n", status_index, get_time(LO));
+    if(data64[51]==1) printf("rxTEST reg_access FATAL ERROR dma%0d STATUS_BYTE_EN_BUS=1 time=%0d\n", status_index, get_time(LO));
+    if(data64[52]==1) printf("rxTEST reg_access FATAL ERROR dma%0d STATUS_RSP_CNT_ERR=1 time=%0d\n", status_index, get_time(LO));
+    if(data64[53]==1) printf("rxTEST reg_access FATAL ERROR dma%0d STATUS_RBR_TMOUT=1 time=%0d\n", status_index, get_time(LO));
+    if(status_index==15) status_index=0;
+    else status_index++;
+
+
+    gen_pio_drv.pio_rd(fullFFLP_TCAM_ERR, data64);
+    printf("rxTEST read addr=0x%0h FFLP_TCAM_ERR data=0x%h time=%0d\n", FFLP_TCAM_ERR, data64, get_time(LO));
+    if(data64[31]==1) printf("rxTEST reg_access FFLP_TCAM ERR time=%0d\n", get_time(LO));
+    if(data64[30]==1) printf("rxTEST reg_access FFLP_TCAM P_ECC time=%0d\n", get_time(LO));
+    if(data64[29]==1) printf("rxTEST reg_access FFLP_TCAM MULT time=%0d\n", get_time(LO));
+  }
+}
+////////////////////////////////////////
+task rx_rand_test::rx_dma_config(integer dma_ch) {
+  bit[63:0] rbr_config_B_data=0, rd_data64;
+  integer blk_size, buf_siz0, buf_siz1, buf_siz2, vld0=1, vld1=1, vld2=1;
+  bit tr_addr;
+  bit[5:0] tmp;
+  bit[15:0] rcr_len;
+
+  void=rand_dma_parameters.randomize();
+
+  if(do_rand_vld) {
+    tmp=random();
+    vld0=tmp[0]||tmp[3]; vld1=tmp[1]||tmp[4]; vld2=tmp[2]||tmp[5];
+    if({vld0,vld1,vld2}==3'b000) vld2=1;  //not all zero
+  }
+
+  printf("rxTEST initalizing dma channel=%0d =====================\n", dma_ch);
+  buf_siz0 = rand_dma_parameters.buf_siz0;
+  buf_siz1 = rand_dma_parameters.buf_siz1;
+  buf_siz2 = rand_dma_parameters.buf_siz2;
+  blk_size = rand_dma_parameters.blk_size;
+
+  case(blk_size) {
+    4: rbr_config_B_data[25:24] = 2'b00;
+    8: rbr_config_B_data[25:24] = 2'b01;
+    16: rbr_config_B_data[25:24] = 2'b10;
+    32: rbr_config_B_data[25:24] = 2'b11;
+  }
+  rbr_config_B_data[23] = vld2;
+  rbr_config_B_data[17:16] = 2'b00;
+  case(buf_siz2) {
+    2048: rbr_config_B_data[17:16] = 2'b00;
+    4096: rbr_config_B_data[17:16] = 2'b01;
+    8192: rbr_config_B_data[17:16] = 2'b10;
+    16384: rbr_config_B_data[17:16] = 2'b11;
+  }
+  rbr_config_B_data[15] = vld1;
+  rbr_config_B_data[9:8] = 2'b00;
+  case(buf_siz1) {
+    1024: rbr_config_B_data[9:8] = 2'b00;
+    2048: rbr_config_B_data[9:8] = 2'b01;
+    4096: rbr_config_B_data[9:8] = 2'b10;
+    8192: rbr_config_B_data[9:8] = 2'b11;
+  }
+  rbr_config_B_data[7]= vld0;
+  case(buf_siz0) {
+    256: rbr_config_B_data[1:0] = 2'b00;
+    512: rbr_config_B_data[1:0] = 2'b01;
+    1024: rbr_config_B_data[1:0] = 2'b10;
+    2048: rbr_config_B_data[1:0] = 2'b11;
+  }
+  printf("rxTEST dma=%0d Rx Block size=%0d\n", dma_ch, blk_size);
+  printf("rxTEST dma=%0d Rx Buf Siz0=%0d Siz1=%0d Siz2=%0d\n", dma_ch, buf_siz0, buf_siz1, buf_siz2);
+  printf("rxTEST dma=%0d Rx Buf vld0=%0d vld1=%0d vld2=%0d\n", dma_ch, vld0, vld1, vld2);
+
+  dring_len[dma_ch]=rand_dma_parameters.desc_ring_length;
+  if(kick_mul16) initial_kick[dma_ch] = (rand_dma_parameters.initial_kick/16)*16;
+  else           initial_kick[dma_ch] = rand_dma_parameters.initial_kick;
+  printf("rxTEST dma=%0d dring_length=0x%0h initial_kick=0x%0h\n", dma_ch, dring_len[dma_ch], initial_kick[dma_ch]);
+
+  cring_len[dma_ch] = rand_dma_parameters.comp_ring_length;
+  printf("rxTEST dma=%0d cring_len=0x%0h\n", dma_ch, cring_len[dma_ch]);
+  //tail_ptr[dma_ch] = initial_kick[dma_ch];
+
+  tr_addr=1;
+  rdmc.rx_dma[dma_ch].random_page_alloc=1;
+
+  if(get_plus_arg(CHECK, "ALL_DESCRIPTORS_IN_ONE_PAGE"))
+    rdmc.rx_dma[dma_ch].pkts_in_alternate_pages=0;
+  else
+    rdmc.rx_dma[dma_ch].pkts_in_alternate_pages=1;
+
+  if(hdr_18B_en) {
+     tmp=random();
+     if(tmp[0]) { rdmc.rx_dma[dma_ch].ctrl_hdr_len = 18;
+                  printf("rxTEST dma=%0d using 18B hdr\n", dma_ch);
+     }
+  }
+
+  //rdmc.InitRXDMA(dma_ch, dring_len[dma_ch], cring_len[dma_ch], rbr_config_B_data, initial_kick[dma_ch], tr_addr, 0);  //0=no holes, 200=random holes
+
+  rdmc.InitRXDMA(dma_ch, dring_len[dma_ch], cring_len[dma_ch], rbr_config_B_data, initial_kick[dma_ch], tr_addr);
+
+  if(get_plus_arg(CHECK, "DONT_WAIT_FOR_DESCR_LOAD")) {}   
+  else if(initial_kick[dma_ch]!==0) {
+    //RBR_STAT reg is first loaded with initial_kick value, as descriptors are read, it decrements
+    rbr_config_B_data=(initial_kick[dma_ch]);    //use rbr_config_B_data as dummy 64 bit reg
+    //printf("rxTEST read rbr_kick until initial kick loaded kick=%0h reg=%0h\n", initial_kick[dma_ch], rbr_config_B_data[15:0]);
+    while( !(rbr_config_B_data[15:0]<initial_kick[dma_ch]) ) {
+      gen_pio_drv.pio_rd(RBR_STAT + dma_ch*RXDMA_STEP, rbr_config_B_data);
+      //printf("rxTEST read rbr_kick until initial kick loaded kick=%0h reg=%0h\n", initial_kick[dma_ch], rbr_config_B_data[15:0]);
+      repeat(20) {@(CLOCK);}
+    }
+  }
+
+#define RCR_LEN 63:48
+#define THRE_SYN 31:20
+#define WIN_SYN 19:16
+#define THRE 15:4
+#define WIN 3:0
+  if(do_wred) {
+      gen_pio_drv.pio_rd(RCR_CFIG_A + dma_ch*RXDMA_STEP, rbr_config_B_data);
+      rcr_len=rbr_config_B_data[RCR_LEN];
+      rbr_config_B_data=0;
+      if(wred_thre>0) {
+        rbr_config_B_data[THRE_SYN]=wred_thre;
+        rbr_config_B_data[THRE]=wred_thre;
+      }
+      else {
+        rbr_config_B_data[THRE_SYN]=rcr_len-33;
+        rbr_config_B_data[THRE]=rcr_len-33;
+      }
+      rbr_config_B_data[WIN_SYN]=0;
+      rbr_config_B_data[WIN]=0;
+      printf("rxTEST dma=%0d setup wred thr=0x%0h win=0 (rcr_len=0x%h) time=%0d\n", dma_ch, rbr_config_B_data[THRE], rcr_len, get_time(LO));
+      gen_pio_drv.pio_wr(RDC_RED_PARA_START + dma_ch*RDC_RED_PARA_STEP, rbr_config_B_data);
+  }
+
+#define PTHRES 31:16
+#define ENTOUT 15
+#define TIMEOUT 5:0
+#define CK_DIV 15:0
+  if(thr_timer_int_en[dma_ch]) {
+    rd_data64 = 21'h1fffff;
+    rd_data64[RX_DMA_ENT_MSK_RCRTHRES] = 0;
+    rd_data64[RX_DMA_ENT_MSK_RCRTO] = 0;
+    printf("rxTEST dma=%0d programming int mask=0x%0h time=%0d\n", dma_ch, rd_data64, get_time(LO));
+    rdmc.rx_dma[dma_ch].pio_wr_RX_DMA_ENT_MSK_START(rd_data64);
+
+    rdmc.rx_dma[dma_ch].pio_rd_RCR_CFIG_B_START(rd_data64);
+    rd_data64[PTHRES] = rcr_pkt_threshold;
+    rd_data64[TIMEOUT] = rcr_timer_value%64;
+    rd_data64[ENTOUT]=1;
+    printf("rxTEST dma=%0d write pkt_threshold=0x%h timer=0x%h 0x%h\n", dma_ch, rd_data64[PTHRES], rd_data64[TIMEOUT], rd_data64);
+    rdmc.rx_dma[dma_ch].pio_wr_RCR_CFIG_B_START(rd_data64);
+
+    // program the CLK DIV register also
+    rd_data64 = 0;
+    rd_data64[CK_DIV] = rcr_timer_value/ 64;
+    if (rd_data64[CK_DIV] > 0)
+      gen_pio_drv.pio_wr(rdmc.rx_dma[dma_ch].getPIOAddress(RX_DMA_CK_DIV, rdmc.rx_dma[dma_ch].dis_pio_virt), rd_data64);
+    printf("rxTEST CLK_DIV = 0x%h\n ", rd_data64[CK_DIV]);
+
+    printf("rxTEST dma=%0d programming mex bit time=%0d\n", dma_ch, get_time(LO));
+    rdmc.rx_dma[dma_ch].pio_rd_RX_DMA_CTL_STAT_START(rd_data64);
+    rd_data64[47]=1;
+    rdmc.rx_dma[dma_ch].pio_wr_RX_DMA_CTL_STAT_START(rd_data64);
+
+    // determine where the current RCR pointer is
+    rdmc.rx_dma[dma_ch].SetCurrentPtrs();
+
+    printf("rxTEST dma=%0d Done interrupt setup time=%0d\n", dma_ch, get_time(LO));
+  }
+  else {
+    fork 
+      rdmc.rx_dma[dma_ch].pollCRPtr(poll_interval);  //if not doing interrupts
+    join none
+  }
+  fork 
+    rdmc.rx_dma[dma_ch].UpdateRCRStat();  //always do
+  join none
+}
+//////////////////////////////////////////////
+//basic test setup parameters
+task rx_rand_test::rx_control() {
+
+  if(rtl_mac[0]) {
+    if(get_plus_arg(CHECK, "RATE_P0")) port_rate[0]=get_plus_arg (NUM, "RATE_P0");
+    else port_rate[0]=10;
+    if(get_plus_arg (CHECK, "RX_PKTCNT_P0")) num_pkts_port[0] = (get_plus_arg (NUM, "RX_PKTCNT_P0"));
+    else num_pkts_port[0]=20;
+    printf("rxTEST port0 num_pkts=%0d rate=%0d\n", num_pkts_port[0], port_rate[0]);
+
+    if(get_plus_arg(CHECK, "PKT_LEN_PARAM_P0")) pkt_len_param[0]=get_plus_arg (NUM, "PKT_LEN_PARAM_P0");
+    else pkt_len_param[0]=0;
+    printf("rxTEST port0 pkt_len_param=%0d (%s)\n", pkt_len_param[0], (pkt_len_param[0]==0)?"random":(pkt_len_param[0]==1)?"byte sweep":"constant=min");
+
+    if(get_plus_arg(CHECK, "PKT_MAX_LEN_P0")) pkt_max_len[0]=get_plus_arg (NUM, "PKT_MAX_LEN_P0");
+    else pkt_max_len[0]=1518;
+    if(get_plus_arg(CHECK, "PKT_MIN_LEN_P0")) pkt_min_len[0]=get_plus_arg (NUM, "PKT_MIN_LEN_P0");
+    else pkt_min_len[0]=64;
+    printf("rxTEST port0 pkt_min_len=%0d  pkt_max_len=%0d\n", pkt_min_len[0], pkt_max_len[0]);
+
+    if(get_plus_arg(CHECK, "CS_CRC_ERR_P0")) cs_crc_err[0]=get_plus_arg (NUM, "CS_CRC_ERR_P0");
+    else cs_crc_err[0]=0;
+    printf("rxTEST port0 cs_crc_err=%0d (percent)\n", cs_crc_err[0]);
+  }
+  if(rtl_mac[1]) {
+    if(get_plus_arg(CHECK, "RATE_P1")) port_rate[1]=get_plus_arg (NUM, "RATE_P1");
+    else port_rate[1]=10;
+    if(get_plus_arg(CHECK, "RX_PKTCNT_P1")) num_pkts_port[1] = (get_plus_arg (NUM, "RX_PKTCNT_P1"));
+    else num_pkts_port[1]=20;
+    printf("rxTEST port1 num_pkts=%0d rate=%0d\n", num_pkts_port[1], port_rate[1]);
+
+    if(get_plus_arg(CHECK, "PKT_LEN_PARAM_P1")) pkt_len_param[1]=get_plus_arg (NUM, "PKT_LEN_PARAM_P1");
+    else pkt_len_param[1]=0;
+    printf("rxTEST port1 pkt_len_param=%0d (%s)\n", pkt_len_param[1], (pkt_len_param[1]==0)?"random":(pkt_len_param[1]==1)?"byte sweep":"constant=min");
+
+    if(get_plus_arg(CHECK, "PKT_MAX_LEN_P1")) pkt_max_len[1]=get_plus_arg (NUM, "PKT_MAX_LEN_P1");
+    else pkt_max_len[1]=1518;
+    if(get_plus_arg(CHECK, "PKT_MIN_LEN_P1")) pkt_min_len[1]=get_plus_arg (NUM, "PKT_MIN_LEN_P1");
+    else pkt_min_len[1]=64;
+    printf("rxTEST port1 pkt_min_len=%0d  pkt_max_len=%0d\n", pkt_min_len[1], pkt_max_len[1]);
+
+    if(get_plus_arg(CHECK, "CS_CRC_ERR_P1")) cs_crc_err[1]=get_plus_arg (NUM, "CS_CRC_ERR_P1");
+    else cs_crc_err[1]=0;
+    printf("rxTEST port1 cs_crc_err=%0d (percent)\n", cs_crc_err[1]);
+  }
+  if(rtl_mac[2]) {
+    if(get_plus_arg(CHECK, "RATE_P2")) port_rate[2]=get_plus_arg (NUM, "RATE_P2");
+    else port_rate[2]=1;
+    if(get_plus_arg(CHECK, "RX_PKTCNT_P2")) num_pkts_port[2] = (get_plus_arg (NUM, "RX_PKTCNT_P2"));
+    else num_pkts_port[2]=2;
+    printf("rxTEST port2 num_pkts=%0d rate=%0d\n", num_pkts_port[2], port_rate[2]);
+
+    if(get_plus_arg(CHECK, "PKT_LEN_PARAM_P2")) pkt_len_param[2]=get_plus_arg (NUM, "PKT_LEN_PARAM_P2");
+    else pkt_len_param[2]=0;
+    printf("rxTEST port2 pkt_len_param=%0d (%s)\n", pkt_len_param[2], (pkt_len_param[2]==0)?"random":(pkt_len_param[2]==1)?"byte sweep":"constant=min");
+
+    if(get_plus_arg(CHECK, "PKT_MAX_LEN_P2")) pkt_max_len[2]=get_plus_arg (NUM, "PKT_MAX_LEN_P2");
+    else pkt_max_len[2]=1518;
+    if(get_plus_arg(CHECK, "PKT_MIN_LEN_P2")) pkt_min_len[2]=get_plus_arg (NUM, "PKT_MIN_LEN_P2");
+    else pkt_min_len[2]=64;
+    printf("rxTEST port2 pkt_min_len=%0d  pkt_max_len=%0d\n", pkt_min_len[2], pkt_max_len[2]);
+
+    if(get_plus_arg(CHECK, "CS_CRC_ERR_P2")) cs_crc_err[2]=get_plus_arg (NUM, "CS_CRC_ERR_P2");
+    else cs_crc_err[2]=0;
+    printf("rxTEST port2 cs_crc_err=%0d (percent)\n", cs_crc_err[2]);
+  }
+  if(rtl_mac[3]) {
+    if(get_plus_arg(CHECK, "RATE_P3")) port_rate[3]=get_plus_arg (NUM, "RATE_P3");
+    else port_rate[3]=1;
+    if(get_plus_arg(CHECK, "RX_PKTCNT_P3")) num_pkts_port[3] = (get_plus_arg (NUM, "RX_PKTCNT_P3"));
+    else num_pkts_port[3]=2;
+    printf("rxTEST port3 num_pkts=%0d rate=%0d\n", num_pkts_port[3], port_rate[3]);
+
+    if(get_plus_arg(CHECK, "PKT_LEN_PARAM_P3")) pkt_len_param[3]=get_plus_arg (NUM, "PKT_LEN_PARAM_P3");
+    else pkt_len_param[3]=0;
+    printf("rxTEST port3 pkt_len_param=%0d (%s)\n", pkt_len_param[3], (pkt_len_param[3]==0)?"random":(pkt_len_param[3]==1)?"byte sweep":"constant=min");
+
+    if(get_plus_arg(CHECK, "PKT_MAX_LEN_P3")) pkt_max_len[3]=get_plus_arg (NUM, "PKT_MAX_LEN_P3");
+    else pkt_max_len[3]=1518;
+    if(get_plus_arg(CHECK, "PKT_MIN_LEN_P3")) pkt_min_len[3]=get_plus_arg (NUM, "PKT_MIN_LEN_P3");
+    else pkt_min_len[3]=64;
+    printf("rxTEST port3 pkt_min_len=%0d  pkt_max_len=%0d\n", pkt_min_len[3], pkt_max_len[3]);
+
+    if(get_plus_arg(CHECK, "CS_CRC_ERR_P3")) cs_crc_err[3]=get_plus_arg (NUM, "CS_CRC_ERR_P3");
+    else cs_crc_err[3]=0;
+    printf("rxTEST port3 cs_crc_err=%0d (percent)\n", cs_crc_err[3]);
+  }
+
+  if(DO_INTERNAL_RAND_KICKS) { 
+    if(get_plus_arg(CHECK, "KICK_MORE_MAX")) kick_more_max=get_plus_arg (NUM, "KICK_MORE_MAX");
+    else kick_more_max=256;
+    if(get_plus_arg(CHECK, "KICK_MORE_MIN")) kick_more_min=get_plus_arg (NUM, "KICK_MORE_MIN");
+    else kick_more_min=128;
+    printf("rxTEST kick_more_min=%0d kick_more_max=%0d\n", kick_more_min, kick_more_max);
+  }
+  else {
+    if(!get_plus_arg(CHECK, "RX_PERIODIC_KICK_AUTO")) {
+      printf("rxTEST ERROR must add +RX_PERIODIC_KICK_AUTO=x\n");
+      exit(1);
+    }
+    else printf("rxTEST RX_PERIODIC_KICK_AUTO=%0d\n", get_plus_arg(NUM,"RX_PERIODIC_KICK_AUTO"));
+    if(get_plus_arg(CHECK, "RX_PERIODIC_KICK_NUM_DESC"))
+      printf("rxTEST RX_PERIODIC_KICK_NUM_DESC=%0d\n", get_plus_arg(NUM,"RX_PERIODIC_KICK_NUM_DESCR"));
+    if(get_plus_arg(CHECK, "RX_PERIODIC_KICK_THRESHOLD"))
+      printf("rxTEST RX_PERIODIC_KICK_THRESHOLD=%0d\n", get_plus_arg(NUM,"RX_PERIODIC_KICK_THRESHOLD"));
+    if(get_plus_arg(CHECK, "RX_PERIODIC_KICK_INTERVAL"))
+      printf("rxTEST RX_PERIODIC_KICK_INTERVAL=%0d\n", get_plus_arg(NUM,"RX_PERIODIC_KICK_INTERVAL"));
+  }
+
+  if(get_plus_arg(CHECK, "DRING_MARGIN")) DringMargin=get_plus_arg (NUM, "DRING_MARGIN");
+  else DringMargin=128;
+  printf("rxTEST DringMargin=%0d\n", DringMargin);
+
+  if(get_plus_arg(CHECK, "NUM_TCAM_ENTRIES")) num_tcam_entries=get_plus_arg (NUM, "NUM_TCAM_ENTRIES");
+    else num_tcam_entries=128;
+  printf("rxTEST num_tcam_entries=%0d\n", num_tcam_entries);
+  frag_id=num_tcam_entries-1;  //last one
+  frag_id_tcp=num_tcam_entries-2;  //second to last one
+
+  if(get_plus_arg(CHECK, "NUM_TCAM_REPEATS")) num_tcam_repeats=get_plus_arg (NUM, "NUM_TCAM_REPEATS");
+  else num_tcam_repeats=0;
+  printf("rxTEST num_tcam_repeats=%0d\n", num_tcam_repeats);
+
+  if(get_plus_arg(CHECK, "HDR_18B_EN")) hdr_18B_en=1;
+  else hdr_18B_en=0;
+  printf("rxTEST hdr_18B_en=%0d\n", hdr_18B_en);
+
+  if(get_plus_arg(CHECK, "NOT_KICK_MUL16")) kick_mul16=0;
+  else kick_mul16=1;
+  printf("rxTEST kick_mul16=%0d\n", kick_mul16);
+
+  if(pkt_len_param[0]==1 | pkt_len_param[1]==1 | pkt_len_param[2]==1 | pkt_len_param[3]==1) {
+    if(get_plus_arg(CHECK, "BYTE_SWEEP")) byte_sweep=get_plus_arg (NUM, "BYTE_SWEEP");
+    else byte_sweep=1;
+    printf("rxTEST byte_sweep=%0d\n", byte_sweep);
+  }
+
+  if(get_plus_arg(CHECK, "DO_FRAG")) do_frag=1;
+  else do_frag=0;
+  printf("rxTEST do_frag=%0d\n", do_frag);
+
+  if(get_plus_arg(CHECK, "DO_FLUSH")) do_flush=get_plus_arg (NUM, "DO_FLUSH");
+  else do_flush=0;
+  printf("rxTEST do_flush=%0d\n", do_flush);
+
+  if(get_plus_arg(CHECK, "DO_RAND_DEF_DMA")) do_rand_def_dma=1;
+  else do_rand_def_dma=0;
+  printf("rxTEST do_rand_def_dma=%0d\n", do_rand_def_dma);
+
+  if(get_plus_arg(CHECK, "DO_RAND_VLD")) do_rand_vld=1;
+  else do_rand_vld=0;
+  printf("rxTEST do_rand_vld=%0d\n", do_rand_vld);
+
+  if(get_plus_arg(CHECK, "DO_RAND_DIS_DMA")) do_rand_dis_dma=get_plus_arg (NUM, "DO_RAND_DIS_DMA");
+  else do_rand_dis_dma=0;
+  printf("rxTEST do_rand_dis_dma=%0d\n", do_rand_dis_dma);
+
+  if(do_rand_dis_dma>0) {
+    if(get_plus_arg(CHECK, "DMA_OFF_TIME")) dma_off_time=get_plus_arg (NUM, "DMA_OFF_TIME");
+    else dma_off_time=200;
+    printf("rxTEST dma_off_time=%0d\n", dma_off_time);
+  }
+
+  if(get_plus_arg(CHECK, "DO_WRED")) do_wred=1;
+  else do_wred=0;
+  printf("rxTEST do_wred=%0d\n", do_wred);
+
+  if(do_wred) {
+    if(get_plus_arg(CHECK, "WRED_THRE")) {
+      wred_thre=get_plus_arg (NUM, "WRED_THRE");
+      printf("rxTEST wred_thre=%0d  Caution should be less than rcr_length\n", wred_thre);
+    }
+    else  {
+      wred_thre=0;
+      printf("rxTEST wred_thre=rce_len-32\n");
+    }
+  }
+
+  if(get_plus_arg(CHECK, "POLL_INTERVAL")) poll_interval=get_plus_arg (NUM, "POLL_INTERVAL");
+  else poll_interval=1000;
+  printf("rxTEST poll_interval=%0d\n", poll_interval);
+
+  if(get_plus_arg(CHECK, "TCAM_FRONTDOOR")) do_rand_mask=1;
+  else do_rand_mask=0;
+  printf("rxTEST do_rand_mask=%0d (tcam_frontdoor)\n", do_rand_mask);
+
+  if(get_plus_arg (CHECK,"RX_THR_TIMER_INT_HEX="))
+    thr_timer_int_en = get_plus_arg(HNUM,"RX_THR_TIMER_INT_HEX=");
+  else thr_timer_int_en = 16'h0000;
+  printf("rxTEST thr_timer_int_en=0x%h\n", thr_timer_int_en);
+
+  if(thr_timer_int_en!==0) {
+    if(get_plus_arg(CHECK, "RCR_PKT_THRESHOLD"))
+     rcr_pkt_threshold = get_plus_arg(NUM, "RCR_PKT_THRESHOLD");
+    else rcr_pkt_threshold = 1;
+    printf("rxTEST rcr_pkt_threshold=0x%h\n", rcr_pkt_threshold);
+
+    if(get_plus_arg(CHECK, "RCR_TIMER_VALUE"))
+      rcr_timer_value = get_plus_arg(NUM, "RCR_TIMER_VALUE");
+    else rcr_timer_value = 63;
+    printf("rxTEST rcr_timer_value=0x%h\n", rcr_timer_value);
+  }
+
+  if(get_plus_arg(CHECK, "DO_RAND_KEY_DISC")) do_rand_key_disc=1;
+  else do_rand_key_disc=0;
+  printf("rxTEST do_rand_key_disc=%0d\n", do_rand_key_disc);
+
+  if(get_plus_arg(CHECK, "DO_RAND_AD_DISC")) do_rand_ad_disc=1;
+  else do_rand_ad_disc=0;
+  printf("rxTEST do_rand_ad_disc=%0d\n", do_rand_ad_disc);
+
+  if(get_plus_arg(CHECK, "DO_RAND_HASH_MASK")) do_rand_hash_mask=1;
+  else do_rand_hash_mask=0;
+  printf("rxTEST do_rand_hash_mask=%0d\n", do_rand_hash_mask);
+
+  if(get_plus_arg(CHECK, "SEND_RUNTS")) send_runts=get_plus_arg(NUM, "SEND_RUNTS");
+  else send_runts=0;
+  printf("rxTEST send_runts=%0d (percent)\n", send_runts);
+
+  if(get_plus_arg(CHECK, "BASE_WEIGHT01_HEX")) base_weight01=get_plus_arg(HNUM, "BASE_WEIGHT01_HEX");
+  else base_weight01='h400;
+  printf("rxTEST base_weight01=0x%0h\n", base_weight01 );
+
+  if(get_plus_arg(CHECK, "WEIGHT_MARGIN")) weight_margin=get_plus_arg(NUM, "WEIGHT_MARGIN");
+  else weight_margin=5;
+  printf("rxTEST weight_margin=%0d (percent)\n", weight_margin );
+
+  if(get_plus_arg(CHECK, "SET_ERRCHKDISABLE")) set_errchkdisable=1;
+  else set_errchkdisable=0;
+  if(send_runts>0) set_errchkdisable=0;
+  printf("rxTEST set_errchkdisable=%0d (not set if sending runts)\n", set_errchkdisable);
+
+  if(get_plus_arg(CHECK, "CORRUPT_VLAN_PARITY")) corrupt_vlan_parity=1;
+  else corrupt_vlan_parity=0;
+  printf("rxTEST corrupt_vlan_parity=%0d\n", corrupt_vlan_parity);
+
+  if(get_plus_arg(CHECK, "PROMIS")) promis=1;
+  else promis=0;
+  printf("rxTEST promis=%0d\n", promis);
+
+  if(get_plus_arg(CHECK, "DA_MISMATCH")) da_mismatch=1;
+  else da_mismatch=0;
+  printf("rxTEST da_mismatch=%0d\n", da_mismatch);
+
+  if(get_plus_arg(CHECK, "NO_PAD")) no_pad=1;
+  else no_pad=0;
+  printf("rxTEST no_pad=%0d\n", no_pad);
+
+  if(get_plus_arg(CHECK, "L4_PROTO_ERR")) l4_proto_err=get_plus_arg(NUM, "L4_PROTO_ERR");
+  else l4_proto_err=0;
+  printf("rxTEST l4_proto_err=%0d\n", l4_proto_err);
+
+  if(get_plus_arg(CHECK, "SEND_PAUSE")) send_pause=get_plus_arg(NUM, "SEND_PAUSE");
+  else send_pause=0;
+  printf("rxTEST send_pause=%0d\n", send_pause);
+
+}
+/////////////////////////////////////////
+//note: rate must be a whole number - no fractional part
+function integer rx_rand_test::ipg_in_ns(integer rate_in_Mhz, integer pkt_len, integer header_len) {
+
+  ipg_in_ns = ( (((pkt_len + header_len)*80)/rate_in_Mhz) - ((pkt_len + header_len) * 8) )/10;
+  //ipg_in_ns = (((pkt_len + header_len)*8)/rate_in_Mhz) - ((pkt_len + header_len) * 0.8);
+  printf("rxTEST ipg_in_ns=%0d\n", ipg_in_ns);
+}
+////////////////////////////////////////
+function bit[47:0] rx_rand_test::get_l2dest_from_Trdc(bit[2:0] Trdc, integer mac_id) {
+#define MAC_L2_DEST_ADDR 47:0
+#define MAC_L2_RDC 50:48
+#define MAC_PRI 51         
+
+  integer ii;
+  bit[3:0] rnum;
+  bit[51:0] mac_entry;
+
+  if(mac_id==2 || mac_id==3) rnum=random()%8;
+  else rnum=random()%16;
+
+  case(mac_id) {
+    0: mac_entry=pktC.FFLP_Model.mac_da_table0[rnum];
+    1: mac_entry=pktC.FFLP_Model.mac_da_table1[rnum];
+    2: mac_entry=pktC.FFLP_Model.mac_da_table2[rnum];
+    3: mac_entry=pktC.FFLP_Model.mac_da_table3[rnum];
+  }
+  //printf("rxTEST p%0d %0d mac rdc=%0d\n", mac_id, rnum, mac_entry[MAC_L2_RDC]);
+  while(mac_entry[MAC_L2_RDC]!==Trdc) {
+    if(mac_id==2 || mac_id==3) {
+      if(rnum==7) rnum=0;
+      else rnum++;
+    }
+    else {
+      if(rnum==15) rnum=0;
+      else rnum++;
+    }
+    case(mac_id) {
+      0: mac_entry=pktC.FFLP_Model.mac_da_table0[rnum];
+      1: mac_entry=pktC.FFLP_Model.mac_da_table1[rnum];
+      2: mac_entry=pktC.FFLP_Model.mac_da_table2[rnum];
+      3: mac_entry=pktC.FFLP_Model.mac_da_table3[rnum];
+    }
+    //printf("rxTEST p%0d %0d mac rdc=%0d\n", mac_id, rnum, mac_entry[MAC_L2_RDC]);
+  }
+
+  get_l2dest_from_Trdc=mac_entry[MAC_L2_DEST_ADDR];
+}
+///////////////////////////
+function bit[11:0] rx_rand_test::get_vlan_from_Trdc(bit[2:0] Trdc, integer mac_id) {
+//pick random number 0<= rnum <4096
+//check if Vrdc=Trdc, if yes, return vlan
+//                    if no, inc rnum and redo check
+  bit[11:0] rnum;
+  bit[2:0] Vrdc;
+  bit[17:0] vlan_entry;
+
+  rnum=random()%4096;
+
+  while(Vrdc!==Trdc) {
+    rnum++;   //since bitwise, will rollover
+
+    vlan_entry = pktC.FFLP_Model.vlan_table[rnum];
+    case(mac_id) {
+       0: Vrdc = vlan_entry[2:0];
+       1: Vrdc = vlan_entry[6:4];
+       2: Vrdc = vlan_entry[10:8];
+       3: Vrdc = vlan_entry[14:12];
+    }
+    //printf("rxTEST rnum=%0d Trdc=%0d Vrdc=%0d\n", rnum, Trdc, Vrdc);
+  }
+  get_vlan_from_Trdc=rnum;
+}
+//////////////////////////////

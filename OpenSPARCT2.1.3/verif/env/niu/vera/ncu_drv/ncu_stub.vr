@@ -1,0 +1,618 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ncu_stub.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "ncu_stub.if.vrh"
+#include "niu_int_qmgr.vrh"
+
+extern CNiuIntrQMgr NiuIntrQ;
+
+
+// NCU_STUB Class
+
+/*
+	Some of the tasks needed
+	- send_ucb( Wucb, Rucb ) -- writes a ucb packet into NIU. 
+	  - Task caller has to package the ucb packet 
+	    If the packet type is set to be a write request, the return value
+	    of RUcb is null. If the pkt type is set to be of read req, the 
+	    return value of Rucb would be what is retured from NIU. 
+
+	- write(addr,data, size)  -- Creates a ucb packet and writes into NIU
+	  - What should be the values for other fields in the ucb packet
+	  - Size ( in bytes) is an optional value. Default is 8 byte 
+	    but other values can be set for error generations
+
+	- read ( addr, data, size, status) -- Function creates a ucb read request pkt.
+	  - Status indicates the ack type. ( nack/ack)
+	  - data indicates the payload field received in the returned ucb packet
+	  - Other fields?
+	  - default value of size is 8 bytes, but can be over loaded for error creation
+
+	- Config (TBD) 
+	  - Primarily used for configuring the stall signal behavior
+	
+	- How to set other fields in the ucb packet such as thread id, cpu id etc
+	- Interrupt packets?
+
+	  
+
+*/
+
+// Defines for Requests
+#define NCU_READ_REQ   4'b0100
+#define NCU_WRITE_REQ  4'b0101
+#define NCU_IFILL_REQ  4'b0110
+
+// Defines for Acks
+#define NCU_READ_NACK  4'b0000
+#define NCU_READ_ACK   4'b0001
+#define NCU_WRITE_ACK  4'b0010
+#define NCU_IFILL_ACK  4'b0011
+#define NCU_IFILL_NACK 4'b0111
+
+// Defines for Interrupt
+#define NCU_INT 4'b1000
+#define NCU_INT_VEC 4'b1100
+
+
+
+class Cucb_packet {
+
+     reg [63:0] payload;
+     reg [8:0]  reserved;
+     reg [39:0] addr;
+     reg [2:0]  size;
+     reg [1:0]  buf_id;
+     reg [2:0]  cpu_id;
+     reg [2:0]  thread_id;
+     reg [3:0]  pkt_type;
+     reg [9:0]  device_id;
+     reg [5:0]  interrupt_vector;
+
+     reg [127:0] pkt;
+     
+     task new() {
+	reserved = 9'b0; 	thread_id = 3'h0; 	   cpu_id = 3'h0; 	   buf_id = 2'h0; 
+	
+     }
+     task create_pkt() {
+	pkt = { payload,reserved,addr,size,buf_id,cpu_id,thread_id,pkt_type};
+     }
+     task parse_pkt() {
+	payload = pkt[127:64];
+	addr = pkt[54:15];
+	size = pkt[14:12];
+	buf_id = pkt[11:10];
+	cpu_id = pkt[9:7];
+	thread_id = pkt[6:4];
+	pkt_type = pkt[3:0];
+        if(pkt_type == NCU_INT) {
+	  device_id = pkt[18:10];
+	}
+        // {payload,reserved,addr,size,buf_id,cpu_id,thread_id,pkt_type} = pkt;
+
+     }
+
+     task set_size ( integer s) {
+	
+	case(s) {
+	    1: size = 3'b000;
+	    2: size = 3'b001;
+	    4: size = 3'b010;
+	    8: size = 3'b011;
+	   16: size = 3'b100;
+      default: size = 3'bx;
+        }
+     }
+}
+
+class Cncu_requests {
+// This queues up all the read requests and will be used to match the responses
+// coming back from the niu block with the queued up requests. 
+// This will also include timers per requests to see if the response comes back
+// within the specfied time
+
+	Cucb_packet read_packets;
+	integer no_of_pendingreqs;
+	// To add Timers, tokens etc
+	task new() {
+	  no_of_pendingreqs = 0;	
+	}
+}
+
+MakeVeraList(Cncu_requests) // que'd list of read requests
+
+
+
+class Cncu_stub {
+	integer NCU_NIU_SEMAPHORE_ID;
+        integer READ_RESP_TRIGGER;
+        integer read_mailbox_id;
+        integer int_mailbox_id;
+	ncu_port niu_ncu;
+   	integer stall;
+	integer hi_time;
+	integer lo_time;
+
+	VeraList_Cncu_requests read_req_que;
+	
+	task new( ncu_port ncu);
+	// ucb_packet ucb;
+        task write_ucb( Cucb_packet ucb );
+	task write_data( bit [39:0] addr, bit[63:0] data, (integer size = 8) );
+	task read_data( bit [39:0] addr, var bit[63:0] data,  var integer status, 
+                        (bit exp_pio_err = 0), (integer size=8));
+	function Cucb_packet get_intpacket();
+	function Cucb_packet get_readpacket();
+ 	task config(integer hi_time, integer lo_time);
+	task gen_stall();
+	local task set_stall_delays(integer hi_time, integer lo_time);
+	local function integer get_hi_time();
+	local function integer get_lo_time();
+	local function bit [63:0] swap ( bit [63:0] d);
+	task get_int_packet();
+	task get_niu_packet();
+
+
+}
+
+task Cncu_stub:: get_int_packet() {
+// A free running task which monitors for Interrupt packets and send it up accordingly
+// 
+  Cucb_packet int_packet;
+  CniuGenIntrMsg IntrMsg;
+
+  while(1) {
+      int_packet = get_intpacket();
+      if(int_packet.pkt_type== NCU_INT) {
+	printf(" Interrupt from NCU-- Packet received - DeviceID %x \n",int_packet.device_id);
+        IntrMsg = new();
+        IntrMsg.device_id = int_packet.device_id;
+	NiuIntrQ.addIntrMsg(IntrMsg);
+        printf("Cncu_stub:: get_int_packet  Added New message into interrupt queue -\n"); 
+      }
+      @(posedge CLOCK);
+  }
+
+
+
+}
+function bit[63:0] Cncu_stub:: swap(bit [63:0] d) {
+ 
+ swap[7:0]  = d[63:56];
+ swap[15:8] = d[55:48];
+ swap[23:16] = d[47:40];
+ swap[31:24] = d[39:32];
+ swap[39:32] = d[31:24];
+ swap[47:40] = d[23:16];
+ swap[55:48] = d[15:8];
+ swap[63:56] = d[ 7:0 ];
+ 
+}
+function integer Cncu_stub:: get_lo_time() {
+	if(lo_time==-1) get_lo_time = random()%10 + 1;
+	else get_lo_time = lo_time;
+}
+function integer Cncu_stub:: get_hi_time() {
+	if(hi_time==-1) get_hi_time = random()%10 + 1;
+	else get_hi_time = hi_time;
+}
+task Cncu_stub::gen_stall() {
+
+	if((hi_time ==0) | (lo_time==0)) {
+	 	stall = 0;
+		niu_ncu.$ncu_niu_stall= stall;
+
+	} else {
+	  while(1) {
+		repeat(get_hi_time()) @(posedge niu_ncu.$clk);
+		niu_ncu.$ncu_niu_stall= 1;
+		@(posedge niu_ncu.$clk);
+	 	stall = 1;
+		repeat(get_lo_time()) @(posedge niu_ncu.$clk);
+		niu_ncu.$ncu_niu_stall= 0;
+		@(posedge niu_ncu.$clk);
+	 	stall = 0;
+	  }
+	}
+}
+
+task Cncu_stub::config(integer h, integer l) {
+
+	// Configure the NCU driver 
+	set_stall_delays(h, l);
+}
+task Cncu_stub::set_stall_delays(integer h, integer l) {
+
+	hi_time = h;
+	lo_time = l;
+}
+
+task Cncu_stub::write_data( bit [39:0] addr, bit[63:0] data, (integer size = 8))  {
+
+// Default value of size if 8 bytes
+
+   Cucb_packet write_ucb_pkt;
+   // printf("Cncu_stub::write_data : addr - %x Time - %d\n",addr,{get_time(HI), get_time(LO)});
+   write_ucb_pkt = new(/* cpu_id,buf_id, thread_id */);
+   write_ucb_pkt.addr = addr;
+   write_ucb_pkt.payload = swap(data);
+   write_ucb_pkt.set_size(size);
+   write_ucb_pkt.pkt_type = NCU_WRITE_REQ;
+   write_ucb_pkt.create_pkt();
+   write_ucb(write_ucb_pkt);
+   printf(" NCU-PIO Writes: Time%d  -- Address = %x, Data = %x \n",{get_time(HI), get_time(LO)},addr,data);
+   // printf(" Done with Write \n");
+
+}
+
+task Cncu_stub::read_data( bit [39:0] addr, var bit[63:0] data, var integer status,
+                           (bit exp_pio_err = 0), (integer size = 8)) {
+
+// Default value of size if 8 bytes
+   Cucb_packet readcmd_ucb_pkt;
+   Cucb_packet readresp_ucb_pkt;
+   bit [39:0] raddr;
+   bit [63:0] rdata;
+
+   shadow bit [1:0]  buf_id;
+   shadow bit [2:0]  cpu_id;
+   shadow bit [2:0]  thread_id;
+
+   integer read_resp_packet_received;
+
+   // printf("Cncu_stub::read_data : addr - %x Time - %d\n",addr,{get_time(HI), get_time(LO)});
+   readcmd_ucb_pkt = new(/* cpu_id,buf_id, thread_id */);
+   readcmd_ucb_pkt.addr = addr;
+   readcmd_ucb_pkt.payload = 64'hdeadbeef_deadbeef;
+   readcmd_ucb_pkt.set_size(size);
+   readcmd_ucb_pkt.pkt_type = NCU_READ_REQ;
+   buf_id = random();
+   cpu_id = random();
+   thread_id = random();
+   readcmd_ucb_pkt.buf_id = buf_id;
+   readcmd_ucb_pkt.cpu_id = cpu_id;
+   readcmd_ucb_pkt.thread_id = thread_id;
+   readcmd_ucb_pkt.create_pkt();
+   write_ucb(readcmd_ucb_pkt);
+   // printf(" Done with Writing Read Command time - %d \n",{get_time(HI), get_time(LO)});
+
+
+   /*
+	In order to use the pending req ques
+	read_req_que.push_back(readcmd_ucb_pkt);
+	// printf(" No of requests = %d \n",read_req_que.size);	
+
+   */
+
+
+   // printf(" Waiting for return data from Read Command Time - %d Addr - %x \n",{get_time(HI), get_time(LO)},addr);
+   // sync(ALL,READ_RESP_TRIGGER);
+   // trigger(OFF,READ_RESP_TRIGGER);
+   semaphore_get(WAIT,READ_RESP_TRIGGER,1);
+
+   raddr = addr;
+   read_resp_packet_received = 0;
+   while(read_resp_packet_received==0) {
+     readresp_ucb_pkt = get_readpacket();
+     printf("Cncu_stub::read_data DEBUG address - %x rdata - %x Time - %d  \n",addr,readresp_ucb_pkt.pkt,{get_time(HI), get_time(LO)});
+     if( (readresp_ucb_pkt.pkt_type == NCU_READ_ACK ) | ( readresp_ucb_pkt.pkt_type == NCU_READ_NACK)) 
+       read_resp_packet_received = 1;
+     else read_resp_packet_received = 0; // received an interrup packet so go back
+
+   }
+
+   // parse the resp packet, check integrity of the packet and return the data and status
+
+ 
+   if(readresp_ucb_pkt.buf_id !== buf_id) {
+     printf(" ERROR - buf_id incorrect \n");
+   }
+   if(readresp_ucb_pkt.cpu_id !== cpu_id) {
+     printf(" ERROR - cpu_id incorrect \n");
+   }
+   if(readresp_ucb_pkt.thread_id !== thread_id) {
+     printf(" ERROR - thread_id incorrect \n");
+   }
+
+  rdata =  swap(readresp_ucb_pkt.payload);
+  if(readresp_ucb_pkt.pkt_type == NCU_READ_ACK)
+    status = 1;
+  else if( readresp_ucb_pkt.pkt_type == NCU_READ_NACK) 
+    status = 0;
+  else status = -1;
+
+  // if( readresp_ucb_pkt.pkt_type == NCU_READ_NACK) 
+     // printf(" Received a NACK Packet from pio_read from address -%x  - Time - %d \n",raddr,{get_time(HI), get_time(LO)});
+    // printf(" Done with get_packet Status = %d read data = %x \n",status,rdata);
+
+    if(status)
+      printf(" NCU-PIO Reads: Time%d  -- Address = %x, Data = %x \n",{get_time(HI), get_time(LO)},raddr,rdata);
+
+  // added code for pio_err tests
+
+   if((exp_pio_err == 1'b0) && (status == 0))
+          printf("ERROR: pio_rd error seen when not expected\n");
+   if((exp_pio_err == 1'b1) && (status == 1))
+          printf("ERROR: pio_rd error not seen when expected\n");
+    
+   // trigger(ON,READ_RESP_TRIGGER);
+   semaphore_put(READ_RESP_TRIGGER,1);
+
+   data = rdata;
+}
+
+
+task Cncu_stub::write_ucb( Cucb_packet ucb) {
+
+   integer cnt;
+ 
+// Writes to NIU
+// For a write from NCU to NIU, NCU tramits the 
+// UCB packet. The transfer occurs in 4 cycles since the UCB
+// Packet is of 128 bits.
+
+	// niu_ncu.$ncu_niu_vld = 0;
+
+   // printf("Cncu_stub::write_ucb : addr - %x type %d  Time - %d\n",ucb.addr,ucb.pkt_type,{get_time(HI), get_time(LO)});
+	semaphore_get(WAIT,NCU_NIU_SEMAPHORE_ID,1);
+
+	for(cnt= 0;cnt <4; cnt ++) {
+	  niu_ncu.$ncu_niu_vld= 1;
+	  while(niu_ncu.$niu_ncu_stall) {
+		@(posedge niu_ncu.$clk);
+	  }
+	  niu_ncu.$ncu_niu_data= ucb.pkt[ 31 + ( cnt*32) : 0 + (cnt*32) ] ;
+
+	  // printf(" Write Data = %x \n",ucb.pkt[ 31 + ( cnt*32) : 0 + (cnt*32) ]);
+	  @(posedge niu_ncu.$clk);
+        }
+	niu_ncu.$ncu_niu_vld= 0;
+	  @(posedge niu_ncu.$clk);
+	semaphore_put(NCU_NIU_SEMAPHORE_ID,1);
+	
+}
+
+task Cncu_stub::get_niu_packet() {
+   integer cnt;
+   integer tmp;
+   reg [127:0] rdata;
+   Cucb_packet resp_ucb;
+
+   repeat(100)@(posedge niu_ncu.$clk);
+   while(1) {
+        cnt = 0;
+        rdata = 0;
+	// Wait for Valid
+	while(!niu_ncu.$niu_ncu_vld) @(posedge niu_ncu.$clk);
+	while(niu_ncu.$niu_ncu_vld  ) {
+	   if(!stall ) {
+	     if(cnt <4)
+	       rdata[31 + (cnt*32) : (cnt*32)] = niu_ncu.$niu_ncu_data;
+	     // printf("get_niu_packet DEBUG - cnt - %d rdata - %x Time - %d \n",cnt,rdata,{get_time(HI), get_time(LO)});
+	     cnt ++;
+             if(cnt==2) {
+               /* If this is an interrupt packet reset the counter */
+	       if(rdata[3:0] == NCU_INT) {
+		printf("get_niu_packet DEBUG- Received an interrupt packet in the middle of a pending read response!!! \n");
+               }
+             }
+	     @(posedge niu_ncu.$clk);	
+	   } else {
+	     @(posedge niu_ncu.$clk);	
+	   }
+	}
+
+	if(cnt>4) { 
+	  printf(" ERROR vld asserted for more that %d clock cycles \n",cnt);
+	  rdata[127:0] = 128'bx;
+        }
+   	resp_ucb = new();
+	resp_ucb.pkt = rdata;
+	resp_ucb.parse_pkt();
+        // printf("Cncu_stub::get_niu_packet DEBUG rdata - %x Time - %d  \n",rdata,{get_time(HI), get_time(LO)});
+	if(cnt == 2) {
+	  if(resp_ucb.pkt_type == NCU_READ_NACK ) {
+	    // printf(" Received a NACK Packet from pio_read - Time - %d \n",{get_time(HI), get_time(LO)});
+	    tmp = 1;
+	  }else if(resp_ucb.pkt_type == NCU_INT) {
+	     printf(" Received an Interrupt Packet - Time - %d \n",{get_time(HI), get_time(LO)});
+	  }
+	  else {
+	    printf(" ERROR - niu_ncu_vld asserted in correctly \n");
+	  }
+	}
+	if(resp_ucb.pkt_type == NCU_INT) {
+	  mailbox_put(int_mailbox_id, resp_ucb);
+        } else {
+	  mailbox_put(read_mailbox_id, resp_ucb);
+        }
+       
+   }
+}
+function Cucb_packet  Cncu_stub::get_intpacket( ) {
+       Cucb_packet packet; 
+       integer status;
+// TOADD - TIMOUT
+       status = mailbox_get(WAIT, int_mailbox_id, packet);
+       get_intpacket = new packet;
+}
+
+function Cucb_packet  Cncu_stub::get_readpacket( ) {
+       Cucb_packet packet; 
+       integer status;
+// TOADD - TIMOUT
+       status = mailbox_get(WAIT, read_mailbox_id, packet);
+       get_readpacket = new packet;
+}
+
+task Cncu_stub::new( ncu_port ncu_bind)
+{
+	// 
+	niu_ncu = ncu_bind;
+	niu_ncu.$ncu_niu_data= 0;
+	niu_ncu.$ncu_niu_vld= 0;
+	niu_ncu.$ncu_niu_stall= 0;
+	if (get_plus_arg(CHECK, "GEN_RANDOM_NCU_STALL")) 
+	 config(-1,-1);
+        else
+	 config(4,4);
+   	stall = 0;
+	NCU_NIU_SEMAPHORE_ID=alloc(SEMAPHORE,0,1,1);
+	READ_RESP_TRIGGER=alloc(SEMAPHORE,0,1,1);
+	read_mailbox_id = alloc(MAILBOX,0,1);
+	int_mailbox_id = alloc(MAILBOX,0,1);
+	read_req_que = new();
+        // trigger(ON,READ_RESP_TRIGGER);
+
+	fork{
+	  if (get_plus_arg(CHECK, "GEN_NCU_STALL")) 
+	   gen_stall();
+	} join none
+
+	fork{
+	  if (get_plus_arg(CHECK, "GEN_RANDOM_NCU_STALL")) 
+	   gen_stall();
+	} join none
+
+	fork {
+	  get_int_packet();
+	} join none
+	fork {
+	  get_niu_packet();
+	} join none
+
+}
+
+/************************
+
+program ncu_stub_test
+{  // start of top block
+
+	Cncu_stub ncu;
+
+	Cucb_packet ucb;
+	bit [63:0] rdata;
+	bit [39:0] address;
+	integer status;
+
+
+	ucb = new();
+	ncu = new(ncu_bind);
+
+	repeat(50) @(posedge ncu.niu_ncu.$clk	);
+
+	// printf(" I am here \n");
+	@(posedge ncu.niu_ncu.$clk	);
+	@(posedge ncu.niu_ncu.$clk	);
+	@(posedge ncu.niu_ncu.$clk	);
+	address[39:24] = 0;
+	address[23:20] = 4'h1;
+	address[19:0] = 20'h00040;
+
+	ncu.write_data(address,64'h12345678);
+	@(posedge ncu.niu_ncu.$clk	);
+	address = address + 8;
+
+	ncu.write_data(address  ,64'h12345678);
+	@(posedge ncu.niu_ncu.$clk	);
+	@(posedge ncu.niu_ncu.$clk	);
+	address = address + 16;
+	ncu.write_data(address,64'h12345678);
+	@(posedge ncu.niu_ncu.$clk	);
+	@(posedge ncu.niu_ncu.$clk	);
+	ncu.write_data(40'habcdef,64'h12345678);
+	@(posedge ncu.niu_ncu.$clk	);
+	@(posedge ncu.niu_ncu.$clk	);
+	ncu.write_data(40'habcdef,64'h12345678);
+	@(posedge ncu.niu_ncu.$clk	);
+	@(posedge ncu.niu_ncu.$clk	);
+	ncu.write_data(40'habcdef,64'h12345678);
+	@(posedge ncu.niu_ncu.$clk	);
+	@(posedge ncu.niu_ncu.$clk	);
+	ncu.write_data(40'habcdef,64'h12345678);
+	@(posedge ncu.niu_ncu.$clk	);
+	@(posedge ncu.niu_ncu.$clk	);
+	ncu.write_data(40'habcdef,64'h12345678);
+	@(posedge ncu.niu_ncu.$clk	);
+	@(posedge ncu.niu_ncu.$clk	);
+	ncu.write_data(40'habcdef,64'h12345678);
+	@(posedge ncu.niu_ncu.$clk	);
+	@(posedge ncu.niu_ncu.$clk	);
+
+
+
+	ucb.pkt = 128'habcd0000_12345678;
+
+	ncu.write_ucb(ucb);
+
+	@(posedge ncu.niu_ncu.$clk	);
+
+	ucb.pkt = 128'habcd0000_12345678;
+	ncu.write_ucb(ucb);
+
+	@(posedge ncu.niu_ncu.$clk	);
+
+	ucb.pkt = 128'habcd0000_12345678;
+	ncu.write_ucb(ucb);
+
+	@(posedge ncu.niu_ncu.$clk	);
+
+	ucb.pkt = 128'habcd0000_12345678;
+	ncu.write_ucb(ucb);
+
+
+
+
+
+	@(posedge ncu.niu_ncu.$clk	);
+	@(posedge ncu.niu_ncu.$clk	);
+	ncu.write_data(40'habcdef,64'h12345678);
+
+
+	@(posedge ncu.niu_ncu.$clk	);
+	@(posedge ncu.niu_ncu.$clk	);
+	ncu.read_data(40'habcdef,rdata,status);
+	printf(" Read Data received = %x \n",rdata);
+	@(posedge ncu.niu_ncu.$clk	);
+	@(posedge ncu.niu_ncu.$clk	);
+	@(posedge ncu.niu_ncu.$clk	);
+
+}  
+*****************************/
+
+
+

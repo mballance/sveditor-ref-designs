@@ -1,0 +1,402 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuIngressRcvrErr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class IngressRcvrErr extends PEUStrBase 
+  {
+  integer f_errQueue;				// A mailbox for bad pkt headers
+
+  integer nmbrRcvrErrsToInject = 10;	//Total number of packets that get error injected
+  integer rcvrErrPct = 10;		//% of packets that get an error
+  //Set the percentage weight of each type of receiver error
+  integer rcvrErr8b10bWeight = 10;
+  integer rcvrErrFramingWeight = 10;
+  integer rcvrErrDisparityWeight = 10;
+  integer rcvrErrFlipBitWeight = 10;	//This is sometimes a CRC error - If the STP gets flipped
+                                        // into a data bit then a CRC error isn't hit
+  integer rcvrErrLcrcWeight = 10;	//This is a CRC error
+  integer rcvrErrDupSeqNmbrWeight = 0;	
+  integer rcvrErrOutOfSeqNmbrWeight = 0;	
+  integer rcvrErrBadSeqNmbrWeight = 0;	
+  integer InvertLCRCErrWeight = 0;  
+  integer EDBErrWeight = 0;  
+  integer InvertLCRCAndEDBErrWeight = 0;  
+
+  // 
+  integer invertLCRC32ErrInjected = 0; 
+  integer EDBErrInjected = 0; 
+  integer InvertLCRCAndEDBErrInjected = 0; 
+
+  
+  //Make the Bad TLP Packet error optional-directed cases
+  //Only rcvrErrFlipBitWeight & rcvrErrLcrcWeight are certain BTP errors
+  // and all others are due to sequence errors, So make the default optional 
+  // except for rcvrErrFlipBitWeight & rcvrErrLcrcWeight
+  bit optional_CE_BTP = 1;
+
+  //Only allow 1 of these strategies to be active at a time
+  static integer rcvrErr_semaphore = alloc(SEMAPHORE, 0, 1, 1);
+
+  task new( PEUTestEnv a_env )
+    {
+    super.new( a_env );
+    f_errQueue = 0;
+    }
+
+  task SetErrQueue( integer a_queue )
+    {
+    f_errQueue = a_queue;
+    } /* end SetErrQueue */
+
+  task Execute()
+    {
+    integer nmbrErrs;
+    integer other_nonInvertLCRCAndEDBErrInjected  = 0 ;  
+    integer denaliReplayTimer;
+    bit recoveryEntered = 0;
+    //Get the semaphore when its your turn
+    semaphore_get( WAIT, rcvrErr_semaphore, 1);
+
+    //
+    optional_CE_BTP = 1;
+
+    //Change Denalis replay timer to take out rx_L0s_adj=250
+    denaliReplayTimer = f_env.Scenario.denaliReplayTimerThreshold - 250;
+    f_env.Pod.FNXPCIEEnableTrans.WriteDenaliReg( PCIE_REG_DEN_REPLAY_TIMER, denaliReplayTimer );
+    //Make the replay buffer smaller so back-back replays don't last too long
+    f_env.Pod.FNXPCIEEnableTrans.WriteDenaliReg(  PCIE_REG_DEN_RETRY_SIZE, 32'h300 );
+
+
+    printf("IngressRcvrErr nmbrRcvrErrsToInject=%0d rcvrErrPct=%0d rcvrErr8b10bWeight=%0d rcvrErrFramingWeight=%0d rcvrErrDisparityWeight=%0d rcvrErrFlipBitWeight=%0d rcvrErrLcrcWeight=%0d rcvrErrDupSeqNmbrWeight=%0d rcvrErrOutOfSeqNmbrWeight=%0d rcvrErrBadSeqNmbrWeight=%0d InvertLCRCErrWeight=%0d EDBErrWeight=%0d InvertLCRCAndEDBErrWeight=%0d \n",nmbrRcvrErrsToInject,rcvrErrPct,rcvrErr8b10bWeight,rcvrErrFramingWeight,rcvrErrDisparityWeight,rcvrErrFlipBitWeight,rcvrErrLcrcWeight, rcvrErrDupSeqNmbrWeight, rcvrErrOutOfSeqNmbrWeight, rcvrErrBadSeqNmbrWeight, InvertLCRCErrWeight, EDBErrWeight, InvertLCRCAndEDBErrWeight  );
+    //Set the number of packets to cause errors on 
+    f_env.nmbrRcvrErrsToInject = nmbrRcvrErrsToInject;
+    f_env.nmbrRcvrErrsInjected = 0;
+    f_env.nmbrRcvrErrsDriven = 0;
+    f_env.rcvrErrPct = rcvrErrPct;
+    //Set the percentage of each type of receiver error
+    f_env.rcvrErr8b10bWeight = rcvrErr8b10bWeight;
+    f_env.rcvrErrFramingWeight = rcvrErrFramingWeight;
+    f_env.rcvrErrDisparityWeight = rcvrErrDisparityWeight;
+    f_env.rcvrErrFlipBitWeight = rcvrErrFlipBitWeight;
+    f_env.rcvrErrLcrcWeight = rcvrErrLcrcWeight;
+    f_env.rcvrErrDupSeqNmbrWeight = rcvrErrDupSeqNmbrWeight;
+    f_env.rcvrErrOutOfSeqNmbrWeight = rcvrErrOutOfSeqNmbrWeight;
+    f_env.rcvrErrBadSeqNmbrWeight = rcvrErrBadSeqNmbrWeight;
+    f_env.InvertLCRCErrWeight = InvertLCRCErrWeight; 
+    f_env.EDBErrWeight = EDBErrWeight; 
+    f_env.InvertLCRCAndEDBErrWeight = InvertLCRCAndEDBErrWeight; 
+
+    //Clear all the specific error trackers
+    f_env.rcvrErr8b10bInjected = 0;
+    f_env.rcvrErrFramingInjected = 0;
+    f_env.rcvrErrDisparityInjected = 0;
+    f_env.rcvrErrFlipBitInjected = 0;
+    f_env.rcvrErrLcrcInjected = 0;
+    f_env.rcvrErrDupSeqNmbrInjected = 0;
+    f_env.rcvrErrOutOfSeqNmbrInjected = 0;
+    f_env.rcvrErrBadSeqNmbrInjected = 0;
+
+    f_env.invertLCRC32ErrInjected = 0; 
+    f_env.EDBErrInjected = 0; 
+    f_env.InvertLCRCAndEDBErrInjected = 0; 
+
+    //Wait until env has injected the right number of errors
+    f_env.enableRcvrErrInjection = 1;
+
+    //If the last Tlp before a retry packet has a framing type error  then the 
+    // 1st retry packet could get a crc or other error causing the packet to be 
+    // dropped. This will cause a Denali replay timeout
+    f_env.Pod.FNXPCIEEnableTrans.SuppressDenaliErr( PCIE_DL_COR_REPLAY_TIMEOUT );
+
+    //Framing error injection could insert a COM which causes peu to get a deskew error
+    // and go into recovery - so disable hang detect for framing errors
+    if( f_env.rcvrErrFramingWeight ){
+    fork
+    {
+       while( f_env.rcvrErrFramingWeight && !f_env.rcvrErrFramingInjected ){
+          repeat(10) @(posedge CLOCK);
+       }
+       //Check to see if recovery is ever entered
+       while( f_env.getLtssmState() === ILUPEU_LTSSM_L0 &&
+              f_env.enableRcvrErrInjection ){
+          repeat(50) @(posedge CLOCK);
+       
+          if( f_env.getLtssmState() === ILUPEU_LTSSM_RCVRY_RCVRLOCK ){
+             recoveryEntered = 1;
+             f_env.activityStalled += 1;
+             //Stall the Denali expects until link comes back up
+             f_env.Pod.FNXPCIEEnableTrans.DisableExpectsTimeout();
+             printf("IngressRcvrErr rcvrErrFramingInjected and ltssm entered Recovery f_env.activityStalled=%0d \n",f_env.activityStalled );
+             f_env.toLtssmState( ILUPEU_LTSSM_L0 );
+             printf("IngressRcvrErr rcvrErrFramingInjected and ltssm entered L0 from Recovery\n");
+             f_env.activityStalled -= 1;
+             f_env.Pod.FNXPCIEEnableTrans.EnableExpectsTimeout();
+          }
+       }
+
+    }
+    join none
+    }
+
+    //Wait until all the errors are driven
+    sync( ANY, f_env.ev_rcvrErrsDriven );
+    //terminate the while loop if no framing errors got injected
+    if( f_env.rcvrErrFramingWeight && !f_env.rcvrErrFramingInjected ){
+       terminate;
+    }else if(f_env.rcvrErrFramingWeight && f_env.rcvrErrFramingInjected ){
+       //Last injected error may cause entry into Recovery so wait a while 
+       repeat( 50 ) @(posedge if_ILU_PEU_PCIE.refclk);
+       if( f_env.getLtssmState() !== ILUPEU_LTSSM_L0 ){
+          printf("IngressRcvrErr waiting for LTSSM to reenter L0 from Recovery\n");
+          f_env.toLtssmState( ILUPEU_LTSSM_L0,*,OMNI );
+       }
+    }
+   
+    printf("at time %d, IngressRcvrErr last error injected check error regs nmbrRcvrErrsToInject=%0d nmbrRcvrErrsInjected=%0d nmbrRcvrErrsDriven=%0d rcvrErr8b10bInjected=%0d rcvrErrFramingInjected=%0d rcvrErrDisparityInjected=%0d rcvrErrFlipBitInjected=%0d rcvrErrLcrcInjected=%0d rcvrErrDupSeqNmbrInjected=%0d rcvrErrOutOfSeqNmbrInjected=%0d rcvrErrBadSeqNmbrInjected=%0d invertLCRC32ErrInjected=%0d, EDBErrInjected=%0d InvertLCRCAndEDBErrInjected = %0d \n",get_time(LO), nmbrRcvrErrsToInject,f_env.nmbrRcvrErrsInjected,f_env.nmbrRcvrErrsDriven,f_env.rcvrErr8b10bInjected,f_env.rcvrErrFramingInjected,f_env.rcvrErrDisparityInjected,f_env.rcvrErrFlipBitInjected,f_env.rcvrErrLcrcInjected, f_env.rcvrErrDupSeqNmbrInjected, f_env.rcvrErrOutOfSeqNmbrInjected, f_env.rcvrErrBadSeqNmbrInjected, f_env.invertLCRC32ErrInjected, f_env.EDBErrInjected,  f_env.InvertLCRCAndEDBErrInjected );
+
+    f_env.enableRcvrErrInjection = 0;
+
+    //Delay long enough for a Denali replay timeout in case the NAKd transaction had
+    // a framing type error causing the 1st replayd packet to be bad also
+    repeat( denaliReplayTimer+25 ) @(posedge if_ILU_PEU_PCIE.refclk);    
+    //Re enable the hang detect
+//    if( f_env.rcvrErrFramingWeight && f_env.rcvrErrFramingInjected ){
+//       f_env.activityStalled -= 1;
+//    }
+
+    //Track possible errors 
+
+   if ((f_env.nmbrRcvrErrsDriven - f_env.InvertLCRCAndEDBErrInjected ) > 0) 
+   { other_nonInvertLCRCAndEDBErrInjected = 1;  } 
+
+   printf("AC: at time %d, other_nonInvertLCRCAndEDBErrInjected = %d", get_time(LO), other_nonInvertLCRCAndEDBErrInjected); 
+
+   if (other_nonInvertLCRCAndEDBErrInjected) {
+    nmbrErrs = 2;
+   }
+   else { 
+    nmbrErrs = 0;
+   }
+
+   if (f_env.InvertLCRCAndEDBErrInjected == 1) {
+     nmbrErrs += 1; 
+   }
+   else if (f_env.InvertLCRCAndEDBErrInjected > 1) {
+     nmbrErrs += 2; 
+   }
+   
+
+    //ErrLcrc & Err8b10b can possibly cause framing errors 
+    
+    //Framing Errors will NOT cause a e_ERR_ce_re - Receiver Error
+    // 6/20/05 
+    //CRC Errors/framing errors
+    if( f_env.rcvrErrFlipBitInjected || f_env.rcvrErrFramingInjected ||
+        f_env.rcvrErrDisparityInjected || f_env.rcvrErr8b10bInjected ){
+       nmbrErrs += 7;
+    }
+
+    if( f_env.rcvrErrDisparityInjected || f_env.rcvrErr8b10bInjected ){ //Receiver Error
+       nmbrErrs += 2;
+    }
+
+    if( f_env.rcvrErrFramingInjected ){ // More framing errors
+       nmbrErrs += 7;
+       if( recoveryEntered ){
+          nmbrErrs += 2;
+       }
+    }
+    printf("AC: nmbrErrs = %d\n", nmbrErrs); 
+
+					// Tell the error-checker about this
+					// bad-boy.
+    if( f_errQueue != 0 ){
+        
+       mailbox_put( f_errQueue, e_ERR_none );
+       mailbox_put( f_errQueue, nmbrErrs );
+       //Bad TLPs caused by either CRC errors or sequence errors when a good TLP
+       // follows a bad TLP  - for some of the more directed cases make it optional
+//        if (f_env.rcvrErrDupSeqNmbrInjected) {    // no error for duplicate seq number 
+//aC:        }  
+//        else {
+
+     if( f_env.rcvrErrLcrcInjected ||
+         f_env.rcvrErrDupSeqNmbrInjected || f_env.rcvrErrOutOfSeqNmbrInjected ||
+         f_env.rcvrErrBadSeqNmbrInjected || f_env.EDBErrInjected ){
+
+        optional_CE_BTP = 0;
+     }
+
+     if (other_nonInvertLCRCAndEDBErrInjected) {
+
+       if (nmbrErrs > 0 ) { 
+          mailbox_put( f_errQueue, e_ERR_ce_btp );
+          if( optional_CE_BTP ){
+             mailbox_put( f_errQueue, 128'bx0 );
+          }else{
+             mailbox_put( f_errQueue, 128'bx );
+          }
+          mailbox_put( f_errQueue, e_ERR_ce_btp );
+          mailbox_put( f_errQueue, 128'bx0 );
+       } 
+     } 
+
+     if ( f_env.InvertLCRCAndEDBErrInjected == 1) {
+        mailbox_put( f_errQueue, e_ERR_ce_btp );
+        mailbox_put( f_errQueue, 128'bx0 );
+     } 
+     else if (f_env.InvertLCRCAndEDBErrInjected > 1) {
+        mailbox_put( f_errQueue, e_ERR_ce_btp );
+        mailbox_put( f_errQueue, 128'bx0 );
+     }
+
+       if( f_env.rcvrErrDisparityInjected || f_env.rcvrErr8b10bInjected  ){
+          mailbox_put( f_errQueue, e_ERR_ce_re );
+          mailbox_put( f_errQueue, 128'bx );
+          mailbox_put( f_errQueue, e_ERR_ce_re );
+          mailbox_put( f_errQueue, 128'bx0 );	//A secondary error may also be logged
+       }
+
+       if( f_env.rcvrErrFramingInjected || f_env.rcvrErrFlipBitInjected  ||
+           f_env.rcvrErrDisparityInjected || f_env.rcvrErr8b10bInjected ){
+          mailbox_put( f_errQueue, e_ERR_oe_lin );
+          mailbox_put( f_errQueue, 128'bx0 );	//Might fail
+/*
+          if( f_env.rcvrErrFramingInjected > 2 ){	//If only 2 errors END->Data STP->data there will be no dlpl errors
+             mailbox_put( f_errQueue, 128'bx );
+          }else{
+             mailbox_put( f_errQueue, 128'bx0 );	//Might fail
+          }
+*/
+          mailbox_put( f_errQueue, e_ERR_dlpl_stp_no_end_edb );
+          mailbox_put( f_errQueue, 128'bx0 );	//Optional error may not occur
+          mailbox_put( f_errQueue, e_ERR_dlpl_kchar_dllp );
+          mailbox_put( f_errQueue, 128'bx0 );
+          mailbox_put( f_errQueue, e_ERR_dlpl_multi_stp );
+          mailbox_put( f_errQueue, 128'bx0 );
+          mailbox_put( f_errQueue, e_ERR_dlpl_end_no_stp_sdp );
+          mailbox_put( f_errQueue, 128'bx0 );
+          mailbox_put( f_errQueue, e_ERR_dlpl_ill_end_pos );
+          mailbox_put( f_errQueue, 128'bx0 );
+          mailbox_put( f_errQueue, e_ERR_dlpl_sdp_no_end );
+          mailbox_put( f_errQueue, 128'bx0 );
+       }
+
+       if( f_env.rcvrErrFramingInjected ){
+          mailbox_put( f_errQueue, e_ERR_dlpl_ill_stp_pos );
+          mailbox_put( f_errQueue, 128'bx0 );
+          mailbox_put( f_errQueue, e_ERR_dlpl_ill_sdp_pos );
+          mailbox_put( f_errQueue, 128'bx0 );
+          mailbox_put( f_errQueue, e_ERR_dlpl_ill_pad_pos );
+          mailbox_put( f_errQueue, 128'bx0 );
+          mailbox_put( f_errQueue, e_ERR_dlpl_unsup_dllp );
+          mailbox_put( f_errQueue, 128'bx0 );
+          mailbox_put( f_errQueue, e_ERR_dlpl_multi_sdp );
+          mailbox_put( f_errQueue, 128'bx0 );
+          mailbox_put( f_errQueue, e_ERR_ce_bdp );
+          mailbox_put( f_errQueue, 128'bx0 );
+          mailbox_put( f_errQueue, e_ERR_ce_rto );	//If END changed to data before ACK
+          mailbox_put( f_errQueue, 128'bx0 );
+          if( recoveryEntered ){
+             mailbox_put( f_errQueue, e_ERR_oe_nfp );
+             mailbox_put( f_errQueue, 128'bx0 );
+             mailbox_put( f_errQueue, e_ERR_dlpl_align );
+             mailbox_put( f_errQueue, 128'bx0 );
+          }
+       }
+    }
+
+    //Unsuppress the Denali error TX checks that were Suppressed in the PEUTestEnv
+    // This was moved out of TestEnv because packets following the one with the injected
+    //  could also get framing type errors in Denali
+
+
+    if( f_env.rcvrErr8b10bInjected ){
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_SYM_8B10B ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_BAD_END ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_BAD_DATA0 ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_SYM_RSV_KC ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_TLP_END ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_BAD_SDP1 ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_DLLP_END ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_PAD ); 
+    }
+    if( f_env.rcvrErrFramingInjected ){
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_BAD_END ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_BAD_DATA0 ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_SYM_RSV_KC ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_TLP_END ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_BAD_SDP1 ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_DLLP_END ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_PAD ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_MOS_FTS_NC ); 
+    }
+    if( f_env.rcvrErrDisparityInjected ){
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_BAD_END ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_BAD_DATA0 ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_TLP_END ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_SYM_DISP ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_PAD ); 
+    }
+    if( f_env.rcvrErrFlipBitInjected ){
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_SYM_8B10B ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_BAD_END ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_BAD_DATA0 ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_SYM_RSV_KC ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_TLP_END ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_BAD_SDP1 ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_DLLP_END ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_FRAME_PAD ); 
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_PL_NONFATAL_SYM_DISP ); 
+    }
+    if( f_env.rcvrErrLcrcInjected ){
+    }
+    if( f_env.rcvrErrDupSeqNmbrInjected ){
+    }
+    if( f_env.rcvrErrOutOfSeqNmbrInjected ){
+    }
+    if( f_env.rcvrErrBadSeqNmbrInjected ){
+    }
+    if( f_env.invertLCRC32ErrInjected ){
+    }
+    if( f_env.EDBErrInjected ){
+       f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr(PCIE_PL_NONFATAL_FRAME_NULL_TLP  ); 
+    }
+ 
+    //
+    f_env.Pod.FNXPCIEEnableTrans.unSuppressDenaliErr( PCIE_DL_COR_REPLAY_TIMEOUT ); 
+
+    repeat( 10 ) @(posedge CLOCK);    
+    semaphore_put( rcvrErr_semaphore, 1 );
+    } /* end Execute */
+  } /* end IngressRcvrErr */

@@ -1,0 +1,116 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: siu_l2intf_cmd_sample.vrhpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#inc "siu_cov_inc.pal";
+
+#ifndef SIU_INTF_COV
+. for ($bank=0; $bank<8; $bank++)
+. {
+    sample siu_l2intf_bank${bank}_cmd_sample_this (this_l2${bank}_cmd)
+                                     // <5:3>=O-P-S; 
+	   		             // <2:0>= 001->RDD; 010->WR8; 100->WRI
+    {
+      state DMU_RDD_ord_npt	    ( 6'b101001 );
+      state DMU_WR8_ord_pst         ( 6'b111010 );
+      state DMU_WRI_pst_ord         ( 6'b111100 );
+
+      state NIU_RDD_ord_npt         ( 6'b100001 );
+      state NIU_RDD_byp_npt         ( 6'b000001 );
+
+      state NIU_WRI_ord_npt         ( 6'b100100 );
+      state NIU_WRI_byp_npt         ( 6'b000100 );
+
+      state NIU_WRI_ord_pst         ( 6'b110100 );
+      state NIU_WRI_byp_pst         ( 6'b010100 );
+      cov_weight = 0;
+    }
+
+    sample siu_l2intf_bank${bank}_cmd_sample_last (last_l2${bank}_cmd)
+    {
+      state DMU_RDD_ord_npt_last    ( 6'b101001 ) if (l2${bank}_back_to_back==1'b1);
+      state DMU_WR8_ord_pst_last    ( 6'b111010 ) if (l2${bank}_back_to_back==1'b1);
+      state DMU_WRI_pst_ord_last    ( 6'b111100 ) if (l2${bank}_back_to_back==1'b1);
+
+      state NIU_RDD_ord_npt_last    ( 6'b100001 ) if (l2${bank}_back_to_back==1'b1);
+      state NIU_RDD_byp_npt_last    ( 6'b000001 ) if (l2${bank}_back_to_back==1'b1);
+
+      state NIU_WRI_ord_npt_last    ( 6'b100100 ) if (l2${bank}_back_to_back==1'b1);
+      state NIU_WRI_byp_npt_last    ( 6'b000100 ) if (l2${bank}_back_to_back==1'b1);
+
+      state NIU_WRI_ord_pst_last    ( 6'b110100 ) if (l2${bank}_back_to_back==1'b1);
+      state NIU_WRI_byp_pst_last    ( 6'b010100 ) if (l2${bank}_back_to_back==1'b1);
+
+      cov_weight = 0;
+
+    }
+
+  cross l2siu_intf_bank${bank}_cross ( siu_l2intf_bank${bank}_cmd_sample_last, siu_l2intf_bank${bank}_cmd_sample_this);
+
+. }
+
+#else
+
+// FC
+. for ($bank=0; $bank<8; $bank++)
+. {
+    sample siu_l2intf_bank${bank}_cmd_sample_this (this_l2${bank}_cmd)
+                                     // <5:3>=O-P-S;
+                                     // <2:0>= 001->RDD; 010->WR8; 100->WRI
+    {
+      state DMU_RDD_ord_npt         ( 6'b101001 );
+      state DMU_WR8_ord_pst         ( 6'b111010 );
+      state DMU_WRI_pst_ord         ( 6'b111100 );
+
+      state NIU_RDD_byp_npt         ( 6'b000001 );
+      state NIU_WRI_ord_npt         ( 6'b100100 );
+      state NIU_WRI_byp_pst         ( 6'b010100 );
+    }
+
+    sample siu_l2intf_bank${bank}_cmd_sample_last (last_l2${bank}_cmd)
+    {
+      state DMU_RDD_ord_npt_last    ( 6'b101001 ) if (l2${bank}_back_to_back==1'b1);
+      state DMU_WR8_ord_pst_last    ( 6'b111010 ) if (l2${bank}_back_to_back==1'b1);
+      state DMU_WRI_pst_ord_last    ( 6'b111100 ) if (l2${bank}_back_to_back==1'b1);
+
+      state NIU_RDD_byp_npt_last    ( 6'b000001 ) if (l2${bank}_back_to_back==1'b1);
+      state NIU_WRI_ord_npt_last    ( 6'b100100 ) if (l2${bank}_back_to_back==1'b1);
+      state NIU_WRI_byp_pst_last    ( 6'b010100 ) if (l2${bank}_back_to_back==1'b1);
+
+      cov_weight = 0;
+
+    }
+. }
+
+  cross l2siu_intf_bank0_cross ( siu_l2intf_bank0_cmd_sample_last, siu_l2intf_bank0_cmd_sample_this);
+#endif

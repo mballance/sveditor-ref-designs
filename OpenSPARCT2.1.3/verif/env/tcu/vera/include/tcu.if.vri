@@ -1,0 +1,1245 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: tcu.if.vri
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#ifndef INC_TCU_IF_VRI
+#define INC_TCU_IF_VRI
+
+#include <tcu_top_defines.vri>
+
+// WHAT: cmp clock (aka l2clk)
+interface tcu_l2clk_if {
+#ifdef TCU_GATE
+  input l2clk CLOCK  verilog_node "`TCU.clkgen_tcu_cmp__cclk";
+#else
+  input l2clk CLOCK  verilog_node "`TCU.clkgen_tcu_cmp.l2clk";
+#endif
+}
+
+// WHAT: IO clock
+interface tcu_iol2clk_if {
+#ifdef TCU_GATE
+  input l2clk CLOCK  verilog_node "`TCU.clkgen_tcu_io__cclk";
+#else
+  input l2clk CLOCK  verilog_node "`TCU.clkgen_tcu_io.l2clk";
+#endif
+}
+
+// WHAT: gclk which is input of TCU cluster headers
+interface tcu_gclk_if {
+#ifdef TCU_GATE
+  input gclk CLOCK  verilog_node "`TCU.gclk";
+#else
+  input gclk CLOCK  verilog_node "`TCU.clkgen_tcu_cmp.gclk";
+#endif
+}
+
+//
+// WHAT: interface for DMO signals
+//
+
+interface tcu_mbist_dmo_if {
+  input  l2clk            CLOCK       verilog_node "`TCU.l2clk";
+  //--- these signals are TCU output ports ---
+  input  [5:0] dmo_coresel      PSAMPLE #-1 verilog_node "`TCU.dmo_coresel";
+  input  [5:0] dmo_l2tsel       PSAMPLE #-1 verilog_node "`TCU.dmo_l2tsel";
+  input  [2:0] tcu_rtx_dmo_ctl  PSAMPLE #-1 verilog_node "`TCU.tcu_rtx_dmo_ctl";
+  input        dmo_dcmuxctl     PSAMPLE #-1 verilog_node "`TCU.dmo_dcmuxctl";
+  input        dmo_icmuxctl     PSAMPLE #-1 verilog_node "`TCU.dmo_icmuxctl";
+  input        dmo_tagmuxctl    PSAMPLE #-1 verilog_node "`TCU.dmo_tagmuxctl";
+}
+
+//
+// WHAT: important TCU-RST interface signals and reset-related signals
+// NOTE: some signals are defined in rst.if.vri, but rst.if.vri is not included in fc_top.vr.
+//
+interface tcu_rst_if {
+  input  l2clk                    CLOCK                    verilog_node "`TCU.l2clk";
+
+  input  PWRON_RST_L                 INPUT_EDGE INPUT_SKEW    verilog_node "`CPU.PWRON_RST_L";
+  input  tcu_por_reset               INPUT_EDGE INPUT_SKEW    verilog_node "`TCU.POR_";  // output of RST block
+  input  rst_tcu_asicflush_stop_req  INPUT_EDGE INPUT_SKEW    verilog_node "`TCU.rst_tcu_asicflush_stop_req";
+  input  tcu_rst_asicflush_stop_ack  INPUT_EDGE INPUT_SKEW    verilog_node "`TCU.tcu_rst_asicflush_stop_ack";
+  input  rst_tcu_flush_init_req      INPUT_EDGE INPUT_SKEW    verilog_node "`TCU.rst_tcu_flush_init_req";
+  input  tcu_rst_flush_init_ack      INPUT_EDGE INPUT_SKEW    verilog_node "`TCU.tcu_rst_flush_init_ack";
+  input  rst_tcu_flush_stop_req      INPUT_EDGE INPUT_SKEW    verilog_node "`TCU.rst_tcu_flush_stop_req";
+  input  tcu_rst_flush_stop_ack      INPUT_EDGE INPUT_SKEW    verilog_node "`TCU.tcu_rst_flush_stop_ack";
+  input  tcu_efu_read_start          INPUT_EDGE INPUT_SKEW    verilog_node "`TCU.tcu_efu_read_start";
+  input  tcu_rst_efu_done            INPUT_EDGE INPUT_SKEW    verilog_node "`TCU.tcu_rst_efu_done";
+  input  rst_ncu_unpark_thread       INPUT_EDGE INPUT_SKEW    verilog_node "`RST.rst_ncu_unpark_thread"; // warn: IO clk domain
+}
+
+//
+// WHAT: core/bank available/enable signals that are NCU outputs and TCU inputs
+// 
+interface tcu_corebank_if {
+  input  l2clk                    CLOCK                    verilog_node "`TCU.l2clk";
+  input [7:0] core_available   INPUT_EDGE INPUT_SKEW  verilog_node "{`TCU.ncu_spc7_core_available,`TCU.ncu_spc6_core_available,`TCU.ncu_spc5_core_available,`TCU.ncu_spc4_core_available,`TCU.ncu_spc3_core_available,`TCU.ncu_spc2_core_available,`TCU.ncu_spc1_core_available,`TCU.ncu_spc0_core_available}";
+  input [7:0] core_enable     INPUT_EDGE INPUT_SKEW    verilog_node "{`TCU.ncu_spc7_core_enable_status,`TCU.ncu_spc6_core_enable_status,`TCU.ncu_spc5_core_enable_status,`TCU.ncu_spc4_core_enable_status,`TCU.ncu_spc3_core_enable_status,`TCU.ncu_spc2_core_enable_status,`TCU.ncu_spc1_core_enable_status,`TCU.ncu_spc0_core_enable_status}";
+  input [7:0] bank_available INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.ncu_tcu_bank_avail";
+  input [7:0] bank_enable    INPUT_EDGE INPUT_SKEW  verilog_node "{`TCU.ncu_spc_ba67, `TCU.ncu_spc_ba67, `TCU.ncu_spc_ba45, `TCU.ncu_spc_ba45, `TCU.ncu_spc_ba23, `TCU.ncu_spc_ba23, `TCU.ncu_spc_ba01, `TCU.ncu_spc_ba01}";
+}
+
+interface bscan {
+  input  TCK     	      CLOCK                      verilog_node "`CPU.TCK" ;
+  input  bs_scan_en           INPUT_EDGE INPUT_SKEW      verilog_node "`TCU.tcu_mio_bs_scan_en" ;
+  input  bs_clk               INPUT_EDGE INPUT_SKEW      verilog_node "`TCU.tcu_mio_bs_clk" ;
+  input  bs_aclk              INPUT_EDGE INPUT_SKEW      verilog_node "`TCU.tcu_mio_bs_aclk" ;
+  input  bs_bclk              INPUT_EDGE INPUT_SKEW      verilog_node "`TCU.tcu_mio_bs_bclk" ;
+  input  bs_uclk              INPUT_EDGE INPUT_SKEW      verilog_node "`TCU.tcu_mio_bs_uclk" ;
+}
+
+interface mbist {
+  input  TCK     	          CLOCK                   verilog_node "`TCU.gclk";
+  input  mbist_user               INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mbist_user_mode";
+  input        tcu_rdp_rdmc_mbist_start      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_rdp_rdmc_mbist_start";
+  input        tcu_rtx_rxc_ipp0_mbist_start  INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_rtx_rxc_ipp0_mbist_start";
+  input        tcu_rtx_rxc_ipp1_mbist_start  INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_rtx_rxc_ipp1_mbist_start";
+  input        tcu_rtx_rxc_mb5_mbist_start   INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_rtx_rxc_mb5_mbist_start";
+  input        tcu_rtx_rxc_mb6_mbist_start   INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_rtx_rxc_mb6_mbist_start";
+  input        tcu_rtx_rxc_zcp0_mbist_start  INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_rtx_rxc_zcp0_mbist_start";
+  input        tcu_rtx_rxc_zcp1_mbist_start  INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_rtx_rxc_zcp1_mbist_start";
+  input        tcu_rtx_txc_txe0_mbist_start  INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_rtx_txc_txe0_mbist_start";
+  input        tcu_rtx_txc_txe1_mbist_start  INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_rtx_txc_txe1_mbist_start";
+  input        tcu_tds_smx_mbist_start       INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_tds_smx_mbist_start";
+  input        tcu_tds_tdmc_mbist_start      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_tds_tdmc_mbist_start";
+  input        tcu_peu_mbist_start      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_peu_mbist_start";
+  input [1:0]  tcu_dmu_mbist_start      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_dmu_mbist_start";
+  input        tcu_l2t7_mbist_start     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t7_mbist_start";
+  input        tcu_l2t6_mbist_start     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t6_mbist_start";
+  input        tcu_l2t5_mbist_start     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t5_mbist_start";
+  input        tcu_l2t4_mbist_start     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t4_mbist_start";
+  input        tcu_l2t3_mbist_start     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t3_mbist_start";
+  input        tcu_l2t2_mbist_start     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t2_mbist_start";
+  input        tcu_l2t1_mbist_start     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t1_mbist_start";
+  input        tcu_l2t0_mbist_start     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t0_mbist_start";
+  input        tcu_l2b7_mbist_start     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b7_mbist_start";
+  input        tcu_l2b6_mbist_start     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b6_mbist_start";
+  input        tcu_l2b5_mbist_start     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b5_mbist_start";
+  input        tcu_l2b4_mbist_start     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b4_mbist_start";
+  input        tcu_l2b3_mbist_start     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b3_mbist_start";
+  input        tcu_l2b2_mbist_start     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b2_mbist_start";
+  input        tcu_l2b1_mbist_start     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b1_mbist_start";
+  input        tcu_l2b0_mbist_start     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b0_mbist_start";
+  input        tcu_mcu3_mbist_start     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu3_mbist_start";
+  input        tcu_mcu2_mbist_start     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu2_mbist_start";
+  input        tcu_mcu1_mbist_start     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu1_mbist_start";
+  input        tcu_mcu0_mbist_start     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu0_mbist_start";
+  input [1:0]  tcu_ncu_mbist_start      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_ncu_mbist_start";
+  input [1:0]  tcu_sio_mbist_start      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_sio_mbist_start";
+  input [1:0]  tcu_sii_mbist_start      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_sii_mbist_start";
+  input [7:0]  tcu_spc_mbist_start      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc_mbist_start";
+  inout         rdp_rdmc_tcu_mbist_done     OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.rdp_rdmc_tcu_mbist_done";
+  inout         rtx_rxc_ipp0_tcu_mbist_done OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.rtx_rxc_ipp0_tcu_mbist_done";
+  inout         rtx_rxc_ipp1_tcu_mbist_done OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.rtx_rxc_ipp1_tcu_mbist_done";
+  inout         rtx_rxc_mb5_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.rtx_rxc_mb5_tcu_mbist_done";
+  inout         rtx_rxc_mb6_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.rtx_rxc_mb6_tcu_mbist_done";
+  inout         rtx_rxc_zcp0_tcu_mbist_done OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.rtx_rxc_zcp0_tcu_mbist_done";
+  inout         rtx_rxc_zcp1_tcu_mbist_done OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.rtx_rxc_zcp1_tcu_mbist_done";
+  inout         rtx_txc_txe0_tcu_mbist_done OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.rtx_txc_txe0_tcu_mbist_done";
+  inout         rtx_txc_txe1_tcu_mbist_done OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.rtx_txc_txe1_tcu_mbist_done";
+  inout         tds_smx_tcu_mbist_done      OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tds_smx_tcu_mbist_done";
+  inout         tds_tdmc_tcu_mbist_done     OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tds_tdmc_tcu_mbist_done";
+  inout         peu_tcu_mbist_done   OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.peu_tcu_mbist_done";
+  inout  [1:0]  dmu_tcu_mbist_done   OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.dmu_tcu_mbist_done";
+  inout         l2t7_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.l2t7_tcu_mbist_done";
+  inout         l2t6_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.l2t6_tcu_mbist_done";
+  inout         l2t5_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.l2t5_tcu_mbist_done";
+  inout         l2t4_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.l2t4_tcu_mbist_done";
+  inout         l2t3_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.l2t3_tcu_mbist_done";
+  inout         l2t2_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.l2t2_tcu_mbist_done";
+  inout         l2t1_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.l2t1_tcu_mbist_done";
+  inout         l2t0_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.l2t0_tcu_mbist_done";
+  inout         l2b7_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.l2b7_tcu_mbist_done";
+  inout         l2b6_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.l2b6_tcu_mbist_done";
+  inout         l2b5_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.l2b5_tcu_mbist_done";
+  inout         l2b4_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.l2b4_tcu_mbist_done";
+  inout         l2b3_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.l2b3_tcu_mbist_done";
+  inout         l2b2_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.l2b2_tcu_mbist_done";
+  inout         l2b1_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.l2b1_tcu_mbist_done";
+  inout         l2b0_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.l2b0_tcu_mbist_done";
+  inout         mcu3_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.mcu3_tcu_mbist_done";
+  inout         mcu2_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.mcu2_tcu_mbist_done";
+  inout         mcu1_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.mcu1_tcu_mbist_done";
+  inout         mcu0_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.mcu0_tcu_mbist_done";
+  inout [1:0]   ncu_tcu_mbist_done   OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.ncu_tcu_mbist_done";
+  inout [1:0]   sio_tcu_mbist_done   OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.sio_tcu_mbist_done";
+  inout [1:0]   sii_tcu_mbist_done   OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.sii_tcu_mbist_done";
+  inout         spc7_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.spc7_tcu_mbist_done";
+  inout         spc6_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.spc6_tcu_mbist_done";
+  inout         spc5_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.spc5_tcu_mbist_done";
+  inout         spc4_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.spc4_tcu_mbist_done";
+  inout         spc3_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.spc3_tcu_mbist_done";
+  inout         spc2_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.spc2_tcu_mbist_done";
+  inout         spc1_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.spc1_tcu_mbist_done";
+  inout         spc0_tcu_mbist_done  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.spc0_tcu_mbist_done"; 
+  output         rdp_rdmc_tcu_mbist_fail     OUTPUT_EDGE_N   verilog_node "`TCU.rdp_rdmc_tcu_mbist_fail";
+  output         rtx_rxc_ipp0_tcu_mbist_fail OUTPUT_EDGE_N   verilog_node "`TCU.rtx_rxc_ipp0_tcu_mbist_fail";
+  output         rtx_rxc_ipp1_tcu_mbist_fail OUTPUT_EDGE_N   verilog_node "`TCU.rtx_rxc_ipp1_tcu_mbist_fail";
+  output         rtx_rxc_mb5_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.rtx_rxc_mb5_tcu_mbist_fail";
+  output         rtx_rxc_mb6_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.rtx_rxc_mb6_tcu_mbist_fail";
+  output         rtx_rxc_zcp0_tcu_mbist_fail OUTPUT_EDGE_N   verilog_node "`TCU.rtx_rxc_zcp0_tcu_mbist_fail";
+  output         rtx_rxc_zcp1_tcu_mbist_fail OUTPUT_EDGE_N   verilog_node "`TCU.rtx_rxc_zcp1_tcu_mbist_fail";
+  output         rtx_txc_txe0_tcu_mbist_fail OUTPUT_EDGE_N   verilog_node "`TCU.rtx_txc_txe0_tcu_mbist_fail";
+  output         rtx_txc_txe1_tcu_mbist_fail OUTPUT_EDGE_N   verilog_node "`TCU.rtx_txc_txe1_tcu_mbist_fail";
+  output         tds_smx_tcu_mbist_fail      OUTPUT_EDGE_N   verilog_node "`TCU.tds_smx_tcu_mbist_fail";
+  output         tds_tdmc_tcu_mbist_fail     OUTPUT_EDGE_N   verilog_node "`TCU.tds_tdmc_tcu_mbist_fail";
+  output         peu_tcu_mbist_fail   OUTPUT_EDGE_N   verilog_node "`TCU.peu_tcu_mbist_fail";
+  output  [1:0]  dmu_tcu_mbist_fail   OUTPUT_EDGE_N   verilog_node "`TCU.dmu_tcu_mbist_fail";
+  output         l2t7_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.l2t7_tcu_mbist_fail";
+  output         l2t6_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.l2t6_tcu_mbist_fail";
+  output         l2t5_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.l2t5_tcu_mbist_fail";
+  output         l2t4_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.l2t4_tcu_mbist_fail";
+  output         l2t3_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.l2t3_tcu_mbist_fail";
+  output         l2t2_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.l2t2_tcu_mbist_fail";
+  output         l2t1_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.l2t1_tcu_mbist_fail";
+  output         l2t0_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.l2t0_tcu_mbist_fail";
+  output         l2b7_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.l2b7_tcu_mbist_fail";
+  output         l2b6_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.l2b6_tcu_mbist_fail";
+  output         l2b5_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.l2b5_tcu_mbist_fail";
+  output         l2b4_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.l2b4_tcu_mbist_fail";
+  output         l2b3_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.l2b3_tcu_mbist_fail";
+  output         l2b2_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.l2b2_tcu_mbist_fail";
+  output         l2b1_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.l2b1_tcu_mbist_fail";
+  output         l2b0_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.l2b0_tcu_mbist_fail";
+  output         mcu3_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.mcu3_tcu_mbist_fail";
+  output         mcu2_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.mcu2_tcu_mbist_fail";
+  output         mcu1_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.mcu1_tcu_mbist_fail";
+  output         mcu0_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.mcu0_tcu_mbist_fail";
+  output [1:0]   ncu_tcu_mbist_fail   OUTPUT_EDGE_N   verilog_node "`TCU.ncu_tcu_mbist_fail";
+  output [1:0]   sio_tcu_mbist_fail   OUTPUT_EDGE_N   verilog_node "`TCU.sio_tcu_mbist_fail";
+  output [1:0]   sii_tcu_mbist_fail   OUTPUT_EDGE_N   verilog_node "`TCU.sii_tcu_mbist_fail";
+  output         spc7_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.spc7_tcu_mbist_fail";
+  output         spc6_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.spc6_tcu_mbist_fail";
+  output         spc5_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.spc5_tcu_mbist_fail";
+  output         spc4_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.spc4_tcu_mbist_fail";
+  output         spc3_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.spc3_tcu_mbist_fail";
+  output         spc2_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.spc2_tcu_mbist_fail";
+  output         spc1_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.spc1_tcu_mbist_fail";
+  output         spc0_tcu_mbist_fail  OUTPUT_EDGE_N   verilog_node "`TCU.spc0_tcu_mbist_fail"; 
+  input  tcu_spc0_scan_en      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc0_scan_en";
+  input  tcu_spc1_scan_en      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc1_scan_en";
+  input  tcu_spc2_scan_en      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc2_scan_en";
+  input  tcu_spc3_scan_en      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc3_scan_en";
+  input  tcu_spc4_scan_en      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc4_scan_en";
+  input  tcu_spc5_scan_en      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc5_scan_en";
+  input  tcu_spc6_scan_en      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc6_scan_en";
+  input  tcu_spc7_scan_en      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc7_scan_en";
+  input  tap_spc0_mb_scan_en      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc0_mb_scan_en";
+  input  tap_spc1_mb_scan_en      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc1_mb_scan_en";
+  input  tap_spc2_mb_scan_en      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc2_mb_scan_en";
+  input  tap_spc3_mb_scan_en      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc3_mb_scan_en";
+  input  tap_spc4_mb_scan_en      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc4_mb_scan_en";
+  input  tap_spc5_mb_scan_en      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc5_mb_scan_en";
+  input  tap_spc6_mb_scan_en      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc6_mb_scan_en";
+  input  tap_spc7_mb_scan_en      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc7_mb_scan_en";
+  input  tcu_mbist_bisi_en        INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mbist_bisi_en";
+  input  tcu_spc0_aclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc0_aclk";
+  input  tcu_spc1_aclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc1_aclk";
+  input  tcu_spc2_aclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc2_aclk";
+  input  tcu_spc3_aclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc3_aclk";
+  input  tcu_spc4_aclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc4_aclk";
+  input  tcu_spc5_aclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc5_aclk";
+  input  tcu_spc6_aclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc6_aclk";
+  input  tcu_spc7_aclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc7_aclk";
+  input  tcu_spc0_bclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc0_bclk";
+  input  tcu_spc1_bclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc1_bclk";
+  input  tcu_spc2_bclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc2_bclk";
+  input  tcu_spc3_bclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc3_bclk";
+  input  tcu_spc4_bclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc4_bclk";
+  input  tcu_spc5_bclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc5_bclk";
+  input  tcu_spc6_bclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc6_bclk";
+  input  tcu_spc7_bclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc7_bclk";
+  input  tap_spc0_aclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc0_mb_aclk";
+  input  tap_spc1_aclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc1_mb_aclk";
+  input  tap_spc2_aclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc2_mb_aclk";
+  input  tap_spc3_aclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc3_mb_aclk";
+  input  tap_spc4_aclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc4_mb_aclk";
+  input  tap_spc5_aclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc5_mb_aclk";
+  input  tap_spc6_aclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc6_mb_aclk";
+  input  tap_spc7_aclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc7_mb_aclk";
+  input  tap_spc0_bclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc0_mb_bclk";
+  input  tap_spc1_bclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc1_mb_bclk";
+  input  tap_spc2_bclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc2_mb_bclk";
+  input  tap_spc3_bclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc3_mb_bclk";
+  input  tap_spc4_bclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc4_mb_bclk";
+  input  tap_spc5_bclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc5_mb_bclk";
+  input  tap_spc6_bclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc6_mb_bclk";
+  input  tap_spc7_bclk              INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc7_mb_bclk";
+  input  tap_spc0_mb_clk_stop       INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc0_mb_clk_stop";
+  input  tap_spc1_mb_clk_stop       INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc1_mb_clk_stop";
+  input  tap_spc2_mb_clk_stop       INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc2_mb_clk_stop";
+  input  tap_spc3_mb_clk_stop       INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc3_mb_clk_stop";
+  input  tap_spc4_mb_clk_stop       INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc4_mb_clk_stop";
+  input  tap_spc5_mb_clk_stop       INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc5_mb_clk_stop";
+  input  tap_spc6_mb_clk_stop       INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc6_mb_clk_stop";
+  input  tap_spc7_mb_clk_stop       INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tap_spc7_mb_clk_stop";
+  input  tcu_spc0_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc0_clk_stop";
+  input  tcu_spc1_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc1_clk_stop";
+  input  tcu_spc2_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc2_clk_stop";
+  input  tcu_spc3_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc3_clk_stop";
+  input  tcu_spc4_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc4_clk_stop";
+  input  tcu_spc5_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc5_clk_stop";
+  input  tcu_spc6_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc6_clk_stop";
+  input  tcu_spc7_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc7_clk_stop";
+  input  tcu_spc0_mbist_scan_out    INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc0_mbist_scan_out";
+  input  tcu_spc1_mbist_scan_out    INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc1_mbist_scan_out";
+  input  tcu_spc2_mbist_scan_out    INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc2_mbist_scan_out";
+  input  tcu_spc3_mbist_scan_out    INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc3_mbist_scan_out";
+  input  tcu_spc4_mbist_scan_out    INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc4_mbist_scan_out";
+  input  tcu_spc5_mbist_scan_out    INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc5_mbist_scan_out";
+  input  tcu_spc6_mbist_scan_out    INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc6_mbist_scan_out";
+  input  tcu_spc7_mbist_scan_out    INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc7_mbist_scan_out";
+  output spc0_tcu_mbist_scan_in     OUTPUT_EDGE_N           verilog_node "`TCU.spc0_tcu_mbist_scan_in";
+  output spc1_tcu_mbist_scan_in     OUTPUT_EDGE_N           verilog_node "`TCU.spc1_tcu_mbist_scan_in";
+  output spc2_tcu_mbist_scan_in     OUTPUT_EDGE_N           verilog_node "`TCU.spc2_tcu_mbist_scan_in";
+  output spc3_tcu_mbist_scan_in     OUTPUT_EDGE_N           verilog_node "`TCU.spc3_tcu_mbist_scan_in";
+  output spc4_tcu_mbist_scan_in     OUTPUT_EDGE_N           verilog_node "`TCU.spc4_tcu_mbist_scan_in";
+  output spc5_tcu_mbist_scan_in     OUTPUT_EDGE_N           verilog_node "`TCU.spc5_tcu_mbist_scan_in";
+  output spc6_tcu_mbist_scan_in     OUTPUT_EDGE_N           verilog_node "`TCU.spc6_tcu_mbist_scan_in";
+  output spc7_tcu_mbist_scan_in     OUTPUT_EDGE_N           verilog_node "`TCU.spc7_tcu_mbist_scan_in";
+  // non-spc mbist engines
+  input  tcu_se_scancollar_in       INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_se_scancollar_in";
+  input  tcu_se_scancollar_out      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_se_scancollar_out";
+  input  tcu_aclk                   INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_aclk";
+  input  tcu_bclk                   INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_bclk";
+  input  tcu_scan_en                INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_scan_en";
+  input  tcu_sii_clk_stop           INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_sii_clk_stop";
+  input  tcu_sii_io_clk_stop        INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_sii_io_clk_stop";
+  input  tcu_sio_clk_stop           INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_sio_clk_stop";
+  input  tcu_sio_io_clk_stop        INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_sio_io_clk_stop";
+  input  tcu_ncu_clk_stop           INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_ncu_clk_stop";
+  input  tcu_ncu_io_clk_stop        INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_ncu_io_clk_stop";
+  input  tcu_mcu0_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu0_clk_stop";
+  input  tcu_mcu0_io_clk_stop       INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu0_io_clk_stop";
+  input  tcu_mcu0_dr_clk_stop       INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu0_dr_clk_stop";
+  input  tcu_mcu0_fbd_clk_stop      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu0_fbd_clk_stop";
+  input  tcu_mcu1_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu1_clk_stop";
+  input  tcu_mcu1_io_clk_stop       INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu1_io_clk_stop";
+  input  tcu_mcu1_dr_clk_stop       INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu1_dr_clk_stop";
+  input  tcu_mcu1_fbd_clk_stop      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu1_fbd_clk_stop";
+  input  tcu_mcu2_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu2_clk_stop";
+  input  tcu_mcu2_io_clk_stop       INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu2_io_clk_stop";
+  input  tcu_mcu2_dr_clk_stop       INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu2_dr_clk_stop";
+  input  tcu_mcu2_fbd_clk_stop      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu2_fbd_clk_stop";
+  input  tcu_mcu3_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu3_clk_stop";
+  input  tcu_mcu3_io_clk_stop       INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu3_io_clk_stop";
+  input  tcu_mcu3_dr_clk_stop       INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu3_dr_clk_stop";
+  input  tcu_mcu3_fbd_clk_stop      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu3_fbd_clk_stop";
+  input  tcu_l2b0_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b0_clk_stop";
+  input  tcu_l2b1_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b1_clk_stop";
+  input  tcu_l2b2_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b2_clk_stop";
+  input  tcu_l2b3_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b3_clk_stop";
+  input  tcu_l2b4_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b4_clk_stop";
+  input  tcu_l2b5_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b5_clk_stop";
+  input  tcu_l2b6_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b6_clk_stop";
+  input  tcu_l2b7_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b7_clk_stop";
+  input  tcu_l2t0_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t0_clk_stop";
+  input  tcu_l2t1_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t1_clk_stop";
+  input  tcu_l2t2_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t2_clk_stop";
+  input  tcu_l2t3_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t3_clk_stop";
+  input  tcu_l2t4_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t4_clk_stop";
+  input  tcu_l2t5_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t5_clk_stop";
+  input  tcu_l2t6_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t6_clk_stop";
+  input  tcu_l2t7_clk_stop          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t7_clk_stop";
+  input  tcu_dmu_io_clk_stop        INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_dmu_io_clk_stop";
+  input  tcu_peu_io_clk_stop        INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_peu_io_clk_stop";
+  input  tcu_peu_pc_clk_stop        INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_peu_pc_clk_stop";
+  input  tcu_tds_io_clk_stop        INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_tds_io_clk_stop";
+  input  tcu_rtx_io_clk_stop        INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_rtx_io_clk_stop";
+  input  tcu_rdp_io_clk_stop        INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_rdp_io_clk_stop";
+
+  input  tcu_sii_mbist_scan_in      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_sii_mbist_scan_in";
+  input  tcu_sio_mbist_scan_in      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_sio_mbist_scan_in";
+  input  tcu_ncu_mbist_scan_in      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_ncu_mbist_scan_in";
+  input  tcu_mcu0_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu0_mbist_scan_in";
+  input  tcu_mcu1_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu1_mbist_scan_in";
+  input  tcu_mcu2_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu2_mbist_scan_in";
+  input  tcu_mcu3_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mcu3_mbist_scan_in";
+  input  tcu_l2b0_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b0_mbist_scan_in";
+  input  tcu_l2b1_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b1_mbist_scan_in";
+  input  tcu_l2b2_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b2_mbist_scan_in";
+  input  tcu_l2b3_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b3_mbist_scan_in";
+  input  tcu_l2b4_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b4_mbist_scan_in";
+  input  tcu_l2b5_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b5_mbist_scan_in";
+  input  tcu_l2b6_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b6_mbist_scan_in";
+  input  tcu_l2b7_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2b7_mbist_scan_in";
+  input  tcu_l2t0_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t0_mbist_scan_in";
+  input  tcu_l2t1_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t1_mbist_scan_in";
+  input  tcu_l2t2_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t2_mbist_scan_in";
+  input  tcu_l2t3_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t3_mbist_scan_in";
+  input  tcu_l2t4_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t4_mbist_scan_in";
+  input  tcu_l2t5_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t5_mbist_scan_in";
+  input  tcu_l2t6_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t6_mbist_scan_in";
+  input  tcu_l2t7_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t7_mbist_scan_in";
+  input  tcu_dmu_mbist_scan_in      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_peu_mbist_scan_in";
+  input  tcu_peu_mbist_scan_in      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_peu_mbist_scan_in";
+  input  tds_mbist_scan_in          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tds_mbist_scan_in";
+  input  rtx_mbist_scan_in          INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.rtx_mbist_scan_in";
+  input  rdp_rdmc_mbist_scan_in     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.rdp_rdmc_mbist_scan_in";
+  output sii_tcu_mbist_scan_out     OUTPUT_EDGE_N   verilog_node "`TCU.sii_tcu_mbist_scan_out";
+  output sio_tcu_mbist_scan_out     OUTPUT_EDGE_N   verilog_node "`TCU.sio_tcu_mbist_scan_out";
+  output ncu_tcu_mbist_scan_out     OUTPUT_EDGE_N   verilog_node "`TCU.ncu_tcu_mbist_scan_out";
+  output mcu0_tcu_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.mcu0_tcu_mbist_scan_out";
+  output mcu1_tcu_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.mcu1_tcu_mbist_scan_out";
+  output mcu2_tcu_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.mcu2_tcu_mbist_scan_out";
+  output mcu3_tcu_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.mcu3_tcu_mbist_scan_out";
+  output l2b0_tcu_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.l2b0_tcu_mbist_scan_out";
+  output l2b1_tcu_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.l2b1_tcu_mbist_scan_out";
+  output l2b2_tcu_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.l2b2_tcu_mbist_scan_out";
+  output l2b3_tcu_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.l2b3_tcu_mbist_scan_out";
+  output l2b4_tcu_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.l2b4_tcu_mbist_scan_out";
+  output l2b5_tcu_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.l2b5_tcu_mbist_scan_out";
+  output l2b6_tcu_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.l2b6_tcu_mbist_scan_out";
+  output l2b7_tcu_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.l2b7_tcu_mbist_scan_out";
+  output l2t0_tcu_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.l2t0_tcu_mbist_scan_out";
+  output l2t1_tcu_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.l2t1_tcu_mbist_scan_out";
+  output l2t2_tcu_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.l2t2_tcu_mbist_scan_out";
+  output l2t3_tcu_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.l2t3_tcu_mbist_scan_out";
+  output l2t4_tcu_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.l2t4_tcu_mbist_scan_out";
+  output l2t5_tcu_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.l2t5_tcu_mbist_scan_out";
+  output l2t6_tcu_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.l2t6_tcu_mbist_scan_out";
+  output l2t7_tcu_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.l2t7_tcu_mbist_scan_out";
+  output dmu_tcu_mbist_scan_out     OUTPUT_EDGE_N   verilog_node "`TCU.dmu_tcu_mbist_scan_out";
+  output peu_tcu_mbist_scan_out     OUTPUT_EDGE_N   verilog_node "`TCU.peu_tcu_mbist_scan_out";
+  output tds_mbist_scan_out         OUTPUT_EDGE_N   verilog_node "`TCU.tds_mbist_scan_out";
+  output rtx_mbist_scan_out         OUTPUT_EDGE_N   verilog_node "`TCU.rtx_mbist_scan_out";
+  output rdp_rdmc_mbist_scan_out    OUTPUT_EDGE_N   verilog_node "`TCU.rdp_rdmc_mbist_scan_out";
+  input  tcu_mio_mbist_fail         INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mio_mbist_fail";
+  input  tcu_mio_mbist_done         INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_mio_mbist_done";
+  input  [165:0] DBG_DQ             INPUT_EDGE INPUT_SKEW   verilog_node "`TOP.cpu.DBG_DQ";
+#ifdef TCU_GATE
+  input  [47:0] tcu_mb_start   	  INPUT_EDGE INPUT_SKEW   verilog_node "{`TCU.tcu_rdp_rdmc_mbist_start, `TCU.tcu_rtx_rxc_ipp0_mbist_start, `TCU.tcu_rtx_rxc_ipp1_mbist_start, `TCU.tcu_rtx_rxc_mb5_mbist_start, `TCU.tcu_rtx_rxc_mb6_mbist_start, `TCU.tcu_rtx_rxc_zcp0_mbist_start, `TCU.tcu_rtx_rxc_zcp1_mbist_start, `TCU.tcu_rtx_txc_txe0_mbist_start, `TCU.tcu_rtx_txc_txe1_mbist_start, `TCU.tcu_tds_smx_mbist_start, `TCU.tcu_tds_tdmc_mbist_start, `TCU.tcu_peu_mbist_start, `TCU.tcu_dmu_mbist_start[1:0], `TCU.tcu_l2t7_mbist_start, `TCU.tcu_l2t6_mbist_start, `TCU.tcu_l2t5_mbist_start, `TCU.tcu_l2t4_mbist_start, `TCU.tcu_l2t3_mbist_start, `TCU.tcu_l2t2_mbist_start, `TCU.tcu_l2t1_mbist_start, `TCU.tcu_l2t0_mbist_start, `TCU.tcu_l2b7_mbist_start, `TCU.tcu_l2b6_mbist_start, `TCU.tcu_l2b5_mbist_start, `TCU.tcu_l2b4_mbist_start, `TCU.tcu_l2b3_mbist_start, `TCU.tcu_l2b2_mbist_start, `TCU.tcu_l2b1_mbist_start, `TCU.tcu_l2b0_mbist_start, `TCU.tcu_mcu3_mbist_start, `TCU.tcu_mcu2_mbist_start, `TCU.tcu_mcu1_mbist_start, `TCU.tcu_mcu0_mbist_start, `TCU.tcu_ncu_mbist_start[1:0], `TCU.tcu_sio_mbist_start[1:0], `TCU.tcu_sii_mbist_start[1:0], `TCU.tcu_spc_mbist_start[7:0]}";
+  input  jtag_dmo_enable	  INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.jtag_dmo_enable";
+  input  [31:0] jtag_dmo_control  INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.jtag_dmo_control[31:0]";
+  input  [15:0] sr_out		  INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.jtag_dmo_control[47:32]";
+  input  tcu_mbist_loop_mode      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.mbist_ctl__csr_mbist_mode_3_";
+#else
+
+  input  [47:0] tcu_mb_start   	  INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.mbist_ctl.tcu_mb_start";
+  input  jtag_dmo_enable	  INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.mbist_ctl.jtag_dmo_enable";
+  input  [31:0] jtag_dmo_control  INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.mbist_ctl.jtag_dmo_control";
+  input  [15:0] sr_out		  INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.mbist_ctl.dmo_ctl.sr_out";
+  input  tcu_mbist_loop_mode      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.mbist_ctl.tcu_mbist_loop_mode";
+#endif
+//Add interface 
+#ifdef FC_SCAN_BENCH
+#ifdef GATESIM
+  input  mbist_l2tag_read_l2t0  INPUT_EDGE INPUT_SKEW   verilog_node "`CPU.l2t0.mbist_l2t_read";
+#else
+  input  mbist_l2tag_read_l2t0  INPUT_EDGE INPUT_SKEW   verilog_node "`CPU.l2t0.mbist.mbist_l2tag_read";
+#endif // GATESIM
+#endif // FC_SCAN_BENCH
+#ifdef TCU_GATE
+  input [31:0] bisx_counter     INPUT_EDGE INPUT_SKEW   verilog_node "{`TCU.mbist_ctl__bisx_counter_31_, `TCU.mbist_ctl__bisx_counter_30_, `TCU.mbist_ctl__bisx_counter_29_, `TCU.mbist_ctl__bisx_counter_28_, `TCU.mbist_ctl__bisx_counter_27_, `TCU.mbist_ctl__bisx_counter_26_, `TCU.mbist_ctl__bisx_counter_25_, `TCU.mbist_ctl__bisx_counter_24_, `TCU.mbist_ctl__bisx_counter_23_, `TCU.mbist_ctl__bisx_counter_22_, `TCU.mbist_ctl__bisx_counter_21_, `TCU.mbist_ctl__bisx_counter_20_, `TCU.mbist_ctl__bisx_counter_19_, `TCU.mbist_ctl__bisx_counter_18_, `TCU.mbist_ctl__bisx_counter_17_, `TCU.mbist_ctl__bisx_counter_16_, `TCU.mbist_ctl__bisx_counter_15_, `TCU.mbist_ctl__bisx_counter_14_, `TCU.mbist_ctl__bisx_counter_13_, `TCU.mbist_ctl__bisx_counter_12_, `TCU.mbist_ctl__bisx_counter_11_, `TCU.mbist_ctl__bisx_counter_10_, `TCU.mbist_ctl__bisx_counter_9_, `TCU.mbist_ctl__bisx_counter_8_, `TCU.mbist_ctl__bisx_counter_7_, `TCU.mbist_ctl__bisx_counter_6_, `TCU.mbist_ctl__bisx_counter_5_, `TCU.mbist_ctl__bisx_counter_4_, `TCU.mbist_ctl__bisx_counter_3_, `TCU.mbist_ctl__bisx_counter_2_, `TCU.mbist_ctl__bisx_counter_1_, `TCU.mbist_ctl__bisx_counter_0_} ";
+#else
+  input [31:0] bisx_counter     INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.mbist_ctl.bisx_counter[31:0]";
+#endif
+}
+
+interface lbist {
+  input  clk                        CLOCK                   verilog_node "`TCU.gclk";
+  input  [(`NUM_LBIST_ENGINES-1):0] lbist_start        INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc_lbist_start";
+  input  [(`NUM_LBIST_ENGINES-1):0] lbist_scan_in      INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc_lbist_scan_in";
+  input  lbist_pgm                INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc_lbist_pgm";
+  input  test_mode                INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc0_test_mode";
+  output spc0_tcu_lbist_done      OUTPUT_EDGE_N   verilog_node "`TCU.spc0_tcu_lbist_done";
+  output spc1_tcu_lbist_done      OUTPUT_EDGE_N   verilog_node "`TCU.spc1_tcu_lbist_done";
+  output spc2_tcu_lbist_done      OUTPUT_EDGE_N   verilog_node "`TCU.spc2_tcu_lbist_done";
+  output spc3_tcu_lbist_done      OUTPUT_EDGE_N   verilog_node "`TCU.spc3_tcu_lbist_done";
+  output spc4_tcu_lbist_done      OUTPUT_EDGE_N   verilog_node "`TCU.spc4_tcu_lbist_done";
+  output spc5_tcu_lbist_done      OUTPUT_EDGE_N   verilog_node "`TCU.spc5_tcu_lbist_done";
+  output spc6_tcu_lbist_done      OUTPUT_EDGE_N   verilog_node "`TCU.spc6_tcu_lbist_done";
+  output spc7_tcu_lbist_done      OUTPUT_EDGE_N   verilog_node "`TCU.spc7_tcu_lbist_done";
+  output spc0_tcu_lbist_scan_out  OUTPUT_EDGE_N   verilog_node "`TCU.spc0_tcu_lbist_scan_out";
+  output spc1_tcu_lbist_scan_out  OUTPUT_EDGE_N   verilog_node "`TCU.spc1_tcu_lbist_scan_out";
+  output spc2_tcu_lbist_scan_out  OUTPUT_EDGE_N   verilog_node "`TCU.spc2_tcu_lbist_scan_out";
+  output spc3_tcu_lbist_scan_out  OUTPUT_EDGE_N   verilog_node "`TCU.spc3_tcu_lbist_scan_out";
+  output spc4_tcu_lbist_scan_out  OUTPUT_EDGE_N   verilog_node "`TCU.spc4_tcu_lbist_scan_out";
+  output spc5_tcu_lbist_scan_out  OUTPUT_EDGE_N   verilog_node "`TCU.spc5_tcu_lbist_scan_out";
+  output spc6_tcu_lbist_scan_out  OUTPUT_EDGE_N   verilog_node "`TCU.spc6_tcu_lbist_scan_out";
+  output spc7_tcu_lbist_scan_out  OUTPUT_EDGE_N   verilog_node "`TCU.spc7_tcu_lbist_scan_out";
+}
+
+interface scan {
+  input   TCK                     CLOCK                  verilog_node "`TOP.tck";  // Using pos/neg edge for AB clock
+  input   tcu_scan_en             INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_scan_en";
+  //input   tcu_srdes_scancfg       INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_srdes_scancfg";
+  input   tcu_aclk                INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_aclk"; // For scan flush check
+  input   tcu_bclk                INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_bclk"; // For scan flush check
+  //input   tcu_scan_cclk           INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_scan_cclk";
+  //input   tcu_pllbypass           INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_pllbypass";
+  input   tcu_pce_ov              INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_pce_ov";
+//  input   [31:0] SCAN_OUT         INPUT_EDGE INPUT_SKEW  verilog_node "`TOP.SCAN_OUT";
+  input   SCAN_OUT31              INPUT_EDGE INPUT_SKEW  verilog_node "`CPU.DBG_DQ[159]";
+  input   [30:0] SCAN_OUT30_0     INPUT_EDGE INPUT_SKEW  verilog_node "`CPU.DBG_DQ[73:43]";
+  input   [1:0] tcu_spc0_scan_out INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc0_scan_out";
+  input   [1:0] tcu_spc1_scan_out INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc1_scan_out";
+  input   [1:0] tcu_spc2_scan_out INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc2_scan_out";
+  input   [1:0] tcu_spc3_scan_out INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc3_scan_out";
+  input   [1:0] tcu_spc4_scan_out INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc4_scan_out";
+  input   [1:0] tcu_spc5_scan_out INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc5_scan_out";
+  input   [1:0] tcu_spc6_scan_out INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc6_scan_out";
+  input   [1:0] tcu_spc7_scan_out INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc7_scan_out";
+  input   tcu_soca_scan_out       INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_soca_scan_out";
+  input   tcu_socb_scan_out       INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_socb_scan_out";
+  input   tcu_socc_scan_out       INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_socc_scan_out";
+  input   tcu_socd_scan_out       INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_socd_scan_out";
+  input   tcu_soce_scan_out       INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_soce_scan_out";
+  input   tcu_socf_scan_out       INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_socf_scan_out";
+  input   tcu_socg_scan_out       INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_socg_scan_out";
+  input   tcu_soch_scan_out       INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_soch_scan_out";
+  input   tcu_soc0_scan_out       INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_soc0_scan_out";
+  input   tcu_soc1_scan_out       INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_soc1_scan_out";
+  input   tcu_soc2_scan_out       INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_soc2_scan_out";
+  input   tcu_soc3_scan_out       INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_soc3_scan_out";
+  input   tcu_soc4_scan_out       INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_soc4_scan_out";
+  input   tcu_soc5_scan_out       INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_soc5_scan_out";
+  input   tcu_soc6_scan_out       INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_soc6_scan_out";
+  //input   tcu_srdes_scan_out      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_srdes_scan_out";  
+  input   tcu_se_scancollar_in    INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_se_scancollar_in";
+  input   tcu_se_scancollar_out   INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_se_scancollar_out";
+  input   tcu_array_wr_inhibit    INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_array_wr_inhibit";
+  input   tcu_rst_flush_init_ack  INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_rst_flush_init_ack";
+  input   tcu_array_bypass        INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_array_bypass";
+  input   tcu_dectest             INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_dectest";
+  input   tcu_muxtest             INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_muxtest";
+  //output  AC_TEST_MODE           OUTPUT_EDGE_N  verilog_node "`CPU.DBG_DQ[137]";     // moved it to pkg.*.vri
+  //output  SCAN_EN                OUTPUT_EDGE_N  verilog_node "`CPU.DBG_DQ[74]";      // moved it to pkg.*.vri
+  //output  [31:0] SCAN_IN         OUTPUT_EDGE_N  verilog_node "`CPU.DBG_DQ[133:103]"; // moved it to pkg.*.vri
+  //output  SRDES_SCANCFG          OUTPUT_EDGE_N  verilog_node "`TOP.SRDES_SCANCFG";
+  //output  SRDES_SCANCFG          OUTPUT_EDGE_N  verilog_node "`TOP.SRDES_SCANCFG";
+  output  [1:0] spc0_tcu_scan_in OUTPUT_EDGE_N  verilog_node "`TCU.spc0_tcu_scan_in";
+  output  [1:0] spc1_tcu_scan_in OUTPUT_EDGE_N  verilog_node "`TCU.spc1_tcu_scan_in";
+  output  [1:0] spc2_tcu_scan_in OUTPUT_EDGE_N  verilog_node "`TCU.spc2_tcu_scan_in";
+  output  [1:0] spc3_tcu_scan_in OUTPUT_EDGE_N  verilog_node "`TCU.spc3_tcu_scan_in";
+  output  [1:0] spc4_tcu_scan_in OUTPUT_EDGE_N  verilog_node "`TCU.spc4_tcu_scan_in";
+  output  [1:0] spc5_tcu_scan_in OUTPUT_EDGE_N  verilog_node "`TCU.spc5_tcu_scan_in";
+  output  [1:0] spc6_tcu_scan_in OUTPUT_EDGE_N  verilog_node "`TCU.spc6_tcu_scan_in";
+  output  [1:0] spc7_tcu_scan_in OUTPUT_EDGE_N  verilog_node "`TCU.spc7_tcu_scan_in";
+  output  soca_tcu_scan_in       OUTPUT_EDGE_N  verilog_node "`TCU.soca_tcu_scan_in";
+  output  socb_tcu_scan_in       OUTPUT_EDGE_N  verilog_node "`TCU.socb_tcu_scan_in";
+  output  socc_tcu_scan_in       OUTPUT_EDGE_N  verilog_node "`TCU.socc_tcu_scan_in";
+  output  socd_tcu_scan_in       OUTPUT_EDGE_N  verilog_node "`TCU.socd_tcu_scan_in";
+  output  soce_tcu_scan_in       OUTPUT_EDGE_N  verilog_node "`TCU.soce_tcu_scan_in";
+  output  socf_tcu_scan_in       OUTPUT_EDGE_N  verilog_node "`TCU.socf_tcu_scan_in";
+  output  socg_tcu_scan_in       OUTPUT_EDGE_N  verilog_node "`TCU.socg_tcu_scan_in";
+  output  soch_tcu_scan_in       OUTPUT_EDGE_N  verilog_node "`TCU.soch_tcu_scan_in";
+  output  soc0_tcu_scan_in       OUTPUT_EDGE_N  verilog_node "`TCU.soc0_tcu_scan_in";
+  output  soc1_tcu_scan_in       OUTPUT_EDGE_N  verilog_node "`TCU.soc1_tcu_scan_in";
+  output  soc2_tcu_scan_in       OUTPUT_EDGE_N  verilog_node "`TCU.soc2_tcu_scan_in";
+  output  soc3_tcu_scan_in       OUTPUT_EDGE_N  verilog_node "`TCU.soc3_tcu_scan_in";
+  output  soc4_tcu_scan_in       OUTPUT_EDGE_N  verilog_node "`TCU.soc4_tcu_scan_in";
+  output  soc5_tcu_scan_in       OUTPUT_EDGE_N  verilog_node "`TCU.soc5_tcu_scan_in";
+  output  soc6_tcu_scan_in       OUTPUT_EDGE_N  verilog_node "`TCU.soc6_tcu_scan_in";
+  //output  srdes_tcu_scan_in      OUTPUT_EDGE_N  verilog_node "`TCU.srdes_tcu_scan_in";
+}
+
+interface efuse {
+  input TCK                     CLOCK                  verilog_node "`TOP.tck";  
+  input [6:0] tcu_efu_rowaddr   INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_efu_rowaddr";
+  input [4:0] tcu_efu_coladdr   INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_efu_coladdr";
+  input tcu_efu_read_en         INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_efu_read_en";
+  input [2:0] tcu_efu_read_mode INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_efu_read_mode";
+  input tcu_efu_read_start      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_efu_read_start";
+  input tcu_efu_fuse_bypass     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_efu_fuse_bypass";
+  input tcu_efu_dest_sample     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_efu_dest_sample";
+  input tcu_efu_updatedr        INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_efu_updatedr";
+  input tcu_efu_shiftdr         INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_efu_shiftdr";
+  input tcu_efu_capturedr       INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_efu_capturedr";
+  input efu_local_fuse_bypass	INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.local_fuse_bypass";
+  input [4:0] sbc_efa_bit_addr	INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.sbc_efa_bit_addr";
+  input [6:0] sbc_efa_word_addr	INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.sbc_efa_word_addr";
+#ifdef EFU_GATE
+  input sbc_efa_margin0_rd	INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.sbc_efa_margin0_rd";
+  input sbc_efa_margin1_rd	INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.sbc_efa_margin1_rd";
+#else
+  input sbc_efa_margin0_rd	INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.u_efa_stdc.sbc_efa_margin0_rd";
+  input sbc_efa_margin1_rd	INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.u_efa_stdc.sbc_efa_margin1_rd";
+#endif
+  input sbc_efa_power_down	INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.sbc_efa_power_down";
+  input pwr_ok			INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.u_efa.pwr_ok";
+
+#ifdef EFU_GATE
+  input por_l           	INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.io_por_l";
+#else
+  input por_l			INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.por_l";
+#endif
+
+  input por_n			INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.u_efa.por_n";
+  input pi_efa_prog_en		INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.u_efa.pi_efa_prog_en";
+  input vpp			INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.u_efa.vpp";
+  input [31:0] efuse_row	INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.u_efa.efuse_row";
+  input sbc_efa_read_en		INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.sbc_efa_read_en";
+  input [31:0] efa_read_data	INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.u_efa.efa_read_data";
+
+#ifdef EFU_GATE
+  input [31:0] efa_out_data     INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efa_sbc_data";
+#else
+  input [31:0] efa_out_data	INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efa_out_data";
+#endif
+
+  input [31:0] read_data_ff	INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.read_data_ff";
+
+#ifdef EFU_GATE
+
+  input [31:0] tck_shft_data_ff INPUT_EDGE INPUT_SKEW  verilog_node "{`EFU.efu_tcu_data_out, `SHFT_DATA_30, `SHFT_DATA_29, `SHFT_DATA_28, `SHFT_DATA_27, `SHFT_DATA_26, `SHFT_DATA_25, `SHFT_DATA_24, `SHFT_DATA_23, `SHFT_DATA_22, `SHFT_DATA_21, `SHFT_DATA_20, `SHFT_DATA_19, `SHFT_DATA_18, `SHFT_DATA_17, `SHFT_DATA_16, `SHFT_DATA_15, `SHFT_DATA_14, `SHFT_DATA_13, `SHFT_DATA_12, `SHFT_DATA_11, `SHFT_DATA_10, `SHFT_DATA_9, `SHFT_DATA_8, `SHFT_DATA_7, `SHFT_DATA_6, `SHFT_DATA_5, `SHFT_DATA_4, `SHFT_DATA_3, `SHFT_DATA_2, `SHFT_DATA_1, `SHFT_DATA_0}";
+
+#else
+
+  input [31:0] tck_shft_data_ff	INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.u_efa_stdc.tck_shft_data_ff";
+
+#endif
+
+  input efu_dmu_xfer_en         INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_dmu_xfer_en";
+  input efu_niu_ram1_xfer_en    INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_ram1_xfer_en";
+  input efu_niu_ram0_xfer_en    INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_ram0_xfer_en";
+  input efu_niu_ram_xfer_en     INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_ram_xfer_en";
+  input efu_niu_4k_xfer_en      INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_4k_xfer_en";
+  input efu_niu_cfifo1_xfer_en  INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_cfifo1_xfer_en";
+  input efu_niu_cfifo0_xfer_en  INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_cfifo0_xfer_en";
+  input efu_niu_ipp1_xfer_en    INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_ipp1_xfer_en";
+  input efu_niu_ipp0_xfer_en    INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_ipp0_xfer_en";
+  input efu_niu_mac0_ro_xfer_en INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_mac0_ro_xfer_en";
+  input efu_niu_mac0_sf_xfer_en INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_mac0_sf_xfer_en";
+  input efu_niu_mac1_ro_xfer_en INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_mac1_ro_xfer_en";
+  input efu_niu_mac1_sf_xfer_en INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_mac1_sf_xfer_en";
+  input efu_ncu_srlnum2_xfer_en INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_ncu_srlnum2_xfer_en";
+  input efu_ncu_srlnum1_xfer_en INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_ncu_srlnum1_xfer_en";
+  input efu_ncu_srlnum0_xfer_en INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_ncu_srlnum0_xfer_en";
+  input efu_ncu_bankavl_xfer_en INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_ncu_bankavl_xfer_en";
+  input efu_ncu_coreavl_xfer_en INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_ncu_coreavl_xfer_en";
+  input efu_l2d7_fuse_xfer_en   INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2b7_fuse_xfer_en";
+  input efu_l2d6_fuse_xfer_en   INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2b6_fuse_xfer_en";
+  input efu_l2d5_fuse_xfer_en   INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2b5_fuse_xfer_en";
+  input efu_l2d4_fuse_xfer_en   INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2b4_fuse_xfer_en";
+  input efu_l2d3_fuse_xfer_en   INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2b3_fuse_xfer_en";
+  input efu_l2d2_fuse_xfer_en   INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2b2_fuse_xfer_en";
+  input efu_l2d1_fuse_xfer_en   INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2b1_fuse_xfer_en";
+  input efu_l2d0_fuse_xfer_en   INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2b0_fuse_xfer_en";
+  input efu_l2t7_fuse_xfer_en   INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2t7_fuse_xfer_en";
+  input efu_l2t6_fuse_xfer_en   INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2t6_fuse_xfer_en";
+  input efu_l2t5_fuse_xfer_en   INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2t5_fuse_xfer_en";
+  input efu_l2t4_fuse_xfer_en   INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2t4_fuse_xfer_en";
+  input efu_l2t3_fuse_xfer_en   INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2t3_fuse_xfer_en";
+  input efu_l2t2_fuse_xfer_en   INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2t2_fuse_xfer_en";
+  input efu_l2t1_fuse_xfer_en   INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2t1_fuse_xfer_en";
+  input efu_l2t0_fuse_xfer_en   INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2t0_fuse_xfer_en";
+  input efu_spc7_fuse_dxfer_en  INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc7_fuse_dxfer_en";
+  input efu_spc7_fuse_ixfer_en  INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc7_fuse_ixfer_en";
+  input efu_spc6_fuse_dxfer_en  INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc6_fuse_dxfer_en";
+  input efu_spc6_fuse_ixfer_en  INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc6_fuse_ixfer_en";
+  input efu_spc5_fuse_dxfer_en  INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc5_fuse_dxfer_en";
+  input efu_spc5_fuse_ixfer_en  INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc5_fuse_ixfer_en";
+  input efu_spc4_fuse_dxfer_en  INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc4_fuse_dxfer_en";
+  input efu_spc4_fuse_ixfer_en  INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc4_fuse_ixfer_en";
+  input efu_spc3_fuse_dxfer_en  INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc3_fuse_dxfer_en";
+  input efu_spc3_fuse_ixfer_en  INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc3_fuse_ixfer_en";
+  input efu_spc2_fuse_dxfer_en  INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc2_fuse_dxfer_en";
+  input efu_spc2_fuse_ixfer_en  INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc2_fuse_ixfer_en";
+  input efu_spc1_fuse_dxfer_en  INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc1_fuse_dxfer_en";
+  input efu_spc1_fuse_ixfer_en  INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc1_fuse_ixfer_en";
+  input efu_spc0_fuse_dxfer_en  INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc0_fuse_dxfer_en";
+  input efu_spc0_fuse_ixfer_en  INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc0_fuse_ixfer_en";
+  output dmu_efu_xfer_en         OUTPUT_EDGE_N  verilog_node "`EFU.dmu_efu_xfer_en";
+  output niu_efu_ram1_xfer_en    OUTPUT_EDGE_N  verilog_node "`EFU.niu_efu_ram1_xfer_en";
+  output niu_efu_ram0_xfer_en    OUTPUT_EDGE_N  verilog_node "`EFU.niu_efu_ram0_xfer_en";
+  output niu_efu_ram_xfer_en     OUTPUT_EDGE_N  verilog_node "`EFU.niu_efu_ram_xfer_en";
+  output niu_efu_4k_xfer_en      OUTPUT_EDGE_N  verilog_node "`EFU.niu_efu_4k_xfer_en";
+  output niu_efu_cfifo1_xfer_en  OUTPUT_EDGE_N  verilog_node "`EFU.niu_efu_cfifo1_xfer_en";
+  output niu_efu_cfifo0_xfer_en  OUTPUT_EDGE_N  verilog_node "`EFU.niu_efu_cfifo0_xfer_en";
+  output niu_efu_ipp1_xfer_en    OUTPUT_EDGE_N  verilog_node "`EFU.niu_efu_ipp1_xfer_en";
+  output niu_efu_ipp0_xfer_en    OUTPUT_EDGE_N  verilog_node "`EFU.niu_efu_ipp0_xfer_en";
+  output niu_efu_mac0_ro_xfer_en OUTPUT_EDGE_N  verilog_node "`EFU.niu_efu_mac0_ro_xfer_en";
+  output niu_efu_mac0_sf_xfer_en OUTPUT_EDGE_N  verilog_node "`EFU.niu_efu_mac0_sf_xfer_en";
+  output niu_efu_mac1_ro_xfer_en OUTPUT_EDGE_N  verilog_node "`EFU.niu_efu_mac1_ro_xfer_en";
+  output niu_efu_mac1_sf_xfer_en OUTPUT_EDGE_N  verilog_node "`EFU.niu_efu_mac1_sf_xfer_en";
+  output l2d7_efu_fuse_xfer_en   OUTPUT_EDGE_N  verilog_node "`EFU.l2b7_efu_fuse_xfer_en";
+  output l2d6_efu_fuse_xfer_en   OUTPUT_EDGE_N  verilog_node "`EFU.l2b6_efu_fuse_xfer_en";
+  output l2d5_efu_fuse_xfer_en   OUTPUT_EDGE_N  verilog_node "`EFU.l2b5_efu_fuse_xfer_en";
+  output l2d4_efu_fuse_xfer_en   OUTPUT_EDGE_N  verilog_node "`EFU.l2b4_efu_fuse_xfer_en";
+  output l2d3_efu_fuse_xfer_en   OUTPUT_EDGE_N  verilog_node "`EFU.l2b3_efu_fuse_xfer_en";
+  output l2d2_efu_fuse_xfer_en   OUTPUT_EDGE_N  verilog_node "`EFU.l2b2_efu_fuse_xfer_en";
+  output l2d1_efu_fuse_xfer_en   OUTPUT_EDGE_N  verilog_node "`EFU.l2b1_efu_fuse_xfer_en";
+  output l2d0_efu_fuse_xfer_en   OUTPUT_EDGE_N  verilog_node "`EFU.l2b0_efu_fuse_xfer_en";
+  output l2t7_efu_fuse_xfer_en   OUTPUT_EDGE_N  verilog_node "`EFU.l2t7_efu_fuse_xfer_en";
+  output l2t6_efu_fuse_xfer_en   OUTPUT_EDGE_N  verilog_node "`EFU.l2t6_efu_fuse_xfer_en";
+  output l2t5_efu_fuse_xfer_en   OUTPUT_EDGE_N  verilog_node "`EFU.l2t5_efu_fuse_xfer_en";
+  output l2t4_efu_fuse_xfer_en   OUTPUT_EDGE_N  verilog_node "`EFU.l2t4_efu_fuse_xfer_en";
+  output l2t3_efu_fuse_xfer_en   OUTPUT_EDGE_N  verilog_node "`EFU.l2t3_efu_fuse_xfer_en";
+  output l2t2_efu_fuse_xfer_en   OUTPUT_EDGE_N  verilog_node "`EFU.l2t2_efu_fuse_xfer_en";
+  output l2t1_efu_fuse_xfer_en   OUTPUT_EDGE_N  verilog_node "`EFU.l2t1_efu_fuse_xfer_en";
+  output l2t0_efu_fuse_xfer_en   OUTPUT_EDGE_N  verilog_node "`EFU.l2t0_efu_fuse_xfer_en";
+  output spc7_efu_fuse_dxfer_en  OUTPUT_EDGE_N  verilog_node "`EFU.spc7_efu_fuse_dxfer_en";
+  output spc7_efu_fuse_ixfer_en  OUTPUT_EDGE_N  verilog_node "`EFU.spc7_efu_fuse_ixfer_en";
+  output spc6_efu_fuse_dxfer_en  OUTPUT_EDGE_N  verilog_node "`EFU.spc6_efu_fuse_dxfer_en";
+  output spc6_efu_fuse_ixfer_en  OUTPUT_EDGE_N  verilog_node "`EFU.spc6_efu_fuse_ixfer_en";
+  output spc5_efu_fuse_dxfer_en  OUTPUT_EDGE_N  verilog_node "`EFU.spc5_efu_fuse_dxfer_en";
+  output spc5_efu_fuse_ixfer_en  OUTPUT_EDGE_N  verilog_node "`EFU.spc5_efu_fuse_ixfer_en";
+  output spc4_efu_fuse_dxfer_en  OUTPUT_EDGE_N  verilog_node "`EFU.spc4_efu_fuse_dxfer_en";
+  output spc4_efu_fuse_ixfer_en  OUTPUT_EDGE_N  verilog_node "`EFU.spc4_efu_fuse_ixfer_en";
+  output spc3_efu_fuse_dxfer_en  OUTPUT_EDGE_N  verilog_node "`EFU.spc3_efu_fuse_dxfer_en";
+  output spc3_efu_fuse_ixfer_en  OUTPUT_EDGE_N  verilog_node "`EFU.spc3_efu_fuse_ixfer_en";
+  output spc2_efu_fuse_dxfer_en  OUTPUT_EDGE_N  verilog_node "`EFU.spc2_efu_fuse_dxfer_en";
+  output spc2_efu_fuse_ixfer_en  OUTPUT_EDGE_N  verilog_node "`EFU.spc2_efu_fuse_ixfer_en";
+  output spc1_efu_fuse_dxfer_en  OUTPUT_EDGE_N  verilog_node "`EFU.spc1_efu_fuse_dxfer_en";
+  output spc1_efu_fuse_ixfer_en  OUTPUT_EDGE_N  verilog_node "`EFU.spc1_efu_fuse_ixfer_en";
+  output spc0_efu_fuse_dxfer_en  OUTPUT_EDGE_N  verilog_node "`EFU.spc0_efu_fuse_dxfer_en";
+  output spc0_efu_fuse_ixfer_en  OUTPUT_EDGE_N  verilog_node "`EFU.spc0_efu_fuse_ixfer_en";
+  input efu_l2b1_fuse_xfer_en   INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2b1_fuse_xfer_en";
+  input efu_ncu_fusestat_xfer_en INPUT_EDGE INPUT_SKEW verilog_node "`TOP.cpu.ncu.efu_ncu_fusestat_xfer_en";
+  input [7:0] ncu_tcu_bank_avail INPUT_EDGE INPUT_SKEW  verilog_node "`TOP.cpu.ncu.ncu_tcu_bank_avail";
+  input tcu_efu_data_in         INPUT_EDGE INPUT_SKEW  verilog_node "`TOP.cpu.tcu_efu_data_in";
+  input efu_tcu_data_out        INPUT_EDGE INPUT_SKEW  verilog_node "`TOP.cpu.tcu.efu_tcu_data_out";
+
+#ifdef NCU_GATE
+
+  input [63:0] creg_fusestat    INPUT_EDGE INPUT_SKEW  verilog_node "{`FUSE_STAT_63 ,`FUSE_STAT_62 ,`FUSE_STAT_61 ,`FUSE_STAT_60 ,`FUSE_STAT_59 ,`FUSE_STAT_58 ,`FUSE_STAT_57 ,`FUSE_STAT_56 ,`FUSE_STAT_55 ,`FUSE_STAT_54 ,`FUSE_STAT_53 ,`FUSE_STAT_52 ,`FUSE_STAT_51,`FUSE_STAT_50, `FUSE_STAT_49 ,`FUSE_STAT_48 ,`FUSE_STAT_47 ,`FUSE_STAT_46 ,`FUSE_STAT_45 ,`FUSE_STAT_44 ,`FUSE_STAT_43 ,`FUSE_STAT_42 ,`FUSE_STAT_41 ,`FUSE_STAT_40 ,`FUSE_STAT_39 ,`FUSE_STAT_38 ,`FUSE_STAT_37 ,`FUSE_STAT_36 ,`FUSE_STAT_35 ,`FUSE_STAT_34 ,`FUSE_STAT_33 ,`FUSE_STAT_32 ,`FUSE_STAT_31 ,`FUSE_STAT_30, `FUSE_STAT_29 ,`FUSE_STAT_28 ,`FUSE_STAT_27 ,`FUSE_STAT_26 ,`FUSE_STAT_25 ,`FUSE_STAT_24 ,`FUSE_STAT_23 ,`FUSE_STAT_22 ,`FUSE_STAT_21 ,`FUSE_STAT_20, `FUSE_STAT_19 ,`FUSE_STAT_18 ,`FUSE_STAT_17 ,`FUSE_STAT_16 ,`FUSE_STAT_15 ,`FUSE_STAT_14 ,`FUSE_STAT_13 ,`FUSE_STAT_12 ,`FUSE_STAT_11 ,`FUSE_STAT_10, `FUSE_STAT_9 ,`FUSE_STAT_8 ,`FUSE_STAT_7 ,`FUSE_STAT_6 ,`FUSE_STAT_5 ,`FUSE_STAT_4 ,`FUSE_STAT_3 ,`FUSE_STAT_2 ,`FUSE_STAT_1 ,`FUSE_STAT_0 }";
+
+#else
+
+  input [63:0] creg_fusestat	INPUT_EDGE INPUT_SKEW  verilog_node "`TOP.cpu.ncu.ncu_scd_ctl.ncu_c2iscd_ctl.ncu_ctrl_ctl.creg_fusestat";
+
+#endif
+
+  output io_vpp			OUTPUT_EDGE_N 	verilog_node "`EFU.io_vpp";
+  output io_pgrm_en		OUTPUT_EDGE_N 	verilog_node "`EFU.io_pgrm_en";
+  output VPP			OUTPUT_EDGE_N 	verilog_node "`TOP.cpu.VPP";
+  output PGRM_EN		OUTPUT_EDGE_N 	verilog_node "`TOP.cpu.PGRM_EN";
+
+#ifdef NCU_GATE
+  input [7:0] coreavail         INPUT_EDGE INPUT_SKEW  verilog_node "{`TOP.cpu.ncu.ncu_spc7_core_available,`TOP.cpu.ncu.ncu_spc6_core_available,`TOP.cpu.ncu.ncu_spc5_core_available,`TOP.cpu.ncu.ncu_spc4_core_available,`TOP.cpu.ncu.ncu_spc3_core_available,`TOP.cpu.ncu.ncu_spc2_core_available,`TOP.cpu.ncu.ncu_spc1_core_available,`TOP.cpu.ncu.ncu_spc0_core_available}";
+  input [7:0] bankavail         INPUT_EDGE INPUT_SKEW  verilog_node "`NCU.ncu_tcu_bank_avail";
+  input [21:0] sernum0          INPUT_EDGE INPUT_SKEW  verilog_node "{`NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_21_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_20_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_19_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_18_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_17_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_16_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_15_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_14_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_13_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_12_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_11_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_10_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_9_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_8_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_7_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_6_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_5_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_4_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_3_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_2_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_1_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum0_0_}";
+  input [21:0] sernum1          INPUT_EDGE INPUT_SKEW  verilog_node "{`NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_21_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_20_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_19_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_18_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_17_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_16_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_15_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_14_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_13_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_12_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_11_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_10_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_9_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_8_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_7_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_6_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_5_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_4_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_3_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_2_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_1_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum1_0_}";
+  input [21:0] sernum2          INPUT_EDGE INPUT_SKEW  verilog_node "{`NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum2_19_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum2_18_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum2_17_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum2_16_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum2_15_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum2_14_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum2_13_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum2_12_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum2_11_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum2_10_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum2_9_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum2_8_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum2_7_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum2_6_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum2_5_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum2_4_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum2_3_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum2_2_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum2_1_, `NCU.ncu_scd_ctl__ncu_c2iscd_ctl_ncu_ctrl_ctl_sernum2_0_}";
+#else
+  inout [7:0] coreavail         OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW  verilog_node "`NCU.ncu_scd_ctl.ncu_c2iscd_ctl.ncu_ctrl_ctl.coreavail";
+  inout [7:0] bankavail         OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW  verilog_node "`NCU.ncu_scd_ctl.ncu_c2iscd_ctl.ncu_ctrl_ctl.bankavail";
+  input [21:0] sernum0          INPUT_EDGE INPUT_SKEW  verilog_node "`NCU.ncu_scd_ctl.ncu_c2iscd_ctl.ncu_ctrl_ctl.sernum0";
+  input [21:0] sernum1          INPUT_EDGE INPUT_SKEW  verilog_node "`NCU.ncu_scd_ctl.ncu_c2iscd_ctl.ncu_ctrl_ctl.sernum1";
+  input [19:0] sernum2          INPUT_EDGE INPUT_SKEW  verilog_node "`NCU.ncu_scd_ctl.ncu_c2iscd_ctl.ncu_ctrl_ctl.sernum2";
+
+#endif
+
+#ifdef TCU_GATE
+  input [14:0] efcnt_dout       INPUT_EDGE INPUT_SKEW  verilog_node "{`TCU.sigmux_ctl__efcnt_dout_14_,`TCU.sigmux_ctl__efcnt_dout_13_,`TCU.sigmux_ctl__efcnt_dout_12_,`TCU.sigmux_ctl__efcnt_dout_11_,`TCU.sigmux_ctl__efcnt_dout_10_,`TCU.sigmux_ctl__efcnt_dout_9_,`TCU.sigmux_ctl__efcnt_dout_8_,`TCU.sigmux_ctl__efcnt_dout_7_,`TCU.sigmux_ctl__efcnt_dout_6_,`TCU.sigmux_ctl__efcnt_dout_5_,`TCU.sigmux_ctl__efcnt_dout_4_,`TCU.sigmux_ctl__efcnt_dout_3_,`TCU.sigmux_ctl__efcnt_dout_2_,`TCU.sigmux_ctl__efcnt_dout_1_,`TCU.sigmux_ctl__efcnt_dout_0_}";
+  input efu_done_int            INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_rst_efu_done";
+#else
+  input [14:0] efcnt_dout       INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.sigmux_ctl.efcnt_dout";
+  input efu_done_int            INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.sigmux_ctl.efu_done_int";
+#endif
+}
+
+interface efuse_gclk_if {
+  input GCLK                    CLOCK                  verilog_node "`EFU.gclk";
+  input efu_niu_fclrz	        INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_fclrz";
+  input efu_psr_fclrz	        INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_psr_fclrz";
+  input efu_mcu_fclrz	        INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_mcu_fclrz";
+  input efu_dmu_clr	        INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_dmu_clr";
+  input efu_niu_ipp0_clr        INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_ipp0_clr";
+  input efu_niu_ipp1_clr        INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_ipp1_clr";
+  input efu_niu_mac0_ro_clr     INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_mac0_ro_clr";
+  input efu_niu_mac0_sf_clr     INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_mac0_sf_clr";
+  input efu_niu_mac1_ro_clr     INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_mac1_ro_clr";
+  input efu_niu_mac1_sf_clr     INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_mac1_sf_clr";
+  input efu_niu_cfifo0_clr      INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_cfifo0_clr";
+  input efu_niu_cfifo1_clr      INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_cfifo1_clr";
+  input efu_niu_ram1_clr        INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_ram1_clr";
+  input efu_niu_ram0_clr        INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_ram0_clr";
+  input efu_niu_ram_clr	        INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_ram_clr";
+  input efu_niu_4k_clr	        INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_niu_4k_clr";
+  input efu_l2b7_fuse_clr       INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2b7_fuse_clr";
+  input efu_l2b6_fuse_clr       INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2b6_fuse_clr";
+  input efu_l2b5_fuse_clr       INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2b5_fuse_clr";
+  input efu_l2b4_fuse_clr       INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2b4_fuse_clr";
+  input efu_l2b3_fuse_clr       INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2b3_fuse_clr";
+  input efu_l2b2_fuse_clr       INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2b2_fuse_clr";
+  input efu_l2b1_fuse_clr       INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2b1_fuse_clr";
+  input efu_l2b0_fuse_clr       INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2b0_fuse_clr";
+  input efu_l2t7_fuse_clr       INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2t7_fuse_clr";
+  input efu_l2t6_fuse_clr       INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2t6_fuse_clr";
+  input efu_l2t5_fuse_clr       INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2t5_fuse_clr";
+  input efu_l2t4_fuse_clr       INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2t4_fuse_clr";
+  input efu_l2t3_fuse_clr       INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2t3_fuse_clr";
+  input efu_l2t2_fuse_clr       INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2t2_fuse_clr";
+  input efu_l2t1_fuse_clr       INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2t1_fuse_clr";
+  input efu_l2t0_fuse_clr       INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_l2t0_fuse_clr";
+  input efu_spc7_fuse_dclr      INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc7_fuse_dclr";
+  input efu_spc7_fuse_iclr      INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc7_fuse_iclr";
+  input efu_spc6_fuse_dclr      INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc6_fuse_dclr";
+  input efu_spc6_fuse_iclr      INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc6_fuse_iclr";
+  input efu_spc5_fuse_dclr      INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc5_fuse_dclr";
+  input efu_spc5_fuse_iclr      INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc5_fuse_iclr";
+  input efu_spc4_fuse_dclr      INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc4_fuse_dclr";
+  input efu_spc4_fuse_iclr      INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc4_fuse_iclr";
+  input efu_spc3_fuse_dclr      INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc3_fuse_dclr";
+  input efu_spc3_fuse_iclr      INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc3_fuse_iclr";
+  input efu_spc2_fuse_dclr      INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc2_fuse_dclr";
+  input efu_spc2_fuse_iclr      INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc2_fuse_iclr";
+  input efu_spc1_fuse_dclr      INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc1_fuse_dclr";
+  input efu_spc1_fuse_iclr      INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc1_fuse_iclr";
+  input efu_spc0_fuse_dclr      INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc0_fuse_dclr";
+  input efu_spc0_fuse_iclr      INPUT_EDGE INPUT_SKEW  verilog_node "`EFU.efu_spc0_fuse_iclr";   
+}  
+
+#ifndef FC_SCAN_BENCH
+interface cmp_spc {
+#ifdef TCU_GATE
+  input CLK                   CLOCK     verilog_node "`TCU.clkgen_tcu_io__cclk";
+#else
+  input CLK     	      CLOCK                    verilog_node "`TCU.clkgen_tcu_io.l2clk";
+#endif
+  input core_available_0      INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc0_core_available" ;
+  input core_enable_status_0  INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc0_core_enable_status" ;
+  input core_running_0        INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc0_core_running" ;
+  input core_running_status_0 INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.spc0_ncu_core_running_status" ;
+  input core_available_1      INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc1_core_available" ;
+  input core_enable_status_1  INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc1_core_enable_status" ;
+  input core_running_1        INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc1_core_running" ;
+  input core_running_status_1 INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.spc1_ncu_core_running_status" ;
+  input core_available_2      INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc2_core_available" ;
+  input core_enable_status_2  INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc2_core_enable_status" ;
+  input core_running_2        INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc2_core_running" ;
+  input core_running_status_2 INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.spc2_ncu_core_running_status" ;
+  input core_available_3      INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc3_core_available" ;
+  input core_enable_status_3  INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc3_core_enable_status" ;
+  input core_running_3        INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc3_core_running" ;
+  input core_running_status_3 INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.spc3_ncu_core_running_status" ;
+  input core_available_4      INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc4_core_available" ;
+  input core_enable_status_4  INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc4_core_enable_status" ;
+  input core_running_4        INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc4_core_running" ;
+  input core_running_status_4 INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.spc4_ncu_core_running_status" ;
+  input core_available_5      INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc5_core_available" ;
+  input core_enable_status_5  INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc5_core_enable_status" ;
+  input core_running_5        INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc5_core_running" ;
+  input core_running_status_5 INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.spc5_ncu_core_running_status" ;
+  input core_available_6      INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc6_core_available" ;
+  input core_enable_status_6  INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc6_core_enable_status" ;
+  input core_running_6        INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc6_core_running" ;
+  input core_running_status_6 INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.spc6_ncu_core_running_status" ;
+  input core_available_7      INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc7_core_available" ;
+  input core_enable_status_7  INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc7_core_enable_status" ;
+  input core_running_7        INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_spc7_core_running" ;
+  input core_running_status_7 INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.spc7_ncu_core_running_status" ;
+  output [21:0] tb_fusedata_init OUTPUT_EDGE_N   verilog_node "`MONTCU.tb_fusedata_init"; // Set core testbench core available
+}
+
+interface spc_debug {
+  input  CLK                         CLOCK                     verilog_node "`TCU.gclk";
+  input  [7:0] tcu_ss_mode           INPUT_EDGE INPUT_SKEW     verilog_node "`TCU.tcu_ss_mode";
+  input  [7:0] tcu_do_mode           INPUT_EDGE INPUT_SKEW     verilog_node "`TCU.tcu_do_mode";
+  input  [7:0] tcu_ss_request        INPUT_EDGE INPUT_SKEW     verilog_node "`TCU.tcu_ss_request";
+  input  [7:0] ncu_spc7_core_running INPUT_EDGE INPUT_SKEW     verilog_node "`NCU.ncu_spc7_core_running";
+  input  [7:0] ncu_spc6_core_running INPUT_EDGE INPUT_SKEW     verilog_node "`NCU.ncu_spc6_core_running";
+  input  [7:0] ncu_spc5_core_running INPUT_EDGE INPUT_SKEW     verilog_node "`NCU.ncu_spc5_core_running";
+  input  [7:0] ncu_spc4_core_running INPUT_EDGE INPUT_SKEW     verilog_node "`NCU.ncu_spc4_core_running";
+  input  [7:0] ncu_spc3_core_running INPUT_EDGE INPUT_SKEW     verilog_node "`NCU.ncu_spc3_core_running";
+  input  [7:0] ncu_spc2_core_running INPUT_EDGE INPUT_SKEW     verilog_node "`NCU.ncu_spc2_core_running";
+  input  [7:0] ncu_spc1_core_running INPUT_EDGE INPUT_SKEW     verilog_node "`NCU.ncu_spc1_core_running";
+  input  [7:0] ncu_spc0_core_running INPUT_EDGE INPUT_SKEW     verilog_node "`NCU.ncu_spc0_core_running";
+  output spc7_ss_complete                       OUTPUT_EDGE_N  verilog_node "`TCU.spc7_ss_complete";
+  output spc6_ss_complete                       OUTPUT_EDGE_N  verilog_node "`TCU.spc6_ss_complete";
+  output spc5_ss_complete                       OUTPUT_EDGE_N  verilog_node "`TCU.spc5_ss_complete";
+  output spc4_ss_complete                       OUTPUT_EDGE_N  verilog_node "`TCU.spc4_ss_complete";
+  output spc3_ss_complete                       OUTPUT_EDGE_N  verilog_node "`TCU.spc3_ss_complete";
+  output spc2_ss_complete                       OUTPUT_EDGE_N  verilog_node "`TCU.spc2_ss_complete";
+  output spc1_ss_complete                       OUTPUT_EDGE_N  verilog_node "`TCU.spc1_ss_complete";
+  output spc0_ss_complete                       OUTPUT_EDGE_N  verilog_node "`TCU.spc0_ss_complete";
+  output [7:0] spc7_ncu_core_running_status     OUTPUT_EDGE_N  verilog_node "`NCU.spc7_ncu_core_running_status";
+  output [7:0] spc6_ncu_core_running_status     OUTPUT_EDGE_N  verilog_node "`NCU.spc6_ncu_core_running_status";
+  output [7:0] spc5_ncu_core_running_status     OUTPUT_EDGE_N  verilog_node "`NCU.spc5_ncu_core_running_status";
+  output [7:0] spc4_ncu_core_running_status     OUTPUT_EDGE_N  verilog_node "`NCU.spc4_ncu_core_running_status";
+  output [7:0] spc3_ncu_core_running_status     OUTPUT_EDGE_N  verilog_node "`NCU.spc3_ncu_core_running_status";
+  output [7:0] spc2_ncu_core_running_status     OUTPUT_EDGE_N  verilog_node "`NCU.spc2_ncu_core_running_status";
+  output [7:0] spc1_ncu_core_running_status     OUTPUT_EDGE_N  verilog_node "`NCU.spc1_ncu_core_running_status";
+  output [7:0] spc0_ncu_core_running_status     OUTPUT_EDGE_N  verilog_node "`NCU.spc0_ncu_core_running_status";
+}
+
+interface tcu_siu {
+  input  CLK                  CLOCK                     verilog_node "`TCU.l2clk";  // changed from `TCU.gclk
+  input  tcu_sii_data         INPUT_EDGE INPUT_SKEW     verilog_node "`TCU.tcu_sii_data";
+  input  tcu_sii_vld          INPUT_EDGE INPUT_SKEW     verilog_node "`TCU.tcu_sii_vld";
+  output sio_tcu_data         OUTPUT_EDGE_N    verilog_node "`TCU.sio_tcu_data";
+  output sio_tcu_vld          OUTPUT_EDGE_N    verilog_node "`TCU.sio_tcu_vld";  
+  input  sio_tcu_data__in     PSAMPLE #-1      verilog_node "`TCU.sio_tcu_data";  // __in: input to vera
+  input  sio_tcu_vld__in      PSAMPLE #-1      verilog_node "`TCU.sio_tcu_vld";   // __in: input to vera
+}
+#endif //FC_SCAN_BENCH
+
+interface internalcmp {
+  input CLK     	      CLOCK                    verilog_node "`TOP.cpu.ccu.gclk";
+}  
+
+//interface eful2clk {
+//  input CLK    CLOCK   verilog_node "`TOP.cpu.efu.l2clk"; // this sig will be removed from the new rtl
+//}  
+
+interface shscan {
+  input  TCK     	          CLOCK                   verilog_node "`TOP.tck";
+  input  tcu_spc0_shscan_clk_stop INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc0_shscan_clk_stop" ;
+  input  tcu_spc1_shscan_clk_stop INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc1_shscan_clk_stop" ;
+  input  tcu_spc2_shscan_clk_stop INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc2_shscan_clk_stop" ;
+  input  tcu_spc3_shscan_clk_stop INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc3_shscan_clk_stop" ;
+  input  tcu_spc4_shscan_clk_stop INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc4_shscan_clk_stop" ;
+  input  tcu_spc5_shscan_clk_stop INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc5_shscan_clk_stop" ;
+  input  tcu_spc6_shscan_clk_stop INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc6_shscan_clk_stop" ;
+  input  tcu_spc7_shscan_clk_stop INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc7_shscan_clk_stop" ;
+  input  tcu_spc_shscan_aclk INPUT_EDGE INPUT_SKEW        verilog_node "`TCU.tcu_spc_shscan_aclk" ;
+  input  tcu_spc_shscan_bclk INPUT_EDGE INPUT_SKEW        verilog_node "`TCU.tcu_spc_shscan_bclk" ;
+  input  tcu_spc_shscan_scan_en INPUT_EDGE INPUT_SKEW     verilog_node "`TCU.tcu_spc_shscan_scan_en" ;
+  input  tcu_spc_shscan_pce_ov INPUT_EDGE INPUT_SKEW      verilog_node "`TCU.tcu_spc_shscan_pce_ov" ;
+  input [2:0]  tcu_spc_shscanid INPUT_EDGE INPUT_SKEW     verilog_node "`TCU.tcu_spc_shscanid" ;
+  input  tcu_l2t0_shscan_clk_stop INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t0_shscan_clk_stop" ;
+  input  tcu_l2t1_shscan_clk_stop INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t1_shscan_clk_stop" ;
+  input  tcu_l2t2_shscan_clk_stop INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t2_shscan_clk_stop" ;
+  input  tcu_l2t3_shscan_clk_stop INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t3_shscan_clk_stop" ;
+  input  tcu_l2t4_shscan_clk_stop INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t4_shscan_clk_stop" ;
+  input  tcu_l2t5_shscan_clk_stop INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t5_shscan_clk_stop" ;
+  input  tcu_l2t6_shscan_clk_stop INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t6_shscan_clk_stop" ;
+  input  tcu_l2t7_shscan_clk_stop INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t7_shscan_clk_stop" ;
+  input  tcu_l2t_shscan_aclk INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t_shscan_aclk" ;
+  input  tcu_l2t_shscan_bclk INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t_shscan_bclk" ;
+  input  tcu_l2t_shscan_scan_en INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t_shscan_scan_en" ;
+  input  tcu_l2t_shscan_pce_ov INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_l2t_shscan_pce_ov" ;
+  input  tcu_spc0_shscan_scan_out INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc0_shscan_scan_out";
+  input  tcu_spc1_shscan_scan_out INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc1_shscan_scan_out";
+  input  tcu_spc2_shscan_scan_out INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc2_shscan_scan_out";
+  input  tcu_spc3_shscan_scan_out INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc3_shscan_scan_out";
+  input  tcu_spc4_shscan_scan_out INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc4_shscan_scan_out";
+  input  tcu_spc5_shscan_scan_out INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc5_shscan_scan_out";
+  input  tcu_spc6_shscan_scan_out INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc6_shscan_scan_out";
+  input  tcu_spc7_shscan_scan_out INPUT_EDGE INPUT_SKEW   verilog_node "`TCU.tcu_spc7_shscan_scan_out";
+  inout  spc0_tcu_shscan_scan_in  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc0_tcu_shscan_scan_in"; 
+  inout  spc1_tcu_shscan_scan_in  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc1_tcu_shscan_scan_in"; 
+  inout  spc2_tcu_shscan_scan_in  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc2_tcu_shscan_scan_in";  
+  inout  spc3_tcu_shscan_scan_in  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc3_tcu_shscan_scan_in"; 
+  inout  spc4_tcu_shscan_scan_in  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc4_tcu_shscan_scan_in"; 
+  inout  spc5_tcu_shscan_scan_in  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc5_tcu_shscan_scan_in"; 
+  inout  spc6_tcu_shscan_scan_in  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc6_tcu_shscan_scan_in";  
+  inout  spc7_tcu_shscan_scan_in  OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc7_tcu_shscan_scan_in";  
+}
+
+//==========================================================================
+// WHAT: clock stop signals from TCU (ie. tcu_*_clk_stop)
+// NOTE: listed in the same order as "stop number" specified by Clock Domain Register
+//==========================================================================
+
+interface tcu_clkstop_if {
+  input clk   CLOCK   verilog_node "`TCU.l2clk";
+
+  //--- clk stop to spc cores ---
+  input tcu_spc0_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc0_clk_stop";
+  input tcu_spc1_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc1_clk_stop";
+  input tcu_spc2_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc2_clk_stop";
+  input tcu_spc3_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc3_clk_stop";
+  input tcu_spc4_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc4_clk_stop";
+  input tcu_spc5_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc5_clk_stop";
+  input tcu_spc6_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc6_clk_stop";
+  input tcu_spc7_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc7_clk_stop";
+  input tcu_spc0_shscan_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc0_shscan_clk_stop";
+  input tcu_spc1_shscan_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc1_shscan_clk_stop";
+  input tcu_spc2_shscan_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc2_shscan_clk_stop";
+  input tcu_spc3_shscan_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc3_shscan_clk_stop";
+  input tcu_spc4_shscan_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc4_shscan_clk_stop";
+  input tcu_spc5_shscan_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc5_shscan_clk_stop";
+  input tcu_spc6_shscan_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc6_shscan_clk_stop";
+  input tcu_spc7_shscan_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_spc7_shscan_clk_stop";
+
+  //--- clk stop to L2 banks ---
+  input tcu_l2b0_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2b0_clk_stop";
+  input tcu_l2b1_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2b1_clk_stop";
+  input tcu_l2b2_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2b2_clk_stop";
+  input tcu_l2b3_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2b3_clk_stop";
+  input tcu_l2b4_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2b4_clk_stop";
+  input tcu_l2b5_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2b5_clk_stop";
+  input tcu_l2b6_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2b6_clk_stop";
+  input tcu_l2b7_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2b7_clk_stop";
+  input tcu_l2d0_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2d0_clk_stop";
+  input tcu_l2d1_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2d1_clk_stop";
+  input tcu_l2d2_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2d2_clk_stop";
+  input tcu_l2d3_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2d3_clk_stop";
+  input tcu_l2d4_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2d4_clk_stop";
+  input tcu_l2d5_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2d5_clk_stop";
+  input tcu_l2d6_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2d6_clk_stop";
+  input tcu_l2d7_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2d7_clk_stop";
+  input tcu_l2t0_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2t0_clk_stop";
+  input tcu_l2t1_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2t1_clk_stop";
+  input tcu_l2t2_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2t2_clk_stop";
+  input tcu_l2t3_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2t3_clk_stop";
+  input tcu_l2t4_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2t4_clk_stop";
+  input tcu_l2t5_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2t5_clk_stop";
+  input tcu_l2t6_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2t6_clk_stop";
+  input tcu_l2t7_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2t7_clk_stop";
+  input tcu_l2t0_shscan_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2t0_shscan_clk_stop";
+  input tcu_l2t1_shscan_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2t1_shscan_clk_stop";
+  input tcu_l2t2_shscan_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2t2_shscan_clk_stop";
+  input tcu_l2t3_shscan_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2t3_shscan_clk_stop";
+  input tcu_l2t4_shscan_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2t4_shscan_clk_stop";
+  input tcu_l2t5_shscan_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2t5_shscan_clk_stop";
+  input tcu_l2t6_shscan_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2t6_shscan_clk_stop";
+  input tcu_l2t7_shscan_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_l2t7_shscan_clk_stop";
+
+  //--- clk stop to MCU ---
+  input tcu_mcu0_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_mcu0_clk_stop";
+  input tcu_mcu1_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_mcu1_clk_stop";
+  input tcu_mcu2_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_mcu2_clk_stop";
+  input tcu_mcu3_clk_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_mcu3_clk_stop";
+  input tcu_mcu0_dr_clk_stop  INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_mcu0_dr_clk_stop";
+  input tcu_mcu1_dr_clk_stop  INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_mcu1_dr_clk_stop";
+  input tcu_mcu2_dr_clk_stop  INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_mcu2_dr_clk_stop";
+  input tcu_mcu3_dr_clk_stop  INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_mcu3_dr_clk_stop";
+  input tcu_mcu0_io_clk_stop  INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_mcu0_io_clk_stop";
+  input tcu_mcu1_io_clk_stop  INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_mcu1_io_clk_stop";
+  input tcu_mcu2_io_clk_stop  INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_mcu2_io_clk_stop";
+  input tcu_mcu3_io_clk_stop  INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_mcu3_io_clk_stop";
+  input tcu_mcu0_fbd_clk_stop  INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_mcu0_fbd_clk_stop";
+  input tcu_mcu1_fbd_clk_stop  INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_mcu1_fbd_clk_stop";
+  input tcu_mcu2_fbd_clk_stop  INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_mcu2_fbd_clk_stop";
+  input tcu_mcu3_fbd_clk_stop  INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_mcu3_fbd_clk_stop";
+
+  //--- clk stop to SOC0: ccx, db0, db1, efu, mio, ncu, ssi, sio ---
+  input tcu_ccx_clk_stop      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_ccx_clk_stop";
+  input tcu_db0_clk_stop      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_db0_clk_stop";
+  input tcu_db1_clk_stop      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_db1_clk_stop";
+  input tcu_efu_clk_stop      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_efu_clk_stop";
+  input tcu_mio_clk_stop      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_mio_clk_stop";
+  input tcu_ncu_clk_stop      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_ncu_clk_stop";
+  input tcu_sii_clk_stop      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_sii_clk_stop";
+  input tcu_sio_clk_stop      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_sio_clk_stop";
+  //--- IO clk stop to SOC0: efu, mio, ncu, ssi, sio ---
+  input tcu_efu_io_clk_stop   INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_efu_io_clk_stop";
+  input tcu_ncu_io_clk_stop   INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_ncu_io_clk_stop";
+  input tcu_sii_io_clk_stop   INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_sii_io_clk_stop";
+  input tcu_sio_io_clk_stop   INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_sio_io_clk_stop";
+
+  //--- clk stop to SOC1: mac, rdp, rtx, and tds ---
+  input tcu_mac_io_clk_stop   INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_mac_io_clk_stop";
+  input tcu_rdp_io_clk_stop   INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_rdp_io_clk_stop";
+  input tcu_rtx_io_clk_stop   INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_rtx_io_clk_stop";
+  input tcu_tds_io_clk_stop   INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_tds_io_clk_stop";
+
+  //--- clk stop to SOC2:  dmu ---
+  input tcu_dmu_io_clk_stop   INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_dmu_io_clk_stop";
+
+  //--- clk stop to SOC3: peu ---
+  input tcu_peu_io_clk_stop   INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_peu_io_clk_stop";
+  input tcu_peu_pc_clk_stop   INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_peu_pc_clk_stop";
+
+  //--- special cases: clk stop to ccu and rst---
+  input tcu_ccu_clk_stop      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_ccu_clk_stop";
+  input tcu_ccu_io_clk_stop   INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_ccu_io_clk_stop";
+  input tcu_rst_clk_stop      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_rst_clk_stop";
+  input tcu_rst_io_clk_stop   INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_rst_io_clk_stop";
+}
+
+//==========================================================================
+// WHAT: debug event signals from spc cores and SOC to TCU
+//==========================================================================
+
+interface tcu_dbg_event_if {
+#ifdef TCU_GATE
+  input l2clk             CLOCK  verilog_node "`TCU.clkgen_tcu_cmp__cclk";
+#else
+  input l2clk                 CLOCK                  verilog_node "`TCU.clkgen_tcu_cmp.l2clk";
+#endif
+
+  //--- debug events from spc cores to TCU ---
+  input spc0_hardstop_request      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc0_hardstop_request";
+  input spc1_hardstop_request      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc1_hardstop_request";
+  input spc2_hardstop_request      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc2_hardstop_request";
+  input spc3_hardstop_request      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc3_hardstop_request";
+  input spc4_hardstop_request      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc4_hardstop_request";
+  input spc5_hardstop_request      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc5_hardstop_request";
+  input spc6_hardstop_request      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc6_hardstop_request";
+  input spc7_hardstop_request      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc7_hardstop_request";
+  input spc0_softstop_request      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc0_softstop_request";
+  input spc1_softstop_request      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc1_softstop_request";
+  input spc2_softstop_request      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc2_softstop_request";
+  input spc3_softstop_request      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc3_softstop_request";
+  input spc4_softstop_request      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc4_softstop_request";
+  input spc5_softstop_request      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc5_softstop_request";
+  input spc6_softstop_request      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc6_softstop_request";
+  input spc7_softstop_request      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc7_softstop_request";
+  input spc0_trigger_pulse         INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc0_trigger_pulse";
+  input spc1_trigger_pulse         INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc1_trigger_pulse";
+  input spc2_trigger_pulse         INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc2_trigger_pulse";
+  input spc3_trigger_pulse         INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc3_trigger_pulse";
+  input spc4_trigger_pulse         INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc4_trigger_pulse";
+  input spc5_trigger_pulse         INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc5_trigger_pulse";
+  input spc6_trigger_pulse         INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc6_trigger_pulse";
+  input spc7_trigger_pulse         INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.spc7_trigger_pulse";
+
+  //--- debug events from SOC (ie. dbg1) to TCU---
+  //--- WARNING: they are in IO clk domain ----
+  input dbg1_tcu_soc_hard_stop     INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.dbg1_tcu_soc_hard_stop";
+  input dbg1_tcu_soc_asrt_trigout  INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.dbg1_tcu_soc_asrt_trigout";
+
+  //---trigger out to package pin. WARNING: clocked by IO2X clock---
+  input tcu_mio_trigout            INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_mio_trigout";
+
+  //---triger in from package pin. WARNING: async signal and is synchronized by TCU---
+  input mio_tcu_trigin             INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.mio_tcu_trigin";
+}
+
+//==========================================================================
+// WHAT: debug event signals from spc cores to TCU (output from Vera)
+// WARN: no dbg1_tcu_soc_hard_stop and dbg1_tcu_soc_asrt_trigout. They're internal signals
+//==========================================================================
+
+interface tcu_dbg_event_out_if {
+#ifdef TCU_GATE
+  input l2clk               CLOCK  verilog_node "`TCU.clkgen_tcu_cmp__cclk";
+#else
+  input l2clk                       CLOCK          verilog_node "`TCU.clkgen_tcu_cmp.l2clk";
+#endif
+  output spc0_hardstop_request      OUTPUT_EDGE_N  verilog_node "`TCU.spc0_hardstop_request";
+  output spc1_hardstop_request      OUTPUT_EDGE_N  verilog_node "`TCU.spc1_hardstop_request";
+  output spc2_hardstop_request      OUTPUT_EDGE_N  verilog_node "`TCU.spc2_hardstop_request";
+  output spc3_hardstop_request      OUTPUT_EDGE_N  verilog_node "`TCU.spc3_hardstop_request";
+  output spc4_hardstop_request      OUTPUT_EDGE_N  verilog_node "`TCU.spc4_hardstop_request";
+  output spc5_hardstop_request      OUTPUT_EDGE_N  verilog_node "`TCU.spc5_hardstop_request";
+  output spc6_hardstop_request      OUTPUT_EDGE_N  verilog_node "`TCU.spc6_hardstop_request";
+  output spc7_hardstop_request      OUTPUT_EDGE_N  verilog_node "`TCU.spc7_hardstop_request";
+  output spc0_softstop_request      OUTPUT_EDGE_N  verilog_node "`TCU.spc0_softstop_request";
+  output spc1_softstop_request      OUTPUT_EDGE_N  verilog_node "`TCU.spc1_softstop_request";
+  output spc2_softstop_request      OUTPUT_EDGE_N  verilog_node "`TCU.spc2_softstop_request";
+  output spc3_softstop_request      OUTPUT_EDGE_N  verilog_node "`TCU.spc3_softstop_request";
+  output spc4_softstop_request      OUTPUT_EDGE_N  verilog_node "`TCU.spc4_softstop_request";
+  output spc5_softstop_request      OUTPUT_EDGE_N  verilog_node "`TCU.spc5_softstop_request";
+  output spc6_softstop_request      OUTPUT_EDGE_N  verilog_node "`TCU.spc6_softstop_request";
+  output spc7_softstop_request      OUTPUT_EDGE_N  verilog_node "`TCU.spc7_softstop_request";
+  output spc0_trigger_pulse         OUTPUT_EDGE_N  verilog_node "`TCU.spc0_trigger_pulse";
+  output spc1_trigger_pulse         OUTPUT_EDGE_N  verilog_node "`TCU.spc1_trigger_pulse";
+  output spc2_trigger_pulse         OUTPUT_EDGE_N  verilog_node "`TCU.spc2_trigger_pulse";
+  output spc3_trigger_pulse         OUTPUT_EDGE_N  verilog_node "`TCU.spc3_trigger_pulse";
+  output spc4_trigger_pulse         OUTPUT_EDGE_N  verilog_node "`TCU.spc4_trigger_pulse";
+  output spc5_trigger_pulse         OUTPUT_EDGE_N  verilog_node "`TCU.spc5_trigger_pulse";
+  output spc6_trigger_pulse         OUTPUT_EDGE_N  verilog_node "`TCU.spc6_trigger_pulse";
+  output spc7_trigger_pulse         OUTPUT_EDGE_N  verilog_node "`TCU.spc7_trigger_pulse";
+}
+
+//// CLOCK is required in some global testbench files (ie: std_display_class.vr).
+//// Deleting this causes the simulation to hang in std_display_class on all dispmon calls with the MON_ERR parameter
+//// CLOCK below has no other purpose than this in the TCU testbench.
+//// verilog_node CLOCK "`TOP.tck";
+
+interface stci {
+  input  TCK                    CLOCK                  verilog_node "`CPU.TCK";
+  input  [1:0] tcu_stcicfg      INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_stcicfg";
+  input        tcu_stcid        INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.tcu_stcid";
+  input        STCIQ            INPUT_EDGE INPUT_SKEW  verilog_node "`TOP.cpu.STCIQ";
+#ifdef TCU_GATE
+  input        update_dr_state  INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.jtag_ctl__n2408";
+  input        capture_dr_state INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.jtag_ctl__N2870";
+  input        shift_dr_state   INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.jtag_ctl__tcu_jtag_tap_ctl_N55";
+#else
+  input        update_dr_state  INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.jtag_ctl.update_dr_state";
+  input        capture_dr_state INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.jtag_ctl.capture_dr_state";
+  input        shift_dr_state   INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.jtag_ctl.shift_dr_state";
+#endif
+#ifndef TCU_GATE
+  input        clockdr          INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.jtag_ctl.clockdr";
+#endif
+  inout        tcu_stciclk      OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW verilog_node "`TCU.tcu_stciclk";
+  inout        io_tdi           OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW verilog_node "`TCU.io_tdi";
+  inout        stciq_tcu        OUTPUT_EDGE_N INPUT_EDGE INPUT_SKEW verilog_node "`TCU.stciq_tcu";
+  output       STCICLK	        OUTPUT_EDGE_N 	       verilog_node "`TOP.cpu.STCICLK";
+  output[1:0]  STCICFG	        OUTPUT_EDGE_N 	       verilog_node "`TOP.cpu.STCICFG";
+  output       STCID	        OUTPUT_EDGE_N 	       verilog_node "`TOP.cpu.STCID";
+#ifdef TCU_GATE
+  input	       stci_acc_mode    INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.jtag_ctl__n2620";
+  input	 [3:0] tap_state        INPUT_EDGE INPUT_SKEW  verilog_node "{`TCU.jtag_ctl__tcu_jtag_tap_ctl_tap_state_l_3_,`TCU.jtag_ctl__tcu_jtag_tap_ctl_tap_state_l_2_,`TCU.jtag_ctl__tcu_jtag_tap_ctl_tap_state_l_1_,`TCU.jtag_ctl__tcu_jtag_tap_ctl_tap_state_l_0_}";
+#else
+  input	       stci_acc_mode    INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.jtag_ctl.stci_acc_mode";
+  input	 [3:0] tap_state        INPUT_EDGE INPUT_SKEW  verilog_node "`TCU.jtag_ctl.tap_state";
+#endif
+  output  signal_to_disable_checker OUTPUT_EDGE_N          verilog_node "`TOP.signal_to_disable_checker";
+
+}
+
+interface ncu_sck {
+#ifdef NCU_GATE
+  input [17:0]sck_cnt  INPUT_EDGE INPUT_SKEW    verilog_node "{`NCU.ncu_ssitop_ctl__ncu_ssisif_ctl_sck_cnt_17_,`NCU.ncu_ssitop_ctl__ncu_ssisif_ctl_sck_cnt_16_,`NCU.ncu_ssitop_ctl__ncu_ssisif_ctl_sck_cnt_15_,`NCU.ncu_ssitop_ctl__ncu_ssisif_ctl_sck_cnt_14_,`NCU.ncu_ssitop_ctl__ncu_ssisif_ctl_sck_cnt_13_,`NCU.ncu_ssitop_ctl__ncu_ssisif_ctl_sck_cnt_12_,`NCU.ncu_ssitop_ctl__ncu_ssisif_ctl_sck_cnt_11_,`NCU.ncu_ssitop_ctl__ncu_ssisif_ctl_sck_cnt_10_,`NCU.ncu_ssitop_ctl__ncu_ssisif_ctl_sck_cnt_9_,`NCU.ncu_ssitop_ctl__ncu_ssisif_ctl_sck_cnt_8_,`NCU.ncu_ssitop_ctl__ncu_ssisif_ctl_sck_cnt_7_,`NCU.ncu_ssitop_ctl__ncu_ssisif_ctl_sck_cnt_6_,`NCU.ncu_ssitop_ctl__ncu_ssisif_ctl_sck_cnt_5_,`NCU.ncu_ssitop_ctl__ncu_ssisif_ctl_sck_cnt_4_,`NCU.ncu_ssitop_ctl__ncu_ssisif_ctl_sck_cnt_3_,`NCU.ncu_ssitop_ctl__ncu_ssisif_ctl_sck_cnt_2_,`NCU.ncu_ssitop_ctl__ncu_ssisif_ctl_sck_cnt_1_,`NCU.ncu_ssitop_ctl__ncu_ssisif_ctl_sck_cnt_0_ }" ;
+#else
+  input [17:0]sck_cnt  INPUT_EDGE INPUT_SKEW    verilog_node "`NCU.ncu_ssitop_ctl.ncu_ssisif_ctl.sck_cnt" ;
+#endif
+}
+
+interface jt_sy_clk {
+   input jt_scan_aclk INPUT_EDGE INPUT_SKEW	verilog_node "`TCU.jt_scan_aclk" ;
+   input jt_scan_bclk INPUT_EDGE INPUT_SKEW	verilog_node "`TCU.jt_scan_bclk" ;
+   input io_test_mode INPUT_EDGE INPUT_SKEW	verilog_node "`TCU.io_test_mode" ;
+#ifdef TCU_GATE
+   input mtaccess INPUT_EDGE INPUT_SKEW	    verilog_node "`TCU.jtag_ctl__mtaccess" ;
+#else
+   input mtaccess INPUT_EDGE INPUT_SKEW	    verilog_node "`TCU.jtag_ctl.mtaccess" ;
+#endif
+#ifndef TCU_GATE
+   input instr_ser_scan INPUT_EDGE INPUT_SKEW	  verilog_node "`TCU.jtag_ctl.instr_ser_scan";
+#endif
+   input jt_scan_en INPUT_EDGE INPUT_SKEW		verilog_node "`TCU.jt_scan_en";
+#ifdef TCU_GATE
+   input tcu_asic_array_wr_inhibit INPUT_EDGE INPUT_SKEW	    verilog_node "`TCU.tcu_asic_array_wr_inhibit";
+   input tcu_spc0_array_wr_inhibit INPUT_EDGE INPUT_SKEW	    verilog_node "`TCU.tcu_spc0_array_wr_inhibit";
+   input tcu_spc1_array_wr_inhibit INPUT_EDGE INPUT_SKEW	    verilog_node "`TCU.tcu_spc1_array_wr_inhibit";
+   input tcu_spc2_array_wr_inhibit INPUT_EDGE INPUT_SKEW	    verilog_node "`TCU.tcu_spc2_array_wr_inhibit";
+   input tcu_spc3_array_wr_inhibit INPUT_EDGE INPUT_SKEW	    verilog_node "`TCU.tcu_spc3_array_wr_inhibit";
+   input tcu_spc4_array_wr_inhibit INPUT_EDGE INPUT_SKEW	    verilog_node "`TCU.tcu_spc4_array_wr_inhibit";
+   input tcu_spc5_array_wr_inhibit INPUT_EDGE INPUT_SKEW	    verilog_node "`TCU.tcu_spc5_array_wr_inhibit";
+   input tcu_spc6_array_wr_inhibit INPUT_EDGE INPUT_SKEW	    verilog_node "`TCU.tcu_spc6_array_wr_inhibit";
+   input tcu_spc7_array_wr_inhibit INPUT_EDGE INPUT_SKEW	    verilog_node "`TCU.tcu_spc7_array_wr_inhibit";
+#else
+   input tcu_asic_array_wr_inhibit INPUT_EDGE INPUT_SKEW	    verilog_node "`TCU.sigmux_ctl.tcu_asic_array_wr_inhibit";
+   input tcu_spc0_array_wr_inhibit INPUT_EDGE INPUT_SKEW	    verilog_node "`TCU.sigmux_ctl.tcu_spc0_array_wr_inhibit";
+   input tcu_spc1_array_wr_inhibit INPUT_EDGE INPUT_SKEW	    verilog_node "`TCU.sigmux_ctl.tcu_spc1_array_wr_inhibit";
+   input tcu_spc2_array_wr_inhibit INPUT_EDGE INPUT_SKEW	    verilog_node "`TCU.sigmux_ctl.tcu_spc2_array_wr_inhibit";
+   input tcu_spc3_array_wr_inhibit INPUT_EDGE INPUT_SKEW	    verilog_node "`TCU.sigmux_ctl.tcu_spc3_array_wr_inhibit";
+   input tcu_spc4_array_wr_inhibit INPUT_EDGE INPUT_SKEW	    verilog_node "`TCU.sigmux_ctl.tcu_spc4_array_wr_inhibit";
+   input tcu_spc5_array_wr_inhibit INPUT_EDGE INPUT_SKEW	    verilog_node "`TCU.sigmux_ctl.tcu_spc5_array_wr_inhibit";
+   input tcu_spc6_array_wr_inhibit INPUT_EDGE INPUT_SKEW	    verilog_node "`TCU.sigmux_ctl.tcu_spc6_array_wr_inhibit";
+   input tcu_spc7_array_wr_inhibit INPUT_EDGE INPUT_SKEW	    verilog_node "`TCU.sigmux_ctl.tcu_spc7_array_wr_inhibit";
+#endif
+
+}
+
+
+interface sys {
+  input  SYSCLK     	          CLOCK                   verilog_node "`TOP.SYSCLK";
+}
+
+interface cmp {
+  input  CMP     	          CLOCK                   verilog_node "`TOP.cpu.l2clk";
+}
+
+#endif

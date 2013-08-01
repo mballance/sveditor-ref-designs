@@ -1,0 +1,81 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_checker.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "plusArgMacros.vri"
+#include "std_display_class.vrh"
+#include "niu_sig.if.vrh"
+
+#define STD_DISP dbg
+
+class niu_checker {
+    reg niu_no_active_chk_disable; 
+    StandardDisplay dbg;
+    
+    task niu_no_active_chk ();
+    task new (StandardDisplay dbg) {
+	this.dbg = dbg;
+	if( mChkPlusarg(niu_no_active_chk_disable)) niu_no_active_chk_disable = 1;
+  	else           niu_no_active_chk_disable = 0;      
+
+	if (!niu_no_active_chk_disable){
+	  fork
+	     niu_no_active_chk();
+	  join none
+        }
+
+    }	
+}
+
+task niu_checker::niu_no_active_chk()
+{
+string name;
+   name = "niu_checker::niu_no_active_chk";
+   while (!niu_no_active_chk_disable){
+	@(posedge niu_sig_intf.clk);
+	if (niu_sig_intf.ncu_niu_vld){
+	  // niu_active_en = 1;
+	   PR_INFO(name, MON_ALWAYS, psprintf ("CPU send PIO R/W to NIU, the checker is disabled\n"));
+	   niu_no_active_chk_disable = 1;
+	   break;
+	}
+	if (niu_sig_intf.niu_ncu_vld){
+	  PR_ERROR(name, MON_ERR, psprintf ("NIU send PIO ACK or INT to PCU before CPU send PIO R/W to NIU! the checker is under :verif/env/fc/vera/niu_chk\n"));
+	}
+	if (niu_sig_intf.niu_sii_hdr_vld){
+	  PR_ERROR(name, MON_ERR, psprintf ("NIU send DAM  to SII before CPU send PIO R/W to NIU! the checker is under :verif/env/fc/vera/niu_chk \n"));
+	}
+   }
+}
+

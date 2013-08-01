@@ -1,0 +1,795 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: N2fcInitStrategy.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+// model some of the NCU/PIU CSRs
+extern N2fcPiuShadowRegs PiuCsrs;
+
+class N2fcInitStrategy extends ilupeuStrategyBase {
+
+   //PCIEXtr transaction used for initializing Denali Xactor
+   FNXPCIEXactorTransaction regTrans;
+   denali_root_monitor_PCIEXactorTransaction denali_root_monitor_regTrans;
+
+
+   bit[ ILUPEU_CSR_WIDTH-1:0 ]            csrRegTmpData, csrRegTmpData1;
+   bit[ FNX_PCIE_XTR_REG_DEN_WIDTH-1:0 ]  tempDenaliData;
+   bit[15:0] tempDenaliPeuData;    // storing Denali PCI Express type registers data
+   //   local static bit dmuXtrEnabled = 0;
+   bit Retrain = 0;
+
+
+   task new( ReportClass      _Report,
+             CSRCollection    _CSR,
+             ilupeuPodClass   _Pod,
+             // denali_root_monitor_PodClass   _denali_root_monitor_Pod,
+             ilupeuScenario   _Scenario );
+
+   task Execute();
+   task SetFastLinkTraining();
+   task DenaliGotoRecovery();
+   task DisableDenaliErrs();
+   task RetrainInit();
+   task Change_soma_parameters(string _str1 );   // task to change denali soma timing etc. parameter
+
+   task SetDenaliInitFlowControl();
+}
+
+
+
+task N2fcInitStrategy::new( ReportClass      _Report,
+                            CSRCollection    _CSR,
+                            ilupeuPodClass   _Pod,
+                            ilupeuScenario   _Scenario ){
+   super.new( _Report,
+              _CSR,
+              _Pod,
+              _Scenario );
+}
+
+task N2fcInitStrategy::RetrainInit(){
+   bit Retrain = 1;
+}
+
+
+
+// task to change denali soma timing parameter
+task N2fcInitStrategy::Change_soma_parameters(string _str1) {
+   integer Err;
+   string str1;
+   // str1 = "mmsomaset tb_top.pcie_root_monitor  ttoTLCpl 1 us ";
+   str1 = _str1;
+   Err  = DenaliDDVTclEval(str1);
+   // bad status when = 1
+   if (Err == 1) {
+     printf("AC: Error: changing soma parameter: %s at time %d \n", str1, get_time(LO));
+   }
+   else {
+     printf("AC: changing soma parameter:   %s at  time %d \n", str1, get_time(LO));
+   }
+}
+
+task N2fcInitStrategy::Execute(){
+
+   integer reset_duration;
+   bit [3:0] calculatedWidth;
+
+   // integer change_soma_status = 0;
+   string soma_completion_timeout_string = "";
+   string soma_turnoff_scramble_string = "";
+
+   // use in replay timer value
+   integer rx_L0s_adj ;
+
+   // denali link width
+   bit [FNX_PCIE_XTR_REG_DEN_EXP_LINK_CAP_MAX_LINK_WIDTH_WIDTH-1:0] denaliLinkCapMaxLinkWdth;
+
+   printf("AC: inside initstrategy execute , before doing soma changes \n");
+   //=============== change soma parameters
+   //changing soma completion timeout ttoTLCpl timing value
+   // change_soma_status = $mmsomaset ("tb_top.pcie_root_monitor","ttoTLCpl", "1","us");
+
+   soma_completion_timeout_string = "mmsomaset tb_top.pcie_root_monitor  ttoTLCpl 30 us ";
+
+//   Change_soma_parameters(soma_completion_timeout_string);
+
+   // example for turn off scrambler
+   //  soma_turnoff_scramble_string = "mmsetvar PciePhyScrambleData 0";
+   // Change_soma_parameters(soma_turnoff_scramble_string);
+
+
+   // get command line link width parameter
+   if (get_plus_arg(CHECK, "denali_link_width=")) {
+     denaliLinkCapMaxLinkWdth = get_plus_arg(NUM, "denali_link_width=");
+     Scenario.denaliLinkCapMaxLinkWdth = denaliLinkCapMaxLinkWdth;
+     printf("AC: denali_link_width command plus arg detected, Scenario.denaliLinkCapMaxLinkWdth = %d\n", Scenario.denaliLinkCapMaxLinkWdth);
+   }
+   else {
+     printf("AC: denali_link_width command plus arg is not set, Scenario.denaliLinkCapMaxLinkWdth = %d\n", Scenario.denaliLinkCapMaxLinkWdth);
+   }
+
+   // before first regTrans inside initstrategy \n");
+
+   //Create the Transaction used for Denali register access
+   regTrans = new( Pod.FNXPCIEBldr );
+   // denali_root_monitor_regTrans = new( denali_root_monitor.Pod.denali_root_monitor_PCIEBldr );
+   denali_root_monitor_regTrans = new( Pod.denali_root_monitor_PCIEBldr );
+
+   ////////////////////////////
+   // Disable RC Error messages
+   printf("Suppressing Denali Errors\n");
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_PL_NONFATAL_TTX_IDLE_SET_TO_IDLE );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_PL_NONFATAL_LTSSM_POLL_ACTIVE_TO1_EARLY );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NE_1 );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NE0_1 );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NE_2 );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NEXP_1 );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NEXP0_1 );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NEXP_2_PH );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NEXP_2_PD );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NEXP_2_NPH );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NEXP_2_NPD );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NEXP_2_CPLH );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NEXP_2_CPLD );
+
+   case( Scenario.denaliLinkCapMaxLinkWdth ){
+      8:        regTrans.SetRcvDetLanes( 8'hff );
+      4:        regTrans.SetRcvDetLanes( 8'h0f );
+      2:        regTrans.SetRcvDetLanes( 8'h03 );
+      1:        regTrans.SetRcvDetLanes( 8'h01 );
+      default:  regTrans.SetRcvDetLanes( 8'hff );
+   }
+
+   //If this is a retraining then let the test control resets
+   if( !Retrain ){
+     // 11/9/04
+     repeat(400) @(posedge CLOCK);
+   }
+
+   //Make sure Denali is out of reset
+   regTrans.SetDenaliReset( 1'b0 );
+
+   //If Fast Sim is not set then change the Denali Timeout values to match the
+   // PCIE spec for endpoint and monitor
+   if( Scenario.FastLinkTraining == 0 ){
+      //Change the timeout parameters in Denali using somaset
+      Change_soma_parameters("mmsomaset tb_top.pcieA  ttoPollActive 24 ms");
+      Change_soma_parameters("mmsomaset tb_top.pcieA  ttoDetectQuiet 12 us");
+      Change_soma_parameters("mmsomaset tb_top.pcieA  ttoDetectActive 12 ms");
+      regTrans.WriteDenaliReg( PCIE_REG_DEN_TS1_PACT, 1024 );
+
+      Change_soma_parameters("mmsomaset tb_top.pcie_root_monitor  ttoPollActive 24 ms");
+      Change_soma_parameters("mmsomaset tb_top.pcie_root_monitor  ttoDetectQuiet 12 ms");
+      Change_soma_parameters("mmsomaset tb_top.pcie_root_monitor  ttoDetectActive 12 ms");
+      denali_root_monitor_regTrans.WriteDenaliReg( PCIE_REG_DEN_TS1_PACT, 1024 );
+
+   }
+
+
+   //Used to disable Denali TX lanes
+   // regTrans.WriteDenaliReg( PCIE_REG_DEN_LN_TX_DISABLE, 32'hffffff00 );
+
+   //Set which Denali TX lanes will get Inverted Polarity
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_LN_INVERSION, Scenario.denaliLanePolarityInvert );
+
+   //Set Denali to reverse the lanes
+   if( Scenario.denaliLaneReverse ){
+      regTrans.WriteDenaliReg( PCIE_REG_DEN_LN_REVERSAL, 32'h3 );
+   }
+
+   //Need to write to Allowed Link Widths register  as just writing to Denali Link Capability might not work
+   if( Scenario.denaliLinkCapMaxLinkWdth < 8 ){
+      case( Scenario.denaliLinkCapMaxLinkWdth ){
+         4 :        tempDenaliData = 32'hb;  //x4,x2,x1
+         2 :        tempDenaliData = 32'h3;  //x2,x1
+         1 :        tempDenaliData = 32'h1;  //x1
+         default:   tempDenaliData = 32'h8b; //x8,x4,x2,x1
+      }
+
+      regTrans.WriteDenaliReg( PCIE_REG_DEN_ALLOWED_WIDTHS, tempDenaliData );
+   }
+
+   //Set Denali to reverse the lanes
+   if( Scenario.denaliLaneReverse ){
+      regTrans.WriteDenaliReg( PCIE_REG_DEN_LN_REVERSAL, 32'h3 );
+   }
+
+   tempDenaliData = regTrans.ReadDenaliReg( PCIE_REG_DEN_TLQ_CTRL_ST );
+   tempDenaliData[10:9] = PCIE_RXCPLQ_TimeOut_enable;
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_TLQ_CTRL_ST, tempDenaliData );
+
+   //Determine the right link width
+   if( Scenario.ilupeuLinkCapMaxLinkWdth >= Scenario.denaliLinkCapMaxLinkWdth ){
+      calculatedWidth = Scenario.denaliLinkCapMaxLinkWdth;
+   }
+   else{
+      calculatedWidth = Scenario.ilupeuLinkCapMaxLinkWdth;
+   }
+
+
+   SetDenaliInitFlowControl();
+
+   //Set the Denali Link Capability bits
+   tempDenaliData = regTrans.ReadDenaliReg( PCIE_REG_EXP_LINK_CAP );
+   tempDenaliData[ FNX_PCIE_XTR_REG_DEN_EXP_LINK_CAP_MAX_LINK_WIDTH_SLC ] = Scenario.denaliLinkCapMaxLinkWdth;
+   tempDenaliData[ FNX_PCIE_XTR_REG_DEN_EXP_LINK_CAP_PORT_NUM_SLC ] = Scenario.denaliLinkCapPortNumber;
+   tempDenaliData[ FNX_PCIE_XTR_REG_DEN_EXP_LINK_CAP_ASPM_SUPPORT_SLC ] = Scenario.denaliLinkCapASPM;
+
+   regTrans.WriteDenaliReg( PCIE_REG_EXP_LINK_CAP, tempDenaliData );
+
+   //Set the Denali Link Control
+   tempDenaliData = regTrans.ReadDenaliReg( PCIE_REG_DEN_LINK_CTRL );
+   tempDenaliData[ FNX_PCIE_XTR_REG_DEN_LINK_CTRL_TS_DISABLE_SCRAMBLING_SLC ] = Scenario.denaliLtssmDisableScrambling;
+   tempDenaliData[ FNX_PCIE_XTR_REG_DEN_LINK_CTRL_TS_HOT_RST_SLC ] = Scenario.denaliLtssmHotReset;
+   tempDenaliData[ FNX_PCIE_XTR_REG_DEN_LINK_CTRL_TS_DISABLE_LINK_SLC ] = Scenario.denaliLtssmLinkDisable;
+   tempDenaliData[ FNX_PCIE_XTR_REG_DEN_LINK_CTRL_TS_LOOPBACK_SLC ] = Scenario.denaliLtssmLinkLoopback;
+
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_LINK_CTRL, tempDenaliData );
+
+   //Set the Denali N_FTS transmitted in TSx
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_TX_NFTS, Scenario.denaliLtssmNFTS );
+
+   //Set the Denali ACK/NAK and Replay timers
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_ACK_NAK_FREQ_TIMER, Scenario.denaliAckNakLatencyTimerThreshold );
+
+   //Set the replay timer according to the PCIE spec pg.140 table 3-4 unless
+   // a value is passed in from the test
+   if( Scenario.denaliReplayTimerThreshold == 258 ){
+     //case( Scenario.ilupeuMaxPayload ){
+      case( PiuCsrs.piuMaxPayloadSize>>7 ){
+         0:{   case( calculatedWidth ){ 			//mps=128
+                 1: Scenario.denaliReplayTimerThreshold = 711;
+                 2: Scenario.denaliReplayTimerThreshold = 384;
+                 4: Scenario.denaliReplayTimerThreshold = 219;
+                 8: Scenario.denaliReplayTimerThreshold = 201;
+               }
+            }
+         1:{   case( calculatedWidth ){ 			//mps=256
+                 1: Scenario.denaliReplayTimerThreshold = 1248;
+                 2: Scenario.denaliReplayTimerThreshold = 651;
+                 4: Scenario.denaliReplayTimerThreshold = 354;
+                 8: Scenario.denaliReplayTimerThreshold = 321;
+               }
+            }
+         2:{   case( calculatedWidth ){ 			//mps=512
+                 1: Scenario.denaliReplayTimerThreshold = 1677;
+                 2: Scenario.denaliReplayTimerThreshold = 867;
+                 4: Scenario.denaliReplayTimerThreshold = 462;
+                 8: Scenario.denaliReplayTimerThreshold = 258;
+               }
+            }
+      }
+   }
+  // Rx_L0s_adj = 1us / 4ns = 250
+   rx_L0s_adj = 250;
+   Scenario.denaliReplayTimerThreshold += rx_L0s_adj;
+
+
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_REPLAY_TIMER, Scenario.denaliReplayTimerThreshold );
+
+   //The Denali denaliMaxPayload is set in the soma file to ? - change to 1k
+   tempDenaliData = regTrans.ReadDenaliReg( PCIE_REG_EXP_DEV_CAP );
+   tempDenaliData[2:0] =  3'h3;	// 3=1k 2=512 1=256
+   regTrans.WriteDenaliReg( PCIE_REG_EXP_DEV_CAP, tempDenaliData );
+   tempDenaliData = regTrans.ReadDenaliReg( PCIE_REG_EXP_DEV_CTRL );
+   //Enable Denali to send TLPs with the relaxed ordering bit set even though
+      tempDenaliData[4] = 1;
+   tempDenaliData[7:5] = Scenario.denaliMaxPayload;
+   regTrans.WriteDenaliReg( PCIE_REG_EXP_DEV_CTRL, tempDenaliData );
+
+   //Set the Denali Replay buffer to 32k so we can transmit big packets and not worry about size
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_RETRY_SIZE, 32'h8000 );	
+   //Set the Initial Link Numbers transmitted on TS1
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_TS1_LKNUM_LN0, Scenario.denaliLtssmLinkNumber );
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_TS1_LKNUM_LN1, Scenario.denaliLtssmLinkNumber );
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_TS1_LKNUM_LN2, Scenario.denaliLtssmLinkNumber );
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_TS1_LKNUM_LN3, Scenario.denaliLtssmLinkNumber );
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_TS1_LKNUM_LN4, Scenario.denaliLtssmLinkNumber );
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_TS1_LKNUM_LN5, Scenario.denaliLtssmLinkNumber );
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_TS1_LKNUM_LN6, Scenario.denaliLtssmLinkNumber );
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_TS1_LKNUM_LN7, Scenario.denaliLtssmLinkNumber );
+
+//If this is a retraining then let the test control resets
+   //if( !Retrain ){
+
+   // 11/9/04
+  //repeat(400) @(posedge CLOCK);
+  //
+
+  // after 400 clock cycles before reset_duration inside initstrategy \n");
+   //The ILU-PEU comes up in reset so just determine how long the
+   // reset duration is
+  //reset_duration = RandUtil.Rand32(Scenario.minResetDuration,Scenario.maxResetDuration);
+  //repeat(reset_duration/2) @(posedge CLOCK);
+   //Remove Power On Reset after 1/2 of reset duration - review Is this ok?
+
+  //dmuXtrEnabled = 1;
+
+
+  //} //End !Retrain
+
+// after resetN = 1, before setting scenario.NPH etc.  \n");
+   //Set initial advertised credits
+   //NPDC, CHC, CDC are all advertised as infinite and can't be set in the CSR
+   // so just set them here in case they got set in the test
+   Scenario.ilupeuInitialNonPostedDataCredit = 12'hfff;
+   Scenario.ilupeuInitialCompletionHeaderCredit = 8'hff;
+   Scenario.ilupeuInitialCompletionDataCredit = 12'hfff;
+   //Set max values per Fire PRM
+   if( Scenario.ilupeuInitialPostedDataCredit > 12'hc0 ){
+      Scenario.ilupeuInitialPostedDataCredit = 12'hc0;
+   }
+   //If the total of the header credits is too big then set to the default values
+   if( (Scenario.ilupeuInitialPostedHeaderCredit + Scenario.ilupeuInitialNonPostedHeaderCredit) > 8'h30 ){
+     Scenario.ilupeuInitialPostedHeaderCredit = 8'h20;
+     Scenario.ilupeuInitialNonPostedHeaderCredit = 8'h10;
+   }
+
+   //set same data to denali root monitor Flow Control Register
+   denali_root_monitor_regTrans.WriteDenaliReg(PCIE_REG_DEN_FC0_PH, Scenario.ilupeuInitialPostedHeaderCredit);
+   denali_root_monitor_regTrans.WriteDenaliReg(PCIE_REG_DEN_FC0_PD, Scenario.ilupeuInitialPostedDataCredit);
+   denali_root_monitor_regTrans.WriteDenaliReg(PCIE_REG_DEN_FC0_NPH, Scenario.ilupeuInitialNonPostedHeaderCredit);
+   // These are unlimited, check if value 0 is right
+   denali_root_monitor_regTrans.WriteDenaliReg(PCIE_REG_DEN_FC0_NPD, 0);
+   denali_root_monitor_regTrans.WriteDenaliReg(PCIE_REG_DEN_FC0_CPLH, 0);
+   denali_root_monitor_regTrans.WriteDenaliReg(PCIE_REG_DEN_FC0_CPLD, 0);
+
+
+
+if( !Retrain ){
+   //Toggle warm reset to allow values set above to propogate
+
+} //End !Retrain
+
+  // ILU-PEU CSR's must be written after reset goes away
+   //Set the Max Payload field in the Device control configuration register
+//   csrRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_dev_ctl.read();
+//   csrRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_DEV_CTL_MPS_SLC] = Scenario.ilupeuMaxPayload;
+//   CSR.fire_plc_tlu_ctb_tlr_csr_a_dev_ctl.write(csrRegTmpData,CSRT_DAEMON);
+
+   //set same data to denali root monitor Express Device Control register
+   tempDenaliPeuData[15:8] = 8'h0;
+   //tempDenaliPeuData[7:5] = Scenario.ilupeuMaxPayload;  // is 0, 1, or 2
+   tempDenaliPeuData[7:5] = (PiuCsrs.piuMaxPayloadSize>>7);  // piuMaxPayloadSize is 128, 256, or 512
+   tempDenaliPeuData[4:0] = 5'h0;
+   denali_root_monitor_regTrans.WriteDenaliReg(PCIE_REG_DEN_FC0_PH, tempDenaliPeuData);
+
+
+
+   //Set PTL Control Register completion time out and Non posted write single threading
+   // - should default to a downstream port - bit 0 = 1
+//   csrRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_ctl.read();
+//   csrRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_CTL_CTO_SEL_SLC] = Scenario.ilupeuCmplTimeOut;
+//   csrRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_CTL_NPWR_EN_SLC] = Scenario.ilupeuNPWrtEnSnglThrd;
+//   csrRegTmpData[1] = Scenario.ilupeuSlotClkConfig;
+////Moved to LinkTrainingStrategy
+////   csrRegTmpData[8] = 0;	//Turn off remain in detect.quiet
+//   CSR.fire_plc_tlu_ctb_tlr_csr_a_tlu_ctl.write(csrRegTmpData,CSRT_DAEMON);
+
+   // For Denali root monitor:
+   //  set in pureview : ilupeuCmplTimeOut = ttoTLCpl
+   //  Non posted write single thread: not needed in Denali
+   //  Slot clock config: set in
+
+
+   //Link Capability register is read only
+
+   //Set the link control register
+//   csrRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_lnk_ctl.read();
+//   csrRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CTL_ASPM_SLC ] = Scenario.ilupeuLinkCtrlASPM;
+//   csrRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CTL_RCB_SLC ] = Scenario.ilupeuLinkCtrlRCB;
+//   csrRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CTL_DISABLE_SLC ] = Scenario.ilupeuLinkCtrlLinkDisable;
+//   csrRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CTL_RETRAIN_SLC ] = Scenario.ilupeuLinkCtrlRetrainLink;
+//   csrRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CTL_CLOCK_SLC ] = Scenario.ilupeuLinkCtrlCommonClkConfig;
+//   csrRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_LNK_CTL_EXTSYNC_SLC ] = Scenario.ilupeuLinkCtrlExtendedSync;
+//   CSR.fire_plc_tlu_ctb_tlr_csr_a_lnk_ctl.write(csrRegTmpData,CSRT_DAEMON);
+
+   //set same data to denali root monitor Express Link  Control register
+   tempDenaliPeuData[15:8] = 8'h0;
+   tempDenaliPeuData[7] = Scenario.ilupeuLinkCtrlExtendedSync;
+   tempDenaliPeuData[6] = Scenario.ilupeuLinkCtrlCommonClkConfig;
+   tempDenaliPeuData[5] = Scenario.ilupeuLinkCtrlRetrainLink;
+   tempDenaliPeuData[4] = Scenario.ilupeuLinkCtrlLinkDisable;
+   tempDenaliPeuData[3] = Scenario.ilupeuLinkCtrlRCB;
+   tempDenaliPeuData[2] = 1'b0;
+   tempDenaliPeuData[1:0] = Scenario.ilupeuLinkCtrlASPM;
+   denali_root_monitor_regTrans.WriteDenaliReg(PCIE_REG_EXP_LINK_CTRL, tempDenaliPeuData);
+
+
+   //Set the slot capabilities register
+   //Only write the register if a value is passed in from the test. This is for RFE 1987
+   // so we can test that a SET_SLOT_POWER message is NOT sent by default
+//   if( Scenario.ilupeuSetPowerLimitValue || Scenario.ilupeuSetPowerLimitScale ){
+//      csrRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_slt_cap.read();
+//      csrRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_SLT_CAP_SPLV_SLC ] = Scenario.ilupeuSetPowerLimitValue;
+//      csrRegTmpData[ FIRE_PLC_TLU_CTB_TLR_CSR_A_SLT_CAP_SPLS_SLC ] = Scenario.ilupeuSetPowerLimitScale;
+//      //CSR.fire_plc_tlu_ctb_tlr_csr_a_slt_cap.write(csrRegTmpData,CSRT_DAEMON);
+//   }
+
+   //set same data to denali root monitor Express Slot Capabilities register
+   //denali_root_monitor_regTrans.WriteDenaliReg(PCIE_REG_EXP_SLOT_CAP, csrRegTmpData);
+
+
+   //Set link config register N2-OKAY
+   //In N2 PRM 0.7 this is called the PEU DLPL DLL Control Register
+   //csrRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_link_cfg.read();
+   //csrRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_LINK_CFG_ACK_FREQ_SLC] = 1;//N2 review Scenario.;
+//   csrRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_LINK_CFG_DATA_LINK_ENABLE_SLC] = 1;//N2 review Scenario.;
+
+   //CSR.fire_plc_tlu_ctb_tlr_csr_a_link_cfg.write(csrRegTmpData,CSRT_DAEMON);
+
+   
+/*
+N2 - Orphaned ???
+   lpusdRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LTSSM_CNTL_LINK_DISABLE_REQ_SLC] = Scenario.lpusdLtssmLinkDisable;
+   lpusdRegTmpData[FIRE_PLC_TLU_CTB_LPR_CSR_A_PCIE_LPU_LTSSM_CNTL_HOT_RESET_SLC] = Scenario.lpusdLtssmHotReset;
+*/
+
+   //Set fields for the ilupeu link control register
+   //In N2 PRM 0.7 this is called the PEU DLPL MACL/PCS Control Register
+   //Set the disable scrambling field for the ilupeu link control register
+   //This should also set the disable scrambling bit in the physical layer configuration register
+//   csrRegTmpData = CSR.fire_plc_tlu_ctb_tlr_csr_a_link_ctl.read(CSRT_OMNI);
+
+//   csrRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_LINK_CTL_SCRAMBLE_DISABLE_SLC] = Scenario.ilupeuLtssmDisableScrambling;
+////   csrRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_LINK_CTL_LTSSM_LPBK_EN_SLC] = Scenario.ilupeuLtssmLinkLoopback; //Removed in PRM .81
+//   csrRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_LINK_CTL_FAST_LINK_MODE_SLC] = Scenario.FastLinkTraining;
+//   csrRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_LINK_CTL_LINK_CAPABLE_SLC] = Scenario.ilupeuLinkCapMaxLinkWdth;
+//   csrRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_LINK_CTL_N_FTS_SLC] = Scenario.ilupeuLtssmNFTS;
+//   csrRegTmpData[FIRE_PLC_TLU_CTB_TLR_CSR_A_LINK_CTL_LINK_NUM_SLC] = Scenario.ilupeuLtssmLinkNumber;
+
+   //CSR.fire_plc_tlu_ctb_tlr_csr_a_link_ctl.write(csrRegTmpData,CSRT_DAEMON);
+
+   //Set the Initial Link Numbers transmitted on TS1 for denali root monitor
+   denali_root_monitor_regTrans.WriteDenaliReg( PCIE_REG_DEN_TS1_LKNUM_LN0, Scenario.ilupeuLtssmLinkNumber );
+   denali_root_monitor_regTrans.WriteDenaliReg( PCIE_REG_DEN_TS1_LKNUM_LN1, Scenario.ilupeuLtssmLinkNumber );
+   denali_root_monitor_regTrans.WriteDenaliReg( PCIE_REG_DEN_TS1_LKNUM_LN2, Scenario.ilupeuLtssmLinkNumber );
+   denali_root_monitor_regTrans.WriteDenaliReg( PCIE_REG_DEN_TS1_LKNUM_LN3, Scenario.ilupeuLtssmLinkNumber );
+   denali_root_monitor_regTrans.WriteDenaliReg( PCIE_REG_DEN_TS1_LKNUM_LN4, Scenario.ilupeuLtssmLinkNumber );
+   denali_root_monitor_regTrans.WriteDenaliReg( PCIE_REG_DEN_TS1_LKNUM_LN5, Scenario.ilupeuLtssmLinkNumber );
+   denali_root_monitor_regTrans.WriteDenaliReg( PCIE_REG_DEN_TS1_LKNUM_LN6, Scenario.ilupeuLtssmLinkNumber );
+   denali_root_monitor_regTrans.WriteDenaliReg( PCIE_REG_DEN_TS1_LKNUM_LN7, Scenario.ilupeuLtssmLinkNumber );
+   //Set the Denali N_FTS transmitted in TSx
+   denali_root_monitor_regTrans.WriteDenaliReg( PCIE_REG_DEN_TX_NFTS, Scenario.ilupeuLtssmNFTS );
+   ////////////////////////////
+   // Disable RC Error messages
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_PL_NONFATAL_TTX_IDLE_SET_TO_IDLE );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_PL_NONFATAL_LTSSM_POLL_ACTIVE_TO1_EARLY );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NE_1 );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NE0_1 );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NE_2 );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NEXP_1 );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NEXP0_1 );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NEXP_2_PH );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NEXP_2_PD );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NEXP_2_NPH );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NEXP_2_NPD );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NEXP_2_CPLH );
+   denali_root_monitor_regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_INI_NEXP_2_CPLD );
+   
+   //Need to write to Allowed Link Widths register  as just writing to Denali Link Capability might not work
+   if( Scenario.ilupeuLinkCapMaxLinkWdth <= 8 ){
+      case( Scenario.ilupeuLinkCapMaxLinkWdth ){
+         4 :        tempDenaliData = 32'hb;  //x4,x2,x1
+         2 :        tempDenaliData = 32'h3;  //x2,x1
+         1 :        tempDenaliData = 32'h1;  //x1
+         default:   tempDenaliData = 32'h8b; //x8,x4,x2,x1
+      }
+
+      denali_root_monitor_regTrans.WriteDenaliReg( PCIE_REG_DEN_ALLOWED_WIDTHS, tempDenaliData );
+   }
+   
+
+   
+
+
+
+   //Set the replay timer according to the PCIE spec pg.140 table 3-4 unless
+   // a value is passed in from the test
+
+//#ifndef N2_FC
+//   if( Scenario.ilupeuReplayTimerThreshold == Scenario.ilupeuReplayTimerThresholdDflt ){
+//      case( Scenario.ilupeuMaxPayload ){
+//         0: {   case( calculatedWidth ){                         //mps=128
+//                 1: Scenario.ilupeuReplayTimerThreshold = 711;
+//                 2: Scenario.ilupeuReplayTimerThreshold = 384;
+//                 4: Scenario.ilupeuReplayTimerThreshold = 219;
+//                 8: Scenario.ilupeuReplayTimerThreshold = 201;
+//               }
+//            }
+//         1: {   case( calculatedWidth ){                         //mps=256
+//                 1: Scenario.ilupeuReplayTimerThreshold = 1248;
+//                 2: Scenario.ilupeuReplayTimerThreshold = 651;
+//                 4: Scenario.ilupeuReplayTimerThreshold = 354;
+//                 8: Scenario.ilupeuReplayTimerThreshold = 321;
+//               }
+//            }
+//         2: {   case( calculatedWidth ){                         //mps=512
+//                 1: Scenario.ilupeuReplayTimerThreshold = 1677;
+//                 2: Scenario.ilupeuReplayTimerThreshold = 867;
+//                 4: Scenario.ilupeuReplayTimerThreshold = 462;
+//                 8: Scenario.ilupeuReplayTimerThreshold = 258;
+//               }
+//            }
+//      }
+//   }
+//   CSR.fire_plc_tlu_ctb_tlr_csr_a_replay_tim_thresh.write( Scenario.ilupeuReplayTimerThreshold );
+
+//   // Set denali root monitor replay timer threshold value
+//      denali_root_monitor_regTrans.WriteDenaliReg( PCIE_REG_DEN_REPLAY_TIMER, Scenario.ilupeuReplayTimerThreshold );
+
+//#endif
+
+/* review
+   //Set the ACK/NAK latency timer threshold to a new value if it is set in the test
+   if( Scenario.lpusdAckNakLatencyTimerThreshold !== Scenario.lpusdAckNakLatencyTimerThresholdDflt ){
+      CSR.fire_plc_tlu_ctb_lpr_csr_a_pcie_lpu_acknak_latency.write( Scenario.lpusdAckNakLatencyTimerThreshold );
+   }
+*/
+
+
+   //Set up Interrupt masks here  D1.5 review
+
+   //Set up Vendor IDs for Vendor Defined TLPs
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_VENDOR_IDS, {Scenario.denaliVendorDefinedVendorID2 ,Scenario.denaliVendorDefinedVendorID1} );
+
+if( !Retrain ){
+   //Disable all Denali errors that aren't needed
+   DisableDenaliErrs();
+}  //End !Retrain
+
+   printf("AC: at end of initstrategy execute \n");
+
+}
+
+
+task N2fcInitStrategy::SetFastLinkTraining(){
+
+}
+
+
+task N2fcInitStrategy::DenaliGotoRecovery(){
+
+   tempDenaliData = regTrans.ReadDenaliReg( PCIE_REG_DEN_LINK_CTRL );
+   tempDenaliData[ FNX_PCIE_XTR_REG_DEN_LINK_CTRL_GOTO_RECOVERY_SLC ] = 1'b1;
+
+
+}
+
+
+task N2fcInitStrategy::DisableDenaliErrs(){
+
+   //If Denali received a reset then all the SuppressDenaliErr set in the FNXPCIEXtr need to be set again so just do it here
+   Pod.FNXPCIEBldr.DenaliMemoryModelInit();
+
+//N2 review - Do we really need to disable these errors, needed to get testbench up
+   //Since were not following PCIE protocol disable these errors that
+   // expect a cfg write before anything else N2
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlInitReq );
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlCplId0_Cpl );
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlCplId0_CplD );
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlCplId0_CplLk );
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlCplId0_CplDLk );
+
+   // Malformed TLP - INTx has non-0 (%d) as function # in Requester ID
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlINTxRID );
+
+   //[PCISIG-CFG.5.5#2[#3]].  Transmitting TLP (Assert_INTB), the corresponding pin value is not specified in Interrupt Pin register(s)
+   regTrans.SuppressDenaliErr(  PCIE_TL_NONFATAL_CFG_vlINTxPIN );
+
+  // Transmitting TLP (Deassert_INTC) is not permitted because this is a single function device.
+   regTrans.SuppressDenaliErr(  PCIE_TL_NONFATAL_CFG_vlINTBCD );
+
+
+//End N2 review - Do we really need to disable these errors, needed to get testbench up
+
+
+/* review These should not be needed since I'm now using the transaction layer
+   //Suppress the Flow Control error so any number of credits can be advertised
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_RXOVFL );
+
+   // Supress [NONFATAL-PoisonedTlp] TLP_UR_Poison [PCISIG-TXN.7.3#4[#5]] since this will be randomized
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_UR_Poison );
+
+   //Disable Denali from reporting the TSx Disable Scrambling bit set when not in LTSSM Configuration State
+   if( Scenario.lpusdLtssmDisableScrambling ){
+      regTrans.SuppressDenaliErr( PCIE_PL_NONFATAL_SCRAM_DISABLE );
+   }
+
+   // Supress  TLP_MF_vlLkEP [PCISIG-TPL.3.3#4].  Illegal Locked TLP - PCI Express Endpoint does not support Locked accesses
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLkEP );
+
+   // Supress TLP_MF_vlLkTC0 [PCISIG].  Malformed Locked TLP - only default traffic class (TC0) is allowed
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLkTC0 );
+
+   // Supress TLP_MF_vlPoison [PCISIG-TXN.7.3#1[#2]].  Poisoned TLP [MRdLk_64] - Poisoned bit is 1,
+   //  but it is not CplD, MWr, CfgWr0, CfgWr1, or MsgDk
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlPoison );
+
+   // Supress TLP_MF_vl1stBE [PCISIG-TXN.2.6#1].  Malformed TLP - First DW BE is 0,
+   //  but the payload length (1024 DWords) is greater than 1
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vl1stBE );
+
+
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLastBE1 );
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlNC1stBE );
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlNClastBE );
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPL_Poison );
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlCplSt );
+
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlLkReq ); //Initiating an illegal Locked Request - only RC can initiate.
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlIOExpEp ); //Erroneous TLP - Express Endpoint cannot generate IO request
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlIOpkgLEN ); //Malformed TLP - IO request can only have Length==1, but it has x
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlCfgTx ); //Erroneous TLP - An Upstream port cannot transmit Configuration requests to upstream components
+
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlMsgPkg ); //Erroneous TLP - Illegal combination of TLP type (Msg), Rout(0x4), and msgCode (0x56)
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlMsgRout ); //Erroneous TLP - Message Routing value (6) is Reserved, it must be within [0 : 5]. It will be treated as 'Terminate at Receiver
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlMsgERRrx ); //This device (ExpressEP) cannot be Receiver of Error Signaling msg TLP - only Root Complex can
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_CFG_vlINTBCD0 ); //Received INTx Msg TLP (Deassert_INTB), this is not permitted because the downstream is a single function device
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_CFG_vlINTxPIN0 ); //Receiving TLP (Deassert_INTB), the corresponding pin value is not specified in Interrupt Pin register(s). The port at the other side of the link defines pin values
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlCfg0 ); //To transmit TLP CfgWr0, but the other end Port Function (transmitter) is not defined as Configuration 1
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlCFGpkgLEN ); //Malformed TLP - Configuration request can only have Length==1, but it has X
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlMsgINTxrx ); //This device (ExpressEP) cannot be Receiver of INTx msg TLP - only Root Complex or Switch can
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlMsgHPAttnrx ); //This device (ExpressEP) cannot be Receiver of Attention_Button_Pressed msg TLP - only Root Complex or Bridge can
+
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlINTxRID ); //Erroneous TLP - INTx has non-0 (5) as function # in RequesterID
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_CFG_vlINTBCD ); //Transmitting INTx Msg TLP (Deassert_INTD) on behalf of the internal resource of this device is not permitted because this is a single function device
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_CFG_vlINTxPIN ); //Transmitting TLP (Deassert_INTD), the corresponding pin value is not specified in Interrupt Pin register(s). This port defines pin values (1)
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlMsgHPPBlktx ); //This device (ExpressEP) cannot be Transmitter of Power_Indicator_Blink msg TLP - only Root Complex or Bridge can
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlMsgAckrx ); //This device (ExpressEP) cannot be Receiver of PM_TO_Ack msg TLP - only Root Complex can
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlMsgPMErx ); // This device (ExpressEP) cannot be Receiver of PM_PME msg TLP - only Root Complex or Switch can
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_PLN0_Msg ); // TLP Msg (SLOT_Power_Limit) has non-0 in payload (0x13a3fd5b) at bits [31 : 10]
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlMsgSLOTtx ); //This device (ExpressEP) cannot be Transmitter of Slot Power Limit msg TLP - only Root Complex or Bridge can
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlMsgLOCKtx ); //This device (ExpressEP) cannot be Transmitter of Unlock msg TLP - only Root Complex can
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlMsgNaktx ); //This device (ExpressEP) cannot be Transmitter of PM_Active_State_Nak msg TLP - only Root Complex or Switch can
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlMsgHPAOntx ); //This device (ExpressEP) cannot be Transmitter of Attention_Indicator_On msg TLP - only Root Complex or Bridge can
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlMsgOfftx ); //This device (ExpressEP) cannot be Transmitter of PM_Turn_Off msg TLP - only Root Complex can
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlMsgHPPOfftx ); //This device (ExpressEP) cannot be Transmitter of Power_Indicator_Off msg TLP - only Root Complex or Bridge can
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlMsgHPAOfftx ); //This device (ExpressEP) cannot be Transmitter of Attention_Indicator_Off msg TLP - only Root Complex or Bridge can
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlMsgHPPOntx ); //This device (ExpressEP) cannot be Transmitter of Attention_Indicator_On msg TLP - only Root Complex or Bridge can
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlMsgHPABlktx ); //This device (ExpressEP) cannot be Transmitter of Attention_Indicator_Blink msg TLP - only Root Complex or Bridge can
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlNC1stBE2 ); //Malformed TLP - Non-contiguous First DW BE (0x%x) is not permitted if the payload length is 2 and address (low32:0x%08x) is not QWord aligned
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlNClastBE2 ); //Malformed TLP - Non-contiguous Last DW BE (0x2) is not permitted if the payload length is 2 and address (low32:0x4869cc64) is not QWord aligned
+   regTrans.SuppressDenaliErr( PCIE_TL_COR_TLP_SLOT_RSV ); //Slot Power Limit TLP contains non-0 payload (0x692d7af7) in reserved bits [31:10]
+   regTrans.SuppressDenaliErr( PCIE_TL_FATAL_CFG_DID_TXCPLQ ); // There are some pending requests in TX Completion Queue [port_%d] while the Device ID changes to
+   regTrans.SuppressDenaliErr( PCIE_TL_COR_TLP_USERTAG_2 ); // Function (7) and Tag (109) identified an unfinished transaction, discard the transaction
+   regTrans.SuppressDenaliErr( PCIE_TL_FATAL_FCPE_INI_PH ); //InitFC value (%d) is less than the minimum PH FC credit requirement
+   regTrans.SuppressDenaliErr( PCIE_TL_FATAL_FCPE_INI_PD ); //InitFC value (%d) is less than the minimum PD FC credit requirement
+   regTrans.SuppressDenaliErr( PCIE_TL_FATAL_FCPE_INI_NPH ); //InitFC value (%d) is less than the minimum NPH FC credit requirement
+   regTrans.SuppressDenaliErr( PCIE_TL_FATAL_FCPE_INI_NPD ); //InitFC value (%d) is less than the minimum NPD FC credit requirement
+   regTrans.SuppressDenaliErr( PCIE_TL_FATAL_FCPE_INI_CPLH ); //InitFC value (%d) is less than the minimum CPLH FC credit requirement
+   regTrans.SuppressDenaliErr( PCIE_TL_FATAL_FCPE_INI_CPLD ); //InitFC value (%d) is less than the minimum CPLD FC credit requirement
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlCplBCM0 ); //TXN.2.21#8 : Erroneous TLP - Completion's BCM must not be set by PCI Express completer
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_TLP_CPLQ0_1 ); //Cannot find matching Request for the Completion TLP [transId=0xc136ad], discard the packet
+   regTrans.SuppressDenaliErr( PCIE_TL_FATAL_CFG_TC_1MAP ); //Malformed TLP - Traffic Class (TC6) is not mapped to an active VC
+   regTrans.SuppressDenaliErr( PCIE_TL_NONFATAL_FCPE_VC ); //Cannot update the FC Credit to not yet enabled VC-1
+   regTrans.SuppressDenaliErr( PCIE_TL_COR_CFG_PTRRSV ); //Capability pointer Register '%s' has non-0 value 0x%x in reserved bits [1:0]
+   regTrans.SuppressDenaliErr( PCIE_TL_COR_CFG_PTRRSV0 ); //Downstream %s: Capability pointer Register '%s' has non-0 value 0x%x in reserved bits [1:0]
+
+
+
+
+  
+
+*/
+
+//review added for Denali version _047
+regTrans.tempSuppressDenaliErr( PCIE_TL_FATAL_FCPE_INI_PD ); //InitFC value (%d) is less than the minimum PD FC credit requirement
+regTrans.tempSuppressDenaliErr( PCIE_TL_COR_TLP_DIFF_CPLST );
+regTrans.tempSuppressDenaliErr( PCIE_PL_COR_PM_UTX_TO_ACK_NR );
+regTrans.tempSuppressDenaliErr( PCIE_PL_COR_PM_UTX_TO_ACK_D3HOT );
+
+//Needed because not all Error transactions complete correctly
+regTrans.tempSuppressDenaliErr( PCIE_TL_COR_TLP_USERTAG_2 ); //identified an unfinished transaction, discard the transaction
+
+}
+
+task N2fcInitStrategy::SetDenaliInitFlowControl(){
+  // ==================================================
+  //Set the Initial Flow Control values in Denali First
+
+  if ( get_plus_arg(CHECK, "PEU_FC_PH") ) {
+    Scenario.denaliInitialPostedHeaderCredit = get_plus_arg(NUM, "PEU_FC_PH");
+  }
+  Report.report(RTYP_DEBUG_1,"N2fcInitStrategy::Execute: Scenario.denaliInitialPostedHeaderCredit = %d \n", Scenario.denaliInitialPostedHeaderCredit);
+
+  if ( get_plus_arg(CHECK, "PEU_FC_NPH") ) {
+    Scenario.denaliInitialNonPostedHeaderCredit = get_plus_arg(NUM, "PEU_FC_NPH");
+  }
+   Report.report(RTYP_DEBUG_1,"N2fcInitStrategy::Execute: Scenario.denaliInitialNonPostedHeaderCredit = %d \n", Scenario.denaliInitialNonPostedHeaderCredit);
+
+  if ( get_plus_arg(CHECK, "PEU_FC_PD") ) {
+    Scenario.denaliInitialPostedDataCredit = get_plus_arg(NUM, "PEU_FC_PD");
+  }
+   Report.report(RTYP_DEBUG_1,"N2fcInitStrategy::Execute: Scenario.denaliInitialPostedDataCredit = %d \n", Scenario.denaliInitialPostedDataCredit);
+
+   // Note: since Denali's definition of inifite means to set their PCIE_REG_DEN to FFFFFFFF and the legacy bit definition
+   //       for scenario.denaliInitialxxHeaderCredit are defined as 8 or 12 bits, so need to introduce the denali_xx_xx_infinite
+   //       variables
+
+   //credits-Posted Header
+   if (Scenario.denali_FC_PH_infinite == 1) {
+     regTrans.WriteDenaliReg( PCIE_REG_DEN_FC0_PH, 32'hFFFFFFFF );
+     Scenario.denaliInitialPostedHeaderCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_PHC_WIDTH'h0;
+   }
+   else {
+     regTrans.WriteDenaliReg( PCIE_REG_DEN_FC0_PH, Scenario.denaliInitialPostedHeaderCredit );
+   }
+
+   //credits-Posted Data
+   if (Scenario.denali_FC_PD_infinite == 1) {
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_FC0_PD, 32'hFFFFFFFF  );
+   Scenario.denaliInitialPostedDataCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_PDC_WIDTH'h0;
+   }
+   else {
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_FC0_PD, Scenario.denaliInitialPostedDataCredit);
+   }
+
+   //credits-NonPosted Header
+   if (Scenario.denali_FC_NPH_infinite == 1) {
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_FC0_NPH, 32'hFFFFFFFF  );
+   Scenario.denaliInitialNonPostedHeaderCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_NHC_WIDTH'h0;
+   }
+   else {
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_FC0_NPH, Scenario.denaliInitialNonPostedHeaderCredit );
+   }
+
+   //credits-NonPosted Data
+   if (Scenario.denali_FC_NPD_infinite == 1) {
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_FC0_NPD, 32'hFFFFFFFF  );
+   Scenario.denaliInitialNonPostedDataCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_NDC_WIDTH'h0;
+   }
+   else {
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_FC0_NPD, Scenario.denaliInitialNonPostedDataCredit );
+   }
+
+   //credits-Completion Header
+   if (Scenario.denali_FC_CPLH_infinite == 1) {
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_FC0_CPLH, 32'hFFFFFFFF );
+   Scenario.denaliInitialCompletionHeaderCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_CHC_WIDTH'h0;
+   }
+   else {
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_FC0_CPLH, Scenario.denaliInitialCompletionHeaderCredit );
+   }
+
+   //credits-Completion Data
+   if (Scenario.denali_FC_CPLD_infinite == 1) {
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_FC0_CPLD, 32'hFFFFFFFF );
+   Scenario.denaliInitialCompletionDataCredit = FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_ICI_CDC_WIDTH'h0;
+   }
+   else {
+   regTrans.WriteDenaliReg( PCIE_REG_DEN_FC0_CPLD, Scenario.denaliInitialCompletionDataCredit );
+   }
+}

@@ -1,0 +1,199 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: asmToVeraIntf.vrh
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#ifndef INC__TMP_ASMTOVERAINTF_VRH
+#define INC__TMP_ASMTOVERAINTF_VRH
+
+extern class TxPacketGenConfig;
+extern class BaseAsmToVeraIntf;
+
+extern class AsmToVeraIntf extends BaseAsmToVeraIntf {
+
+  task generic_ev(
+    string     arg1_str,
+    reg [63:0] arg2_64bits,
+    reg [63:0] arg3_64bits
+  );
+
+  task intp(reg [5:0] tid = 0,
+            reg [63:0] type = 0,
+            reg [63:0] vec = 0,
+            integer src = 16, // 0-16 are ccx ports. 16 = NCU
+            integer wait = 0);
+
+  task dump_mem(reg [63:0] addr=0,
+                integer amount = 8);
+  
+  task extint(integer wait = 0, integer width = 0);
+  
+  task warmrst(integer wait = 0);
+  
+  task store(reg [7:0] ccxPortMask = 0,
+             reg [63:0] addr=0,
+             reg [63:0] data=0);
+
+  task jtagRdWrL2(reg [63:0] paAddr = 0,
+                  reg [63:0] data=0,
+                  reg [63:0] jtagDoneAddrMem=0,
+                  reg rdwr=0);
+
+// added this
+#ifndef FC_NO_NIU_T2
+task pktGenConfig (
+        integer mac_port,
+	integer frame_type,
+	integer frame_class,
+        integer data_length,
+        (integer tx_multi_port = 0, integer data_length_p1 = -1)
+);
+
+ task NIU_AddTxChannels (
+        integer mac_port,
+        integer dma_no,
+        (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0)
+);
+
+task NIU_SetTxRingKick (
+    integer mac_port,
+    integer dma_no,
+    (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0)
+);
+
+task NIU_SetTxMaxBurst (
+    integer mac_port,
+    integer dma_no, 
+    integer SetTxMaxBurst_Data,
+    (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0)
+);
+
+task NIU_InitTxDma (
+    integer mac_port, 
+    integer dma_no,
+    bit Xlate,
+    (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0)
+);
+
+ task NIU_TxDMAActivate (
+    	integer mac_port, 
+        integer dma_activelist,
+        (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0)
+);
+
+ task NIU_EXIT_chk (
+    	integer mac_port
+);
+
+task TxPktGen (
+    integer mac_port,
+    integer dmaport,
+    integer numofpacket,
+    (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0)
+);
+
+task TxPktGen_int (
+    integer mac_port,
+    integer dmaport,
+    integer numofpacket,
+    (integer tx_multi_port = 0, bit [15:0] tx_multi_dma_p0 = 16'h0, bit [15:0] tx_multi_dma_p1 = 16'h0)
+);
+
+task NIU_InitRxDma (
+    integer RxDmaChnlNo, 
+    integer RxDescRingLen, 
+    bit [39:0] RxRingStartAddr, 
+    bit [63:0] RbrConfData, 
+    integer RxInitKick,
+    bit Xlate,
+    (bit [15:0] rx_multi_dma = 16'h0)
+);
+
+task NIU_RxPktConf (
+    integer RxPktCnt,
+    (integer iport = 0)
+);
+  
+task NIU_RxGenPkt (
+    integer mac_port, 
+    integer RxDmaChnlNo,  
+    integer RxPktCnt,
+    integer RxPktLen,
+    (integer rx_multi_PORT = 0,
+     bit [15:0] rx_multi_DMA = 16'h0)
+); 
+
+task NIU_internalrx (
+    integer mac_port,
+    integer RxDmaChnlNo,
+    integer RxPktCnt,
+    integer RxPktLen,
+    (integer rx_multi_port=0,
+    bit [15:0] rx_multi_dma= 16'h0)
+);
+#endif
+
+task IosErrInj (string errtype, bit [15:0] ctag, bit [39:0] pa);
+task IosRandErrInj (string errtype, integer num_errs, integer weight);
+
+task marker(
+  string what,
+  reg [5:0] fromTid,
+  reg [63:0] pc
+);
+
+task reset_now(
+  string what
+);
+
+#ifndef FC_NO_PEU_VERA
+task set_StartPEUTest ();
+
+task EnablePCIeEgCmd (string      cmdType,
+                      bit [63:0]  addr,
+                      bit [31:0]  txLen,
+                      bit [31:0]  startData,
+                      string      err);
+
+
+task EnablePCIeIgCmd (string      cmdType,
+                      bit [63:0]  StartAddr,
+                      bit [63:0]  EndAddr,
+                      string      txLen,
+                      bit [31:0]  NumCmds,
+                      string      err);
+#endif
+
+
+}
+
+#endif

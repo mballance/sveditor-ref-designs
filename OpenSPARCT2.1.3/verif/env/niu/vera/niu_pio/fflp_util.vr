@@ -1,0 +1,943 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: fflp_util.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "fflp_memory_map.vri"
+#include "dmc_memory_map.vri"
+#include "pio_driver.vrh"
+#include "fflp_defines.vri"
+//#include "ncu_stub.vrh"
+// extern Cncu_stub gen_pio_drv;
+extern niu_gen_pio gen_pio_drv;
+
+
+
+#include "cMesg.vrh"
+
+extern Mesg be_msg;
+
+class fflp_util_class {
+
+
+//@@@@ FFLP Shadow Register Variables @@@@
+bit [63:0] fflp_config;  
+bit [63:0] fflp_tcp_cflag_mask;
+bit [63:0] fflp_fcram_ref_tmr;
+bit [63:0] fflp_l2_cls_2;
+bit [63:0] fflp_l2_cls_3;
+bit [63:0] fflp_l2_cls_4;
+bit [63:0] fflp_l2_cls_5;
+bit [63:0] fflp_l2_cls_6;
+bit [63:0] fflp_l2_cls_7;
+bit [63:0] fflp_cam_key_reg0;
+bit [63:0] fflp_cam_key_reg1;
+bit [63:0] fflp_cam_key_reg2;
+bit [63:0] fflp_cam_key_reg3;
+bit [63:0] fflp_cam_key_mask_reg0;
+bit [63:0] fflp_cam_key_mask_reg1;
+bit [63:0] fflp_cam_key_mask_reg2;
+bit [63:0] fflp_cam_key_mask_reg3;
+bit [63:0] fflp_cam_key_control;
+bit [63:0] fflp_how_tcam_key_cls_4;
+bit [63:0] fflp_how_tcam_key_cls_5;
+bit [63:0] fflp_how_tcam_key_cls_6;
+bit [63:0] fflp_how_tcam_key_cls_7;
+bit [63:0] fflp_how_tcam_key_cls_8;
+bit [63:0] fflp_how_tcam_key_cls_9;
+bit [63:0] fflp_how_tcam_key_cls_A;
+bit [63:0] fflp_how_tcam_key_cls_B;
+bit [63:0] fflp_how_tcam_key_cls_C;
+bit [63:0] fflp_how_tcam_key_cls_D;
+bit [63:0] fflp_how_tcam_key_cls_E;
+bit [63:0] fflp_how_tcam_key_cls_F;
+
+bit [63:0] fflp_how_flow_key_cls_4;
+bit [63:0] fflp_how_flow_key_cls_5;
+bit [63:0] fflp_how_flow_key_cls_6;
+bit [63:0] fflp_how_flow_key_cls_7;
+bit [63:0] fflp_how_flow_key_cls_8;
+bit [63:0] fflp_how_flow_key_cls_9;
+bit [63:0] fflp_how_flow_key_cls_A;
+bit [63:0] fflp_how_flow_key_cls_B;
+bit [63:0] fflp_how_flow_key_cls_C;
+bit [63:0] fflp_how_flow_key_cls_D;
+bit [63:0] fflp_how_flow_key_cls_E;
+bit [63:0] fflp_how_flow_key_cls_F;
+bit [63:0] fflp_flow_h1poly;
+bit        ext_lookup [8];
+bit [63:0] rdc_def_pt0_rdc;
+bit [63:0] rdc_def_pt1_rdc;
+bit [63:0] rdc_def_pt2_rdc;
+bit [63:0] rdc_def_pt3_rdc;
+
+        task new( ) ;
+        function bit check_cmd(bit [63:0]cmd, bit [63:0] opt); 
+        task fflp_init ( integer iport, bit[63:0] cmd);
+        function bit [199:0] pio_rd_tcam_key (bit [9:0] tcam_index, 
+                                              var bit [199:0] pio_rd_tcam_mask);
+        task pio_wr_tcam_key (bit [9:0] tcam_index,
+                              bit [199:0] wr_tcam_key,
+                              bit [199:0] wr_tcam_mask);
+        function bit [63:0] pio_rd_tcam_asdata (bit [9:0] tcam_index);
+        task pio_wr_tcam_asdata (bit [9:0] tcam_index,
+                                 bit [63:0] wr_tcam_asdata);
+        task wait_for_done_bit();
+        task fflp_pio_wrapper ( bit [39:0] pio_addr, bit [63:0] wr_data);
+        task init_cam_entries();
+        task pio_cmp_tcam_key (bit [199:0] cmp_tcam_key);
+        function bit [10:0] pio_comp_tcam_key (bit [199:0] cmp_tcam_key);
+        
+}
+
+task fflp_util_class::new( ) 
+ {
+  fflp_config = -1;
+  fflp_tcp_cflag_mask = -1;
+  fflp_fcram_ref_tmr = -1;
+  fflp_l2_cls_2 = -1;
+  fflp_l2_cls_3 = -1;
+  fflp_l2_cls_4 = -1;
+  fflp_l2_cls_5 = -1;
+  fflp_l2_cls_6 = -1;
+  fflp_l2_cls_7 = -1;
+  fflp_cam_key_reg0 = -1;
+  fflp_cam_key_reg1 = -1;
+  fflp_cam_key_reg2 = -1;
+  fflp_cam_key_reg3 = -1;
+  fflp_cam_key_mask_reg0 = -1;
+  fflp_cam_key_mask_reg1 = -1;
+  fflp_cam_key_mask_reg2 = -1;
+  fflp_cam_key_mask_reg3 = -1;
+  fflp_cam_key_control = -1;
+  fflp_how_tcam_key_cls_4 = -1;
+  fflp_how_tcam_key_cls_5 = -1;
+  fflp_how_tcam_key_cls_6 = -1;
+  fflp_how_tcam_key_cls_7 = -1;
+  fflp_how_tcam_key_cls_8 = -1;
+  fflp_how_tcam_key_cls_9 = -1;
+  fflp_how_tcam_key_cls_A = -1;
+  fflp_how_tcam_key_cls_B = -1;
+  fflp_how_tcam_key_cls_C = -1;
+  fflp_how_tcam_key_cls_D = -1;
+  fflp_how_tcam_key_cls_E = -1;
+  fflp_how_tcam_key_cls_F = -1;
+
+  fflp_how_flow_key_cls_4 = -1;
+  fflp_how_flow_key_cls_5 = -1;
+  fflp_how_flow_key_cls_6 = -1;
+  fflp_how_flow_key_cls_7 = -1;
+  fflp_how_flow_key_cls_8 = -1;
+  fflp_how_flow_key_cls_9 = -1;
+  fflp_how_flow_key_cls_A = -1;
+  fflp_how_flow_key_cls_B = -1;
+  fflp_how_flow_key_cls_C = -1;
+  fflp_how_flow_key_cls_D = -1;
+  fflp_how_flow_key_cls_E = -1;
+  fflp_how_flow_key_cls_F = -1;
+  fflp_flow_h1poly        = -1;
+  ext_lookup[0]           = -1;
+  ext_lookup[1]           = -1;
+  ext_lookup[2]           = -1;
+  ext_lookup[3]           = -1;
+  ext_lookup[4]           = -1;
+  ext_lookup[5]           = -1;
+  ext_lookup[6]           = -1;
+  ext_lookup[7]           = -1;
+  rdc_def_pt0_rdc         = -1;
+  rdc_def_pt1_rdc         = -1;
+  rdc_def_pt2_rdc         = -1;
+  rdc_def_pt3_rdc         = -1;
+
+ } 
+
+
+task fflp_util_class::fflp_pio_wrapper ( bit [39:0] pio_addr, bit [63:0] wr_data) 
+ {
+  case(pio_addr)
+   {
+    FFLP_ADDRESS_RANGE+FFLP_CONFIG:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_CONFIG,wr_data);
+      fflp_config = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_TCP_CFLAG_MASK:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_TCP_CFLAG_MASK,wr_data);
+      fflp_tcp_cflag_mask = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_FCRAM_REF_TMR:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_FCRAM_REF_TMR,wr_data);
+      fflp_fcram_ref_tmr = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_L2_CLS_2:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_L2_CLS_2,wr_data);
+      fflp_l2_cls_2 = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_L2_CLS_3:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_L2_CLS_3,wr_data);
+      fflp_l2_cls_3 = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_L3_CLS_4:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_L3_CLS_4,wr_data);
+      fflp_l2_cls_4 = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_L3_CLS_5:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_L3_CLS_5,wr_data);
+      fflp_l2_cls_5 = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_L3_CLS_6:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_L3_CLS_6,wr_data);
+      fflp_l2_cls_6 = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_L3_CLS_7:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_L3_CLS_7,wr_data);
+      fflp_l2_cls_7 = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_CAM_KEY_REG0:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_CAM_KEY_REG0,wr_data);
+      fflp_cam_key_reg0 = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_CAM_KEY_REG1:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_CAM_KEY_REG1,wr_data);
+      fflp_cam_key_reg1 = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_CAM_KEY_REG2:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_CAM_KEY_REG2,wr_data);
+      fflp_cam_key_reg2 = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_CAM_KEY_REG3:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_CAM_KEY_REG3,wr_data);
+      fflp_cam_key_reg3 = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_CAM_KEY_MASK_REG0:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_CAM_KEY_MASK_REG0,wr_data);
+      fflp_cam_key_mask_reg0 = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_CAM_KEY_MASK_REG1:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_CAM_KEY_MASK_REG1,wr_data);
+      fflp_cam_key_mask_reg1 = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_CAM_KEY_MASK_REG2:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_CAM_KEY_MASK_REG2,wr_data);
+      fflp_cam_key_mask_reg2 = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_CAM_KEY_MASK_REG3:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_CAM_KEY_MASK_REG3,wr_data);
+      fflp_cam_key_mask_reg3 = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_CAM_CONTROL:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_CAM_CONTROL,wr_data);
+      fflp_cam_key_control = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_HOW_TCAM_KEY_CLS_4:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_HOW_TCAM_KEY_CLS_4,wr_data);
+      fflp_how_tcam_key_cls_4 = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_HOW_TCAM_KEY_CLS_5:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_HOW_TCAM_KEY_CLS_5,wr_data);
+      fflp_how_tcam_key_cls_5 = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_HOW_TCAM_KEY_CLS_6:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_HOW_TCAM_KEY_CLS_6,wr_data);
+      fflp_how_tcam_key_cls_6 = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_HOW_TCAM_KEY_CLS_7:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_HOW_TCAM_KEY_CLS_7,wr_data);
+      fflp_how_tcam_key_cls_7 = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_HOW_TCAM_KEY_CLS_8:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_HOW_TCAM_KEY_CLS_8,wr_data);
+      fflp_how_tcam_key_cls_8 = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_HOW_TCAM_KEY_CLS_9:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_HOW_TCAM_KEY_CLS_9,wr_data);
+      fflp_how_tcam_key_cls_9 = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_HOW_TCAM_KEY_CLS_A:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_HOW_TCAM_KEY_CLS_A,wr_data);
+      fflp_how_tcam_key_cls_A = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_HOW_TCAM_KEY_CLS_B:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_HOW_TCAM_KEY_CLS_B,wr_data);
+      fflp_how_tcam_key_cls_B = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_HOW_TCAM_KEY_CLS_C:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_HOW_TCAM_KEY_CLS_C,wr_data);
+      fflp_how_tcam_key_cls_C = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_HOW_TCAM_KEY_CLS_D:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_HOW_TCAM_KEY_CLS_D,wr_data);
+      fflp_how_tcam_key_cls_D = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_HOW_TCAM_KEY_CLS_E:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_HOW_TCAM_KEY_CLS_E,wr_data);
+      fflp_how_tcam_key_cls_E = wr_data;
+     }
+    FFLP_ADDRESS_RANGE+FFLP_HOW_TCAM_KEY_CLS_F:
+     {
+      gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_HOW_TCAM_KEY_CLS_F,wr_data);
+      fflp_how_tcam_key_cls_F = wr_data;
+     }
+    FFLP_FLOW_ADDRESS_RANGE+FFLP_HOW_FLOW_KEY_CLS_4:
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE +FFLP_HOW_FLOW_KEY_CLS_4,wr_data);
+      fflp_how_flow_key_cls_4 = wr_data;
+     }
+    FFLP_FLOW_ADDRESS_RANGE+FFLP_HOW_FLOW_KEY_CLS_5:
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE +FFLP_HOW_FLOW_KEY_CLS_5,wr_data);
+      fflp_how_flow_key_cls_5 = wr_data;
+     }
+    FFLP_FLOW_ADDRESS_RANGE+FFLP_HOW_FLOW_KEY_CLS_6:
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE +FFLP_HOW_FLOW_KEY_CLS_6,wr_data);
+      fflp_how_flow_key_cls_6 = wr_data;
+     }
+    FFLP_FLOW_ADDRESS_RANGE+FFLP_HOW_FLOW_KEY_CLS_7:
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE +FFLP_HOW_FLOW_KEY_CLS_7,wr_data);
+      fflp_how_flow_key_cls_7 = wr_data;
+     }
+    FFLP_FLOW_ADDRESS_RANGE+FFLP_HOW_FLOW_KEY_CLS_8:
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE +FFLP_HOW_FLOW_KEY_CLS_8,wr_data);
+      fflp_how_flow_key_cls_8 = wr_data;
+     }
+    FFLP_FLOW_ADDRESS_RANGE+FFLP_HOW_FLOW_KEY_CLS_9:
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE +FFLP_HOW_FLOW_KEY_CLS_9,wr_data);
+      fflp_how_flow_key_cls_9 = wr_data;
+     }
+    FFLP_FLOW_ADDRESS_RANGE+FFLP_HOW_FLOW_KEY_CLS_A:
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE +FFLP_HOW_FLOW_KEY_CLS_A,wr_data);
+      fflp_how_flow_key_cls_A = wr_data;
+     }
+    FFLP_FLOW_ADDRESS_RANGE+FFLP_HOW_FLOW_KEY_CLS_B:
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE +FFLP_HOW_FLOW_KEY_CLS_B,wr_data);
+      fflp_how_flow_key_cls_B = wr_data;
+     }
+    FFLP_FLOW_ADDRESS_RANGE+FFLP_HOW_FLOW_KEY_CLS_C:
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE +FFLP_HOW_FLOW_KEY_CLS_C,wr_data);
+      fflp_how_flow_key_cls_C = wr_data;
+     }
+    FFLP_FLOW_ADDRESS_RANGE+FFLP_HOW_FLOW_KEY_CLS_D:
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE +FFLP_HOW_FLOW_KEY_CLS_D,wr_data);
+      fflp_how_flow_key_cls_D = wr_data;
+     }
+    FFLP_FLOW_ADDRESS_RANGE+FFLP_HOW_FLOW_KEY_CLS_E:
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE +FFLP_HOW_FLOW_KEY_CLS_E,wr_data);
+      fflp_how_flow_key_cls_E = wr_data;
+     }
+    FFLP_FLOW_ADDRESS_RANGE+FFLP_HOW_FLOW_KEY_CLS_F:
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE +FFLP_HOW_FLOW_KEY_CLS_F,wr_data);
+      fflp_how_flow_key_cls_F = wr_data;
+     }
+    FFLP_FLOW_ADDRESS_RANGE + FFLP_FLOW_H1POLY:
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE + FFLP_FLOW_H1POLY,wr_data);
+      fflp_flow_h1poly = wr_data;
+     }
+    FFLP_FLOW_ADDRESS_RANGE + FFLP_FLOW_PARTITION_SEL:
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE + FFLP_FLOW_PARTITION_SEL,wr_data);
+      ext_lookup[0] = wr_data[16];
+     }
+    FFLP_FLOW_ADDRESS_RANGE + FFLP_FLOW_PARTITION_SEL + (1*8):
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE + FFLP_FLOW_PARTITION_SEL + (1*8),wr_data);
+      ext_lookup[1] = wr_data[16];
+     }
+    FFLP_FLOW_ADDRESS_RANGE + FFLP_FLOW_PARTITION_SEL + (2*8):
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE + FFLP_FLOW_PARTITION_SEL + (2*8),wr_data);
+      ext_lookup[2] = wr_data[16];
+     }
+    FFLP_FLOW_ADDRESS_RANGE + FFLP_FLOW_PARTITION_SEL + (3*8):
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE + FFLP_FLOW_PARTITION_SEL + (3*8),wr_data);
+      ext_lookup[3] = wr_data[16];
+     }
+    FFLP_FLOW_ADDRESS_RANGE + FFLP_FLOW_PARTITION_SEL + (4*8):
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE + FFLP_FLOW_PARTITION_SEL + (4*8),wr_data);
+      ext_lookup[4] = wr_data[16];
+     }
+    FFLP_FLOW_ADDRESS_RANGE + FFLP_FLOW_PARTITION_SEL + (5*8):
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE + FFLP_FLOW_PARTITION_SEL + (5*8),wr_data);
+      ext_lookup[5] = wr_data[16];
+     }
+    FFLP_FLOW_ADDRESS_RANGE + FFLP_FLOW_PARTITION_SEL + (6*8):
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE + FFLP_FLOW_PARTITION_SEL + (6*8),wr_data);
+      ext_lookup[6] = wr_data[16];
+     }
+    FFLP_FLOW_ADDRESS_RANGE + FFLP_FLOW_PARTITION_SEL + (7*8):
+     {
+      gen_pio_drv.pio_wr(FFLP_FLOW_ADDRESS_RANGE + FFLP_FLOW_PARTITION_SEL + (7*8),wr_data);
+      ext_lookup[7] = wr_data[16];
+     }
+    RDC_DEF_PT0_RDC:
+     {
+      gen_pio_drv.pio_wr(RDC_DEF_PT0_RDC,wr_data);
+      rdc_def_pt0_rdc = wr_data;
+     }
+    RDC_DEF_PT1_RDC:
+     {
+      gen_pio_drv.pio_wr(RDC_DEF_PT1_RDC,wr_data);
+      rdc_def_pt1_rdc = wr_data;
+     }
+    RDC_DEF_PT2_RDC:
+     {
+      gen_pio_drv.pio_wr(RDC_DEF_PT2_RDC,wr_data);
+      rdc_def_pt2_rdc = wr_data;
+     }
+    RDC_DEF_PT3_RDC:
+     {
+      gen_pio_drv.pio_wr(RDC_DEF_PT3_RDC,wr_data);
+      rdc_def_pt3_rdc = wr_data;
+     }
+    default:
+     {
+     
+     }
+   }
+ }
+
+task fflp_util_class::fflp_init ( integer iport, bit[63:0] cmd) {
+
+
+bit 	[39:0] 	base_addr;
+bit 	[63:0] 	i, wr_data;
+bit 	[39:0] 	addr;
+
+// FFLP_CONFIG
+  printf(" Initializing FFLP_CONFIG REG \n");
+  wr_data = 64'h0000_0000_0004_3301;
+
+  // gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_CONFIG,wr_data);
+  gen_pio_drv.pio_wr(FFLP_ADDRESS_RANGE +FFLP_CONFIG,wr_data);
+
+  be_msg.print(e_mesg_info, "fflp_util_class", "fflp_init",
+               "WROTE %h TO FFLP CONFIG REG.\n",wr_data);
+
+// FFLP_L2_CLS_2
+  printf(" Initializing FFLP_L2_CLS_2 REG \n");
+  addr = FFLP_ADDRESS_RANGE + FFLP_L2_CLS_2;
+  // gen_pio_drv.pio_wr(addr, 64'h0);
+  gen_pio_drv.pio_wr(addr, 64'h0);
+
+// FFLP_L2_CLS_3
+  printf(" Initializing FFLP_L2_CLS_3 REG \n");
+  addr = FFLP_ADDRESS_RANGE + FFLP_L2_CLS_3;
+  // gen_pio_drv.pio_wr(addr, 64'h0);
+  gen_pio_drv.pio_wr(addr, 64'h0);
+
+// FFLP L3 class4-7
+  printf(" Initializing FFLP L3 class4-7 REG \n");
+  for (addr = FFLP_ADDRESS_RANGE + FFLP_L3_CLS_4; addr < FFLP_ADDRESS_RANGE + FFLP_L3_CLS_7 + 32'h8; addr = addr + 32'h8) {
+  // gen_pio_drv.pio_wr(addr, 64'h0);
+  gen_pio_drv.pio_wr(addr, 64'h0);
+
+  repeat (5) @(posedge CLOCK);
+  }
+
+// FFLP CAM KEY 0-3
+  printf(" Initializing FFLP CAM KEY 0-3 REG \n");
+  for (addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG0; addr < FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG3 + 32'h8; addr = addr + 32'h8) {
+  // gen_pio_drv.pio_wr(addr, 64'h0);
+  gen_pio_drv.pio_wr(addr, 64'h0);
+ 
+  repeat (5) @(posedge CLOCK);
+  }
+
+// FFLP CAM KEY MASK 0-3
+  printf(" Initializing FFLP CAM KEY MASK 0-3 REG \n");
+  for (addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_MASK_REG0; addr < FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_MASK_REG3 + 32'h8; addr = addr + 32'h8) {
+  // gen_pio_drv.pio_wr(addr, 64'h0);
+  gen_pio_drv.pio_wr(addr, 64'h0);
+
+  repeat (5) @(posedge CLOCK);
+  }
+
+  if ( get_plus_arg(CHECK, "INIT_TCAM_RAM") )
+    {
+     // FFLP CAM 128-entry
+     printf(" Initializing FFLP CAM 128-entry \n");
+     addr = FFLP_ADDRESS_RANGE + FFLP_CAM_CONTROL;
+     for (wr_data = 10'd0; wr_data < 10'd128; wr_data = wr_data + 1'd1) {
+     // gen_pio_drv.pio_wr(addr, wr_data);
+     gen_pio_drv.pio_wr(addr, wr_data);
+     printf(" Write data %h to addr %h for CAM 128-entry\n", wr_data, addr);
+   
+     repeat (8) @(posedge CLOCK);
+     }
+   
+     // FFLP CAM associated RAM 128-entry
+     printf(" Initializing FFLP CAM associated RAM 128-entry \n");
+     addr = FFLP_ADDRESS_RANGE + FFLP_CAM_CONTROL;
+     for (i = 10'd0; i < 10'd128; i = i + 1'd1) {
+     wr_data = i + 64'h10_0000;
+     // gen_pio_drv.pio_wr(addr, wr_data);
+     gen_pio_drv.pio_wr(addr, wr_data);
+     printf(" Write data %h to addr %h for RAM 128-entry\n", wr_data, addr);
+   
+     repeat (8) @(posedge CLOCK);
+     }
+    }
+
+// VLAN table
+
+  if ( get_plus_arg(CHECK, "INIT_VLAN_TBL") )
+    {
+     printf(" Initializing VLAN Table.\n");
+     for (i=0;i<4096;i++)
+        {
+         wr_data = 64'h0;
+         addr = FFLP_VLAN_TBL_ADDRESS_RANGE + (i*8);
+   
+         gen_pio_drv.pio_wr(addr, wr_data);
+//       fflp_util.fflp_pio_wrapper(addr, wr_data);   NO SUPPORT YET
+        }
+     printf(" VLAN Table Initialized.\n");
+    }
+}	// end of task fflp_init
+
+function bit  fflp_util_class :: check_cmd(bit [63:0]cmd, bit [63:0] opt){
+  if((cmd & opt) > 0) check_cmd=1;
+  else                check_cmd=0;
+}
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@ FFLP PIO WRAPPERS @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@@@@@@@@@@@ TCAM index based read TCAM key @@@@@@@@@@@@@@@@@@@
+function bit [199:0] fflp_util_class::pio_rd_tcam_key (bit [9:0] tcam_index, 
+                                                       var bit [199:0] pio_rd_tcam_mask)
+     {
+
+  integer    stat;
+  bit [63:0] rd_data;
+  bit [63:0] wr_data;
+
+  bit [39:0] addr;
+
+  bit [63:0] rd_data0;
+  bit [63:0] rd_data1;
+  bit [63:0] rd_data2;
+  bit [63:0] rd_data3;
+  bit [63:0] rdm_data0;
+  bit [63:0] rdm_data1;
+  bit [63:0] rdm_data2;
+  bit [63:0] rdm_data3;
+
+       //****************************************
+       // CPU checks the done bit before start **
+       //****************************************
+         wait_for_done_bit();
+
+       //****************************************
+       // CPU write to command register *********
+       //****************************************
+//printf("KEY_TYPE IS = %d\n", key_type);
+//printf("L3_L2 = %h, L3_L2 = %d\n", key_size, key_size);
+         addr = FFLP_ADDRESS_RANGE + FFLP_CAM_CONTROL;
+         wr_data = {43'h0,3'b001,8'h00,tcam_index};
+         gen_pio_drv.pio_wr(addr, wr_data);
+
+       //****************************************
+       // CPU checks the done bit before start **
+       //****************************************
+         wait_for_done_bit();
+
+       //****************************************
+       // CPU reads "read CAM key registers" ****
+       //****************************************
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_MASK_REG0;
+        gen_pio_drv.pio_rd(addr, rdm_data0, stat);
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_MASK_REG1;
+        gen_pio_drv.pio_rd(addr, rdm_data1, stat);
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_MASK_REG2;
+        gen_pio_drv.pio_rd(addr, rdm_data2, stat);
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_MASK_REG3;
+        gen_pio_drv.pio_rd(addr, rdm_data3, stat);
+
+        pio_rd_tcam_mask = {rdm_data0[7:0],rdm_data1,rdm_data2,rdm_data3};
+        printf("Index = %d, Read_TCAM_Mask Value = %h.\n",tcam_index,pio_rd_tcam_mask);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG0;
+        gen_pio_drv.pio_rd(addr, rd_data0, stat);
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG1;
+        gen_pio_drv.pio_rd(addr, rd_data1, stat);
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG2;
+        gen_pio_drv.pio_rd(addr, rd_data2, stat);
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG3;
+        gen_pio_drv.pio_rd(addr, rd_data3, stat);
+
+        pio_rd_tcam_key = {rd_data0[7:0],rd_data1,rd_data2,rd_data3};
+        printf("Index = %d, Read_TCAM Value = %h.\n",tcam_index,pio_rd_tcam_key);
+
+     }
+
+//@@@@@@@@@@@@@@@@@ TCAM index based write TCAM key @@@@@@@@@@@@@@@@@@@
+task fflp_util_class::pio_wr_tcam_key (bit [9:0] tcam_index,
+                                       bit [199:0] wr_tcam_key,
+                                       bit [199:0] wr_tcam_mask)
+    {
+     bit [63:0] wr_data;
+     bit [39:0] addr;
+
+       //****************************************
+       // CPU checks the done bit before start **
+       //****************************************
+         wait_for_done_bit();
+
+       //********************************************
+       // CPU writes CAM keys to wrt_cam_key regs. **
+       //********************************************
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_MASK_REG0;
+        wr_data = {56'h0,wr_tcam_mask[199:192]};
+//      gen_pio_drv.pio_wr(addr, wr_data);
+        fflp_pio_wrapper ( addr, wr_data);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_MASK_REG1;
+        wr_data = wr_tcam_mask[191:128];
+//      gen_pio_drv.pio_wr(addr, wr_data);
+        fflp_pio_wrapper ( addr, wr_data);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_MASK_REG2;
+        wr_data = wr_tcam_mask[127:64];
+//      gen_pio_drv.pio_wr(addr, wr_data);
+        fflp_pio_wrapper ( addr, wr_data);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_MASK_REG3;
+        wr_data = wr_tcam_mask[63:0];
+//      gen_pio_drv.pio_wr(addr, wr_data);
+        fflp_pio_wrapper ( addr, wr_data);
+        printf("Index = %d, Write_TCAM_Mask Value = %h.\n",tcam_index,wr_tcam_mask);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG0;
+        wr_data = {56'h0,wr_tcam_key[199:192]};
+//      gen_pio_drv.pio_wr(addr, wr_data);
+        fflp_pio_wrapper ( addr, wr_data);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG1;
+        wr_data = wr_tcam_key[191:128];
+//      gen_pio_drv.pio_wr(addr, wr_data);
+        fflp_pio_wrapper ( addr, wr_data);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG2;
+        wr_data = wr_tcam_key[127:64];
+//      gen_pio_drv.pio_wr(addr, wr_data);
+        fflp_pio_wrapper ( addr, wr_data);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG3;
+        wr_data = wr_tcam_key[63:0];
+//      gen_pio_drv.pio_wr(addr, wr_data);
+        fflp_pio_wrapper ( addr, wr_data);
+        printf("Index = %d, Write_TCAM Value = %h.\n",tcam_index,wr_tcam_key);
+
+       //****************************************
+       // CPU write to command register *********
+       //****************************************
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_CONTROL;
+        wr_data = {43'h0,3'b000,8'h00,tcam_index};
+//      gen_pio_drv.pio_wr(addr, wr_data);
+        fflp_pio_wrapper ( addr, wr_data);
+    }
+
+//@@TASK Version@@@ TCAM Compare based on TCAM key @@@@@@@@@@@@@@@@@@@
+task fflp_util_class::pio_cmp_tcam_key (bit [199:0] cmp_tcam_key)
+    {
+     bit [63:0] wr_data;
+     bit [39:0] addr;
+     bit [9:0]  tcam_index = 10'h0;
+
+       //****************************************
+       // CPU checks the done bit before start **
+       //****************************************
+         wait_for_done_bit();
+
+       //********************************************
+       // CPU writes CAM keys to wrt_cam_key regs. **
+       //********************************************
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG0;
+        wr_data = {56'h0,cmp_tcam_key[199:192]};
+//      gen_pio_drv.pio_wr(addr, wr_data);
+        fflp_pio_wrapper ( addr, wr_data);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG1;
+        wr_data = cmp_tcam_key[191:128];
+//      gen_pio_drv.pio_wr(addr, wr_data);
+        fflp_pio_wrapper ( addr, wr_data);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG2;
+        wr_data = cmp_tcam_key[127:64];
+//      gen_pio_drv.pio_wr(addr, wr_data);
+        fflp_pio_wrapper ( addr, wr_data);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG3;
+        wr_data = cmp_tcam_key[63:0];
+//      gen_pio_drv.pio_wr(addr, wr_data);
+        fflp_pio_wrapper ( addr, wr_data);
+        printf("Index = %d, Compare TCAM Value = %h.\n",cmp_tcam_key);
+
+       //****************************************
+       // CPU write to command register *********
+       //****************************************
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_CONTROL;
+        wr_data = {43'h0,3'b010,8'h00,tcam_index};
+//      gen_pio_drv.pio_wr(addr, wr_data);
+        fflp_pio_wrapper ( addr, wr_data);
+    }
+
+//@@FUNCTION Version@@@@TCAM Compare based on TCAM key @@@@@@@@@@@@@@@@@@@
+function bit [10:0] fflp_util_class::pio_comp_tcam_key (bit [199:0] cmp_tcam_key)
+    {
+     bit [63:0] rd_data;
+     bit [63:0] wr_data;
+     bit [39:0] addr;
+     bit [9:0]  tcam_index = 10'h0;
+     integer         stat;
+
+       //****************************************
+       // CPU checks the done bit before start **
+       //****************************************
+         wait_for_done_bit();
+
+       //********************************************
+       // CPU writes CAM keys to wrt_cam_key regs. **
+       //********************************************
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG0;
+        wr_data = {56'h0,cmp_tcam_key[199:192]};
+//      gen_pio_drv.pio_wr(addr, wr_data);
+        fflp_pio_wrapper ( addr, wr_data);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG1;
+        wr_data = cmp_tcam_key[191:128];
+//      gen_pio_drv.pio_wr(addr, wr_data);
+        fflp_pio_wrapper ( addr, wr_data);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG2;
+        wr_data = cmp_tcam_key[127:64];
+//      gen_pio_drv.pio_wr(addr, wr_data);
+        fflp_pio_wrapper ( addr, wr_data);
+
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG3;
+        wr_data = cmp_tcam_key[63:0];
+//      gen_pio_drv.pio_wr(addr, wr_data);
+        fflp_pio_wrapper ( addr, wr_data);
+        printf("Index = %d, Compare TCAM Value = %h.\n",cmp_tcam_key);
+
+       //****************************************
+       // CPU write to command register *********
+       //****************************************
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_CONTROL;
+        wr_data = {43'h0,3'b010,8'h00,tcam_index};
+//      gen_pio_drv.pio_wr(addr, wr_data);
+        fflp_pio_wrapper ( addr, wr_data);
+
+       //****************************************
+       // CPU checks the done bit before start **
+       //****************************************
+         wait_for_done_bit();
+
+         gen_pio_drv.pio_rd(addr, rd_data, stat);
+         pio_comp_tcam_key = {rd_data[16],rd_data[9:0]};
+    }
+
+//@@@@@@@@@@@@@@@@@ TCAM index based read AS_DATA @@@@@@@@@@@@@@@@@@@
+function bit [63:0] fflp_util_class::pio_rd_tcam_asdata (bit [9:0] tcam_index)
+     {
+
+  integer    stat;
+  bit [63:0] rd_data;
+  bit [63:0] rd_data1;
+  bit [63:0] wr_data;
+
+  bit [39:0] addr;
+
+       //****************************************
+       // CPU checks the done bit before start **
+       //****************************************
+         wait_for_done_bit();
+
+       //****************************************
+       // CPU write to command register *********
+       //****************************************
+//printf("KEY_TYPE IS = %d\n", key_type);
+//printf("L3_L2 = %h, L3_L2 = %d\n", key_size, key_size);
+         addr = FFLP_ADDRESS_RANGE + FFLP_CAM_CONTROL;
+         wr_data = {43'h0,3'b101,8'h00,tcam_index};
+         gen_pio_drv.pio_wr(addr, wr_data);
+
+       //****************************************
+       // CPU checks the done bit before start **
+       //****************************************
+         wait_for_done_bit();
+
+       //****************************************
+       // CPU reads "read CAM key registers" ****
+       //****************************************
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG1;
+        gen_pio_drv.pio_rd(addr, rd_data1, stat);
+
+        pio_rd_tcam_asdata = rd_data1;
+        printf("Index = %d, Read_TCAM ASDATA Value = %h.\n",tcam_index,pio_rd_tcam_asdata);
+
+     }
+
+//@@@@@@@@@@@@@@@@@ TCAM index based write AS_DATA @@@@@@@@@@@@@@@@@@@
+task fflp_util_class::pio_wr_tcam_asdata (bit [9:0] tcam_index,
+                                       bit [63:0] wr_tcam_asdata)
+    {
+     bit [63:0] wr_data;
+     bit [39:0] addr;
+
+       //****************************************
+       // CPU checks the done bit before start **
+       //****************************************
+         wait_for_done_bit();
+
+       //********************************************
+       // CPU writes CAM keys to wrt_cam_key regs. **
+       //********************************************
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_KEY_REG1;
+        wr_data = wr_tcam_asdata;
+        gen_pio_drv.pio_wr(addr, wr_data);
+        printf("Index = %d, Writing TCAM_ASDATA Value = %h.\n",tcam_index,wr_tcam_asdata);
+
+       //****************************************
+       // CPU write to command register *********
+       //****************************************
+        addr = FFLP_ADDRESS_RANGE + FFLP_CAM_CONTROL;
+        wr_data = {43'h0,3'b100,8'h00,tcam_index};
+        gen_pio_drv.pio_wr(addr, wr_data);
+    }
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@@@@@@@@ Wait for cmd completion bit @@@@@@@@@@
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+task fflp_util_class::wait_for_done_bit()
+    {
+     integer         stat;
+     bit     [63:0]  rd_data =0;
+     bit     [39:0]  addr    =0;
+
+     addr = FFLP_ADDRESS_RANGE + FFLP_CAM_CONTROL;
+     gen_pio_drv.pio_rd(addr, rd_data, stat);
+         while(!rd_data[17])
+            {
+             gen_pio_drv.pio_rd(addr, rd_data, stat);
+            }
+     repeat(5) @(posedge CLOCK);
+    }
+task fflp_util_class::init_cam_entries()
+ {
+  integer i;
+  bit [9:0]  cam_addr;
+  bit [199:0] cam_key;
+  bit [199:0] cam_lmask;
+  bit [63:0]  adata;
+
+  bit [4:0]  hdr_class = 5'b00000;
+  bit [4:0]  l2_drc_tbl_num = 5'b00000;
+  bit        noport = 1'b0;
+  bit [7:0]  tos = 8'h0;
+  bit [7:0]  next_hdr = 8'h0;
+  bit [15:0]  src_port_num = 16'h0;
+  bit [15:0]  dst_port_num = 16'h0;
+  bit [127:0]  dst_src_addr = 128'h0;
+  bit [7:0]   protocol       = 8'h0;
+  bit [31:0]  src_addr       = 32'h0;
+  bit [31:0]  dst_addr       = 32'h0;
+  //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+  //@ 1st Packet cam/ram setup CL_TCP         @
+  //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+   cam_addr  = 10'h0_00;
+   cam_key   = 200'h0;
+   cam_lmask = 200'hff_ffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff;
+
+   if ( get_plus_arg(CHECK, "DO_PIO_TRANS") )
+     {
+      be_msg.print(e_mesg_info, *, "test_class::init_cam_entries()",
+        "Initializing CAM, Performing PIO Transactions to CAM_RAM.\n");
+      for (i=0;i<IP_DB_ENTRIES;i++)
+         {
+          pio_wr_tcam_key(cam_addr, cam_key, cam_lmask);
+          cam_addr = cam_addr + 1;
+         }
+     }
+   else
+     {
+      be_msg.print(e_mesg_info, *, "test_class::init_cam_entries()",
+        "Performing Backdoor Operation to CAM_RAM.\n");
+     }
+ } 

@@ -1,0 +1,298 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_siu_packet.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+
+#include "niu_mem.vrh"
+#include "smx_defines.vri"
+#include "niu_error_dfn.vri"
+#include "niu_cbclass.vrh"
+#include "hostErrInjTab.vrh"
+
+class Csiu_packet {
+
+// SIU Interface Packets
+
+  // header
+  bit [5:0] command; // bits 127:122
+/*
+  Command Encoding--
+
+  NIU to SIU
+ -- Read Request command Encoding
+  command[5] - response bit - 0
+  command[4] - posted bit   - 0
+  command[3] - read bit     - 1
+  command[2] - WriteByteMask Active bit - 0
+  command[1] - L2 bit   - 1
+  command[0] - NCU bit  - 0
+
+  command = 6'h0a;
+-- Write Request command Encoding
+  command[5] - response bit - 0
+  command[4] - posted bit   - 0 -- if ack is needed else 1
+  command[3] - read bit     - 0
+  command[2] - WriteByteMask Active bit - 0
+  command[1] - L2 bit   - 1
+  command[0] - NCU bit  - 0
+
+
+  command = 6'h12 for write ack ; command = 6'h02 - for posted writes;
+
+  SIU to NIU
+  -- Read Response Command Encoding
+  command[5] - response bit - 1
+  command[4] - posted bit   - 0 
+  command[3] - read bit     - 1
+  command[2] - WriteByteMask Active bit - 0
+  command[1] - L2 bit   - 1
+  command[0] - NCU bit  - 0
+
+  command = 6'h2a;
+  -- Write Response Command Encoding
+  command[5] - response bit - 1
+  command[4] - posted bit   - 0 
+  command[3] - read bit     - 0
+  command[2] - WriteByteMask Active bit - 0
+  command[1] - L2 bit   - 1
+  command[0] - NCU bit  - 0
+
+  command = 6'h22;
+
+	
+*/
+  bit  TimeOutError; // bit 82:82
+  bit  UnmappedAddressError; // bit 81:81
+  bit  UncorrectableError; // bit 80:80
+  bit [15:0] id; // bits 79:64
+  bit [39:0] PA;
+  bit [5:0] CtagEcc;
+  bit CP;
+  bit [1:0] AP;
+
+  bit [127:0] header;
+
+
+  // payload
+  bit [63:0] data[];
+  bit [7:0] be[]; // byte enables
+  bit [7:0] data_parity[];
+
+  integer NoOf8Bytes;
+
+  task create_header () {
+	header[127:122] = command;
+        header[121:83] = 39'h0;
+	header[82] = TimeOutError;
+	header[81] = UnmappedAddressError;
+	header[80] = UncorrectableError;
+	header[61:56] = CtagEcc;
+	header[79:64] = id;
+	header[63:40] = 24'h0;
+	header[39:0] =  PA;
+  }
+
+  task parse_header( bit [127:0]  h, (bit check_parity = 0) ) {
+	bit parity;
+	integer i;
+	command = h[127:122];
+	AP = h[84:83];
+	TimeOutError= h[82] ;
+	UnmappedAddressError = h[81];
+	UncorrectableError = h[80] ;
+	CP = h[62];
+	CtagEcc = h[61:56];
+	id = h[79:64] ;
+	PA = h[39:0] ;
+ 	// printf(" Header - %x Command = %x \n",h,command);
+	// This should be part of checker and not here--
+	// check_CP
+
+	if(check_parity) {
+	  parity = CP^command[0]^command[1]^command[2]^command[3]^command[4]^command[5];
+	  if(parity!==1) {
+	   printf("Time:%d WARNING  SIU Header - CommandParity Incorrect for ID - %x \n",TIME,h[79:64]);
+	  }
+	  
+	 // check_AP
+	 parity = 0;
+	 for(i = 0 ; i < 20 ; i ++) {
+	   parity = parity ^ PA[2*i];
+	 }
+	 parity = parity ^ AP[0];
+	 if(parity!==1) {
+	   printf("Time:%d WARNING  SIU Header - AddressParity [0] Incorrect for ID - %x \n",TIME,h[79:64]);
+	 }
+	 parity = 0;
+	 for(i = 0 ; i < 20 ; i ++) {
+	   parity = parity ^ PA[2*i + 1];
+	 }
+	 parity = parity ^ AP[1];
+	 if(parity!==1) {
+	   printf("Time:%d WARNING  SIU Header - AddressParity [1] Incorrect for ID - %x \n",TIME,h[79:64]);
+	 }
+	}
+  }
+
+
+  task new( integer n =8) {// default of 64 bytes
+	NoOf8Bytes = n;
+  }
+  task print(integer debug =0) {
+	integer i;
+	if(debug) {
+	  printf("Csiu_packet::print:  Time = %d Header = %x id = %d \n",{get_time(HI), get_time(LO)},header,id);
+	  if(isReadResp() | isNPWrite()) {
+	    printf("Csiu_packet::print: ID - %x Address - %x \n",getTransID(),getReqAddress());
+	    for(i =0;i< NoOf8Bytes;i++) {
+	    printf("Csiu_packet::print:  Data[%d] = %x \n",i,data[i]);
+	    }
+	   }
+	}
+  }
+
+  function integer isReadResp();
+  function integer isWriteAck();
+  function integer isReadReq();
+  function integer isNPWrite();
+  function bit[15:0] getTransID();
+  function bit[2:0] isPacketError();
+  function bit [39:0] getReqAddress();
+  task calcDataParity( bit[127:0] data, var bit[7:0] parity ) ;
+  task calcParity() ;
+  function bit[127:0] swap(bit [127:0] d);
+  function bit [5:0] calc_CtagEcc ( bit [15:0] tag);
+
+}
+function bit[127:0]  Csiu_packet:: swap ( bit [127:0] d) {
+
+integer i;
+
+  swap [127:120] = d[7:0];
+  swap [119:112] = d[15:8];
+  swap [111:104] = d[23:16];
+  swap [103:96] = d[31:24];
+  swap [95:88] = d[39:32];
+  swap [87:80] = d[47:40];
+  swap [79:72] = d[55:48];
+  swap [71:64] = d[63:56];
+  swap [63:56] = d[71:64];
+  swap [55:48] = d[79:72];
+  swap [47:40] = d[87:80];
+  swap [39:32] = d[95:88];
+  swap [31:24] = d[103:96];
+  swap [23:16] = d[111:104];
+  swap [15:8] = d[119:112];
+  swap [7:0] = d[127:120];
+	
+}
+function bit[2:0] Csiu_packet::isPacketError() {
+   isPacketError = {TimeOutError,UnmappedAddressError,UncorrectableError};
+}
+function integer Csiu_packet::isReadResp() {
+   isReadResp = (command === 6'h2a);
+}
+function integer Csiu_packet::isWriteAck() {
+   isWriteAck = command[5] & ~command[3];
+}
+function integer Csiu_packet::isReadReq() {
+   isReadReq = (command === 6'ha);
+}
+function integer Csiu_packet::isNPWrite() {
+   isNPWrite = (command === 6'h2);
+}
+function bit[15:0] Csiu_packet::getTransID() {
+   getTransID = id;
+}
+function bit [39:0] Csiu_packet::getReqAddress() {
+   getReqAddress = PA;
+}
+task Csiu_packet::calcDataParity( bit[127:0] data, var bit [7:0] parity ) {
+ bit tmp;
+ integer i,j;
+ integer start;
+
+ start = 0;
+ parity = 0;
+ for(i=0;i<7;i= i + 1 ){
+   parity[i] = 0;
+   for(j=0;j<32;j= j + 2 ) {
+     tmp = parity[i] ^data[start+j];
+     // printf("parity bit - %d calculated with %d\n",i,start+j);
+     parity[i] = tmp;
+   // printf(" calcDataParity - i- %d  parity - %x data - %x \n",i,parity, data);
+   }
+   i++;
+   start++;
+   parity[i] = 0;
+   for(j=0;j<32;j= j + 2 ) {
+     tmp = parity[i] ^data[start+j];
+     parity[i] = tmp;
+     // printf("parity bit - %d calculated with %d\n",i,start+j);
+   // printf(" calcDataParity - i- %d  parity - %x data - %x \n",i,parity, data);
+   }
+   start = start + 31;
+ }
+}
+
+task Csiu_packet::calcParity() {
+integer i;
+bit[127:0] datai,swap_data;
+bit[7:0] parity;
+
+for(i =0;i<4;i++) {
+  datai = { data[2*i +1],data[2*i]};
+  swap_data = swap(datai);
+  calcDataParity(swap_data,parity);
+  data_parity[i] = ~parity;
+}
+
+}
+function bit [5:0] Csiu_packet::calc_CtagEcc ( bit [15:0] tag) {
+	bit [5:0] p;
+	bit [15:0] d;
+	d = tag;
+	p[0] = d[0] ^ d[1]^ d[3]^ d[4]^ d[6]^ d[8]^ d[10]^ d[11]^ d[13]^ d[15];
+        p[1] = d[0] ^ d[2]^ d[3]^ d[5]^ d[6]^ d[9]^ d[10]^ d[12]^ d[13];
+        p[2] = d[1] ^ d[2]^ d[3]^ d[7]^ d[8]^ d[9]^ d[10]^ d[14]^ d[15];
+        p[3] = d[4] ^ d[5]^ d[6]^ d[7]^ d[8]^ d[9]^ d[10];
+        p[4] = d[11] ^ d[12]^ d[13]^ d[14]^ d[15];
+        p[5] = d[0] ^ d[1] ^ d[2] ^ d[3] ^ p[0] ^ p[1] ^p[2];
+
+	calc_CtagEcc  = p;
+
+	printf("Csiu_packet::calc_CtagEcc id - %x Ecc - %x\n",tag,p);
+}
+

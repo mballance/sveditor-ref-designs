@@ -1,0 +1,432 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ccu_clk_chkr_4fc.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "std_display_class.vrh"
+#include "ucb_top.vri"
+#include "ccu_top.vri"
+#include "cluster_hdr_top.vri"
+#include "ucb___packet.vrh"
+#include "ccu_clk_packet.vrh"
+#include "ccu_clks_states.vrh"
+#include "ucb_monitor.vrh"
+#include "ccu_checker.vrh"
+#include "cluster_hdr_chkr.vrh"
+
+#ifndef FC_BENCH  // ie. TCU SAT
+
+   class CCU_clk_chkr_4fc { // for TCU SAT, it is empty class
+      integer dummy;        // dummy variable to avoid compilation error
+   }
+   
+#else  // this section is for FC bench
+
+class CCU_clk_chkr_4fc {
+  StandardDisplay dbg;
+  //----- vars for ports in CCU -----
+  CCU_clk_port     ccu_clk_port         = ccu_clk_bind;
+  CCU_mon_port     ccu_mon_port         = ccu_mon_bind;
+  UCB_port         ccu_ucb_port         = ccu_ucb_mon_bind;
+
+  //--- vars for ports for cluster headers in ccu_mon.v -----
+//added by  to remove NIU
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  CLKGEN_port  clkgen_ccumon_dr_port   = clkgen_ccumon_dr_bind;
+  CLKGEN_port  clkgen_ccumon_io2x_port = clkgen_ccumon_io2x_bind;
+#endif
+#endif
+  //--- vars for ports for cluster headers of blocks in TCU_SAT (listed in alphabetical order)---
+  CLKGEN_port  clkgen_ccu_cmp_port	= clkgen_ccu_cmp_bind;
+  CLKGEN_port  clkgen_ccu_io_port	= clkgen_ccu_io_bind;
+  CLKGEN_port  clkgen_db0_cmp_port	= clkgen_db0_cmp_bind;
+  CLKGEN_port  clkgen_db0_io_port	= clkgen_db0_io_bind;
+  CLKGEN_port  clkgen_db1_cmp_port	= clkgen_db1_cmp_bind;
+  CLKGEN_port  clkgen_db1_io_port	= clkgen_db1_io_bind;
+  CLKGEN_port  clkgen_efu_cmp_port	= clkgen_efu_cmp_bind;
+  CLKGEN_port  clkgen_efu_io_port	= clkgen_efu_io_bind;
+  CLKGEN_port  clkgen_mio_0_cmp_port	= clkgen_mio_0_cmp_bind;
+  CLKGEN_port  clkgen_mio_1_cmp_port	= clkgen_mio_1_cmp_bind;
+  CLKGEN_port  clkgen_mio_2_cmp_port	= clkgen_mio_2_cmp_bind;
+  CLKGEN_port  clkgen_mio_3_cmp_port	= clkgen_mio_3_cmp_bind;
+  CLKGEN_port  clkgen_mio_io_port	= clkgen_mio_io_bind;
+  CLKGEN_port  clkgen_ncu_cmp_port	= clkgen_ncu_cmp_bind;
+  CLKGEN_port  clkgen_ncu_io_port	= clkgen_ncu_io_bind;
+  CLKGEN_port  clkgen_rst_cmp_port	= clkgen_rst_cmp_bind;
+  CLKGEN_port  clkgen_rst_io_port	= clkgen_rst_io_bind;
+  CLKGEN_port  clkgen_tcu_cmp_port	= clkgen_tcu_cmp_bind;
+  CLKGEN_port  clkgen_tcu_io_port	= clkgen_tcu_io_bind;
+
+  //--- vars ports for cluster headers of blocks not in TCU_SAT (listed in alphabetical order)---
+  CLKGEN_port  clkgen_ccx_cmp_port	= clkgen_ccx_cmp_bind;
+  CLKGEN_port  clkgen_dmu_io_port	= clkgen_dmu_io_bind;
+  CLKGEN_port  clkgen_l2b0_cmp_port	= clkgen_l2b0_cmp_bind;
+  CLKGEN_port  clkgen_l2b1_cmp_port	= clkgen_l2b1_cmp_bind;
+  CLKGEN_port  clkgen_l2b2_cmp_port	= clkgen_l2b2_cmp_bind;
+  CLKGEN_port  clkgen_l2b3_cmp_port	= clkgen_l2b3_cmp_bind;
+  CLKGEN_port  clkgen_l2b4_cmp_port	= clkgen_l2b4_cmp_bind;
+  CLKGEN_port  clkgen_l2b5_cmp_port	= clkgen_l2b5_cmp_bind;
+  CLKGEN_port  clkgen_l2b6_cmp_port	= clkgen_l2b6_cmp_bind;
+  CLKGEN_port  clkgen_l2b7_cmp_port	= clkgen_l2b7_cmp_bind;
+
+//CLKGEN_port  clkgen_l2d0_cmp_port	= clkgen_l2d0_cmp_bind; // cluster hdr of l2d is changing
+//CLKGEN_port  clkgen_l2d1_cmp_port	= clkgen_l2d1_cmp_bind;
+//CLKGEN_port  clkgen_l2d2_cmp_port	= clkgen_l2d2_cmp_bind;
+//CLKGEN_port  clkgen_l2d3_cmp_port	= clkgen_l2d3_cmp_bind;
+//CLKGEN_port  clkgen_l2d4_cmp_port	= clkgen_l2d4_cmp_bind;
+//CLKGEN_port  clkgen_l2d5_cmp_port	= clkgen_l2d5_cmp_bind;
+//CLKGEN_port  clkgen_l2d6_cmp_port	= clkgen_l2d6_cmp_bind;
+//CLKGEN_port  clkgen_l2d7_cmp_port	= clkgen_l2d7_cmp_bind;
+
+  CLKGEN_port  clkgen_l2t0_cmp_port	= clkgen_l2t0_cmp_bind;
+  CLKGEN_port  clkgen_l2t1_cmp_port	= clkgen_l2t1_cmp_bind;
+  CLKGEN_port  clkgen_l2t2_cmp_port	= clkgen_l2t2_cmp_bind;
+  CLKGEN_port  clkgen_l2t3_cmp_port	= clkgen_l2t3_cmp_bind;
+  CLKGEN_port  clkgen_l2t4_cmp_port	= clkgen_l2t4_cmp_bind;
+  CLKGEN_port  clkgen_l2t5_cmp_port	= clkgen_l2t5_cmp_bind;
+  CLKGEN_port  clkgen_l2t6_cmp_port	= clkgen_l2t6_cmp_bind;
+  CLKGEN_port  clkgen_l2t7_cmp_port	= clkgen_l2t7_cmp_bind;
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  CLKGEN_port  clkgen_mac_io_port	= clkgen_mac_io_bind;
+#endif
+#endif
+  CLKGEN_port  clkgen_mcu0_cmp_port	= clkgen_mcu0_cmp_bind;
+  CLKGEN_port  clkgen_mcu0_dr_port	= clkgen_mcu0_dr_bind;
+  CLKGEN_port  clkgen_mcu0_io_port	= clkgen_mcu0_io_bind;
+  CLKGEN_port  clkgen_mcu1_cmp_port	= clkgen_mcu1_cmp_bind;
+  CLKGEN_port  clkgen_mcu1_dr_port	= clkgen_mcu1_dr_bind;
+  CLKGEN_port  clkgen_mcu1_io_port	= clkgen_mcu1_io_bind;
+  CLKGEN_port  clkgen_mcu2_cmp_port	= clkgen_mcu2_cmp_bind;
+  CLKGEN_port  clkgen_mcu2_dr_port	= clkgen_mcu2_dr_bind;
+  CLKGEN_port  clkgen_mcu2_io_port	= clkgen_mcu2_io_bind;
+  CLKGEN_port  clkgen_mcu3_cmp_port	= clkgen_mcu3_cmp_bind;
+  CLKGEN_port  clkgen_mcu3_dr_port	= clkgen_mcu3_dr_bind;
+  CLKGEN_port  clkgen_mcu3_io_port	= clkgen_mcu3_io_bind;
+#ifndef FC_NO_PEU_VERA
+#ifndef PEU_SYSTEMC_T2
+  CLKGEN_port  clkgen_peu_io_port	= clkgen_peu_io_bind;
+  CLKGEN_port  clkgen_peu_pc_port	= clkgen_peu_pc_bind;
+#endif
+#endif
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  CLKGEN_port  clkgen_rdp_io_port	= clkgen_rdp_io_bind;
+  CLKGEN_port  clkgen_rdp_io2x_port	= clkgen_rdp_io2x_bind;
+  CLKGEN_port  clkgen_rtx_io_port	= clkgen_rtx_io_bind;
+  CLKGEN_port  clkgen_rtx_io2x_port	= clkgen_rtx_io2x_bind;
+#endif
+#endif
+  CLKGEN_port  clkgen_sii_cmp_port	= clkgen_sii_cmp_bind;
+  CLKGEN_port  clkgen_sii_io_port	= clkgen_sii_io_bind;
+  CLKGEN_port  clkgen_sio_cmp_port	= clkgen_sio_cmp_bind;
+  CLKGEN_port  clkgen_sio_io_port	= clkgen_sio_io_bind;
+#ifndef RTL_NO_SPC0
+  CLKGEN_port  clkgen_spc0_cmp_port	= clkgen_spc0_cmp_bind;
+#endif
+#ifndef RTL_NO_SPC1
+  CLKGEN_port  clkgen_spc1_cmp_port	= clkgen_spc1_cmp_bind;
+#endif
+#ifndef RTL_NO_SPC2
+  CLKGEN_port  clkgen_spc2_cmp_port	= clkgen_spc2_cmp_bind;
+#endif
+#ifndef RTL_NO_SPC3
+  CLKGEN_port  clkgen_spc3_cmp_port	= clkgen_spc3_cmp_bind;
+#endif
+#ifndef RTL_NO_SPC4
+  CLKGEN_port  clkgen_spc4_cmp_port	= clkgen_spc4_cmp_bind;
+#endif
+#ifndef RTL_NO_SPC5
+  CLKGEN_port  clkgen_spc5_cmp_port	= clkgen_spc5_cmp_bind;
+#endif
+#ifndef RTL_NO_SPC6
+  CLKGEN_port  clkgen_spc6_cmp_port	= clkgen_spc6_cmp_bind;
+#endif
+#ifndef RTL_NO_SPC7
+  CLKGEN_port  clkgen_spc7_cmp_port	= clkgen_spc7_cmp_bind;
+#endif
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  CLKGEN_port  clkgen_tds_io_port	= clkgen_tds_io_bind;
+  CLKGEN_port  clkgen_tds_io2x_port	= clkgen_tds_io2x_bind;
+#endif
+#endif
+
+  //---- vars for CCU objects ------
+  CCU_clk_packet   ccu_clk_pkt;
+  CCU_clks_states  ccu_states;
+
+  //--- var for CCU checker ---
+  CCU_checker         ccu_checker;
+
+  //--- vars for cluster header checkers of blks in TCU SAT (listed in alphabetical order)---
+  CLUSTER_hdr_chkr    clkgen_ccu_cmp_chkr;
+  CLUSTER_hdr_chkr    clkgen_ccu_io_chkr;
+  CLUSTER_hdr_chkr    clkgen_db0_cmp_chkr;
+  CLUSTER_hdr_chkr    clkgen_db0_io_chkr;
+  CLUSTER_hdr_chkr    clkgen_db1_cmp_chkr;
+  CLUSTER_hdr_chkr    clkgen_db1_io_chkr;
+  CLUSTER_hdr_chkr    clkgen_efu_cmp_chkr;
+  CLUSTER_hdr_chkr    clkgen_efu_io_chkr;
+  CLUSTER_hdr_chkr    clkgen_mio_0_cmp_chkr;
+  CLUSTER_hdr_chkr    clkgen_mio_1_cmp_chkr;
+  CLUSTER_hdr_chkr    clkgen_mio_2_cmp_chkr;
+  CLUSTER_hdr_chkr    clkgen_mio_3_cmp_chkr;
+  CLUSTER_hdr_chkr    clkgen_mio_io_chkr;
+  CLUSTER_hdr_chkr    clkgen_ncu_cmp_chkr;
+  CLUSTER_hdr_chkr    clkgen_ncu_io_chkr;
+  CLUSTER_hdr_chkr    clkgen_rst_cmp_chkr;
+  CLUSTER_hdr_chkr    clkgen_rst_io_chkr;
+  CLUSTER_hdr_chkr    clkgen_tcu_cmp_chkr;
+  CLUSTER_hdr_chkr    clkgen_tcu_io_chkr;
+
+  //--- vars for cluster header checkers of blks not in TCU SAT (listed in alphabetical order)---
+  CLUSTER_hdr_chkr  clkgen_ccx_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_dmu_io_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2b0_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2b1_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2b2_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2b3_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2b4_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2b5_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2b6_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2b7_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2d0_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2d1_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2d2_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2d3_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2d4_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2d5_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2d6_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2d7_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2t0_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2t1_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2t2_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2t3_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2t4_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2t5_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2t6_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_l2t7_cmp_chkr;
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  CLUSTER_hdr_chkr  clkgen_mac_io_chkr;
+#endif
+#endif
+  CLUSTER_hdr_chkr  clkgen_mcu0_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_mcu0_dr_chkr;
+  CLUSTER_hdr_chkr  clkgen_mcu0_io_chkr;
+  CLUSTER_hdr_chkr  clkgen_mcu1_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_mcu1_dr_chkr;
+  CLUSTER_hdr_chkr  clkgen_mcu1_io_chkr;
+  CLUSTER_hdr_chkr  clkgen_mcu2_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_mcu2_dr_chkr;
+  CLUSTER_hdr_chkr  clkgen_mcu2_io_chkr;
+  CLUSTER_hdr_chkr  clkgen_mcu3_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_mcu3_dr_chkr;
+  CLUSTER_hdr_chkr  clkgen_mcu3_io_chkr;
+#ifndef FC_NO_PEU_VERA
+#ifndef PEU_SYSTEMC_T2
+  CLUSTER_hdr_chkr  clkgen_peu_io_chkr;
+  CLUSTER_hdr_chkr  clkgen_peu_pc_chkr;
+#endif
+#endif
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  CLUSTER_hdr_chkr  clkgen_rdp_io_chkr;
+  CLUSTER_hdr_chkr  clkgen_rdp_io2x_chkr;
+  CLUSTER_hdr_chkr  clkgen_rtx_io_chkr;
+  CLUSTER_hdr_chkr  clkgen_rtx_io2x_chkr;
+#endif
+#endif
+  CLUSTER_hdr_chkr  clkgen_sii_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_sii_io_chkr;
+  CLUSTER_hdr_chkr  clkgen_sio_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_sio_io_chkr;
+  CLUSTER_hdr_chkr  clkgen_spc0_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_spc1_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_spc2_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_spc3_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_spc4_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_spc5_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_spc6_cmp_chkr;
+  CLUSTER_hdr_chkr  clkgen_spc7_cmp_chkr;
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  CLUSTER_hdr_chkr  clkgen_tds_io_chkr;
+  CLUSTER_hdr_chkr  clkgen_tds_io2x_chkr;
+#endif
+#endif
+  //---public subroutines---
+  task new(StandardDisplay dbg);
+}
+
+//################################################################
+//######### implementation of subroutines              ###########
+//################################################################
+
+task CCU_clk_chkr_4fc::new(StandardDisplay dbg) {
+  integer start_it = 1, not_start_it = 0;  // 0: not start; otherwise, start the checkers
+
+  if (!get_plus_arg(CHECK, "ccu_checker"))
+    return;                                 // by default, checkers are disabble
+
+  ccu_states  = new("CCU_states", dbg, start_it);
+  ccu_checker = new("CCU_checker", dbg, ccu_states, start_it);  // ccu checker
+
+  // template: clstrHdrChkr = new("name", dbg, ccu_states, hdrType, clkgen_port, dr_port, io_port, io2x_port, chkCmpSlowSync, chkSlowCmpSync, chkDrSycn,  chkIo2xSync, cmpSlowSyncIsIO2X, start_it);
+
+  //---obj instantiations: all cluster hdr checkers for blks in TCU SAT (listed in alphabetical order) ---
+  clkgen_ccu_cmp_chkr   = new("ccu_cmp_hdr_chkr",   dbg, ccu_states, CLUSTER_HDR_CMP,  clkgen_ccu_cmp_port,   null, null, null, 0, 0, 0, 0, 0, start_it);
+  clkgen_ccu_io_chkr    = new("ccu_io_hdr_chkr",    dbg, ccu_states, CLUSTER_HDR_IO,   clkgen_ccu_io_port,    null, null, null, 0, 0, 0, 0, 0, start_it);
+  clkgen_db0_cmp_chkr   = new("db0_cmp_hdr_chkr",   dbg, ccu_states, CLUSTER_HDR_CMP1, clkgen_db0_cmp_port,   null, clkgen_db0_io_port, null, 0, 1, 0, 1, 0, start_it);
+  clkgen_db0_io_chkr    = new("db0_io_hdr_chkr",    dbg, ccu_states, CLUSTER_HDR_IO,   clkgen_db0_io_port,    null, null, null, 0, 0, 0, 0, 0, start_it);
+  clkgen_db1_cmp_chkr   = new("db1_cmp_hdr_chkr",   dbg, ccu_states, CLUSTER_HDR_CMP1, clkgen_db1_cmp_port,   null, clkgen_db1_io_port, null, 1, 1, 0, 1, 0, start_it);
+  clkgen_db1_io_chkr    = new("db1_io_hdr_chkr",    dbg, ccu_states, CLUSTER_HDR_IO,   clkgen_db1_io_port,    null, null, null, 0, 0, 0, 0, 0, start_it);
+  clkgen_efu_cmp_chkr   = new("efu_cmp_hdr_chkr",   dbg, ccu_states, CLUSTER_HDR_CMP,  clkgen_efu_cmp_port,   null, clkgen_efu_io_port, null, 1, 1, 0, 0, 0, start_it);
+  clkgen_efu_io_chkr    = new("efu_io_hdr_chkr",    dbg, ccu_states, CLUSTER_HDR_IO,   clkgen_efu_io_port,    null, null, null, 0, 0, 0, 0, 0, start_it);
+  clkgen_mio_0_cmp_chkr = new("mio_0_cmp_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_CMP,  clkgen_mio_0_cmp_port, null, null, null, 1, 0, 0, 0, 1, start_it);
+  clkgen_mio_1_cmp_chkr = new("mio_1_cmp_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_CMP,  clkgen_mio_1_cmp_port, null, null, null, 1, 0, 0, 0, 1, start_it);
+  clkgen_mio_2_cmp_chkr = new("mio_2_cmp_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_CMP,  clkgen_mio_2_cmp_port, null, null, null, 1, 0, 0, 0, 1, start_it);
+  clkgen_mio_3_cmp_chkr = new("mio_3_cmp_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_CMP,  clkgen_mio_3_cmp_port, null, null, null, 1, 0, 0, 0, 1, start_it);
+  clkgen_mio_io_chkr    = new("mio_io_hdr_chkr",    dbg, ccu_states, CLUSTER_HDR_IO,   clkgen_mio_io_port,    null, null, null, 0, 0, 0, 0, 0, start_it);
+  clkgen_ncu_cmp_chkr   = new("ncu_cmp_hdr_chkr",   dbg, ccu_states, CLUSTER_HDR_CMP,  clkgen_ncu_cmp_port,   null, clkgen_ncu_io_port, null, 1, 1, 0, 0, 0, start_it);
+  clkgen_ncu_io_chkr    = new("ncu_io_hdr_chkr",    dbg, ccu_states, CLUSTER_HDR_IO,   clkgen_ncu_io_port,    null, null, null, 0, 0, 0, 0, 0, start_it);
+  clkgen_rst_cmp_chkr   = new("rst_cmp_hdr_chkr",   dbg, ccu_states, CLUSTER_HDR_CMP,  clkgen_rst_cmp_port,   null, clkgen_rst_io_port, null, 1, 1, 0, 0, 0, start_it);
+  clkgen_rst_io_chkr    = new("rst_io_hdr_chkr",    dbg, ccu_states, CLUSTER_HDR_IO,   clkgen_rst_io_port,    null, null, null, 0, 0, 0, 0, 0, start_it);
+  clkgen_tcu_cmp_chkr   = new("tcu_cmp_hdr_chkr",   dbg, ccu_states, CLUSTER_HDR_CMP1, clkgen_tcu_cmp_port,   null, clkgen_tcu_io_port, null, 1, 1, 1, 1, 0, start_it); 
+  clkgen_tcu_io_chkr    = new("tcu_io_hdr_chkr",    dbg, ccu_states, CLUSTER_HDR_IO,   clkgen_tcu_io_port,    null, null, null, 0, 0, 0, 0, 0, start_it);
+
+  //---obj instantiations: cluster hdr checkers for blocks not in TCU SAT (listed in alphabetical order) ---
+  clkgen_ccx_cmp_chkr  = new("ccx_cmp_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_ccx_cmp_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+  clkgen_dmu_io_chkr   = new("dmu_io_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_IO,  clkgen_dmu_io_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+
+  clkgen_l2b0_cmp_chkr = new("l2b0_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2b0_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+  clkgen_l2b1_cmp_chkr = new("l2b1_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2b1_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+  clkgen_l2b2_cmp_chkr = new("l2b2_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2b2_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+  clkgen_l2b3_cmp_chkr = new("l2b3_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2b3_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+  clkgen_l2b4_cmp_chkr = new("l2b4_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2b4_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+  clkgen_l2b5_cmp_chkr = new("l2b5_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2b5_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+  clkgen_l2b6_cmp_chkr = new("l2b6_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2b6_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+  clkgen_l2b7_cmp_chkr = new("l2b7_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2b7_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+
+//clkgen_l2d0_cmp_chkr = new("l2d0_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2d0_cmp_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+//clkgen_l2d1_cmp_chkr = new("l2d1_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2d1_cmp_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+//clkgen_l2d2_cmp_chkr = new("l2d2_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2d2_cmp_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+//clkgen_l2d3_cmp_chkr = new("l2d3_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2d3_cmp_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+//clkgen_l2d4_cmp_chkr = new("l2d4_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2d4_cmp_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+//clkgen_l2d5_cmp_chkr = new("l2d5_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2d5_cmp_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+//clkgen_l2d6_cmp_chkr = new("l2d6_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2d6_cmp_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+//clkgen_l2d7_cmp_chkr = new("l2d7_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2d7_cmp_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+
+  clkgen_l2t0_cmp_chkr = new("l2t0_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2t0_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+  clkgen_l2t1_cmp_chkr = new("l2t1_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2t1_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+  clkgen_l2t2_cmp_chkr = new("l2t2_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2t2_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+  clkgen_l2t3_cmp_chkr = new("l2t3_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2t3_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+  clkgen_l2t4_cmp_chkr = new("l2t4_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2t4_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+  clkgen_l2t5_cmp_chkr = new("l2t5_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2t5_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+  clkgen_l2t6_cmp_chkr = new("l2t6_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2t6_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+  clkgen_l2t7_cmp_chkr = new("l2t7_cmp_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_l2t7_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  clkgen_mac_io_chkr   = new("mac_io_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_IO, clkgen_mac_io_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+#endif
+#endif
+  clkgen_mcu0_cmp_chkr = new("mcu0_cmp_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_mcu0_cmp_port, clkgen_mcu0_dr_port, clkgen_mcu0_io_port, null, 1, 1, 1, 0, 0, start_it);
+  clkgen_mcu0_dr_chkr  = new("mcu0_dr_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_DR,  clkgen_mcu0_dr_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+  clkgen_mcu0_io_chkr  = new("mcu0_io_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_IO,  clkgen_mcu0_io_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+  clkgen_mcu1_cmp_chkr = new("mcu1_cmp_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_mcu1_cmp_port, clkgen_mcu1_dr_port, clkgen_mcu1_io_port, null, 1, 1, 1, 0, 0, start_it);
+  clkgen_mcu1_dr_chkr  = new("mcu1_dr_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_DR,  clkgen_mcu1_dr_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+  clkgen_mcu1_io_chkr  = new("mcu1_io_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_IO,  clkgen_mcu1_io_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+  clkgen_mcu2_cmp_chkr = new("mcu2_cmp_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_mcu2_cmp_port, clkgen_mcu2_dr_port, clkgen_mcu2_io_port, null, 1, 1, 1, 0, 0, start_it);
+  clkgen_mcu2_dr_chkr  = new("mcu2_dr_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_DR,  clkgen_mcu2_dr_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+  clkgen_mcu2_io_chkr  = new("mcu2_io_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_IO,  clkgen_mcu2_io_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+  clkgen_mcu3_cmp_chkr = new("mcu3_cmp_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_mcu3_cmp_port, clkgen_mcu3_dr_port, clkgen_mcu3_io_port, null, 1, 1, 1, 0, 0, start_it);
+  clkgen_mcu3_dr_chkr  = new("mcu3_dr_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_DR,  clkgen_mcu3_dr_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+  clkgen_mcu3_io_chkr  = new("mcu3_io_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_IO,  clkgen_mcu3_io_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+#ifndef FC_NO_PEU_VERA
+#ifndef PEU_SYSTEMC_T2
+  clkgen_peu_io_chkr   = new("peu_io_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_IO,  clkgen_peu_io_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+  clkgen_peu_pc_chkr   = new("peu_pc_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_peu_pc_port, null, null, null, 0, 0, 0, 0, 0, not_start_it); // review: handle later
+#endif
+#endif
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  clkgen_rdp_io_chkr   = new("rdp_io_hdr_chkr",   dbg, ccu_states, CLUSTER_HDR_IO,   clkgen_rdp_io_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+  clkgen_rdp_io2x_chkr = new("rdp_io2x_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_IO2X, clkgen_rdp_io2x_port, null, null, null, 0, 0, 0, 0, 0, start_it);
+
+  clkgen_rtx_io_chkr   = new("rtx_io_hdr_chkr",   dbg, ccu_states, CLUSTER_HDR_IO,   clkgen_rtx_io_port,  null, null, null, 0, 0, 0, 0, 0, start_it);
+  clkgen_rtx_io2x_chkr = new("rtx_io2x_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_IO2X, clkgen_rtx_io2x_port,  null, null, null, 0, 0, 0, 0, 0, start_it);
+#endif
+#endif
+  clkgen_sii_cmp_chkr  = new("sii_cmp_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_sii_cmp_port, null, clkgen_sii_io_port, null, 1, 1, 0, 0, 0, start_it);
+  clkgen_sii_io_chkr   = new("sii_io_hdr_chkr",  dbg, ccu_states, CLUSTER_HDR_IO,  clkgen_sii_io_port,  null, null, null, 0, 0, 0, 0, 0, start_it);
+
+  clkgen_sio_cmp_chkr  = new("sio_cmp_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_sio_cmp_port, null, clkgen_sio_io_port, null, 1, 1, 0, 0, 0, start_it);
+  clkgen_sio_io_chkr   = new("sio_io_hdr_chkr ", dbg, ccu_states, CLUSTER_HDR_IO,  clkgen_sio_io_port,  null, null, null, 0, 0, 0, 0, 0, start_it);
+
+#ifndef RTL_NO_SPC0
+  clkgen_spc0_cmp_chkr = new("spc0_cmp_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_spc0_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+#endif
+#ifndef RTL_NO_SPC1
+  clkgen_spc1_cmp_chkr = new("spc1_cmp_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_spc1_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+#endif
+#ifndef RTL_NO_SPC2
+  clkgen_spc2_cmp_chkr = new("spc2_cmp_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_spc2_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+#endif
+#ifndef RTL_NO_SPC3
+  clkgen_spc3_cmp_chkr = new("spc3_cmp_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_spc3_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+#endif
+#ifndef RTL_NO_SPC4
+  clkgen_spc4_cmp_chkr = new("spc4_cmp_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_spc4_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+#endif
+#ifndef RTL_NO_SPC5
+  clkgen_spc5_cmp_chkr = new("spc5_cmp_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_spc5_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+#endif
+#ifndef RTL_NO_SPC6
+  clkgen_spc6_cmp_chkr = new("spc6_cmp_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_spc6_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+#endif
+#ifndef RTL_NO_SPC7
+  clkgen_spc7_cmp_chkr = new("spc7_cmp_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_CMP, clkgen_spc7_cmp_port, null, clkgen_ccu_io_port, null, 1, 1, 0, 0, 0, start_it);
+#endif
+
+#ifndef FC_NO_NIU_T2
+#ifndef NIU_SYSTEMC_T2
+  clkgen_tds_io_chkr   = new("tds_io_hdr_chkr",   dbg, ccu_states, CLUSTER_HDR_IO,   clkgen_tds_io_port,    null, null, null, 0, 0, 0, 0, 0, start_it);
+  clkgen_tds_io2x_chkr = new("tds_io2x_hdr_chkr", dbg, ccu_states, CLUSTER_HDR_IO2X, clkgen_tds_io2x_port,  null, null, null, 0, 0, 0, 0, 0, start_it);
+#endif
+#endif
+}
+
+#endif // end of "#ifndef FC_BENCH else"
+

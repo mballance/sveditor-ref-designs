@@ -1,0 +1,285 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: CCCAccessMethod.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "general_csr_defines.vri"
+#include "report_macros.vri"
+#include "cReport.vrh"
+#include "CSRFmwork.vrh"
+//#include "CCCXactor.vrh"
+
+
+//------------------------------------------------------------------------------
+//  Class Definition 
+//      
+//
+//
+//------------------------------------------------------------------------------
+
+
+class CCCAccessMethod extends CSRAccessMethod {
+
+  CCCXactor			ringXactor;
+  protected ReportClass		report;
+  protected integer		timeout;
+  protected integer		min_timeout;
+  protected integer		src_bus_id;
+  protected integer		CSRSbusSema;
+  protected string		myName;
+
+  //***************************************************************
+  //  Constructor 
+  //	
+  //	- Must pass in a handle to 
+  //		- pre-existing CCCXactor
+  //		- Report Class 
+  //
+  //	- Pass in Source Bus ID 
+  //	- Transaction Timeout value
+  //
+  //***************************************************************
+
+  task new (ReportClass report, CCCXactor ringXactor, integer src_bus_id, integer timeout, integer min_timeout = 0) {
+
+    this.report 	= report;
+    this.ringXactor 	= ringXactor;
+    this.timeout 	= timeout;
+    this.min_timeout 	= min_timeout;
+    this.src_bus_id	= src_bus_id;
+    
+    myName 		= "CCCAccessMethod";
+
+    //-----------------------------------
+    // Create the Semaphore
+    //-----------------------------------
+    
+    CSRSbusSema	= alloc(SEMAPHORE,0,1,1);
+    
+    if (CSRSbusSema == 0)
+      error("%0s: Out of semaphore space.\n", myName);
+
+  } 
+
+  //***************************************************************
+  //  READ FUNCTION  
+  //	
+  //	- Returns 64 bit Read Data
+  //	- Pass in 64 Bit address 
+  //    - Pass in Error bit
+  //
+  //***************************************************************
+  
+  function bit [CSRT_DATA_WIDTH-1:0] read (bit [CSRT_ADDR_OFFSET_WIDTH-1:0] addr) {
+  
+  
+    CCCXactorTransaction ringXaction = new;
+
+    semaphore_get (WAIT, CSRSbusSema, 1);
+
+    // Align address
+    
+    //--------------------------------------------
+    // Set up a read
+    //--------------------------------------------
+    
+    ringXaction.wr_rd_cmd 	= CCC_XACTOR_RD_CMD;
+    ringXaction.address		= addr;
+    ringXaction.src_bus_id 	= src_bus_id;
+    ringXaction.csr_data 	= CSRT_DATA_WIDTH'bx;
+    ringXaction.error 		= 1'b0;
+
+    
+    //-------------------------------------------
+    // Print out the transaction
+    //-------------------------------------------
+
+    QuickReport(report, RTYP_DEBUG_1, "%0s: Reading: src_bus_id: 2'b%b, addr: 'h%h",
+		  myName, src_bus_id, addr);
+
+    //-------------------------------------------
+    // Execute the transaction
+    //-------------------------------------------
+    
+    ringXactor.ExecuteTrans(ringXaction, timeout, min_timeout);
+
+    //-------------------------------------------
+    // Get the Read Return Data 
+    //-------------------------------------------
+      read = ringXaction.csr_data;
+
+    semaphore_put (CSRSbusSema, 1);
+
+  } 
+
+  //***************************************************************
+  //  READ FUNCTION  
+  //	
+  //	- Returns 64 bit Read Data
+  //	- Pass in 64 Bit address 
+  //    - Pass in Error bit
+  //
+  //***************************************************************
+  
+  function bit [CSRT_DATA_WIDTH-1:0] read_error (bit [CSRT_ADDR_OFFSET_WIDTH-1:0] addr) {
+  
+  
+    CCCXactorTransaction ringXaction = new;
+
+    semaphore_get (WAIT, CSRSbusSema, 1);
+
+    // Align address
+    
+    //--------------------------------------------
+    // Set up a read
+    //--------------------------------------------
+    
+    ringXaction.wr_rd_cmd 	= CCC_XACTOR_RD_CMD;
+    ringXaction.address		= addr;
+    ringXaction.src_bus_id 	= src_bus_id;
+    ringXaction.csr_data 	= CSRT_DATA_WIDTH'bx;
+    ringXaction.error 		= 1'b1;
+
+    
+    //-------------------------------------------
+    // Print out the transaction
+    //-------------------------------------------
+
+    QuickReport(report, RTYP_DEBUG_1, "%0s: Reading: src_bus_id: 2'b%b, addr: 'h%h",
+		  myName, src_bus_id, addr);
+
+    //-------------------------------------------
+    // Execute the transaction
+    //-------------------------------------------
+    
+    ringXactor.ExecuteTrans(ringXaction, timeout, min_timeout);
+
+    //-------------------------------------------
+    // Get the Read Return Data 
+    //-------------------------------------------
+      read_error = ringXaction.csr_data;
+
+    semaphore_put (CSRSbusSema, 1);
+
+  } 
+
+
+  //***************************************************************
+  //  Write FUNCTION  
+  //	
+  //	- Pass in 64 bit Write Data
+  //	- Pass in 64 Bit address 
+  //
+  //***************************************************************
+  
+    task write (bit [CSRT_ADDR_OFFSET_WIDTH-1:0] addr, bit [CSRT_DATA_WIDTH-1:0] data) {
+    
+    CCCXactorTransaction ringXaction = new;
+
+    semaphore_get (WAIT, CSRSbusSema, 1);
+
+    // Align address
+    //addr <<= 3; +++review+++ do we need this?
+
+    //--------------------------------------------
+    // Set up a Write
+    //--------------------------------------------
+
+    ringXaction.wr_rd_cmd 	= CCC_XACTOR_WR_CMD;
+    ringXaction.src_bus_id 	= src_bus_id;
+    ringXaction.address 	= addr;
+    ringXaction.csr_data 	= data;
+    ringXaction.error 		= 1'b0;
+
+    //-------------------------------------------
+    // Print out the transaction
+    //-------------------------------------------
+
+
+    QuickReport(report, RTYP_DEBUG_1, "%0s: Writing: src_bus_id: 2'b%0b, addr: 'h%h, data: 'h%h",
+		  myName, src_bus_id, addr, data);
+
+    //-------------------------------------------
+    // Execute the transaction
+    //-------------------------------------------
+    
+     ringXactor.ExecuteTrans(ringXaction, timeout, min_timeout);
+
+    semaphore_put (CSRSbusSema, 1);
+  } 
+
+  //***************************************************************
+  //  Write FUNCTION  
+  //	
+  //	- Pass in 64 bit Write Data
+  //	- Pass in 64 Bit address 
+  //
+  //***************************************************************
+  
+    task write_error (bit [CSRT_ADDR_OFFSET_WIDTH-1:0] addr, bit [CSRT_DATA_WIDTH-1:0] data) {
+    
+    CCCXactorTransaction ringXaction = new;
+
+    semaphore_get (WAIT, CSRSbusSema, 1);
+
+    // Align address
+    //addr <<= 3; +++review+++ do we need this?
+
+    //--------------------------------------------
+    // Set up a Write
+    //--------------------------------------------
+
+    ringXaction.wr_rd_cmd 	= CCC_XACTOR_WR_CMD;
+    ringXaction.src_bus_id 	= src_bus_id;
+    ringXaction.address 	= addr;
+    ringXaction.csr_data 	= data;
+    ringXaction.error 		= 1'b1;
+
+    //-------------------------------------------
+    // Print out the transaction
+    //-------------------------------------------
+
+
+    QuickReport(report, RTYP_DEBUG_1, "%0s: Writing: src_bus_id: 2'b%0b, addr: 'h%h, data: 'h%h",
+		  myName, src_bus_id, addr, data);
+
+    //-------------------------------------------
+    // Execute the transaction
+    //-------------------------------------------
+    
+     ringXactor.ExecuteTrans(ringXaction, timeout, min_timeout);
+
+    semaphore_put (CSRSbusSema, 1);
+  } 
+
+
+} 

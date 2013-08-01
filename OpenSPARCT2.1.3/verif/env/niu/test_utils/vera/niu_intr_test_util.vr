@@ -1,0 +1,184 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_intr_test_util.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "niu_int_mgr.vrh"
+#include "niu_int_dev.vrh"
+extern   CNiuIntrMgr NiuIntrMgr;
+
+
+
+class sid_table {
+
+      bit [68:0] dev_bound;
+      bit [6:0] sid_num;
+      integer ldgno_bound;
+
+      task new() {
+          dev_bound = 69'h0;
+          sid_num = 7'h0;
+      }
+}
+
+
+class intr_test_util {
+
+   integer intr_grpnum;
+   integer cmdl_grpnum;
+
+   sid_table sid_tab[64];
+   // CNiuIntrMgr NiuIntrMgr;
+
+   task new();
+
+   task setup_sid_tab(CNiuIntrDev dev,integer ldgno,integer type);
+   task programme_intmgr(CNiuIntrDev dev,integer ldgno, integer type, integer func_num);
+   task compute_sid(integer func_num, var bit [6:0] sid); 
+   
+  
+}
+
+task intr_test_util :: new() {
+
+     integer i = 0;
+
+     for(i = 0;i <64; i++) {
+      sid_tab[i] = new();
+     }
+
+    if (get_plus_arg (CHECK,"INTR_GRPNUM="))
+	intr_grpnum = get_plus_arg(NUM,"INTR_GRPNUM=");
+   else
+      intr_grpnum = 0;
+
+   if (get_plus_arg (CHECK,"CMDL_GRPNUM="))
+	cmdl_grpnum = get_plus_arg(NUM,"CMDL_GRPNUM=");
+   else
+      cmdl_grpnum = 0;
+
+     NiuIntrMgr.initLdg(64'hffffffffffffffff); // Enable all LDG in Environment
+     printf("Init LDG\n");
+     NiuIntrMgr.SetTmrRes(100);
+     printf("Set Time resolution\n");
+}
+
+task intr_test_util :: setup_sid_tab(CNiuIntrDev dev,integer ldgno,integer type)
+{
+  integer group_num;
+  integer func_num;
+  static integer tmp_grp_num = 0; 
+
+    if(intr_grpnum == 0) 
+      group_num = random()%64;
+    else if(intr_grpnum == 1)
+      group_num = cmdl_grpnum;
+    else if(intr_grpnum == 2) {
+      group_num = tmp_grp_num;
+      tmp_grp_num++;
+    } else if(intr_grpnum == 3) {
+      group_num = tmp_grp_num%64;
+      tmp_grp_num = tmp_grp_num + 16;
+    }
+      
+       
+      printf("Group number is %d for dev %d\n",group_num,dev.dev_id);
+      
+      if(group_num < 16)
+          func_num = 0;
+      else if(group_num < 32)
+          func_num = 1;
+      else if(group_num < 48)
+          func_num = 2;
+      else func_num = 3;
+
+      programme_intmgr(dev,group_num,1,func_num);
+
+      sid_tab[group_num].ldgno_bound = 1;
+      sid_tab[group_num].dev_bound[dev.dev_id] = 1;
+
+          
+}
+
+task intr_test_util :: programme_intmgr(CNiuIntrDev dev,integer ldgno, integer type, integer func_num) {
+ 
+  bit[6:0] sid;
+  
+       if(sid_tab[ldgno].ldgno_bound)  {
+
+          // just do the bind
+        
+        dev.setGid(ldgno);
+        NiuIntrMgr.ldg[ldgno].SetIntrMgm(1/*Arm*/,10/*Timer*/);
+        NiuIntrMgr.ldg[ldgno].ldgbind(dev); 
+
+       } else {
+         compute_sid(func_num,sid);
+        
+         printf("Sid_table updated\n"); 
+         NiuIntrMgr.updateSidTab(ldgno,sid); 
+
+         dev.setGid(ldgno);
+         NiuIntrMgr.ldg[ldgno].SetIntrMgm(1/*Arm*/,10/*Timer*/);
+         NiuIntrMgr.ldg[ldgno].ldgbind(dev); 
+         NiuIntrMgr.ldg[ldgno].rearm = 1;
+       }
+}
+
+task intr_test_util :: compute_sid(integer func_num, var bit [6:0] sid) {
+
+       bit [4:0] part_sid;
+       static bit [31:0] mask = 32'h0;
+       integer tmp_part_sid;
+       bit [6:0] tmp_sid;
+       bit [1:0] tmp_fn_num;
+       integer done = 0;
+
+ 
+       tmp_fn_num = func_num;
+
+       while(!done) {
+       part_sid = random()%32;
+       tmp_part_sid = part_sid;
+     
+       if(mask[tmp_part_sid] == 0) {
+             // tmp_sid = {tmp_fn_num,tmp_part_sid};
+             sid = {tmp_fn_num,part_sid};
+             mask[tmp_part_sid] = 1;
+             done = 1;
+       }
+
+     }
+
+        
+} 
+

@@ -1,0 +1,341 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: FcMcuMon.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "FcMcuMonPort.if.vrh"
+#define STD_DISP gDbg
+#include <std_display_defines.vri>
+#include <std_display_class.vrh>
+
+extern bit [63:0] FCMemoryAddress_A[4];
+extern bit [63:0] FCMemoryAddress_B[4];
+extern bit [63:0] FCMemoryAddress_C[4];
+extern event FCMemorySync_A[4];
+extern event FCMemorySync_B[4];
+extern event FCMemorySync_C[4];
+extern StandardDisplay gDbg; 
+
+
+class FcMcuMon {
+
+dram_write_MCU write_mcu;
+//local StandardDisplay dbg;
+bit [1:0] mcu_port_no;
+
+	task new(dram_write_MCU write_mcu, bit [1:0] mcu_port_no);
+	task DramWrite (dram_write_MCU write_mcu, bit [1:0] mcu_port_no);
+
+}
+
+
+task FcMcuMon:: new (dram_write_MCU write_mcu, bit [1:0] mcu_port_no) {
+
+	fork
+	{
+	  DramWrite (write_mcu, mcu_port_no);
+	}
+	join none
+
+}
+
+
+task FcMcuMon:: DramWrite (dram_write_MCU write_mcu, bit [1:0] mcu_port_no) {
+
+
+bit          CLK;
+bit  [2:0]   CMD_A, 	CMD_B,	CMD_C;
+bit  [15:0]  ADDR_A,	ADDR_B,	ADDR_C;
+bit  [2:0]   BANK_A,	BANK_B,	BANK_C;
+bit          RANK_A,	RANK_B,	RANK_C;
+bit  [2:0]   DIMM_A,	DIMM_B,	DIMM_C;
+
+bit  [2:0]   State_A, 		State_B, 		State_C;
+bit  [2:0]   Idle_State_A, 	Idle_State_B, 		Idle_State_C;
+bit  [2:0]   Active_State_A, 	Active_State_B,		Active_State_C;
+bit  [2:0]   Write_State_A, 	Write_State_B, 		Write_State_C;
+bit	     Idle_A, 		Idle_B,	 		Idle_C;
+bit	     Active_A, 		Active_B, 		Active_C;
+bit          Write_A, 		Write_B, 		Write_C;
+bit  [15:0]  RAS_A, 		RAS_B, 			RAS_C;
+bit  [15:0]  CAS_A, 		CAS_B, 			CAS_C;
+
+bit  [39:0] physical_addr_A,	physical_addr_B,	physical_addr_C;
+
+bit          BA01, BA23, BA45, BA67;
+
+integer i;
+
+State_A  = 3'b001;
+Idle_State_A   = 3'b001;
+Active_State_A = 3'b010;
+Write_State_A  = 3'b100;
+
+State_B  = 3'b001;
+Idle_State_B   = 3'b001;
+Active_State_B = 3'b010;
+Write_State_B  = 3'b100;
+
+State_C  = 3'b001;
+Idle_State_C   = 3'b001;
+Active_State_C = 3'b010;
+Write_State_C  = 3'b100;
+
+CLK    = write_mcu.$drl2clk;
+
+	
+        PR_DEBUG("FcMcuMon", MON_DEBUG, psprintf("MCU[%0d] Inside DramWrite Task\n", mcu_port_no));
+	while(1) {
+		@(posedge write_mcu.$drl2clk);
+
+		CMD_A  = write_mcu.$drif_dram_cmd_a;
+		ADDR_A = write_mcu.$drif_dram_addr_a;
+		BANK_A = write_mcu.$drif_dram_bank_a;
+		RANK_A = write_mcu.$drif_dram_rank_a;
+		DIMM_A = write_mcu.$drif_dram_dimm_a;
+		
+		CMD_B  = write_mcu.$drif_dram_cmd_b;
+		ADDR_B = write_mcu.$drif_dram_addr_b;
+		BANK_B = write_mcu.$drif_dram_bank_b;
+		RANK_B = write_mcu.$drif_dram_rank_b;
+		DIMM_B = write_mcu.$drif_dram_dimm_b;
+
+		CMD_C  = write_mcu.$drif_dram_cmd_c;
+		ADDR_C = write_mcu.$drif_dram_addr_c;
+		BANK_C = write_mcu.$drif_dram_bank_c;
+		RANK_C = write_mcu.$drif_dram_rank_c;
+		DIMM_C = write_mcu.$drif_dram_dimm_c;
+	
+  		BA01   = write_mcu.$ncu_mcu_ba01;
+  		BA23   = write_mcu.$ncu_mcu_ba23;
+  		BA45   = write_mcu.$ncu_mcu_ba45;
+  		BA67   = write_mcu.$ncu_mcu_ba67;
+
+
+		Idle_A   = State_A[0];
+		Active_A = State_A[1];
+		Write_A  = State_A[2];
+
+		Idle_B   = State_B[0];
+		Active_B = State_B[1];
+		Write_B  = State_B[2];
+
+		Idle_C   = State_C[0];
+		Active_C = State_C[1];
+		Write_C  = State_C[2];
+
+		case(1'b1)
+		{
+		   Idle_A   : {
+				if (CMD_A == 3'b100)
+				{
+//				   printf ("%0d : MAQ-Debug[%0d] : Active_A RAS = %h \n",{get_time(HI), get_time(LO)}, mcu_port_no, ADDR_A);
+				   State_A = Active_State_A;
+				   RAS_A = ADDR_A;
+				}
+			    }
+		   Active_A : {
+				if (CMD_A == 3'b011)
+				{
+				   State_A = Write_State_A;
+				   CAS_A = ADDR_A;
+				   PR_DEBUG("FcMcuMon", MON_DEBUG, psprintf("%0d MCU[%0d]  Write_A DIMM = %h, RANK = %h, BANK = %h, RAS = %h, CAS = %h\n",
+						 {get_time(HI), get_time(LO)}, mcu_port_no, DIMM_A, RANK_A, BANK_A, RAS_A, CAS_A));
+				   physical_addr_A = {2'b00, DIMM_A, CAS_A[2], RAS_A[14:0], CAS_A[11], CAS_A[9:3], BANK_A[2:1], mcu_port_no, BANK_A[0], CAS_A[1], 5'b00000};
+//				   printf("JAMES1 addr = %h ba01=%0d ba23=%0d, ba45=%0d, ba67=%0d\n", physical_addr_A, BA01, BA23, BA45, BA67);
+				   physical_addr_A = saddr(physical_addr_A, BA01, BA23, BA45, BA67);
+                                   if (write_mcu.$index_hashing) 
+                                     physical_addr_A = { physical_addr_A[39:18], physical_addr_A[32:28] ^ physical_addr_A[17:13], physical_addr_A[19:18] ^ physical_addr_A[12:11], physical_addr_A[10:0] };
+//				  printf("JAMES2 addr = %h ba01=%0d ba23=%0d, ba45=%0d, ba67=%0d\n", physical_addr_A, BA01, BA23, BA45, BA67);
+				   for(i=0;i<8; i++)
+				   {
+				   	PR_DEBUG("FcMcuMon", MON_DEBUG, psprintf (" %0d MCU[%0d] : physical :Addr = %h \n", {get_time(HI), get_time(LO)}, mcu_port_no, (physical_addr_A + 8*i)));
+				   	FCMemoryAddress_A[mcu_port_no] = (physical_addr_A + 8*i);
+				   	trigger(FCMemorySync_A[mcu_port_no]);
+				   	sync(ALL,FCMemorySync_A[mcu_port_no]);
+				   }
+
+				}
+				else
+				{
+//				   printf ("%0d : MAQ-Debug[%0d] : Active CMD was not for Write \n", {get_time(HI), get_time(LO)}, mcu_port_no);
+                                   if (CMD_A == 3'b100)
+				   State_A = Active_State_A; //Idle_State_A;
+                                   else
+				   State_A = Idle_State_A;
+				}
+			    }
+		   Write_A  : {
+//				printf ("%0d : MAQ-Debug[%0d] : Idle_A \n",{get_time(HI), get_time(LO)}, mcu_port_no);
+				State_A = Idle_State_A;
+			    }
+		   default : State_A = Idle_State_A;
+		} // case
+// ****************************************************************************************************************************
+		case(1'b1)
+		{
+		   Idle_B   : {
+				if (CMD_B == 3'b100)
+				{
+//				   printf ("%0d : MAQ-Debug[%0d] : Active_B RAS = %h \n",{get_time(HI), get_time(LO)}, mcu_port_no, ADDR_B);
+				   State_B = Active_State_B;
+				   RAS_B = ADDR_B;
+				}
+			    }
+		   Active_B : {
+				if (CMD_B == 3'b011)
+				{
+				   State_B = Write_State_B;
+				   CAS_B = ADDR_B;
+				   PR_DEBUG("FcMcuMon", MON_DEBUG, psprintf ("%0d : MAQ-Debug[%0d] : Write_B DIMM = %h, RANK = %h, BANK = %h, RAS = %h, CAS = %h \n",
+						 {get_time(HI), get_time(LO)}, mcu_port_no, DIMM_B, RANK_B, BANK_B, RAS_B, CAS_B));
+				   physical_addr_B = {2'b00, DIMM_B, CAS_B[2], RAS_B[14:0], CAS_B[11], CAS_B[9:3], BANK_B[2:1], mcu_port_no, BANK_B[0], CAS_B[1], 5'b00000};
+				   //printf("JAMES3 addr = %h ba01=%0d ba23=%0d, ba45=%0d, ba67=%0d\n", physical_addr_B, BA01, BA23, BA45, BA67);
+				   physical_addr_B = saddr(physical_addr_B, BA01, BA23, BA45, BA67);
+                                   if (write_mcu.$index_hashing) 
+                                     physical_addr_B = { physical_addr_B[39:18], physical_addr_B[32:28] ^ physical_addr_B[17:13], physical_addr_B[19:18] ^ physical_addr_B[12:11], physical_addr_B[10:0] };
+//				   printf("JAMES4 addr = %h ba01=%0d ba23=%0d, ba45=%0d, ba67=%0d\n", physical_addr_B, BA01, BA23, BA45, BA67);
+				   for(i=0;i<8; i++)
+				   {
+				   	PR_DEBUG("FcMcuMon", MON_DEBUG, psprintf ("%0d : MAQ-Debug[%0d] : physical :Addr = %h \n",{get_time(HI), get_time(LO)}, mcu_port_no, (physical_addr_B + 8*i)));
+				   	FCMemoryAddress_B[mcu_port_no] = (physical_addr_B + 8*i);
+				   	trigger(FCMemorySync_B[mcu_port_no]);
+				   	sync(ALL,FCMemorySync_B[mcu_port_no]);
+				   }
+				}
+				else
+				{
+//				   printf (" %0d : MAQ-Debug[%0d] : Active CMD was not for Write \n", {get_time(HI), get_time(LO)}, mcu_port_no);
+                                   if (CMD_B == 3'b100)
+                                   State_B = Active_State_B;
+                                   else
+				   State_B = Idle_State_B;
+				}
+			    }
+		   Write_B  : {
+//				printf ("%0d : MAQ-Debug[%0d] : Idle_B \n",{get_time(HI), get_time(LO)}, mcu_port_no);
+				State_B = Idle_State_B;
+			    }
+		   default : State_B = Idle_State_B;
+		} // case
+
+// ****************************************************************************************************************************
+		case(1'b1)
+		{
+		   Idle_C   : {
+				if (CMD_C == 3'b100)
+				{
+//				   printf ("%0d : MAQ-Debug[%0d] : Active_C RAS = %h \n",{get_time(HI), get_time(LO)}, mcu_port_no, ADDR_C);
+				   State_C = Active_State_C;
+				   RAS_C = ADDR_C;
+				}
+			    }
+		   Active_C : {
+				if (CMD_C == 3'b011)
+				{
+				   State_C = Write_State_C;
+				   CAS_C = ADDR_C;
+				   PR_DEBUG("FcMcuMon", MON_DEBUG, psprintf ("%0d : MAQ-Debug[%0d] : Write_C DIMM = %h, RANK = %h, BANK = %h, RAS = %h, CAS = %h \n",
+						 {get_time(HI), get_time(LO)}, mcu_port_no, DIMM_C, RANK_C, BANK_C, RAS_C, CAS_C));
+				   physical_addr_C = {2'b00, DIMM_C, CAS_C[2], RAS_C[14:0], CAS_C[11], CAS_C[9:3], BANK_C[2:1], mcu_port_no, BANK_C[0], CAS_C[1], 5'b00000};
+				   //printf("JAMES5 addr = %h ba01=%0d ba23=%0d, ba45=%0d, ba67=%0d\n", physical_addr_A, BA01, BA23, BA45, BA67);
+				   physical_addr_C = saddr(physical_addr_C, BA01, BA23, BA45, BA67);
+                                   if (write_mcu.$index_hashing) 
+                                     physical_addr_C = { physical_addr_C[39:18], physical_addr_C[32:28] ^ physical_addr_C[17:13], physical_addr_C[19:18] ^ physical_addr_C[12:11], physical_addr_C[10:0] };
+//				   printf("JAMES6 addr = %h ba01=%0d ba23=%0d, ba45=%0d, ba67=%0d\n", physical_addr_C, BA01, BA23, BA45, BA67);
+				   for(i=0;i<8; i++)
+				   {
+				   	PR_DEBUG("FcMcuMon", MON_DEBUG, psprintf ("%0d : MAQ-Debug[%0d] : physical :Addr = %h \n",{get_time(HI), get_time(LO)}, mcu_port_no, (physical_addr_C + 8*i)));
+				   	FCMemoryAddress_C[mcu_port_no] = (physical_addr_C + 8*i);
+				   	trigger(FCMemorySync_C[mcu_port_no]);
+				   	sync(ALL,FCMemorySync_C[mcu_port_no]);
+				   }
+
+				}
+				else
+				{
+//				   printf (" %0d : MAQ-Debug[%0d] : Active CMD was not for Write \n", {get_time(HI), get_time(LO)}, mcu_port_no);
+                                   if (CMD_C == 3'b100)
+                                   State_C = Active_State_C;
+                                   else
+				   State_C = Idle_State_C;
+				}
+			    }
+		   Write_C  : {
+//				printf ("%0d : MAQ-Debug[%0d] : Idle_C \n",{get_time(HI), get_time(LO)}, mcu_port_no);
+				State_C = Idle_State_C;
+			    }
+		   default : State_C = Idle_State_C;
+		} // case
+
+// ****************************************************************************************************************************
+	} // while
+}
+
+
+// PM Shifting function
+function bit [39:0] saddr (bit[39:0] addr, bit ba01, bit ba23, bit ba45, bit ba67)
+{
+  integer shift;
+  integer pa6, pa7, pa8;
+
+  case({ba67, ba45, ba23, ba01}) {
+    4'b0000: shift = 0;
+    4'b0001: shift = 2;
+    4'b0010: shift = 2;
+    4'b0011: shift = 1;
+    4'b0100: shift = 2;
+    4'b0101: shift = 1;
+    4'b0110: shift = 1;
+    4'b1000: shift = 2;
+    4'b1001: shift = 1;
+    4'b1010: shift = 1;
+    4'b1100: shift = 1;
+    4'b1111: shift = 0;
+  }
+
+  if(shift > 0){
+    saddr = addr >> 9;
+    if(shift == 1){
+      saddr = saddr << 8;
+      saddr = saddr | (addr & 8'b11111111);
+    }
+    if(shift == 2){
+      saddr = saddr << 7;
+      saddr = saddr | (addr & 7'b1111111);
+    }
+  }
+  else
+    saddr = addr;
+}

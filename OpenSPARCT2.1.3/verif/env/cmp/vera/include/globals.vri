@@ -1,0 +1,147 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: globals.vri
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+typedef class StandardDisplay;
+typedef class MemArray;
+typedef class Params;
+typedef class BaseUtils;
+typedef class Utils;
+typedef class BasePkt;
+typedef class PcxPkt;
+typedef class CpxPkt;
+typedef class CcxDevBaseBFM;
+typedef class CcxDevMemBFM;
+typedef class CcxDevSpcBFM;
+typedef class MCUStub_class;
+typedef class AsmEventsToVera;
+typedef class AsmToVeraIntf;
+typedef class AsmEvent;
+typedef class SparcBenchUtils;
+typedef class TAG_MEM;
+typedef class Irritator;
+
+
+#ifndef INC__TMP_GLOBALS_VRI
+#define INC__TMP_GLOBALS_VRI
+
+
+// this ifdef PROG_FILE does not work with NTB because
+// PROG_FILE is always defined in NTB. In NTB, everybody sees everything.
+// NTB does not need externs since it sees *all* files at once so
+// for NTB, this file is mostly a nop. Needed for Vera compiles though.
+#ifdef PROG_FILE
+#define EXTERN
+#else
+#define EXTERN extern
+#endif
+
+// everyone gets interfaces with #include "globals.vri" in their .vr files.
+#ifndef PROG_FILE
+// interfaces & binds
+#include <cmp_top.if.vrh>
+#include <ccxDevices.if.vrh>
+#include <ccxDevices.binds.vrh>
+
+#ifdef CMP_BENCH
+#include <MCUStub.if.vrh>
+#include <MCUStub.bind.vrh>
+#endif
+
+#include <errorCountTasks.if.vrh>
+#include <sparcBenchUtils_if.vrh>
+// bench defines too
+#include <defines.vri>
+#endif
+
+// #ifndef NTB
+// #ifndef PROG_FILE
+
+// global instantiated classes
+EXTERN StandardDisplay gDbg;
+EXTERN MemArray gMem;
+EXTERN Params gParam;
+EXTERN CcxDevBaseBFM gCcxDevice[17]; // base CcxDevice
+EXTERN CcxDevMemBFM  gCcxDevMem[17]; // 9 mem, not using first 8
+EXTERN CcxDevSpcBFM  gCcxDevSpc[8];  // 8 cpu
+EXTERN Utils gUtil;
+#ifdef CMP_BENCH
+EXTERN MCUStub_class gMcuDev[8];
+#endif
+EXTERN TAG_MEM dtag[8];             // L1 D$ tags
+EXTERN TAG_MEM itag[8];             // L1 I$ tags
+EXTERN Irritator gIrritator;
+
+// asm $events
+EXTERN AsmEventsToVera gAsmEventsToVera;
+
+// virtual ports
+EXTERN ccxPort gPcxPort[17];
+EXTERN ccxPort gCpxPort[17];
+#ifdef CMP_BENCH
+EXTERN mcu_port gMcuPort[8];
+EXTERN mcu_data_port gMcuDataPort[8];
+#endif
+EXTERN ldStSync_port gLdStSyncPort[17]; // not using first 8
+
+// probes
+EXTERN probesPort gProbesPort;
+  
+// other globals
+EXTERN integer gSeed;
+EXTERN integer gSeedFileHndl;
+EXTERN integer gClkPeriod;
+EXTERN integer gL2bfms;
+
+// gOutOfBoot works with User Events to show asm diag progress.
+// Function gUtil.getThreadEnables will tell you which threads are running.
+// (so will sparcBenchUtils_if.th_check_enable)
+//
+// Here is how you use gOutOfBoot:
+//   reg [63:0] tmp;
+//   tmp = gUtil.getThreadEnables;
+//   while (tmp !== gOutOfBoot) wait_var(gOutOfBoot); // all threads out of boot 
+EXTERN reg [63:0] gOutOfBoot;
+
+// lists
+#ifndef PROG_FILE
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#endif
+
+
+#undef EXTERN
+
+// eof
+#endif
+

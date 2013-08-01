@@ -1,0 +1,87 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: CTStrategyBase.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "CTVerifObjectBase.vrh"
+#include "CTTransactionID.vrh"
+#include "CTThreadAttributes.vrh"
+
+// NOTE:  We must reference the Thread Manager definitions directly
+//	  in order to implement the 'handleSignal' method here.
+#include "ThreadMgr.vri"
+
+//
+// All strategy classes descend from the Strategy class.
+//
+virtual class CTStrategyBase extends CTVerifObject {
+
+  // This object is a triplet of ID information, but only context and strategy IDs
+  // are set at this level.
+  protected CTTransactionID ID = new;
+
+  // These methods are used within the MIBE verification framework to
+  // relay signals among threads via the ThreadManager.
+  virtual function CTThreadAttributes getAttributes();
+  virtual task setThreadNumber(integer threadNum);
+  virtual function TMSuccess_T handleSignal(integer sig, CTThreadAttributes senderAttr);
+  
+  // The RunThread() method can be used by subclasses to perform
+  // initialization prior to, and cleanup after, a strategy thread runs.
+  // This is the entry point for calls to a strategy from its context.
+  virtual task RunThread() {
+    // By default, simply call the strategy's Execute() handler.
+    Execute();
+  }
+
+  // The only interface type enforced by this class consists of one
+  // signature. Contexts will assume that each strategy provides an
+  // execute method.
+  // At the strategy level, "Execute" is a command to run a single strategy thread.
+  virtual task Execute();
+
+  // SetID is provided for the template Execute method in the Context class, where it
+  // is used to stamp each strategy instance with a constant context ID and an
+  // increasing strategy ID.
+  // This task should never be needed by a test writer and only needed by a
+  // context writer if he or she plans on overiding the context Execute
+  // method.
+  task SetID(integer CID, integer PEU_SID) {
+    ID.SetContextID(CID);
+    ID.SetStrategyID(PEU_SID);
+  }
+
+  function CTTransactionID GetID() { GetID = ID; }
+}
+
+

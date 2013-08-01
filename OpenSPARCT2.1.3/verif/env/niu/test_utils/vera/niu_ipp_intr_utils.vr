@@ -1,0 +1,225 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_ipp_intr_utils.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "niu_int_dev.vrh"
+#include "niu_int_mgr.vrh"
+#include "mbox_class.vrh"
+#include "get_mbox_id.vrh"
+#include "neptune_memory_map.vri"
+#include "ipp_memory_map.vri"
+#include "mac_defines.vri"
+#include "pio_driver.vrh"
+#include "mac_pio_class.vrh"
+#include "xmac_util.vrh"
+#include "bmac_util.vrh"
+#include "mac_shadow_class.vrh"
+#include "xmac_shadow_class.vrh"
+#include "vega_shadow_class.vrh"
+#include "cMesg.vrh"
+#include "mac_defines.vri"
+
+extern Mesg be_msg;
+extern niu_gen_pio gen_pio_drv;
+extern CNiuIntrMgr NiuIntrMgr;
+extern pio_drv pio_driver_class;
+extern mac_pio_cl mac_pio_class;
+extern shadow_cl shadow_class;
+extern mac_util_class mac_util;
+extern bmac_util_class bmac_util;
+
+/* defined in ipp_memory_map.vri, listed here just for reference
+#define IPP_MASK_ECC_ERR_MX 	7
+#define IPP_MASK_DFIFO_EOP_SOP 	6
+#define IPP_MASK_DFIFO_UC 	5
+#define IPP_MASK_PFIFO_PAR 	4
+#define IPP_MASK_PFIFO_OVER 	3
+#define IPP_MASK_PFIFO_UND 	2
+#define IPP_MASK_BAD_CS 	1
+#define IPP_MASK_PKT_DIS_CNT 	0
+
+#define IPP_STAT_SOP_MISS 	31	// corresponds to MASK 6
+#define IPP_STAT_EOP_MISS 	30	// corresponds to MASK 6
+#define IPP_STAT_DFIFO_UE 	29:28	// corresponds to MASK 5
+#define IPP_STAT_DFIFO_CE 	27:26
+#define IPP_STAT_DFIFO_ECC 	25:24
+#define IPP_STAT_DFIFO_ECC_ID 	22:12
+#define IPP_STAT_PFIFO_PERR 	11	// corresponds to MASK 4
+#define IPP_STAT_ECC_ERR_MA 	10	// corresponds to MASK 7
+#define IPP_STAT_PFIFO_ERR_ID 	9:4
+#define IPP_STAT_PFIFO_OVER 	3	// corresponds to MASK 3
+#define IPP_STAT_PFIFO_UND 	2	// corresponds to MASK 2
+#define IPP_STAT_BAD_CS_MX 	1	// corresponds to MASK 1
+#define IPP_STAT_PKT_DIS_MX 	0	// corresponds to MASK 0
+*/
+
+class CNiuIntrDevIPPm extends CNiuIntrDev {
+  integer isr_count = 0;
+  integer lf_intr_cnt = 0;
+  integer rf_intr_cnt = 0;
+  bit [3:0] ports_vld = 0;
+
+  task new(bit [3:0] ports_valid, integer dev_id) {
+    super.new(dev_id);
+    ports_vld = ports_valid;
+    ErrId = 2; // for Interrupt Manager to Kick off the right Error Device's ISR
+               // In the PIO_SYS_ERR_STAT, bit[2] is Interrupt for IPP, that is why.
+  }
+  task set_masks(bit [3:0] ports_valid);
+  function integer isr( (bit[1:0] ldf_flags=0) );
+  task check_ipp_int(integer mac_id);
+}
+
+function integer CNiuIntrDevIPPm::isr( (bit[1:0] ldf_flags=0) ) {
+  bit[31:0] rd_data, rd_status, rd_mask;
+  bit[39:0] base_addr;
+  bit [63:0] address;
+  integer i;
+
+  printf("Start in CNiuIntrDevIPP ISR DevId time=%0d\n", super.dev_id, get_time(LO));
+  isr_done = 0;
+  SetPendingFlag();
+
+  if(ldf_flags!=2) printf("ERROR ldf_flags is not set to the correct value of 2\n");
+
+  for(i=0;i<4;i++){
+   if (ports_vld[i]) {
+     printf("CNiuIntrDevIPP Kicking off PerPort-ISR IntrDevId=%0d ipp_num=%0d LDF_flags=%0d time=%0d\n", 
+		super.dev_id, i, ldf_flags, get_time(LO));
+     check_ipp_int(i);
+   }
+  }
+
+  ClrPendingFlag();
+  isr_done=1;
+  printf("End in CNiuIntrDevIPP ISR DevId time=%0d\n", super.dev_id, get_time(LO));
+}
+
+task CNiuIntrDevIPPm::check_ipp_int(integer mac_id) {
+  bit[31:0] rd_data, rd_status, rd_mask;
+  bit[39:0] base_addr;
+  bit[63:0] rd_data64;
+  bit[63:0] address;
+
+  case(mac_id){
+    0:address = FZC_IPP_BASE_ADDRESS+IPP_INT_STATUS+IPP_0_RANGE;
+    1:address = FZC_IPP_BASE_ADDRESS+IPP_INT_STATUS+IPP_1_RANGE;
+    2:address = FZC_IPP_BASE_ADDRESS+IPP_INT_STATUS+IPP_2_RANGE;
+    3:address = FZC_IPP_BASE_ADDRESS+IPP_INT_STATUS+IPP_3_RANGE;
+    default: {}
+  }
+
+  gen_pio_drv.pio_rd(address, rd_data64, 1'b0);
+  printf("CNiuIntrDevIPP INT_STAT id=%0d status=0x%0x for ipp %0d\n", super.dev_id, rd_data64, mac_id);
+
+/**** Each Bit ISR Response ****/
+  if(rd_data64[IPP_STAT_ECC_ERR_MA]) {
+    printf("CNiuIntrDevIPP IPP_INT_STAT IPP_MASK_ECC_ERR_MX is set\n");
+    // write 0 to ECC_CNTR to  clear this bit
+    case(mac_id){
+     0:address = FZC_IPP_BASE_ADDRESS+IPP_ECC_ERR_COUNTER+IPP_0_RANGE;
+     1:address = FZC_IPP_BASE_ADDRESS+IPP_ECC_ERR_COUNTER+IPP_1_RANGE;
+     2:address = FZC_IPP_BASE_ADDRESS+IPP_ECC_ERR_COUNTER+IPP_2_RANGE;
+     3:address = FZC_IPP_BASE_ADDRESS+IPP_ECC_ERR_COUNTER+IPP_3_RANGE;
+     default: {}
+    }
+    gen_pio_drv.pio_rd(address, rd_data64, 1'b0); // Read to Clear the ECC Error Counter
+    // Now, read the IPP_INT_STAT again to make sure it is really cleared
+    case(mac_id){
+     0:address = FZC_IPP_BASE_ADDRESS+IPP_INT_STATUS+IPP_0_RANGE;
+     1:address = FZC_IPP_BASE_ADDRESS+IPP_INT_STATUS+IPP_1_RANGE;
+     2:address = FZC_IPP_BASE_ADDRESS+IPP_INT_STATUS+IPP_2_RANGE;
+     3:address = FZC_IPP_BASE_ADDRESS+IPP_INT_STATUS+IPP_3_RANGE;
+     default: {}
+    }
+    gen_pio_drv.pio_rd(address, rd_data64, 1'b0);
+    if (rd_data64[IPP_STAT_ECC_ERR_MA])
+	be_msg.print(e_mesg_error, "CNiuIntrDevIPP::check_ipp_int", "ISR", 
+		"Could not get IPP_STAT_ECC_ERR_MA bit cleared in the ISR\n");
+    else
+	printf("IPP_STAT_ECC_ERR_MA bit is just cleared in the ISR\n");
+
+    // pre-program IPP_ECC_ERR_COUNTER to an almost-full value to get the next intr sooner
+    case(mac_id){
+     0:address = FZC_IPP_BASE_ADDRESS+IPP_ECC_ERR_COUNTER+IPP_0_RANGE;
+     1:address = FZC_IPP_BASE_ADDRESS+IPP_ECC_ERR_COUNTER+IPP_1_RANGE;
+     2:address = FZC_IPP_BASE_ADDRESS+IPP_ECC_ERR_COUNTER+IPP_2_RANGE;
+     3:address = FZC_IPP_BASE_ADDRESS+IPP_ECC_ERR_COUNTER+IPP_3_RANGE;
+     default: {}
+    }
+    gen_pio_drv.pio_wr(address, rd_data64); // Write 8'hf0 to IPP_ECC_ERR_COUNTER
+  }
+/**** Each Bit ISR Response ****/
+  if(rd_data64[IPP_STAT_SOP_MISS] | rd_data64[IPP_STAT_EOP_MISS]) {
+  }  
+/**** Each Bit ISR Response ****/
+  if(rd_data64[IPP_STAT_DFIFO_UE]) {
+  }  
+/**** Each Bit ISR Response ****/
+  if(rd_data64[IPP_STAT_PFIFO_PERR]) {
+  }  
+/**** Each Bit ISR Response ****/
+  if(rd_data64[IPP_STAT_PFIFO_OVER]) {
+  }  
+/**** Each Bit ISR Response ****/
+  if(rd_data64[IPP_STAT_PFIFO_UND]) {
+  }  
+/**** Each Bit ISR Response ****/
+  if(rd_data64[IPP_STAT_BAD_CS_MX]) {
+  }  
+/**** Each Bit ISR Response ****/
+  if(rd_data64[IPP_STAT_PKT_DIS_MX]) {
+  }  
+}
+
+task CNiuIntrDevIPPm::set_masks (bit [3:0] ports_vld) {
+  bit[39:0] base_addr;
+  bit[31:0] rd_data;
+  bit[63:0] address;
+  integer i;
+
+for (i=0;i<4;i++) {
+  if (ports_vld[i]) {
+  printf("CNiuIntrDevIPP setting masks=0 mac_id=%0d\n", i);
+   case(i){
+    0:address = FZC_IPP_BASE_ADDRESS+IPP_INT_MASK+IPP_0_RANGE;
+    1:address = FZC_IPP_BASE_ADDRESS+IPP_INT_MASK+IPP_1_RANGE;
+    2:address = FZC_IPP_BASE_ADDRESS+IPP_INT_MASK+IPP_2_RANGE;
+    3:address = FZC_IPP_BASE_ADDRESS+IPP_INT_MASK+IPP_3_RANGE;
+    default: {}
+   }
+  gen_pio_drv.pio_wr(address, 64'h0); // Enable all the 8 interrupts
+  }
+}
+}

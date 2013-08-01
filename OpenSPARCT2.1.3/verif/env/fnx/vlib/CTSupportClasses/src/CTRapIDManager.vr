@@ -1,0 +1,286 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: CTRapIDManager.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "CTRapIDDefines.vri"
+
+// This class defines a manager that allocates tuples the form:
+//
+//   <Device-ID><Packet-ID>
+//
+// where:
+//
+// Device-ID is a number that corresponds to one of N devices.
+//
+// Packet-ID is a number that corresponds to one of N 
+// transactions from Device-ID.
+//
+// The combination of Device-ID and Packet-ID is guaranteed to
+// be unique in that the manager will not issue the same combination
+// until the previous instance has been deallocated.
+//
+// The assumption is that this class will be used to allocate raptor
+// request IDs, hence some of those assumptions are built into this class.
+// In particular, bit zero of the device ID is set to zero in all IDs
+// that are returned by the Allocate function. Also, bit zero of the
+// packet ID field is used to signify a read or write transaction.
+
+
+class CTRapIDManager {
+
+  integer Policy = CT_RANDOM_ALLOC;
+
+  //Packet-ID (PID) Pools. Separate pools allow two outstanding PIDs to
+  //differ only in bit zero, which gets tacked on after a PID is selected.
+  local bit [CT_NUMBER_OF_PKT_IDS-1:0] ReadPIDPool[CT_NUMBER_OF_DEVICES];
+  local bit [CT_NUMBER_OF_PKT_IDS-1:0] WritePIDPool[CT_NUMBER_OF_DEVICES];
+
+  local integer AllocSema;
+
+  ////////////////////////////////////// Public Methods /////////////////////////////////////////////////////
+
+  task new (bit [CT_NUMBER_OF_PKT_IDS-1:0] PIDMask = CT_PKT_ID_MASK_DEFAULT) {
+    integer Device;
+
+
+    if (PIDMask === 0)
+      error("CTRapIDManager(new)::At least one packet ID must be enabled\n");
+    else if ((^PIDMask) === 1'bx)
+      error("CTRapIDManager(new)::X-values are not allowed in packet ID mask\n");
+
+    AllocSema = alloc(SEMAPHORE,0,1,1);
+
+    if (AllocSema == 0)
+      error("CTRapIDManager:: Out of semaphore space.\n\n");
+
+
+    //Fill the PID Pools
+    for (Device=0; Device < CT_NUMBER_OF_DEVICES; ++Device) {
+      ReadPIDPool[Device] = PIDMask;
+      WritePIDPool[Device] = PIDMask;
+    }
+
+  }
+
+  function bit [CT_RAP_ID_WIDTH-1:0] Allocate (bit RW,
+					       integer Timeout,
+					       bit [CT_NUMBER_OF_DEVICES-1:0] DeviceMask = CT_DEVICE_MASK_DEFAULT
+					       ) {
+    bit [CT_INTERNAL_DEVICE_ID_WIDTH-1:0] Device;
+    bit [CT_INTERNAL_PKT_ID_WIDTH-1:0]       PID;
+
+    semaphore_get(WAIT, AllocSema, 1);
+
+    if (DeviceMask === 0)
+      error("CTRapIDManager(Allocate)::At least one active device must be specified\n");
+    else if ((^DeviceMask) === 1'bx)
+      error("CTRapIDManager(Allocate)::X-values are not allowed in device mask\n");
+
+    if (Timeout === 0)
+      error("CTRapIDManager(Allocate)::At least one cycle timeout window needed to select ID\n");
+
+    Device = SelectDevice(RW, Policy, Timeout, DeviceMask) ;
+
+
+    //This is a PID out of the read or write pool, depending on the value of RW.
+    //The final value of PID comes after appending RW bit.
+    PID = SelectPID(RW, Policy, Device);
+
+    //Take ID out of the pool
+
+    if (RW == CT_RAP_READ)
+      ReadPIDPool[Device] &= ~(1'b1 << PID);
+    else 
+      WritePIDPool[Device] &= ~(1'b1 << PID);
+
+    //Bit zero of device ID always zero; Bit zero of packet ID specifies read or write
+    Allocate = {Device, 1'b0, PID, RW}; 
+
+    semaphore_put(AllocSema, 1);
+  }
+
+
+  task Deallocate (bit [CT_RAP_ID_WIDTH-1:0] ID) {
+    bit [CT_INTERNAL_DEVICE_ID_WIDTH-1:0] Device = ID[CT_DEVICE_ID_RANGE];
+    bit [CT_INTERNAL_PKT_ID_WIDTH-1:0]       PID    = ID[CT_PKT_ID_RANGE];
+
+    if ((^ID) === 1'bx)
+      error("CTRapIDManager(Deallocate)::X-values are not allowed in ID\n");
+
+    if (PID[0] == CT_RAP_READ)
+      ReadPIDPool[Device] |= (1'b1 << (PID >> 1));
+    else
+      WritePIDPool[Device] |= (1'b1 << (PID >> 1));
+  }
+
+
+  task SetPIDMask (bit [CT_NUMBER_OF_PKT_IDS-1:0] PIDMask) {
+    integer Device;
+
+    if (PIDMask === 0)
+      error("CTRapIDManager(SetPIDMask)::At least one packet ID must be enabled\n");
+    else if ((^PIDMask) === 1'bx)
+      error("CTRapIDManager(SetPIDMask)::X-values are not allowed in packet ID mask\n");
+
+    //Fill the PID Pools
+    for (Device=0; Device < CT_NUMBER_OF_DEVICES; ++Device) {
+      ReadPIDPool[Device] = PIDMask;
+      WritePIDPool[Device] = PIDMask;
+    }
+  }
+
+  ////////////////////////////////////// Private Methods /////////////////////////////////////////////////////
+
+  //It is assumed that Device has PIDs available before this function is called.
+  //Otherwise, SelectRandomPID will pull an error.
+  local function bit [CT_INTERNAL_PKT_ID_WIDTH-1:0] SelectPID(bit RW,
+							      integer Policy,
+							      bit [CT_INTERNAL_DEVICE_ID_WIDTH-1:0] Device) {
+    bit [CT_NUMBER_OF_PKT_IDS-1:0] PIDVector = (RW == CT_RAP_READ)? ReadPIDPool[Device]:WritePIDPool[Device];
+    bit [CT_INTERNAL_PKT_ID_WIDTH-1:0] PIDPosition;
+
+
+    case (Policy)
+      {
+      CT_RANDOM_ALLOC:
+	{
+	  SelectPID = SelectRandomPID(PIDVector);
+	}
+      CT_SEQUENTIAL_ALLOC: 
+	{
+	  //The meaning of this is still unclear. Maybe random is the only thing that makes sense?
+
+	}
+
+      default: error("CTRapIDManager(Allocate)::Allocation policy unsupported!\n");
+      }
+  }
+
+  local function bit [CT_INTERNAL_DEVICE_ID_WIDTH-1:0] SelectDevice(bit     RW,
+								    integer Policy, 
+								    integer Timeout,
+								    bit [CT_NUMBER_OF_DEVICES-1:0] DeviceMask) {
+    bit [CT_INTERNAL_DEVICE_ID_WIDTH-1:0] DevicePosition;
+    bit Done = 0;
+
+    case (Policy)
+      {
+      CT_RANDOM_ALLOC:
+	{
+	  while (!Done && Timeout > 0) {
+
+	    DevicePosition = SelectRandomDevice(DeviceMask);
+
+	    if (PIDIsAvailable(DevicePosition, RW))
+	      //No cycle time should expire if a PID is available for selected device
+	      Done = 1;
+	    else {
+	      //Try again
+	      --Timeout;
+	      @(posedge CLOCK);
+	    }
+	  }
+
+	  if (Timeout == 0)
+	    error("CTRapIDManager(Allocate)::Allocation Timeout \n");
+
+	  SelectDevice = DevicePosition;
+	}
+      CT_SEQUENTIAL_ALLOC: 
+	{
+	  //The meaning of this is still unclear. Maybe random is the only thing that makes sense?
+
+	}
+
+      default: error("CTRapIDManager(Allocate)::Allocation policy unsupported!\n");
+      }
+  }
+
+
+  //Return true is at least one PID is available at DevicePosition
+  local function bit PIDIsAvailable (bit [CT_INTERNAL_DEVICE_ID_WIDTH-1:0] DevicePosition, bit RW) {
+
+    if (RW == CT_RAP_READ)
+      PIDIsAvailable = (ReadPIDPool[DevicePosition])? 1'b1: 1'b0;
+    else
+      PIDIsAvailable = (WritePIDPool[DevicePosition])? 1'b1: 1'b0;
+  }
+
+//----------------------------------------------------------------------------------------------------------
+// function: SelectRandomDevice
+//    Return any number with its corresponding bit set in the argument SetVector
+//----------------------------------------------------------------------------------------------------------
+  local function bit[CT_INTERNAL_DEVICE_ID_WIDTH-1:0] SelectRandomDevice (bit [CT_NUMBER_OF_DEVICES-1:0] SetVector) {
+    integer i, j;
+
+    j = 0;
+    for (i = 0; i < CT_NUMBER_OF_DEVICES; i++) j = j + ((SetVector >> i) & 1'b1);
+    if (j == 0)
+      error ("SelectRandomDevice: set empty\n");
+    j = random() % j;
+
+    for (i = 0; i < CT_NUMBER_OF_DEVICES; i++)
+      if (((SetVector >> i) & 1'b1) == 1'b1)
+	{
+	  if (j == 0) SelectRandomDevice = i;
+	  j = j - 1;
+	}
+  }
+
+//----------------------------------------------------------------------------------------------------------
+// function: SelectRandomPID
+//    Return any number with its corresponding bit set in the argument SetVector
+//----------------------------------------------------------------------------------------------------------
+  local function bit[CT_INTERNAL_PKT_ID_WIDTH-1:0] SelectRandomPID (bit [CT_NUMBER_OF_PKT_IDS-1:0] SetVector) {
+    integer i, j;
+
+    j = 0;
+    for (i = 0; i < CT_NUMBER_OF_PKT_IDS; i++) j = j + ((SetVector >> i) & 1'b1);
+    if (j == 0)
+      error ("SelectRandomTid: set empty\n");
+    j = random() % j;
+
+    for (i = 0; i < CT_NUMBER_OF_PKT_IDS; i++)
+      if (((SetVector >> i) & 1'b1) == 1'b1)
+	{
+	  if (j == 0) SelectRandomPID = i;
+	  j = j - 1;
+	}
+  }
+
+}
+
+
+
+ 

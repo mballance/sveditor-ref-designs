@@ -1,0 +1,108 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ipp_util.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "ipp_memory_map.vri"
+#include "mac_defines.vri"
+#include "pio_driver.vrh"
+//#include "ncu_stub.vrh"
+// extern Cncu_stub ncu_driver;
+extern niu_gen_pio gen_pio_drv;
+
+
+
+//#include "ipp_shadow_class.vrh"
+#include "cMesg.vrh"
+
+extern Mesg be_msg;
+
+class ipp_util_class {
+
+        task new( ) ;
+        function bit check_cmd(bit [63:0]cmd, bit [63:0] opt); 
+        function bit[39:0] get_ipp_reg_base(integer iport);
+        task ipp_init ( integer iport, bit[63:0] cmd);
+
+}
+
+task ipp_util_class::new( ) { } 
+
+
+task ipp_util_class::ipp_init ( integer iport, bit[63:0] cmd) {
+
+
+                bit [39:0] base_addr;
+                bit [63:0] wr_data;
+
+                base_addr = get_ipp_reg_base(iport);
+
+                if( get_plus_arg( CHECK, "ENABLE_IPP_CHKSUM"))
+                  {
+                   wr_data   = 64'h0000_0000_01ff_ff11;
+   	           be_msg.print(e_mesg_info, "ipp_util_class", "ipp_init",
+                     "IPP PORT %h IS ENABLED AND ALSO CHKSUM IS ENABLED, IPP_CONFIG = %h.\n",iport,wr_data);
+                  }
+                else
+                  {
+                   wr_data   = 64'h0000_0000_01ff_ff01;
+                  }
+
+                // ncu_driver.write_data(base_addr + IPP_CONFIG,wr_data);
+                gen_pio_drv.pio_wr(base_addr + IPP_CONFIG,wr_data);
+
+   	be_msg.print(e_mesg_info, "ipp_util_class", "ipp_init",
+                     "IPP port %0d is enabled \n",iport);
+
+}
+
+
+        function bit[39:0] ipp_util_class :: get_ipp_reg_base(integer iport){
+
+                case(iport) {
+                    0: get_ipp_reg_base = IPP0_BASE;
+                    1: get_ipp_reg_base = IPP1_BASE;
+                    2: get_ipp_reg_base = IPP2_BASE;
+                    3: get_ipp_reg_base = IPP3_BASE;
+                   default: error("Error: Invalid PORT (%0d) for get_ipp_reg_base task\n",iport);
+                   }
+
+          }
+
+
+        function bit  ipp_util_class :: check_cmd(bit [63:0]cmd, bit [63:0] opt){
+                if((cmd & opt) > 0)     check_cmd=1;
+                else                    check_cmd=0;
+           }
+
+ 

@@ -1,0 +1,2935 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ncu_coverage.vrpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "plusArgMacros.vri"
+#include "std_display_class.vrh"
+#include "std_display_defines.vri"
+#include "ncu_cov.if.vrh"
+#include "ncu_cov_ports_binds.vrh"
+
+
+
+class ncu_intf_cov
+{	
+  // for dispmon
+  StandardDisplay dbg;
+  local string 	  myname;
+
+#ifdef FC_COVERAGE
+. for ($bank=0; $bank<8; $bank++)
+. {
+  integer  spc${bank}_ncu_thread1_cnt = 0;
+  integer  spc${bank}_ncu_thread2_cnt = 0;
+  integer  spc${bank}_ncu_thread3_cnt = 0;
+  integer  spc${bank}_ncu_thread4_cnt = 0;
+  integer  spc${bank}_ncu_thread5_cnt = 0;
+  integer  spc${bank}_ncu_thread6_cnt = 0;
+  integer  spc${bank}_ncu_thread7_cnt = 0;
+  integer  spc${bank}_ncu_thread8_cnt = 0;
+  integer  spc${bank}_ncu_thread1_10_cnt = 0;
+  integer  spc${bank}_ncu_thread2_10_cnt = 0;
+  integer  spc${bank}_ncu_thread3_10_cnt = 0;
+  integer  spc${bank}_ncu_thread4_10_cnt = 0;
+  integer  spc${bank}_ncu_thread5_10_cnt = 0;
+  integer  spc${bank}_ncu_thread6_10_cnt = 0;
+  integer  spc${bank}_ncu_thread7_10_cnt = 0;
+  integer  spc${bank}_ncu_thread8_10_cnt = 0;
+
+  event spc${bank}_ncu_thread1_evnt_trig;
+  event spc${bank}_ncu_thread2_evnt_trig;
+  event spc${bank}_ncu_thread3_evnt_trig;
+  event spc${bank}_ncu_thread4_evnt_trig;
+  event spc${bank}_ncu_thread5_evnt_trig;
+  event spc${bank}_ncu_thread6_evnt_trig;
+  event spc${bank}_ncu_thread7_evnt_trig;
+  event spc${bank}_ncu_thread8_evnt_trig;
+  event spc${bank}_ncu_thread1_10_evnt_trig;
+  event spc${bank}_ncu_thread2_10_evnt_trig;
+  event spc${bank}_ncu_thread3_10_evnt_trig;
+  event spc${bank}_ncu_thread4_10_evnt_trig;
+  event spc${bank}_ncu_thread5_10_evnt_trig;
+  event spc${bank}_ncu_thread6_10_evnt_trig;
+  event spc${bank}_ncu_thread7_10_evnt_trig;
+  event spc${bank}_ncu_thread8_10_evnt_trig;
+. }
+
+  integer  spc_ncu_thread_50_cnt = 0;
+  integer  spc_ncu_thread_100_cnt = 0;
+
+
+  event spc_ncu_thread_50_evnt_trig;
+  event spc_ncu_thread_100_evnt_trig;
+  event ncu_spc_enable1_evnt_trig;
+  event ncu_spc_enable2_evnt_trig;
+  event ncu_spc_enable3_evnt_trig;
+  event ncu_spc_enable4_evnt_trig;
+  event ncu_spc_enable5_evnt_trig;
+  event ncu_spc_enable6_evnt_trig;
+  event ncu_spc_enable7_evnt_trig;
+
+#endif
+
+  event ncu_spc_bnk_evnt_trig;
+
+  #include "ncu_cov_intf_ver_defines.vrh" 
+
+  // ----------- coverage_group ----------------
+#ifndef IOS_COVERAGE
+  coverage_group efu_ncu_intf_group 
+  {
+    const_sample_reference = 1;	// ref. to sample vars. is constant
+
+    sample_event           = sync (ANY, efu_ncu_evnt_trig );
+    #include "efu_ncu_sample.vrh"
+
+  } // ncu_intf_cov_group
+//----------PCX -> NCU------------------- 
+  coverage_group ncu_pcx_intf_cov_group 
+  {
+    const_sample_reference = 1;	// ref. to sample vars. is constant
+
+    sample_event           = sync (ANY, ncu_pcx_sample_evnt_trig );
+    #include "ncu_pcx_sample.vrh"
+
+  } // ncu_intf_cov_group
+
+//----------NCU -> CPX------------------- 
+  coverage_group ncu_cpx_intf_cov_group 
+  {
+    const_sample_reference = 1;	// ref. to sample vars. is constant
+
+    sample_event           = sync (ANY, cpx_sample_evnt_trig );
+	
+    #include "ncu_cpx_sample.vrh"
+
+  } // ncu_intf_cov_group
+
+//----------SIU -> NCU------------------- 
+  coverage_group ncu_siu_intf_cov_group 
+  {
+    const_sample_reference = 1;	// ref. to sample vars. is constant
+
+    sample_event           = sync (ANY, siu_sample_evnt_trig );
+    #include "ncu_siu_sample.vrh"
+
+  } // ncu_intf_cov_group
+
+#ifndef NCU_INTF_COV
+//----------NCU -> PIO------------------- 
+  coverage_group ncu_pio_intf_cov_group 
+  {
+    const_sample_reference = 1;	// ref. to sample vars. is constant
+
+    sample_event           = sync (ANY, pio_sample_evnt_trig );
+    #include "ncu_pio_sample.vrh"
+
+  } // ncu_intf_cov_group
+#endif
+ 
+//----------NCU -> TCU------------------- 
+  coverage_group ncu_tcu_intf_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, ncu_tcu_sample_evnt_trig );
+    #include "ncu_tcu_sample.vrh"
+  } // ncu_tcu_intf_cov_group
+
+//----------TCU -> NCU------------------- 
+  coverage_group tcu_ncu_intf_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, tcu_ncu_sample_evnt_trig );
+    #include "tcu_ncu_sample.vrh"
+  } // tcu_ncu_intf_cov_group
+
+
+
+//----------NCU -> CCU------------------- 
+  coverage_group ncu_ccu_intf_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, ncu_ccu_sample_evnt_trig );
+    #include "ncu_ccu_sample.vrh"
+  } // ncu_nucb_intf_cov_group
+
+//----------CCU -> NCU------------------- 
+  coverage_group ccu_ncu_intf_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, ccu_ncu_sample_evnt_trig );
+    #include "ccu_ncu_sample.vrh"
+  } // ccu_ncu_intf_cov_group
+
+//----------NCU -> DBG1------------------- 
+  coverage_group ncu_dbg1_intf_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, ncu_dbg1_sample_evnt_trig );
+    #include "ncu_dbg1_sample.vrh"
+  } // ncu_nucb_intf_cov_group
+
+//----------DBG1 -> NCU------------------- 
+  coverage_group dbg1_ncu_intf_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, dbg1_ncu_sample_evnt_trig );
+    #include "dbg1_ncu_sample.vrh"
+  } // dbg1_ncu_intf_cov_group
+
+//----------NCU -> SSI------------------- 
+  coverage_group ncu_ssi_intf_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, ncu_ssi_sample_evnt_trig );
+    #include "ncu_ssi_sample.vrh"
+  } // ncu_nucb_intf_cov_group
+
+//----------SSI -> NCU------------------- 
+  coverage_group ssi_ncu_intf_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, ssi_ncu_sample_evnt_trig );
+    #include "ssi_ncu_sample.vrh"
+  } // ssi_ncu_intf_cov_group
+
+
+//----------NCU -> RST------------------- 
+  coverage_group ncu_rst_intf_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, ncu_rst_sample_evnt_trig );
+    #include "ncu_rst_sample.vrh"
+  } // ncu_nucb_intf_cov_group
+
+//----------RST -> NCU------------------- 
+  coverage_group rst_ncu_intf_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, rst_ncu_sample_evnt_trig );
+    #include "rst_ncu_sample.vrh"
+  } // rst_ncu_intf_cov_group
+
+.for($b=0; $b<4; $b++) {
+//----------NCU -> MCU${b}------------------- 
+  coverage_group ncu_mcu${b}_intf_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, ncu_mcu${b}_sample_evnt_trig );
+    #include "ncu_mcu${b}_sample.vrh"
+  } // ncu_nucb_intf_cov_group
+
+//----------MCU${b} -> NCU------------------- 
+  coverage_group mcu${b}_ncu_intf_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, mcu${b}_ncu_sample_evnt_trig );
+    #include "mcu${b}_ncu_sample.vrh"
+  } // ncu_mcu_intf_cov_group
+
+.}
+
+//----------NCU -> NIU------------------- 
+  coverage_group ncu_niu_intf_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, ncu_niu_sample_evnt_trig );
+    #include "ncu_niu_sample.vrh"
+  } // ncu_nucb_intf_cov_group
+
+//----------NIU -> NCU------------------- 
+  coverage_group niu_ncu_intf_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, niu_ncu_sample_evnt_trig );
+    #include "niu_ncu_sample.vrh"
+  } // niu_ncu_intf_cov_group
+
+//----------NCU -> DMU------------------- 
+  coverage_group ncu_dmu_intf_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, ncu_dmu_sample_evnt_trig );
+    #include "ncu_dmu_sample.vrh"
+  } // ncu_nucb_intf_cov_group
+
+//----------DMU -> NCU------------------- 
+  coverage_group dmu_ncu_intf_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, dmu_ncu_sample_evnt_trig );
+    #include "dmu_ncu_sample.vrh"
+  } // dmu_ncu_intf_cov_group
+
+  coverage_group ncu_io_int_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = @(posedge ncu_rtl_io_cov.int_vld);
+    sample ncu_intr_dev_id_cov (ncu_rtl_io_cov.io_intman_addr)
+	{
+           m_state DEVICE_ID0   (1:2)   ;
+           m_state DEVICE_ID1   (64:127) ;
+	}
+
+  } // ncu_io_int_cov_group
+
+#endif
+//-------------- NCU RAS ----------------------
+  coverage_group ncu_ras_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = @(negedge ncu_ras_cov.clk );
+    #include "ncu_ras_intf_sample.vrh"
+  } // ncu_ras_cov_group
+
+  coverage_group ncu_ras_report_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, ncu_soc_report_sample_evnt_trig);
+    #include "ncu_ras_report_sample.vrh"
+  } // ncu_ras_report_cov_group
+
+//-------------- Advance NCU interrupt  ------------------------ 
+  coverage_group ncu_ios_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = @(negedge ncu_cov_ios.clk);
+    #include "ncu_io_sample.vrh"
+  } // ncu_ios_cov_group
+
+#ifndef IOS_COVERAGE
+//-------------- Advance NCU interrupt  ------------------------ 
+  coverage_group ncu_intr_pairs_cov
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = @(negedge ncu_cov_ccx.clk);
+    #include "ncu_int_sample.vrh"
+  } // ncu_intr_pairs_cov
+
+/*
+  coverage_group ncu_intr_pairs_cov2
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = @(negedge ncu_rtl_io_cov.clk);
+    #include "ncu_int2_sample.vrh"
+  } // ncu_intr_pairs_cov2
+*/
+
+//-------------- vald counter before stall assert ------------------------ 
+  coverage_group ncu_dbg1_vld_to_stall_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           =  @(posedge ncu_cov_ios.dbg1_ncu_stall);
+    sample ncu_dbg1_intf_vld_to_stall_cnt_cov (ncu_dbg1_vld_to_stall_cnt)	{
+	m_state VLD2STALL_CNT (1:31);
+    }
+  } // ncu_nucb_intf_cov_group
+/*
+  coverage_group dbg1_ncu_vld_to_stall_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           =  @(posedge ncu_cov_ios.ncu_dbg1_stall);
+    sample dbg1_ncu_intf_vld_to_stall_cnt_cov (dbg1_ncu_vld_to_stall_cnt)	{
+	m_state VLD2STALL_CNT (1:31);
+    }
+  } // dbg1_ncu_intf_cov_group1
+*/
+  coverage_group ncu_tcu_vld_to_stall_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           =  @(posedge ncu_cov_ios.tcu_ncu_stall);
+    sample ncu_tcu_intf_vld_to_stall_cnt_cov (ncu_tcu_vld_to_stall_cnt)	{
+	m_state VLD2STALL_CNT (1:15);
+    }
+  } // ncu_nucb_intf_cov_group
+/*
+  coverage_group tcu_ncu_vld_to_stall_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           =  @(posedge ncu_cov_ios.ncu_tcu_stall);
+    sample tcu_ncu_intf_vld_to_stall_cnt_cov (tcu_ncu_vld_to_stall_cnt)	{
+	m_state VLD2STALL_CNT (1:15);
+    }
+  } // tcu_ncu_intf_cov_group1
+*/
+
+  coverage_group ncu_ccu_vld_to_stall_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           =  @(posedge ncu_cov_ios.ccu_ncu_stall);
+    sample ncu_ccu_intf_vld_to_stall_cnt_cov (ncu_ccu_vld_to_stall_cnt)	{
+	m_state VLD2STALL_CNT (1:31);
+    }
+  } // ncu_nucb_intf_cov_group
+/*
+  coverage_group ccu_ncu_vld_to_stall_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           =  @(posedge ncu_cov_ios.ncu_ccu_stall);
+    sample ccu_ncu_intf_vld_to_stall_cnt_cov (ccu_ncu_vld_to_stall_cnt)	{
+	m_state VLD2STALL_CNT (1:31);
+    }
+  } // ccu_ncu_intf_cov_group1
+*/
+  coverage_group ncu_rst_vld_to_stall_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           =  @(posedge ncu_cov_ios.rst_ncu_stall);
+    sample ncu_rst_intf_vld_to_stall_cnt_cov (ncu_rst_vld_to_stall_cnt)	{
+	m_state VLD2STALL_CNT (1:31);
+    }
+  } // ncu_nucb_intf_cov_group
+/*
+  coverage_group rst_ncu_vld_to_stall_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           =  @(posedge ncu_cov_ios.ncu_rst_stall);
+    sample rst_ncu_intf_vld_to_stall_cnt_cov (rst_ncu_vld_to_stall_cnt)	{
+	m_state VLD2STALL_CNT (1:31);
+    }
+  } // rst_ncu_intf_cov_group1
+*/
+
+.for($b=0; $b<4; $b++) {
+  coverage_group ncu_mcu${b}_vld_to_stall_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           =  @(posedge ncu_cov_ios.mcu${b}_ncu_stall);
+    sample ncu_mcu${b}_intf_vld_to_stall_cnt_cov (ncu_mcu${b}_vld_to_stall_cnt)	{
+	m_state VLD2STALL_CNT (1:31);
+    }
+  } // ncu_mcu_intf_cov_group
+.}
+
+/*
+.for($b=0; $b<4; $b++) {
+  coverage_group mcu${b}_ncu_vld_to_stall_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           =  @(posedge ncu_cov_ios.ncu_mcu${b}_stall);
+    sample mcu${b}_ncu_intf_vld_to_stall_cnt_cov (mcu${b}_ncu_vld_to_stall_cnt)      {
+        m_state VLD2STALL_CNT (1:31);
+    }
+  } // mcu_ncu_intf_cov_group
+.}
+*/
+
+  coverage_group ncu_niu_vld_to_stall_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           =  @(posedge ncu_cov_ios.niu_ncu_stall);
+    sample ncu_niu_intf_vld_to_stall_cnt_cov (ncu_niu_vld_to_stall_cnt)	{
+	m_state VLD2STALL_CNT (1:3);
+    }
+  } // ncu_nucb_intf_cov_group
+/*
+  coverage_group niu_ncu_vld_to_stall_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           =  @(posedge ncu_cov_ios.ncu_niu_stall);
+    sample niu_ncu_intf_vld_to_stall_cnt_cov (niu_ncu_vld_to_stall_cnt)	{
+	m_state VLD2STALL_CNT (1:3);
+    }
+  } // niu_ncu_intf_cov_group1
+*/
+
+  coverage_group ncu_dmu_vld_to_stall_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           =  @(posedge ncu_cov_ios.dmu_ncu_stall);
+    sample ncu_dmu_intf_vld_to_stall_cnt_cov (ncu_dmu_vld_to_stall_cnt)	{
+	m_state VLD2STALL_CNT (1:3);
+    }
+  } // ncu_nucb_intf_cov_group
+/*
+  coverage_group dmu_ncu_vld_to_stall_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           =  @(posedge ncu_cov_ios.ncu_dmu_stall);
+    sample dmu_ncu_intf_vld_to_stall_cnt_cov (dmu_ncu_vld_to_stall_cnt)	{
+	m_state VLD2STALL_CNT (1:3);
+    }
+  } // dmu_ncu_intf_cov_group1
+*/
+
+  coverage_group ncu_spc_bnk_intf_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, ncu_spc_bnk_evnt_trig);
+    #include "ncu_spc_bnk_intf_sample.vrh"
+  } // ncu_spc_bnk_intf_cov_group
+
+#ifdef FC_COVERAGE
+/*
+//----------NCU -> SPC-------------------
+  coverage_group ncu_spc_intf_enable_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, ncu_spc_enable1_evnt_trig, ncu_spc_enable2_evnt_trig, ncu_spc_enable3_evnt_trig, ncu_spc_enable4_evnt_trig, ncu_spc_enable5_evnt_trig, ncu_spc_enable6_evnt_trig, ncu_spc_enable7_evnt_trig );
+    #include "ncu_spc_intf_enable_sample.vrh"
+  } // ncu_spc_intf_enable_cov_group
+*/
+//----------SPC -> NCU-------------------
+  coverage_group spc0_ncu_intf_thread_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, spc0_ncu_thread1_evnt_trig, spc1_ncu_thread1_evnt_trig, spc2_ncu_thread1_evnt_trig, spc3_ncu_thread1_evnt_trig, spc4_ncu_thread1_evnt_trig, spc5_ncu_thread1_evnt_trig, spc6_ncu_thread1_evnt_trig, spc7_ncu_thread1_evnt_trig );
+    #include "spc0_ncu_intf_thread_sample.vrh"
+  } // spc0_ncu_intf_thread_cov_group
+
+//----------SPC -> NCU-------------------
+  coverage_group spc1_ncu_intf_thread_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, spc0_ncu_thread2_evnt_trig, spc1_ncu_thread2_evnt_trig, spc2_ncu_thread2_evnt_trig, spc3_ncu_thread2_evnt_trig, spc4_ncu_thread2_evnt_trig, spc5_ncu_thread2_evnt_trig, spc6_ncu_thread2_evnt_trig, spc7_ncu_thread2_evnt_trig );
+    #include "spc1_ncu_intf_thread_sample.vrh"
+  } // spc1_ncu_intf_thread_cov_group
+
+//----------SPC -> NCU-------------------
+  coverage_group spc2_ncu_intf_thread_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, spc0_ncu_thread3_evnt_trig, spc1_ncu_thread3_evnt_trig, spc2_ncu_thread3_evnt_trig, spc3_ncu_thread3_evnt_trig, spc4_ncu_thread3_evnt_trig, spc5_ncu_thread3_evnt_trig, spc6_ncu_thread3_evnt_trig, spc7_ncu_thread3_evnt_trig );
+    #include "spc2_ncu_intf_thread_sample.vrh"
+  } // spc2_ncu_intf_thread_cov_group
+
+//----------SPC -> NCU-------------------
+  coverage_group spc3_ncu_intf_thread_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, spc0_ncu_thread4_evnt_trig, spc1_ncu_thread4_evnt_trig, spc2_ncu_thread4_evnt_trig, spc3_ncu_thread4_evnt_trig, spc4_ncu_thread4_evnt_trig, spc5_ncu_thread4_evnt_trig, spc6_ncu_thread4_evnt_trig, spc7_ncu_thread4_evnt_trig );
+    #include "spc3_ncu_intf_thread_sample.vrh"
+  } // spc3_ncu_intf_thread_cov_group
+
+//----------SPC -> NCU-------------------
+  coverage_group spc4_ncu_intf_thread_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, spc0_ncu_thread5_evnt_trig, spc1_ncu_thread5_evnt_trig, spc2_ncu_thread5_evnt_trig, spc3_ncu_thread5_evnt_trig, spc4_ncu_thread5_evnt_trig, spc5_ncu_thread5_evnt_trig, spc6_ncu_thread5_evnt_trig, spc7_ncu_thread5_evnt_trig );
+    #include "spc4_ncu_intf_thread_sample.vrh"
+  } // spc4_ncu_intf_thread_cov_group
+
+//----------SPC -> NCU-------------------
+  coverage_group spc5_ncu_intf_thread_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, spc0_ncu_thread6_evnt_trig, spc1_ncu_thread6_evnt_trig, spc2_ncu_thread6_evnt_trig, spc3_ncu_thread6_evnt_trig, spc4_ncu_thread6_evnt_trig, spc5_ncu_thread6_evnt_trig, spc6_ncu_thread6_evnt_trig, spc7_ncu_thread6_evnt_trig );
+    #include "spc5_ncu_intf_thread_sample.vrh"
+  } // spc5_ncu_intf_thread_cov_group
+
+//----------SPC -> NCU-------------------
+  coverage_group spc6_ncu_intf_thread_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, spc0_ncu_thread7_evnt_trig, spc1_ncu_thread7_evnt_trig, spc2_ncu_thread7_evnt_trig, spc3_ncu_thread7_evnt_trig, spc4_ncu_thread7_evnt_trig, spc5_ncu_thread7_evnt_trig, spc6_ncu_thread7_evnt_trig, spc7_ncu_thread7_evnt_trig );
+    #include "spc6_ncu_intf_thread_sample.vrh"
+  } // spc6_ncu_intf_thread_cov_group
+
+//----------SPC -> NCU-------------------
+  coverage_group spc7_ncu_intf_thread_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, spc0_ncu_thread8_evnt_trig, spc1_ncu_thread8_evnt_trig, spc2_ncu_thread8_evnt_trig, spc3_ncu_thread8_evnt_trig, spc4_ncu_thread8_evnt_trig, spc5_ncu_thread8_evnt_trig, spc6_ncu_thread8_evnt_trig, spc7_ncu_thread8_evnt_trig );
+    #include "spc7_ncu_intf_thread_sample.vrh"
+  } // spc7_ncu_intf_thread_cov_group
+
+//----------SPC -> NCU-------------------
+  coverage_group spc0_ncu_intf_thread_10_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, spc0_ncu_thread1_10_evnt_trig, spc1_ncu_thread1_10_evnt_trig, spc2_ncu_thread1_10_evnt_trig, spc3_ncu_thread1_10_evnt_trig, spc4_ncu_thread1_10_evnt_trig, spc5_ncu_thread1_10_evnt_trig, spc6_ncu_thread1_10_evnt_trig, spc7_ncu_thread1_10_evnt_trig );
+    #include "spc0_ncu_intf_thread_10_sample.vrh"
+  } // spc0_ncu_intf_thread_10_cov_group
+
+//----------SPC -> NCU-------------------
+  coverage_group spc1_ncu_intf_thread_10_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, spc0_ncu_thread2_10_evnt_trig, spc1_ncu_thread2_10_evnt_trig, spc2_ncu_thread2_10_evnt_trig, spc3_ncu_thread2_10_evnt_trig, spc4_ncu_thread2_10_evnt_trig, spc5_ncu_thread2_10_evnt_trig, spc6_ncu_thread2_10_evnt_trig, spc7_ncu_thread2_evnt_trig );
+    #include "spc1_ncu_intf_thread_10_sample.vrh"
+  } // spc1_ncu_intf_thread_10_cov_group
+
+//----------SPC -> NCU-------------------
+  coverage_group spc2_ncu_intf_thread_10_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, spc0_ncu_thread3_10_evnt_trig, spc1_ncu_thread3_10_evnt_trig, spc2_ncu_thread3_10_evnt_trig, spc3_ncu_thread3_10_evnt_trig, spc4_ncu_thread3_10_evnt_trig, spc5_ncu_thread3_10_evnt_trig, spc6_ncu_thread3_10_evnt_trig, spc7_ncu_thread3_10_evnt_trig );
+    #include "spc2_ncu_intf_thread_10_sample.vrh"
+  } // spc2_ncu_intf_thread_10_cov_group
+
+//----------SPC -> NCU-------------------
+  coverage_group spc3_ncu_intf_thread_10_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, spc0_ncu_thread4_10_evnt_trig, spc1_ncu_thread4_10_evnt_trig, spc2_ncu_thread4_10_evnt_trig, spc3_ncu_thread4_10_evnt_trig, spc4_ncu_thread4_10_evnt_trig, spc5_ncu_thread4_10_evnt_trig, spc6_ncu_thread4_10_evnt_trig, spc7_ncu_thread4_10_evnt_trig );
+    #include "spc3_ncu_intf_thread_10_sample.vrh"
+  } // spc3_ncu_intf_thread_10_cov_group
+
+//----------SPC -> NCU-------------------
+  coverage_group spc4_ncu_intf_thread_10_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, spc0_ncu_thread5_10_evnt_trig, spc1_ncu_thread5_10_evnt_trig, spc2_ncu_thread5_10_evnt_trig, spc3_ncu_thread5_10_evnt_trig, spc4_ncu_thread5_10_evnt_trig, spc5_ncu_thread5_10_evnt_trig, spc6_ncu_thread5_10_evnt_trig, spc7_ncu_thread5_10_evnt_trig );
+    #include "spc4_ncu_intf_thread_10_sample.vrh"
+  } // spc4_ncu_intf_thread_10_cov_group
+
+//----------SPC -> NCU-------------------
+  coverage_group spc5_ncu_intf_thread_10_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, spc0_ncu_thread6_10_evnt_trig, spc1_ncu_thread6_10_evnt_trig, spc2_ncu_thread6_10_evnt_trig, spc3_ncu_thread6_10_evnt_trig, spc4_ncu_thread6_10_evnt_trig, spc5_ncu_thread6_10_evnt_trig, spc6_ncu_thread6_10_evnt_trig, spc7_ncu_thread6_10_evnt_trig );
+    #include "spc5_ncu_intf_thread_10_sample.vrh"
+  } // spc5_ncu_intf_thread_10_cov_group
+
+//----------SPC -> NCU-------------------
+  coverage_group spc6_ncu_intf_thread_10_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, spc0_ncu_thread7_10_evnt_trig, spc1_ncu_thread7_10_evnt_trig, spc2_ncu_thread7_10_evnt_trig, spc3_ncu_thread7_10_evnt_trig, spc4_ncu_thread7_10_evnt_trig, spc5_ncu_thread7_10_evnt_trig, spc6_ncu_thread7_10_evnt_trig, spc7_ncu_thread7_10_evnt_trig );
+    #include "spc6_ncu_intf_thread_10_sample.vrh"
+  } // spc6_ncu_intf_thread_10_cov_group
+
+//----------SPC -> NCU-------------------
+  coverage_group spc7_ncu_intf_thread_10_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY, spc0_ncu_thread8_10_evnt_trig, spc1_ncu_thread8_10_evnt_trig, spc2_ncu_thread8_10_evnt_trig, spc3_ncu_thread8_10_evnt_trig, spc4_ncu_thread8_10_evnt_trig, spc5_ncu_thread8_10_evnt_trig, spc6_ncu_thread8_10_evnt_trig, spc7_ncu_thread8_10_evnt_trig );
+    #include "spc7_ncu_intf_thread_10_sample.vrh"
+  } // spc7_ncu_intf_thread_10_cov_group
+
+//----------SPC -> NCU-------------------
+  coverage_group spc_ncu_intf_thread_50_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY,  spc_ncu_thread_50_evnt_trig, spc_ncu_thread_100_evnt_trig );
+    #include "spc_ncu_intf_thread_50_sample.vrh"
+  } // spc_ncu_intf_thread_50_cov_group
+
+#endif
+#endif
+
+//----------SPC -> NCU-------------------
+  coverage_group dmu_ncu_intf_intr_all_ic_waiting_cov_group
+  {
+    const_sample_reference = 1; // ref. to sample vars. is constant
+    sample_event           = sync (ANY,  mondo_wait_id_reg_cov_trig);
+    sample dmu_ncu_intf_intr_all_ic_waiting_cov ({mondo_wait_id_reg_cov3, mondo_wait_id_reg_cov2, mondo_wait_id_reg_cov1, mondo_wait_id_reg_cov0}) 
+	{
+		wildcard   state MONDOID0   ( 16'bxxxxxxxxxxxx1111);
+		wildcard   state MONDOID1   ( 16'bxxxxxxxx1111xxxx);
+		wildcard   state MONDOID2   ( 16'bxxxx1111xxxxxxxx);
+		wildcard   state MONDOID3   ( 16'b1111xxxxxxxxxxxx);
+	}
+  } // spc_ncu_intf_thread_50_cov_group
+
+
+
+
+
+
+  task new(string myname, StandardDisplay dbg);
+
+  task set_ncu_ras_cov_point (string myname);
+  task set_ncu_io_mix_points (string myname);
+  task set_efu_ncu_points (string myname, reg [6:0] tran_cnt, var reg [63:0] data, ncu_cov_efu_port efu);
+  task set_int_pkt_points (string myname);
+  function reg  count_pkt_num(string myname, reg [1000:0] base_reg,  reg [9:0] pkt_num);
+#ifdef FC_COVERAGE
+  task set_ncu_spc_intf_cov_point (string myname);
+#endif
+  task set_ncu_ras_soc_report_point (string myname, ncu_cov_com_io_port ncu_pcxpt, ncu_cov_cpx_port cpxpt);
+  task set_ncu_pcx_cov_point (string myname, ncu_cov_com_io_port ncu_pcxpt);
+  task set_cpx_cov_point (string myname, ncu_cov_cpx_port cpxpt); 
+  task set_siu_cov_point (string myname, ncu_cov_siu_port siupt); 
+  task set_pio_cov_point (string myname, ncu_cov_pio_port piopt); 
+  task set_mondo_cov_point (string myname,  reg [1:0] mondo_id, var reg [3:0] mondo_wait_id_reg, reg mondo_type=0);
+  task detect_other_mondo_int (string myname,  reg [1:0] mondo_id, reg [1:0] detect_mondo_id, var reg mondo_req_ack_hit);
+  task set_err_cnt_cov_point (string myname, reg [19:0] intf_err, reg [7:0] multi_err_sign_reg_idx, reg which_type = 0);
+
+  task set_ncu_ucb_cov_point(string myname,
+                         reg [5:0] ucb_data_width,
+                        var reg [3:0] ncu_ucb_type,
+                        var reg [5:0] ncu_ucb_cpuid ,
+                        var reg [1:0] ncu_ucb_bufid ,
+                        var reg [39:0] ncu_ucb_add ,
+                        var reg [2:0] ncu_ucb_size ,
+			var reg [31:0] b2b_cnt,
+			var reg [31:0] stall_b2b_cnt,
+			var reg [31:0] vld_to_stall_cnt,
+			var reg [31:0] ucb_pkt_gap,
+                        ncu_cov_com_io_port1 dw_ucbpt,
+                        var event ncu_ucb_sample_evnt_trig);
+
+  task set_ucb_ncu_cov_point(string myname,
+                    reg [5:0] ucb_data_width,
+                    var reg [3:0] ucb_ncu_type,
+                    var reg [5:0] ucb_ncu_cpuid,
+                    var reg [1:0] ucb_ncu_bufid,
+                    var reg [8:0] ucb_ncu_deviceid,
+                    var reg [5:0] ucb_ncu_int_vec,
+                    var reg [2:0] ucb_ncu_size,
+			var reg [31:0] b2b_cnt,
+			var reg [31:0] stall_b2b_cnt,
+			var reg [31:0] vld_to_stall_cnt,
+			var reg [31:0] ucb_pkt_gap,
+                    ncu_cov_com_io_port up_ucbpt,
+                var event ucb_ncu_sample_evnt_trig);
+
+} //class ncu_intf_cov
+
+
+/////////////////////////////////////////////////////////////////
+// Class creation 
+/////////////////////////////////////////////////////////////////
+task ncu_intf_cov::new(string myname, StandardDisplay dbg)
+{
+
+  // for dispmon
+  reg [3:0] dummy_data;
+
+  this.myname = myname;
+  this.dbg = dbg;
+  
+
+
+    dmu_ncu_intf_intr_all_ic_waiting_cov_group = new();
+    ncu_ras_report_cov_group = new();
+    ncu_ios_cov_group = new();
+    ncu_ras_cov_group = new();
+#ifndef IOS_COVERAGE
+    ncu_niu_intf_cov_group = new();
+    niu_ncu_intf_cov_group = new();
+    ncu_dmu_intf_cov_group = new();
+    dmu_ncu_intf_cov_group = new();
+    ncu_pcx_intf_cov_group = new();
+    ncu_cpx_intf_cov_group = new();
+    ncu_tcu_intf_cov_group = new();
+    tcu_ncu_intf_cov_group = new();
+    ncu_rst_intf_cov_group = new();
+    rst_ncu_intf_cov_group = new();
+    ncu_ccu_intf_cov_group = new();
+    ccu_ncu_intf_cov_group = new();
+    ncu_spc_bnk_intf_cov_group = new();
+  #ifdef FC_COVERAGE
+    //ncu_spc_intf_enable_cov_group = new();
+    spc0_ncu_intf_thread_cov_group = new();
+    spc1_ncu_intf_thread_cov_group = new();
+    spc2_ncu_intf_thread_cov_group = new();
+    spc3_ncu_intf_thread_cov_group = new();
+    spc4_ncu_intf_thread_cov_group = new();
+    spc5_ncu_intf_thread_cov_group = new();
+    spc6_ncu_intf_thread_cov_group = new();
+    spc7_ncu_intf_thread_cov_group = new();
+    spc0_ncu_intf_thread_10_cov_group = new();
+    spc1_ncu_intf_thread_10_cov_group = new();
+    spc2_ncu_intf_thread_10_cov_group = new();
+    spc3_ncu_intf_thread_10_cov_group = new();
+    spc4_ncu_intf_thread_10_cov_group = new();
+    spc5_ncu_intf_thread_10_cov_group = new();
+    spc6_ncu_intf_thread_10_cov_group = new();
+    spc7_ncu_intf_thread_10_cov_group = new();
+    spc_ncu_intf_thread_50_cov_group = new();
+ #endif
+.for($b=0; $b<4; $b++) {
+    ncu_mcu${b}_intf_cov_group = new();
+    mcu${b}_ncu_intf_cov_group = new();
+.}
+#endif
+
+   fork
+     set_int_pkt_points("ncu_intf_cov");
+     set_ncu_ras_soc_report_point ({myname, ".sco_report"}, ncu_cov_ccx_exp_bind, ncu_cov_ccx_up_bind);
+     set_ncu_ras_cov_point ({myname, ".ncu_ras_intf"});
+#ifndef IOS_COVERAGE
+     set_ncu_io_mix_points ({myname, ".ncu_spc_intf"});
+     set_efu_ncu_points ("EFU_SERNUM0",   22, efu_ncu_sernum0,   ncu_cov_sernum_bind0);
+     set_efu_ncu_points ("EFU_SERNUM1",   22, efu_ncu_sernum1,   ncu_cov_sernum_bind1);
+     set_efu_ncu_points ("EFU_SERNUM2",   22, efu_ncu_sernum2,   ncu_cov_sernum_bind2);
+     set_efu_ncu_points ("EFU_COREAVAIL", 22, efu_ncu_coreaval,  ncu_cov_coreavail_bind);
+     set_efu_ncu_points ("EFU_BANKAVAIL", 22, efu_ncu_bankaval,  ncu_cov_bankavail_bind);
+     set_efu_ncu_points ("EFU_FUSESTAT",  64, efu_ncu_efustat,   ncu_cov_fuestat_bind);
+#ifdef FC_COVERAGE
+     set_ncu_spc_intf_cov_point ({myname, ".ncu_spc_intf"});
+#endif
+     set_ncu_pcx_cov_point ({myname, ".ncu_pcx"}, ncu_cov_ccx_exp_bind);
+     set_cpx_cov_point ({myname, ".cpx"}, ncu_cov_ccx_up_bind);
+     set_siu_cov_point ({myname, ".siu"}, ncu_cov_siu_exp_bind);
+     set_pio_cov_point ({myname, ".pio"}, ncu_cov_pio_dw_bind);
+
+     set_mondo_cov_point (myname,  0, mondo_wait_id_reg_cov0);
+     set_mondo_cov_point (myname,  1, mondo_wait_id_reg_cov1);
+     set_mondo_cov_point (myname,  2, mondo_wait_id_reg_cov2);
+     set_mondo_cov_point (myname,  3, mondo_wait_id_reg_cov3);
+     set_mondo_cov_point (myname,  0, dummy_data,1);
+
+     set_ncu_ucb_cov_point({myname, ".ncu_niu"},
+                        32,
+                        ncu_niu_type,
+                        ncu_niu_cpuid ,
+                        ncu_niu_bufid ,
+                        ncu_niu_add ,
+                        ncu_niu_size ,
+			ncu_niu_b2b,
+			niu_ncu_stall_b2b,
+			ncu_niu_vld_to_stall_cnt,
+			ncu_niu_pkt_gap,
+                        ncu_cov_niu_dw_bind,
+                        ncu_niu_sample_evnt_trig);
+
+     set_ucb_ncu_cov_point({myname, ".niu_ncu"} ,
+                        32,
+                        niu_ncu_type,
+                        niu_ncu_cpuid,
+                        niu_ncu_bufid,
+                        niu_ncu_deviceid,
+                        niu_ncu_int_vec,
+			niu_ncu_size,
+			niu_ncu_b2b,
+			ncu_niu_stall_b2b,
+			niu_ncu_vld_to_stall_cnt,
+			niu_ncu_pkt_gap,
+                        ncu_cov_niu_exp_bind ,
+                        niu_ncu_sample_evnt_trig);
+
+     set_ncu_ucb_cov_point({myname, ".ncu_dmu"},
+                        32,
+                        ncu_dmu_type,
+                        ncu_dmu_cpuid ,
+                        ncu_dmu_bufid ,
+                        ncu_dmu_add ,
+                        ncu_dmu_size ,
+			ncu_dmu_b2b,
+			dmu_ncu_stall_b2b,
+			ncu_dmu_vld_to_stall_cnt,
+			ncu_dmu_pkt_gap,
+                        ncu_cov_dmu_dw_bind,
+                        ncu_dmu_sample_evnt_trig);
+
+     set_ucb_ncu_cov_point({myname, ".dmu_ncu"} ,
+                        32,
+                        dmu_ncu_type,
+                        dmu_ncu_cpuid,
+                        dmu_ncu_bufid,
+                        dmu_ncu_deviceid,
+                        dmu_ncu_int_vec,
+			dmu_ncu_size,
+			dmu_ncu_b2b,
+			ncu_dmu_stall_b2b,
+			dmu_ncu_vld_to_stall_cnt,
+			dmu_ncu_pkt_gap,
+                        ncu_cov_dmu_exp_bind ,
+                        dmu_ncu_sample_evnt_trig);
+
+     set_ncu_ucb_cov_point({myname, ".ncu_dbg1"},
+                        4,
+                        ncu_dbg1_type,
+                        ncu_dbg1_cpuid ,
+                        ncu_dbg1_bufid ,
+                        ncu_dbg1_add ,
+                        ncu_dbg1_size ,
+			ncu_dbg1_b2b,
+			dbg1_ncu_stall_b2b,
+			ncu_dbg1_vld_to_stall_cnt,
+			ncu_dbg1_pkt_gap,
+                        ncu_cov_dbg1_dw_bind,
+                        ncu_dbg1_sample_evnt_trig);
+
+     set_ucb_ncu_cov_point({myname, ".dbg1_ncu"} ,
+                        4,
+                        dbg1_ncu_type,
+                        dbg1_ncu_cpuid,
+                        dbg1_ncu_bufid,
+                        dbg1_ncu_deviceid,
+                        dbg1_ncu_int_vec,
+			dbg1_ncu_size,
+			dbg1_ncu_b2b,
+			ncu_dbg1_stall_b2b,
+			dbg1_ncu_vld_to_stall_cnt,
+			dbg1_ncu_pkt_gap,
+                        ncu_cov_dbg1_exp_bind ,
+                        dbg1_ncu_sample_evnt_trig);
+
+     set_ncu_ucb_cov_point({myname, ".ncu_rst"},
+                        4,
+                        ncu_rst_type,
+                        ncu_rst_cpuid ,
+                        ncu_rst_bufid ,
+                        ncu_rst_add ,
+                        ncu_rst_size ,
+			ncu_rst_b2b,
+			rst_ncu_stall_b2b,
+			ncu_rst_vld_to_stall_cnt,
+			ncu_rst_pkt_gap,
+                        ncu_cov_rst_dw_bind,
+                        ncu_rst_sample_evnt_trig);
+
+
+     set_ucb_ncu_cov_point({myname, ".rst_ncu"} ,
+                        4,
+                        rst_ncu_type,
+                        rst_ncu_cpuid,
+                        rst_ncu_bufid,
+                        rst_ncu_deviceid,
+                        rst_ncu_int_vec,
+			rst_ncu_size,
+			rst_ncu_b2b,
+			ncu_rst_stall_b2b,
+			rst_ncu_vld_to_stall_cnt,
+			rst_ncu_pkt_gap,
+                        ncu_cov_rst_exp_bind ,
+                        rst_ncu_sample_evnt_trig);
+
+
+     set_ncu_ucb_cov_point({myname, ".ncu_ccu"},
+                        4,
+                        ncu_ccu_type,
+                        ncu_ccu_cpuid ,
+                        ncu_ccu_bufid ,
+                        ncu_ccu_add ,
+                        ncu_ccu_size ,
+			ncu_ccu_b2b,
+			ccu_ncu_stall_b2b,
+			ncu_ccu_vld_to_stall_cnt,
+			ncu_ccu_pkt_gap,
+                        ncu_cov_ccu_dw_bind,
+                        ncu_ccu_sample_evnt_trig);
+
+     set_ucb_ncu_cov_point({myname, ".ccu_ncu"} ,
+                        4,
+                        ccu_ncu_type,
+                        ccu_ncu_cpuid,
+                        ccu_ncu_bufid,
+                        ccu_ncu_deviceid,
+                        ccu_ncu_int_vec,
+			ccu_ncu_size,
+			ccu_ncu_b2b,
+			ncu_ccu_stall_b2b,
+			ccu_ncu_vld_to_stall_cnt,
+			ccu_ncu_pkt_gap,
+                        ncu_cov_ccu_exp_bind ,
+                        ccu_ncu_sample_evnt_trig);
+
+
+.for($b=0; $b<4; $b++) {
+     set_ncu_ucb_cov_point({myname, ".ncu_mcu{$b}"},
+                        4,
+                        ncu_mcu${b}_type,
+                        ncu_mcu${b}_cpuid ,
+                        ncu_mcu${b}_bufid ,
+                        ncu_mcu${b}_add ,
+                        ncu_mcu${b}_size ,
+			ncu_mcu${b}_b2b,
+			mcu${b}_ncu_stall_b2b,
+			ncu_mcu${b}_vld_to_stall_cnt,
+			ncu_mcu${b}_pkt_gap,
+                        ncu_cov_mcu_dw_bind${b},
+                        ncu_mcu${b}_sample_evnt_trig);
+
+     set_ucb_ncu_cov_point({myname, ".mcu${b}_ncu"} ,
+                        4,
+                        mcu${b}_ncu_type,
+                        mcu${b}_ncu_cpuid,
+                        mcu${b}_ncu_bufid,
+                        mcu${b}_ncu_deviceid,
+                        mcu${b}_ncu_int_vec,
+			mcu${b}_ncu_size,
+			mcu${b}_ncu_b2b,
+			ncu_mcu${b}_stall_b2b,
+			mcu${b}_ncu_vld_to_stall_cnt,
+			mcu${b}_ncu_pkt_gap,
+                        ncu_cov_mcu_exp_bind${b} ,
+                        mcu${b}_ncu_sample_evnt_trig);
+.}
+
+
+     set_ncu_ucb_cov_point({myname, ".ncu_ssi"},
+                        4,
+                        ncu_ssi_type,
+                        ncu_ssi_cpuid ,
+                        ncu_ssi_bufid ,
+                        ncu_ssi_add ,
+                        ncu_ssi_size ,
+			ncu_ssi_b2b,
+			ssi_ncu_stall_b2b,
+			ncu_ssi_vld_to_stall_cnt,
+			ncu_ssi_pkt_gap,
+                        ncu_cov_ssi_dw_bind,
+                        ncu_ssi_sample_evnt_trig);
+
+     set_ucb_ncu_cov_point({myname, ".ssi_ncu"} ,
+                        4,
+                        ssi_ncu_type,
+                        ssi_ncu_cpuid,
+                        ssi_ncu_bufid,
+                        ssi_ncu_deviceid,
+                        ssi_ncu_int_vec,
+			ssi_ncu_size,
+			ssi_ncu_b2b,
+			ncu_ssi_stall_b2b,
+			ssi_ncu_vld_to_stall_cnt,
+			ssi_ncu_pkt_gap,
+                        ncu_cov_ssi_exp_bind ,
+                        ssi_ncu_sample_evnt_trig);
+
+     set_ncu_ucb_cov_point({myname, ".ncu_tcu"},
+                        8,
+                        ncu_tcu_type,
+                        ncu_tcu_cpuid ,
+                        ncu_tcu_bufid ,
+                        ncu_tcu_add ,
+                        ncu_tcu_size ,
+			ncu_tcu_b2b,
+			tcu_ncu_stall_b2b,
+			ncu_tcu_vld_to_stall_cnt,
+			ncu_tcu_pkt_gap,
+                        ncu_cov_tcu_dw_bind,
+                        ncu_tcu_sample_evnt_trig);
+
+     set_ucb_ncu_cov_point({myname, ".tcu_ncu"} ,
+                        8,
+                        tcu_ncu_type,
+                        tcu_ncu_cpuid,
+                        tcu_ncu_bufid,
+                        tcu_ncu_deviceid,
+                        tcu_ncu_int_vec,
+			tcu_ncu_size,
+			tcu_ncu_b2b,
+			ncu_tcu_stall_b2b,
+			tcu_ncu_vld_to_stall_cnt,
+			tcu_ncu_pkt_gap,
+                        ncu_cov_tcu_exp_bind ,
+                        tcu_ncu_sample_evnt_trig);
+#endif  // IOS_COVERAGE
+
+
+   join none
+
+
+} // ncu_intf_cov::new()
+
+task ncu_intf_cov::set_err_cnt_cov_point (string myname, reg [19:0] intf_err, reg [7:0] multi_err_sign_reg_idx, reg which_type = 0)
+{
+reg [6:0] merr_cnt = 0;
+reg [5:0] err_idx=0;
+
+myname = {myname, ".set_err_cnt_cov_point"};
+
+     if (|intf_err){
+	merr_cnt = 0;
+	for (err_idx=0;  err_idx <20; err_idx++){
+	  if (intf_err[err_idx]){
+	   merr_cnt++;
+	  }
+	}
+	if (!which_type){
+	   if (merr_cnt >=2){
+     	      multi_err_sign_reg[multi_err_sign_reg_idx+0]  = 1'b1;
+	   } 
+	} else { 
+	   if (merr_cnt >=3 ) {
+     	      multi_err_sign_reg[multi_err_sign_reg_idx+0]  = 1'b1;
+	   }
+	   if (merr_cnt >=5 ) {
+     	      multi_err_sign_reg[multi_err_sign_reg_idx+1]  = 1'b1;
+	   }
+	}
+    
+        dbg.dispmon(myname, MON_INFO, psprintf("intf_err %h, merr_cnt %0d, which_type %h, err_sgn_reg %0b", intf_err, merr_cnt, which_type, multi_err_sign_reg));
+     }	
+}
+
+///////////////////////////////////////////////////////////////////////////
+// This task is a psuedo coverage object that combines a few conditions
+// so that the actual coverage objects' state space doesn't get too big
+//////////////////////////////////////////////////////////////////////////
+task ncu_intf_cov::set_ncu_ras_cov_point (string myname)
+{
+   reg mondo_flag = 0;
+   reg pio_flag = 0;
+   reg [10:0] ncu_err = 0;
+   reg [5:0] ue_err = 0;
+   reg [5:0] ce_err = 0;
+   reg [6:0] merr_cnt = 0;
+   reg [5:0] err_idx=0;
+   reg err_sig_flag1 = 0;
+    reg [5:0] ras_clk_cnt=0;
+    reg [5:0] ras_clk_cnt1=0;
+    reg [42:0] accum_err_in = 0;
+    reg [19:0] dmu_err1=0;
+    reg [19:0] mcu_err1=0;
+    reg [19:0] niu_err1=0;
+    reg [19:0] siu_err1=0;
+	
+    reg [19:0] ce_err1=0;
+    reg [19:0] ue_err1=0;
+    reg [5:0] clk_idx=0;
+    reg [15:0] pkt_tran_cyc=0;
+    reg [15:0] ras_tran_cyc=0;
+    reg [3:0] pkt_tran_cyc_idx=0;
+    reg [3:0] ras_tran_cyc_idx=0;
+    
+
+   multi_err_sign_reg = 0;
+   myname = {myname, ".set_ncu_ras_cov_point"}; 
+   while (1) {
+     @ (posedge ncu_ras_cov.clk);
+	pkt_tran_cyc[pkt_tran_cyc_idx] = ncu_ras_cov.c2i_packet_vld;
+	ras_tran_cyc[ras_tran_cyc_idx] = |ncu_ras_cov.raserr_in;
+	ras_tran_syn = |pkt_tran_cyc && |ras_tran_cyc;
+	pkt_tran_cyc_idx++;
+   	ras_tran_cyc_idx++;
+	
+     if (err_sig_flag1 && ras_clk_cnt1 < 20){
+	ras_clk_cnt1++;
+     } else {
+	ras_clk_cnt1 = 0;
+	err_sig_flag1= 0;
+     }
+	
+
+     if (|ncu_ras_cov.ncu_ras_esr){
+     	for (err_idx = 0; err_idx<43; err_idx++){
+		if (ncu_ras_cov.ncu_ras_esr[err_idx]){
+		  ncu_ras_esr_err_cnt++;		
+		}
+     	}
+	ncu_ras_esr_err_cnt_flag = 1;
+     } else {
+	ncu_ras_esr_err_cnt_flag = 0;	
+     }
+     mcu_err = {ncu_ras_cov.mcu3_ncu_ecc,ncu_ras_cov.mcu3_ncu_fbr,
+		ncu_ras_cov.mcu2_ncu_ecc,ncu_ras_cov.mcu2_ncu_fbr,
+		ncu_ras_cov.mcu1_ncu_ecc,ncu_ras_cov.mcu1_ncu_fbr,
+		ncu_ras_cov.mcu0_ncu_ecc,ncu_ras_cov.mcu0_ncu_fbr};
+	
+     set_err_cnt_cov_point(myname, mcu_err, 0, 0); // count smae error at same cycle
+     mcu_err1[clk_idx] = |mcu_err; 
+     set_err_cnt_cov_point(myname, mcu_err1, 1, 1); // count error in 20 cycles 
+
+
+     niu_err = {ncu_ras_cov.niu_ncu_ctag_ue,ncu_ras_cov.niu_ncu_ctag_ce,
+		ncu_ras_cov.niu_ncu_d_pe};
+
+     set_err_cnt_cov_point(myname, niu_err, 3, 0);
+     niu_err1[clk_idx] = |niu_err;
+     set_err_cnt_cov_point(myname, niu_err1, 4, 1);
+
+     siu_err = {1'b0,ncu_ras_cov.sio_ncu_ctag_ce,
+		ncu_ras_cov.sio_ncu_ctag_ue,ncu_ras_cov.sii_ncu_dmud_pe,
+		ncu_ras_cov.sii_ncu_dmuctag_ce,ncu_ras_cov.sii_ncu_dmuctag_ue,
+		ncu_ras_cov.sii_ncu_dmua_pe,ncu_ras_cov.sii_ncu_niud_pe,
+		ncu_ras_cov.sii_ncu_niuctag_ce,ncu_ras_cov.sii_ncu_niuctag_ue,
+		ncu_ras_cov.sii_ncu_niua_pe};
+
+     set_err_cnt_cov_point(myname, siu_err, 6, 0);
+     siu_err1 = {accum_err_in[26:25], accum_err_in[7:0]};
+     set_err_cnt_cov_point(myname, siu_err1, 7, 1);
+
+
+     dmu_err = {ncu_ras_cov.dmu_ncu_ctag_ue,ncu_ras_cov.dmu_ncu_ctag_ce,
+		ncu_ras_cov.dmu_ncu_d_pe,ncu_ras_cov.dmu_ncu_siicr_pe,
+		ncu_ras_cov.dmu_ncu_ncucr_pe,ncu_ras_cov.dmu_ncu_ie};	
+
+     
+     dbg.dispmon(myname, MON_INFO, psprintf("dmu_err %h", dmu_err));
+
+     set_err_cnt_cov_point(myname, dmu_err, 9, 0);
+     dmu_err1 = {accum_err_in[26:25], accum_err_in[7:0]};
+     set_err_cnt_cov_point(myname, dmu_err1, 10, 1);
+	
+
+     ncu_err = {ncu_ras_cov.raserr_in[42], ncu_ras_cov.raserr_in[23:14]};
+     set_err_cnt_cov_point(myname, dmu_err1, 12, 0);
+     dmu_err1 = {accum_err_in[42], accum_err_in[23:14]};
+     set_err_cnt_cov_point(myname, dmu_err1, 13, 1);
+    
+     ue_err = {
+		 ncu_ras_cov.niu_ncu_ctag_ue,
+		ncu_ras_cov.sio_ncu_ctag_ue,
+		ncu_ras_cov.raserr_in[22],
+		ncu_ras_cov.sii_ncu_dmuctag_ue,
+		ncu_ras_cov.sii_ncu_niuctag_ue,
+		ncu_ras_cov.dmu_ncu_ctag_ue
+	       };
+
+     set_err_cnt_cov_point(myname, ue_err, 15, 0);
+     ue_err = {accum_err_in[28], accum_err_in[25], accum_err_in[22], accum_err_in[11], accum_err_in[1], accum_err_in[0]};
+     set_err_cnt_cov_point(myname, ue_err, 16, 1);
+
+     ce_err = {
+		 ncu_ras_cov.niu_ncu_ctag_ce,
+		ncu_ras_cov.sio_ncu_ctag_ce,
+		ncu_ras_cov.raserr_in[22],
+		ncu_ras_cov.sii_ncu_dmuctag_ce,
+		ncu_ras_cov.sii_ncu_niuctag_ce,
+		ncu_ras_cov.dmu_ncu_ctag_ce
+	       };
+
+     set_err_cnt_cov_point(myname, ce_err, 18, 0);
+     ce_err1 = {accum_err_in[27], accum_err_in[26], accum_err_in[23], accum_err_in[10], accum_err_in[3], accum_err_in[2]};
+     set_err_cnt_cov_point(myname, ce_err, 19, 1);
+
+	
+     mcu_erri = {ncu_ras_cov.ncu_mcu3_ecci,ncu_ras_cov.ncu_mcu3_fbri,
+		ncu_ras_cov.ncu_mcu2_ecci,ncu_ras_cov.ncu_mcu2_fbri,
+		ncu_ras_cov.ncu_mcu1_ecci,ncu_ras_cov.ncu_mcu1_fbri,
+		ncu_ras_cov.ncu_mcu0_ecci,ncu_ras_cov.ncu_mcu0_fbri};
+
+     niu_erri = {ncu_ras_cov.ncu_niu_ctag_uei,ncu_ras_cov.ncu_niu_ctag_cei,
+		ncu_ras_cov.ncu_niu_d_pei};
+     siu_erri = {ncu_ras_cov.ncu_sio_d_pei,ncu_ras_cov.ncu_sio_ctag_cei,
+		ncu_ras_cov.ncu_sio_ctag_uei,ncu_ras_cov.ncu_sii_dmud_pei,
+		ncu_ras_cov.ncu_sii_dmuctag_cei,ncu_ras_cov.ncu_sii_dmuctag_uei,
+		ncu_ras_cov.ncu_sii_dmua_pei,ncu_ras_cov.ncu_sii_niud_pei,
+		ncu_ras_cov.ncu_sii_niuctag_cei,ncu_ras_cov.ncu_sii_niuctag_uei,
+		ncu_ras_cov.ncu_sii_niua_pei};
+     dmu_erri = {ncu_ras_cov.ncu_dmu_ctag_uei,ncu_ras_cov.ncu_dmu_ctag_cei,
+		ncu_ras_cov.ncu_dmu_d_pei,ncu_ras_cov.ncu_dmu_siicr_pei,
+		ncu_ras_cov.ncu_dmu_ncucr_pei,ncu_ras_cov.ncu_dmu_iei};	
+
+     	
+     if (ncu_ras_cov.mondo_hdr_vld){
+	mondo_flag = 1;
+     }	
+     if (ncu_ras_cov.pio_hdr_vld){
+	pio_flag = 1;
+     }	
+     if (mondo_flag && ncu_ras_cov.pldvld){
+	
+	ncu_data_pe [0] = ncu_ras_cov.dperr;
+	mondo_flag = 0;
+     }  else if (pio_flag && ncu_ras_cov.pldvld){
+	ncu_data_pe [1] = ncu_ras_cov.dperr;
+	pio_flag = 0;
+     }
+
+     ncu_ctag_ce = {ncu_ras_cov.ncuctag_ce & ncu_ras_cov.pio_hdr_vld, 
+		    ncu_ras_cov.ncuctag_ce & ncu_ras_cov.mondo_hdr_vld};
+
+     ncu_ctag_ue = {ncu_ras_cov.ncuctag_ue & ncu_ras_cov.pio_hdr_vld, 
+		    ncu_ras_cov.ncuctag_ue & ncu_ras_cov.mondo_hdr_vld};
+	
+     dbg.dispmon(myname, MON_INFO, psprintf("ncu_ctag_ce %h ncu_ctag_ue %h, hdr_vld %h, mondo_vld %h", ncu_ras_cov.ncuctag_ce, ncu_ras_cov.ncuctag_ue, ncu_ras_cov.pio_hdr_vld, ncu_ras_cov.mondo_hdr_vld));
+
+    ncu_int_tb_pe = {ncu_ras_cov.c2i_rd_intman   & ncu_ras_cov.intman_pe_n,
+                       ncu_ras_cov.io_rd_intman_d2 & ncu_ras_cov.intman_pe_n};
+     if (ras_clk_cnt1 > 0){
+	accum_err_in = accum_err_in | ncu_ras_cov.raserr_in;
+     } else {
+	accum_err_in = 0;	
+     }
+
+    if (|ncu_ras_cov.raserr_in){
+	err_sig_flag1 = 1;
+    }
+    raserr_in_ele_off = ncu_ras_cov.raserr_in & (~ncu_ras_cov.ncu_ras_ele);
+    raserr_in_eie_off = ncu_ras_cov.raserr_in & (~ncu_ras_cov.ncu_ras_eie);
+    raserr_in_fee_off = ncu_ras_cov.raserr_in & (~ncu_ras_cov.ncu_ras_fee);
+    clk_idx++;
+	if (clk_idx >=20){
+	   clk_idx=0;
+	}
+   }
+
+} // task set_ncu_ras_cov_point
+
+task ncu_intf_cov::set_efu_ncu_points (string myname, reg [6:0] tran_cnt_max, var reg [63:0] data, ncu_cov_efu_port efu)
+{
+ reg [6:0] index;
+ reg efu_flag = 0;
+ string efu_name;
+ reg [6:0] tran_cnt;
+   efu_name=myname;
+   myname = {myname, ".set_efu_ncu_points"};
+   tran_cnt = tran_cnt_max-1;
+   while (1) {
+     @(posedge efu.\$clk);
+     if (efu.\$vld){
+	if (index >tran_cnt_max){
+	   dbg.dispmon(myname, MON_ERR, psprintf("valid assert longer then %0d cycles", index));
+	}
+	 data[tran_cnt] = efu.\$data;
+	 dbg.dispmon(myname, MON_INFO, psprintf("1. data %0h tran_cnt %0d",data, tran_cnt));
+	 tran_cnt--;
+	 index++;
+	efu_flag = 1;
+     } else if (efu_flag){
+	 case (efu_name){
+	    "EFU_SERNUM0"   : efu_ncu_intf_hit[0] = 1'b1;
+	    "EFU_SERNUM1"   : efu_ncu_intf_hit[1] = 1'b1;
+	    "EFU_SERNUM2"   : efu_ncu_intf_hit[2] = 1'b1;
+	    "EFU_COREAVAIL" : efu_ncu_intf_hit[3] = 1'b1;
+	    "EFU_BANKAVAIL" : efu_ncu_intf_hit[4] = 1'b1;
+	    "EFU_FUSESTAT"  : efu_ncu_intf_hit[5] = 1'b1;
+		
+	 }
+	 dbg.dispmon(myname, MON_INFO, psprintf("2. data %0h efu_ncu_intf_hit %b", data,efu_ncu_intf_hit));
+         trigger (efu_ncu_evnt_trig);
+	 efu_flag = 0;
+	 index = 0;
+	 tran_cnt = tran_cnt_max-1;
+     } else {
+	data = 0;	 
+     }
+     
+   }
+}
+task ncu_intf_cov::set_ncu_io_mix_points (string myname){
+   myname = {myname, ".set_ncu_io_mix_points"};
+   while (1) {
+     @ (posedge ncu_cov_ios.clk);
+     ncu_spc_core_enable_status = {
+                                   ncu_cov_ios.ncu_spc7_core_enable_status,
+                                   ncu_cov_ios.ncu_spc6_core_enable_status,
+                                   ncu_cov_ios.ncu_spc5_core_enable_status,
+                                   ncu_cov_ios.ncu_spc4_core_enable_status,
+                                   ncu_cov_ios.ncu_spc3_core_enable_status,
+                                   ncu_cov_ios.ncu_spc2_core_enable_status,
+                                   ncu_cov_ios.ncu_spc1_core_enable_status,
+                                   ncu_cov_ios.ncu_spc0_core_enable_status
+                                   }  ;
+      ncu_spc_core_available = { ncu_cov_ios.ncu_spc7_core_available,
+                                   ncu_cov_ios.ncu_spc6_core_available,
+                                   ncu_cov_ios.ncu_spc5_core_available,
+                                   ncu_cov_ios.ncu_spc4_core_available,
+                                   ncu_cov_ios.ncu_spc3_core_available,
+                                   ncu_cov_ios.ncu_spc2_core_available,
+                                   ncu_cov_ios.ncu_spc1_core_available,
+                                   ncu_cov_ios.ncu_spc0_core_available
+                                };
+            ncu_spc_core_running = {   ncu_cov_ios.ncu_spc7_core_running,
+                                   ncu_cov_ios.ncu_spc6_core_running,
+                                   ncu_cov_ios.ncu_spc5_core_running,
+                                   ncu_cov_ios.ncu_spc4_core_running,
+                                   ncu_cov_ios.ncu_spc3_core_running,
+                                   ncu_cov_ios.ncu_spc2_core_running,
+                                   ncu_cov_ios.ncu_spc1_core_running,
+                                   ncu_cov_ios.ncu_spc0_core_running
+                                };
+
+        ncu_spc_core_running = {   ncu_cov_ios.ncu_spc7_core_running,
+                                   ncu_cov_ios.ncu_spc6_core_running,
+                                   ncu_cov_ios.ncu_spc5_core_running,
+                                   ncu_cov_ios.ncu_spc4_core_running,
+                                   ncu_cov_ios.ncu_spc3_core_running,
+                                   ncu_cov_ios.ncu_spc2_core_running,
+                                   ncu_cov_ios.ncu_spc1_core_running,
+                                   ncu_cov_ios.ncu_spc0_core_running
+                                };
+ 
+        spc_ncu_core_running_status = {   
+				   ncu_cov_ios.spc7_ncu_core_running_status,
+                                   ncu_cov_ios.spc6_ncu_core_running_status,
+                                   ncu_cov_ios.spc5_ncu_core_running_status,
+                                   ncu_cov_ios.spc4_ncu_core_running_status,
+                                   ncu_cov_ios.spc3_ncu_core_running_status,
+                                   ncu_cov_ios.spc2_ncu_core_running_status,
+                                   ncu_cov_ios.spc1_ncu_core_running_status,
+                                   ncu_cov_ios.spc0_ncu_core_running_status
+                                };
+
+	ncu_spc_ba = {
+		      ncu_cov_ios.ncu_spc_pm,
+		      ncu_cov_ios.ncu_spc_ba67,
+	              ncu_cov_ios.ncu_spc_ba45,
+	              ncu_cov_ios.ncu_spc_ba23,
+	              ncu_cov_ios.ncu_spc_ba01
+ 		      };
+
+
+	ncu_sii_ba = {
+		      ncu_cov_ios.ncu_sii_pm,
+		      ncu_cov_ios.ncu_sii_ba67,
+	              ncu_cov_ios.ncu_sii_ba45,
+	              ncu_cov_ios.ncu_sii_ba23,
+	              ncu_cov_ios.ncu_sii_ba01
+ 		      };
+
+	ncu_l2t_ba = {
+		      ncu_cov_ios.ncu_l2t_pm,
+		      ncu_cov_ios.ncu_l2t_ba67,
+	              ncu_cov_ios.ncu_l2t_ba45,
+	              ncu_cov_ios.ncu_l2t_ba23,
+	              ncu_cov_ios.ncu_l2t_ba01
+ 		      };
+
+	ncu_mcu_ba = {
+		      ncu_cov_ios.ncu_mcu_pm,
+		      ncu_cov_ios.ncu_mcu_ba67,
+	              ncu_cov_ios.ncu_mcu_ba45,
+	              ncu_cov_ios.ncu_mcu_ba23,
+	              ncu_cov_ios.ncu_mcu_ba01
+ 		      };
+
+         if ( (|ncu_spc_core_enable_status) || (|ncu_spc_core_available ) ||
+              (|ncu_spc_core_running) || (|spc_ncu_core_running_status ) ||
+              (|ncu_spc_ba) || (|ncu_sii_ba ) ||
+              (|ncu_mcu_ba) || (|ncu_l2t_ba ) 
+	
+                ){
+                trigger (ncu_spc_bnk_evnt_trig);
+         }
+	    
+   }
+}
+///////////////////////////////////////////////////////////////////////////
+// This task is a ncu-spc coverage object
+//////////////////////////////////////////////////////////////////////////
+// task ncu_intf_cov::set_ncu_spc_intf_cov_point (string myname )
+#ifdef FC_COVERAGE
+task ncu_intf_cov::set_ncu_spc_intf_cov_point (string myname)
+{
+
+   myname = {myname, ".set_ncu_spc_intf_cov_point"};
+   fork
+   while (1) {
+     @(posedge ncu_cov_ios.clk);
+     if (ncu_cov_ios.ncu_spc0_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc1_core_enable_status === 1'b1)
+     trigger (ncu_spc_enable1_evnt_trig);
+
+     if (ncu_cov_ios.ncu_spc0_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc1_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc2_core_enable_status === 1'b1)
+     trigger (ncu_spc_enable2_evnt_trig);
+     if (ncu_cov_ios.ncu_spc0_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc1_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc2_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc3_core_enable_status === 1'b1)
+     trigger (ncu_spc_enable3_evnt_trig);
+
+     if (ncu_cov_ios.ncu_spc0_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc1_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc2_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc3_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc4_core_enable_status === 1'b1)
+     trigger (ncu_spc_enable4_evnt_trig);
+
+     if (ncu_cov_ios.ncu_spc0_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc1_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc2_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc3_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc4_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc5_core_enable_status === 1'b1)
+     trigger (ncu_spc_enable5_evnt_trig);
+
+     if (ncu_cov_ios.ncu_spc0_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc1_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc2_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc3_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc4_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc5_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc6_core_enable_status === 1'b1)  
+     trigger (ncu_spc_enable6_evnt_trig);
+
+     if (ncu_cov_ios.ncu_spc0_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc1_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc2_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc3_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc4_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc5_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc6_core_enable_status === 1'b0 && ncu_cov_ios.ncu_spc7_core_enable_status === 1'b1) 
+     trigger (ncu_spc_enable7_evnt_trig);
+     }
+join none
+
+fork
+.     for ($bank=0; $bank<8; $bank++)
+. {
+{
+while(1)
+{
+ @(posedge ncu_cov_ios.clk);
+ if (spc${bank}_ncu_thread1_cnt === 'd5)
+ {
+
+     if (ncu_cov_ios.spc${bank}_ncu_core_running_status[0] === 1'b0)
+       spc${bank}_ncu_thread1_cnt = 1;
+     else
+       spc${bank}_ncu_thread1_cnt = 0;
+  }
+ else if (ncu_cov_ios.spc${bank}_ncu_core_running_status[0] === 1'b0)
+  {
+     spc${bank}_ncu_thread1_cnt = spc${bank}_ncu_thread1_cnt + 1;
+     @(posedge ncu_cov_ios.clk);
+     if (spc${bank}_ncu_thread1_cnt === 'd5)
+     trigger (spc${bank}_ncu_thread1_evnt_trig);
+   }
+  else
+     spc${bank}_ncu_thread1_cnt = 0;
+}
+}
+.   }
+join none
+ 
+fork
+.     for ($bank=0; $bank<8; $bank++)
+. {
+{
+while(1)
+{
+ @ (posedge ncu_cov_ios.clk);
+ if (spc${bank}_ncu_thread2_cnt === 'd5)
+ {
+
+     if (ncu_cov_ios.spc${bank}_ncu_core_running_status[1] === 1'b0)
+       spc${bank}_ncu_thread2_cnt = 1;
+     else
+       spc${bank}_ncu_thread2_cnt = 0;
+  }
+ else if (ncu_cov_ios.spc${bank}_ncu_core_running_status[1] === 1'b0)
+  {
+     spc${bank}_ncu_thread2_cnt = spc${bank}_ncu_thread2_cnt + 1;
+     @(posedge ncu_cov_ios.clk);
+     if (spc${bank}_ncu_thread2_cnt === 'd5)
+     trigger (spc${bank}_ncu_thread2_evnt_trig);
+   }
+  else
+     spc${bank}_ncu_thread2_cnt = 0;
+}
+}
+.   }
+join none
+
+fork
+.     for ($bank=0; $bank<8; $bank++)
+. {
+{
+while(1)
+{
+ @ (posedge ncu_cov_ios.clk);
+ if (spc${bank}_ncu_thread3_cnt === 'd5)
+ {
+
+     if (ncu_cov_ios.spc${bank}_ncu_core_running_status[2] === 1'b0)
+       spc${bank}_ncu_thread3_cnt = 1;
+     else
+       spc${bank}_ncu_thread3_cnt = 0;
+  }
+ else if (ncu_cov_ios.spc${bank}_ncu_core_running_status[2] === 1'b0)
+  {
+     spc${bank}_ncu_thread3_cnt = spc${bank}_ncu_thread3_cnt + 1;
+     @(posedge ncu_cov_ios.clk);
+     if (spc${bank}_ncu_thread3_cnt === 'd5)
+     trigger (spc${bank}_ncu_thread3_evnt_trig);
+   }
+  else
+     spc${bank}_ncu_thread3_cnt = 0;
+}
+}
+.   }
+join none
+
+fork
+.     for ($bank=0; $bank<8; $bank++)
+. {
+{
+while(1)
+{
+ @ (posedge ncu_cov_ios.clk);
+ if (spc${bank}_ncu_thread4_cnt === 'd5)
+ {
+
+     if (ncu_cov_ios.spc${bank}_ncu_core_running_status[3] === 1'b0)
+       spc${bank}_ncu_thread4_cnt = 1;
+     else
+       spc${bank}_ncu_thread4_cnt = 0;
+  }
+ else if (ncu_cov_ios.spc${bank}_ncu_core_running_status[3] === 1'b0)
+  {
+     spc${bank}_ncu_thread4_cnt = spc${bank}_ncu_thread4_cnt + 1;
+     @(posedge ncu_cov_ios.clk);
+     if (spc${bank}_ncu_thread4_cnt === 'd5)
+     trigger (spc${bank}_ncu_thread4_evnt_trig);
+   }
+  else
+     spc${bank}_ncu_thread4_cnt = 0;
+}
+}
+.   }
+join none
+
+fork
+.     for ($bank=0; $bank<8; $bank++)
+. {
+{
+while(1)
+{
+ @ (posedge ncu_cov_ios.clk);
+ if (spc${bank}_ncu_thread5_cnt === 'd5)
+ {
+
+     if (ncu_cov_ios.spc${bank}_ncu_core_running_status[4] === 1'b0)
+       spc${bank}_ncu_thread5_cnt = 1;
+     else
+       spc${bank}_ncu_thread5_cnt = 0;
+  }
+ else if (ncu_cov_ios.spc${bank}_ncu_core_running_status[4] === 1'b0)
+  {
+     spc${bank}_ncu_thread5_cnt = spc${bank}_ncu_thread5_cnt + 1;
+     @(posedge ncu_cov_ios.clk);
+     if (spc${bank}_ncu_thread5_cnt === 'd5)
+     trigger (spc${bank}_ncu_thread5_evnt_trig);
+   }
+  else
+     spc${bank}_ncu_thread5_cnt = 0;
+}
+}
+.   }
+join none
+
+fork
+.     for ($bank=0; $bank<8; $bank++)
+. {
+{
+while(1)
+{
+ @ (posedge ncu_cov_ios.clk);
+ if (spc${bank}_ncu_thread6_cnt === 'd5)
+ {
+
+     if (ncu_cov_ios.spc${bank}_ncu_core_running_status[5] === 1'b0)
+       spc${bank}_ncu_thread6_cnt = 1;
+     else
+       spc${bank}_ncu_thread6_cnt = 0;
+  }
+ else if (ncu_cov_ios.spc${bank}_ncu_core_running_status[5] === 1'b0)
+  {
+     spc${bank}_ncu_thread6_cnt = spc${bank}_ncu_thread6_cnt + 1;
+     @(posedge ncu_cov_ios.clk);
+     if (spc${bank}_ncu_thread6_cnt === 'd5)
+     trigger (spc${bank}_ncu_thread6_evnt_trig);
+   }
+  else
+     spc${bank}_ncu_thread6_cnt = 0;
+}
+}
+.   }
+join none
+
+fork
+.     for ($bank=0; $bank<8; $bank++)
+. {
+{
+while(1)
+{
+ @ (posedge ncu_cov_ios.clk);
+ if (spc${bank}_ncu_thread7_cnt === 'd5)
+ {
+
+     if (ncu_cov_ios.spc${bank}_ncu_core_running_status[6] === 1'b0)
+       spc${bank}_ncu_thread7_cnt = 1;
+     else
+       spc${bank}_ncu_thread7_cnt = 0;
+  }
+ else if (ncu_cov_ios.spc${bank}_ncu_core_running_status[6] === 1'b0)
+  {
+     spc${bank}_ncu_thread7_cnt = spc${bank}_ncu_thread7_cnt + 1;
+     @(posedge ncu_cov_ios.clk);
+     if (spc${bank}_ncu_thread7_cnt === 'd5)
+     trigger (spc${bank}_ncu_thread7_evnt_trig);
+   }
+  else
+     spc${bank}_ncu_thread7_cnt = 0;
+}
+}
+.   }
+join none
+
+fork
+.     for ($bank=0; $bank<8; $bank++)
+. {
+{
+while(1)
+{
+ @ (posedge ncu_cov_ios.clk);
+ if (spc${bank}_ncu_thread8_cnt === 'd5)
+ {
+
+     if (ncu_cov_ios.spc${bank}_ncu_core_running_status[7] === 1'b0)
+       spc${bank}_ncu_thread8_cnt = 1;
+     else
+       spc${bank}_ncu_thread8_cnt = 0;
+  }
+ else if (ncu_cov_ios.spc${bank}_ncu_core_running_status[7] === 1'b0)
+  {
+     spc${bank}_ncu_thread8_cnt = spc${bank}_ncu_thread8_cnt + 1;
+     @(posedge ncu_cov_ios.clk);
+     if (spc${bank}_ncu_thread8_cnt === 'd5)
+     trigger (spc${bank}_ncu_thread8_evnt_trig);
+   }
+  else
+     spc${bank}_ncu_thread8_cnt = 0;
+}
+}
+.   }
+join none
+
+fork
+.     for ($bank=0; $bank<8; $bank++)
+. {
+{
+while(1)
+{
+ @ (posedge ncu_cov_ios.clk);
+ if (spc${bank}_ncu_thread1_10_cnt === 'd10)
+ {
+
+     if (ncu_cov_ios.spc${bank}_ncu_core_running_status[0] === 1'b0)
+       spc${bank}_ncu_thread1_10_cnt = 1;
+     else
+       spc${bank}_ncu_thread1_10_cnt = 0;
+  }
+ else if (ncu_cov_ios.spc${bank}_ncu_core_running_status[0] === 1'b0)
+  {
+     spc${bank}_ncu_thread1_10_cnt = spc${bank}_ncu_thread1_10_cnt + 1;
+     @(posedge ncu_cov_ios.clk);
+     if (spc${bank}_ncu_thread1_10_cnt === 'd10)
+     trigger (spc${bank}_ncu_thread1_10_evnt_trig);
+   }
+  else
+     spc${bank}_ncu_thread1_10_cnt = 0;
+}
+}
+.   }
+join none
+
+fork
+.     for ($bank=0; $bank<8; $bank++)
+. {
+{
+while(1)
+{
+ @ (posedge ncu_cov_ios.clk);
+ if (spc${bank}_ncu_thread2_10_cnt === 'd10)
+ {
+
+     if (ncu_cov_ios.spc${bank}_ncu_core_running_status[1] === 1'b0)
+       spc${bank}_ncu_thread2_10_cnt = 1;
+     else
+       spc${bank}_ncu_thread2_10_cnt = 0;
+  }
+ else if (ncu_cov_ios.spc${bank}_ncu_core_running_status[1] === 1'b0)
+  {
+     spc${bank}_ncu_thread2_10_cnt = spc${bank}_ncu_thread2_10_cnt + 1;
+     @(posedge ncu_cov_ios.clk);
+     if (spc${bank}_ncu_thread2_10_cnt === 'd10)
+     trigger (spc${bank}_ncu_thread2_10_evnt_trig);
+   }
+  else
+     spc${bank}_ncu_thread2_10_cnt = 0;
+}
+}
+.   }
+join none
+
+fork
+.     for ($bank=0; $bank<8; $bank++)
+. {
+{
+while(1)
+{
+ @ (posedge ncu_cov_ios.clk);
+ if (spc${bank}_ncu_thread3_10_cnt === 'd10)
+ {
+
+     if (ncu_cov_ios.spc${bank}_ncu_core_running_status[2] === 1'b0)
+       spc${bank}_ncu_thread3_10_cnt = 1;
+     else
+       spc${bank}_ncu_thread3_10_cnt = 0;
+  }
+ else if (ncu_cov_ios.spc${bank}_ncu_core_running_status[2] === 1'b0)
+  {
+     spc${bank}_ncu_thread3_10_cnt = spc${bank}_ncu_thread3_10_cnt + 1;
+     @(posedge ncu_cov_ios.clk);
+     if (spc${bank}_ncu_thread3_10_cnt === 'd10)
+     trigger (spc${bank}_ncu_thread3_10_evnt_trig);
+   }
+  else
+     spc${bank}_ncu_thread3_10_cnt = 0;
+}
+}
+.   }
+join none
+
+fork
+.     for ($bank=0; $bank<8; $bank++)
+. {
+{
+while(1)
+{
+ @ (posedge ncu_cov_ios.clk);
+ if (spc${bank}_ncu_thread4_10_cnt === 'd10)
+ {
+
+     if (ncu_cov_ios.spc${bank}_ncu_core_running_status[3] === 1'b0)
+       spc${bank}_ncu_thread4_10_cnt = 1;
+     else
+       spc${bank}_ncu_thread4_10_cnt = 0;
+  }
+ else if (ncu_cov_ios.spc${bank}_ncu_core_running_status[3] === 1'b0)
+  {
+     spc${bank}_ncu_thread4_10_cnt = spc${bank}_ncu_thread4_10_cnt + 1;
+     @(posedge ncu_cov_ios.clk);
+     if (spc${bank}_ncu_thread4_10_cnt === 'd10)
+     trigger (spc${bank}_ncu_thread4_10_evnt_trig);
+   }
+  else
+     spc${bank}_ncu_thread4_10_cnt = 0;
+}
+}
+.   }
+join none
+
+fork
+.     for ($bank=0; $bank<8; $bank++)
+. {
+{
+while(1)
+{
+ @ (posedge ncu_cov_ios.clk);
+ if (spc${bank}_ncu_thread5_10_cnt === 'd10)
+ {
+
+     if (ncu_cov_ios.spc${bank}_ncu_core_running_status[4] === 1'b0)
+       spc${bank}_ncu_thread5_10_cnt = 1;
+     else
+       spc${bank}_ncu_thread5_10_cnt = 0;
+  }
+ else if (ncu_cov_ios.spc${bank}_ncu_core_running_status[4] === 1'b0)
+  {
+     spc${bank}_ncu_thread5_10_cnt = spc${bank}_ncu_thread5_10_cnt + 1;
+     @(posedge ncu_cov_ios.clk);
+     if (spc${bank}_ncu_thread5_10_cnt === 'd10)
+     trigger (spc${bank}_ncu_thread5_10_evnt_trig);
+   }
+  else
+     spc${bank}_ncu_thread5_10_cnt = 0;
+}
+}
+.   }
+join none
+
+fork
+.     for ($bank=0; $bank<8; $bank++)
+. {
+{
+while(1)
+{
+ @ (posedge ncu_cov_ios.clk);
+ if (spc${bank}_ncu_thread6_10_cnt === 'd10)
+ {
+
+     if (ncu_cov_ios.spc${bank}_ncu_core_running_status[5] === 1'b0)
+       spc${bank}_ncu_thread6_10_cnt = 1;
+     else
+       spc${bank}_ncu_thread6_10_cnt = 0;
+  }
+ else if (ncu_cov_ios.spc${bank}_ncu_core_running_status[5] === 1'b0)
+  {
+     spc${bank}_ncu_thread6_10_cnt = spc${bank}_ncu_thread6_10_cnt + 1;
+     @(posedge ncu_cov_ios.clk);
+     if (spc${bank}_ncu_thread6_10_cnt === 'd10)
+     trigger (spc${bank}_ncu_thread6_10_evnt_trig);
+   }
+  else
+     spc${bank}_ncu_thread6_10_cnt = 0;
+}
+}
+.   }
+join none
+
+fork
+.     for ($bank=0; $bank<8; $bank++)
+. {
+{
+while(1)
+{
+ @ (posedge ncu_cov_ios.clk);
+ if (spc${bank}_ncu_thread7_10_cnt === 'd10)
+ {
+
+     if (ncu_cov_ios.spc${bank}_ncu_core_running_status[6] === 1'b0)
+       spc${bank}_ncu_thread7_10_cnt = 1;
+     else
+       spc${bank}_ncu_thread7_10_cnt = 0;
+  }
+ else if (ncu_cov_ios.spc${bank}_ncu_core_running_status[6] === 1'b0)
+  {
+     spc${bank}_ncu_thread7_10_cnt = spc${bank}_ncu_thread7_10_cnt + 1;
+     @(posedge ncu_cov_ios.clk);
+     if (spc${bank}_ncu_thread7_10_cnt === 'd10)
+     trigger (spc${bank}_ncu_thread7_10_evnt_trig);
+   }
+  else
+     spc${bank}_ncu_thread7_10_cnt = 0;
+}
+}
+.   }
+join none
+
+fork
+.     for ($bank=0; $bank<8; $bank++)
+. {
+{
+while(1)
+{
+ @ (posedge ncu_cov_ios.clk);
+ if (spc${bank}_ncu_thread8_10_cnt === 'd10)
+ {
+
+     if (ncu_cov_ios.spc${bank}_ncu_core_running_status[7] === 1'b0)
+       spc${bank}_ncu_thread8_10_cnt = 1;
+     else
+       spc${bank}_ncu_thread8_10_cnt = 0;
+  }
+ else if (ncu_cov_ios.spc${bank}_ncu_core_running_status[7] === 1'b0)
+  {
+     spc${bank}_ncu_thread8_10_cnt = spc${bank}_ncu_thread8_10_cnt + 1;
+     @(posedge ncu_cov_ios.clk);
+     if (spc${bank}_ncu_thread8_10_cnt === 'd10)
+     trigger (spc${bank}_ncu_thread8_10_evnt_trig);
+   }
+  else
+     spc${bank}_ncu_thread8_10_cnt = 0;
+}
+}
+.   }
+join none
+
+fork
+.     for ($bank=0; $bank<8; $bank++)
+. {
+{
+while(1)
+{
+ @ (posedge ncu_cov_ios.clk);
+ if (spc_ncu_thread_50_cnt === 'd50)
+ {
+
+     if (ncu_cov_ios.spc${bank}_ncu_core_running_status[0] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[1] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[2] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[3] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[4] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[5] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[6] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[7] === 1'b0)
+       spc_ncu_thread_50_cnt = 1;
+     else
+       spc_ncu_thread_50_cnt = 0;
+  }
+     else if (ncu_cov_ios.spc${bank}_ncu_core_running_status[0] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[1] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[2] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[3] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[4] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[5] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[6] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[7] === 1'b0)
+  {
+     spc_ncu_thread_50_cnt = spc_ncu_thread_50_cnt + 1;
+     @(posedge ncu_cov_ios.clk);
+     if (spc_ncu_thread_50_cnt === 'd50)
+     trigger (spc_ncu_thread_50_evnt_trig);
+   }
+  else
+     spc_ncu_thread_50_cnt = 0;
+}
+}
+.   }
+join none
+
+fork
+.     for ($bank=0; $bank<8; $bank++)
+. {
+{
+while(1)
+{
+ @ (posedge ncu_cov_ios.clk);
+ if (spc_ncu_thread_100_cnt === 'd100)
+ {
+
+     if (ncu_cov_ios.spc${bank}_ncu_core_running_status[0] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[1] === 1'b0 | | ncu_cov_ios.spc${bank}_ncu_core_running_status[2] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[3] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[4] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[5] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[6] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[7] === 1'b0)
+       spc_ncu_thread_100_cnt = 1;
+     else
+       spc_ncu_thread_100_cnt = 0;
+  }
+     else if (ncu_cov_ios.spc${bank}_ncu_core_running_status[0] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[1] === 1'b0 | | ncu_cov_ios.spc${bank}_ncu_core_running_status[2] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[3] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[4] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[5] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[6] === 1'b0 | ncu_cov_ios.spc${bank}_ncu_core_running_status[7] === 1'b0)
+  {
+     spc_ncu_thread_100_cnt = spc_ncu_thread_100_cnt + 1;
+     @(posedge ncu_cov_ios.clk);
+     if (spc_ncu_thread_100_cnt === 'd100)
+     trigger (spc_ncu_thread_100_evnt_trig);
+   }
+  else
+     spc_ncu_thread_100_cnt = 0;
+}
+}
+.   }
+join none
+
+
+} // task set_ncu_spc_intf_cov_point
+#endif
+
+
+
+task ncu_intf_cov::set_ncu_pcx_cov_point (string myname, ncu_cov_com_io_port ncu_pcxpt)
+{
+ reg ncu_pcx_pkt_gap_cnt_flag = 0;
+ reg [31:0] pcx_32_int_in_32clk=0;
+ reg [63:0] pcx_32_int_in_64clk=0;
+ reg [4:0] pcx_32_int_in_32clk_idx=0;
+ reg [5:0] pcx_32_int_in_64clk_idx=0;
+
+   myname = {myname, ".set_ncu_pcx_cov_point"}; 
+   pcx_int_clk_cnt = 0;
+   ncu_pcx_pkt_gap_cnt = 0;
+   while (1) {
+     @ (posedge ncu_pcxpt.\$clk);
+	if ( ncu_pcxpt.\$valid) {
+	    trigger (ncu_pcx_sample_evnt_trig);
+	  fork
+	    { 
+		@(posedge ncu_cov_ccx.clk);
+	       ncu_pcx_pkt_gap_cnt = 0;
+	       ncu_pcx_pkt_gap_cnt_flag = 1;
+	    }
+	  join none
+	} else {
+	    if (ncu_pcx_pkt_gap_cnt_flag){
+		   ncu_pcx_pkt_gap_cnt++;
+	    }
+	}
+     //=============================
+     if (ncu_pcxpt.\$stall) {
+	ncu_pcx_stall_cnt++;
+	trigger (ncu_pcx_sample_evnt_trig);
+     } else {
+	ncu_pcx_stall_cnt = 0;	
+     }
+     //=============================
+     if (spc_int_flag ){
+        spc_niu_int_skew++;
+        spc_ssi_int_skew++;
+        spc_siu_int_skew++;
+	  spc_int_flag = 0;
+     }  else if (spc_niu_int_skew <= 10){
+  	spc_niu_int_skew++;
+	spc_ssi_int_skew++;
+	spc_siu_int_skew++;
+     } else {
+	spc_niu_int_skew = 4'hf;
+	spc_ssi_int_skew = 4'hf;
+	spc_siu_int_skew = 4'hf;
+     }
+     //=============================
+	
+     
+
+	pcx_32_int_in_32clk[pcx_32_int_in_32clk_idx] =  ncu_pcxpt.\$valid && 
+				     	  ((ncu_pcxpt.\$data[103:64] & 40'hff03ffffff) ==  40'h9001cc0000) &&  
+				     	  (ncu_pcxpt.\$data[128:124] == 5'b00001);
+
+	pcx_32_int_in_64clk[pcx_32_int_in_64clk_idx] =  ncu_pcxpt.\$valid && 
+				     ((ncu_pcxpt.\$data[103:64] & 40'hff03ffffff) ==  40'h9001cc0000) &&  
+				     	  (ncu_pcxpt.\$data[128:124] == 5'b00001);
+
+ 	pcx_32_int_in_32clk_idx++;
+	pcx_32_int_in_64clk_idx++;
+
+	pcx_int_des_reg[0] = &pcx_32_int_in_32clk;
+	pcx_int_des_reg[1] = count_pkt_num(myname, pcx_32_int_in_64clk, 32);
+	if (|pcx_int_des_reg){
+	   trigger (ncu_pcx_sample_evnt_trig);
+	}
+ 	if (ncu_pcxpt.\$valid && ((ncu_pcxpt.\$data[103:64] & 40'hff03ffffff)==40'h9001cc0000)){
+	   dbg.dispmon(myname, MON_INFO, psprintf("pcx_int_des_reg %h pcx_32_int_in_32clk %h pcx_32_int_in_64clk %h, pcx_32_int_in_32clk_idx, %0d, pcx_32_int_in_64clk %0", pcx_int_des_reg, pcx_32_int_in_32clk, pcx_32_int_in_64clk, pcx_32_int_in_32clk_idx, pcx_32_int_in_64clk_idx));
+	   spc_int_flag = 1;
+	}
+
+	
+     if (!ncu_pcxpt.\$stall && ncu_pcxpt.\$valid) {
+		ncu_io_sample_flag = 1;
+           ncu_pcx_add = ncu_pcxpt.\$data[103:64];
+           ncu_pcx_type = ncu_pcxpt.\$data[128:124];
+           ncu_pcx_cpu = ncu_pcxpt.\$data[122:117];
+           ncu_pcx_size = ncu_pcxpt.\$data[111:104];
+	   ncu_pcx_b2b++;
+	   if (ncu_pcx_type == 5'b00001){
+	      ncu_pcx_store_b2b++;
+	   }
+	   if (ncu_pcx_type == 5'b00000){
+	      ncu_pcx_load_b2b++;
+	   }
+	   if (ncu_pcx_add[39:32] == 8'h81){ 
+		ncu_pcx_niu_b2b++;
+	   }
+	   if (ncu_pcx_add[39:32] == 8'h83){ 
+		ncu_pcx_ccu_b2b++;
+	   }
+	   if (ncu_pcx_add[39:32] == 8'h84){ 
+		if (ncu_pcx_add[31:30] == 0){
+		    ncu_pcx_mcu0_b2b++;
+		}
+		if (ncu_pcx_add[31:30] == 1){
+		    ncu_pcx_mcu1_b2b++;
+		}
+		if (ncu_pcx_add[31:30] == 2){
+		    ncu_pcx_mcu2_b2b++;
+		}
+		if (ncu_pcx_add[31:30] == 3){
+		    ncu_pcx_mcu3_b2b++;
+		}
+	   }
+	   if (ncu_pcx_add[39:32] == 8'h85){ 
+		ncu_pcx_tcu_b2b++;
+	   }
+	   if (ncu_pcx_add[39:32] == 8'h86){ 
+		ncu_pcx_dbg1_b2b++;
+	   }
+	   if (ncu_pcx_add[39:32] == 8'h88){ 
+		ncu_pcx_dmu_b2b++;
+	   }
+	   if (ncu_pcx_add[39:32] == 8'hff){ 
+		ncu_pcx_ssi_b2b++;
+	   }
+	   if (ncu_pcx_add[39:32] == 8'h89){ 
+		ncu_pcx_rst_b2b++;
+	   }
+	   if (ncu_pcx_add[39:36] == 4'hc){ 
+		ncu_pcx_pio_b2b++;
+	   }
+
+	   if (ncu_pcx_add == 40'h8000040400) {
+		 ncu_pcx_adata0_thr_reg[ncu_pcx_cpu] = 1'b1;
+		
+	   } 
+	   if (ncu_pcx_add == 40'h8000040600) {
+		 ncu_pcx_adata1_thr_reg[ncu_pcx_cpu] = 1'b1;
+		
+	   } 
+	   if (ncu_pcx_add == 40'h8000040a00) {
+		 ncu_pcx_abusy_thr_reg[ncu_pcx_cpu] = 1'b1;
+		
+	   } 
+	   trigger (ncu_pcx_sample_evnt_trig);
+	   dbg.dispmon(myname, MON_INFO, psprintf("ncu_pcx_add %h ncu_pcx_type %h id %h size %h b2b cnt %0d", ncu_pcx_add, ncu_pcx_type, ncu_pcx_cpu, ncu_pcx_size, ncu_pcx_b2b));
+     } else {
+	ncu_pcx_adata0_thr_reg = 0;
+	ncu_pcx_adata1_thr_reg = 0;
+	ncu_pcx_add = 40'hxxxxxxxxxx;
+	ncu_pcx_type = 5'hxx;
+	ncu_pcx_cpu = 6'hxx;
+	ncu_pcx_size = 8'hxx;
+	ncu_pcx_b2b = 0;
+	ncu_pcx_pio_b2b=0;
+	ncu_pcx_ssi_b2b=0;
+	ncu_pcx_rst_b2b=0;
+	ncu_pcx_dmu_b2b=0;
+	ncu_pcx_dbg1_b2b=0;
+	ncu_pcx_tcu_b2b=0;
+	ncu_pcx_mcu3_b2b=0;
+	ncu_pcx_mcu2_b2b=0;
+	ncu_pcx_mcu1_b2b=0;
+	ncu_pcx_mcu0_b2b=0;
+	ncu_pcx_ccu_b2b=0;
+	ncu_pcx_niu_b2b=0;
+	ncu_pcx_load_b2b=0;
+	ncu_pcx_store_b2b=0;
+     }
+   }
+} // task set_ncu_pcx_cov_point
+
+
+
+task ncu_intf_cov::set_ucb_ncu_cov_point(string myname, 
+		    reg [5:0] ucb_data_width,
+		    var reg [3:0] ucb_ncu_type,
+		    var reg [5:0] ucb_ncu_cpuid,
+		    var reg [1:0] ucb_ncu_bufid,
+		    var reg [8:0] ucb_ncu_deviceid,
+		    var reg [5:0] ucb_ncu_int_vec,
+		    var reg [2:0] ucb_ncu_size,
+			var reg [31:0] b2b_cnt,
+			var reg [31:0] stall_b2b_cnt,
+			var reg [31:0] vld_to_stall_cnt,
+			var reg [31:0] ucb_pkt_gap,
+		    ncu_cov_com_io_port up_ucbpt, 
+		var event ucb_ncu_sample_evnt_trig
+){
+
+ reg [127:0] rev_pkt;
+ reg [5:0] rev_cyc_cnt;
+ reg get_pkt_flag;
+ reg case1_flag;
+ reg  [31:0] niu_ncu_int_des_clk_cnt = 0;
+ reg  [31:0] niu_ncu_int_des_cnt = 0;
+ reg  niu_ncu_int_des_flag = 0;
+ reg  ucb_pkt_gap_flag = 0;
+ reg [4:0] niu_int_in_5cyc=0;
+ reg [19:0] niu_int_in_20cyc=0;
+ reg [49:0] niu_int_in_50cyc=0;
+ reg [149:0] niu_int_in_150cyc=0;
+ reg [799:0] niu_int_in_800cyc=0;
+ reg [31:0] niu_int_in_800cyc_idx=0;
+ reg [31:0] niu_int_in_5cyc_idx=0;
+ reg [31:0] niu_int_in_20cyc_idx=0;
+ reg [31:0] niu_int_in_50cyc_idx=0;
+ reg [31:0] niu_int_in_150cyc_idx=0;
+ reg niu_vld_flag = 0;
+
+        
+
+	ucb_pkt_gap= 0;
+        get_pkt_flag  = 0;
+        rev_cyc_cnt       = 0;
+        case1_flag = 0;
+        myname = {myname,  ".set_ucb_ncu_cov_pont"};
+	b2b_cnt=0;
+	vld_to_stall_cnt=0;
+        while (1) {
+           @(posedge up_ucbpt.\$clk);
+	  
+	//--------------------------
+	fork
+           if (up_ucbpt.\$valid && !up_ucbpt.\$stall){
+		vld_to_stall_cnt++;
+	   } else if (~up_ucbpt.\$valid ||  up_ucbpt.\$stall){
+		if (up_ucbpt.\$stall){
+            	  @(posedge up_ucbpt.\$clk);
+	        }
+		vld_to_stall_cnt = 0;	
+	   }
+	join none
+	if (up_ucbpt.\$valid) {
+	   if (ucb_pkt_gap >0){
+             dbg.dispmon(myname, MON_INFO, psprintf("ucb_pkt_gap %0d", ucb_pkt_gap));
+	     trigger (ucb_ncu_sample_evnt_trig);
+	   }
+	   fork  
+	    {
+		@(negedge up_ucbpt.\$clk);
+	       ucb_pkt_gap = 0;
+	       ucb_pkt_gap_flag = 1;
+	    } 
+	   join none 
+        } else {
+	   if (ucb_pkt_gap_flag){
+	       ucb_pkt_gap++;
+	   }
+ 	}
+
+	//--------------------------
+	   if (up_ucbpt.\$stall){
+		stall_b2b_cnt++;
+	   	trigger (ucb_ncu_sample_evnt_trig);
+	   } else {
+		stall_b2b_cnt = 0;
+	   }	
+     	  //=============================
+
+       if (myname.match("ssi_ncu") ){
+     	  if (ssi_int_flag ){
+  	     ssi_spc_int_skew++;
+	     ssi_siu_int_skew++;
+	     ssi_niu_int_skew++;
+             ssi_int_flag = 0;
+          }  else if (ssi_spc_int_skew <= 10){
+  	     ssi_spc_int_skew++;
+	     ssi_siu_int_skew++;
+	     ssi_niu_int_skew++;
+          } else {
+	     ssi_spc_int_skew = 4'hf;
+	     ssi_niu_int_skew = 4'hf;
+	     ssi_siu_int_skew = 4'hf;
+          }
+       }
+       if (myname.match("niu_ncu") ){
+     	  //=============================
+     	  if (niu_int_flag ){
+  	     niu_spc_int_skew++;
+	     niu_siu_int_skew++;
+	     niu_ssi_int_skew++;
+             niu_int_flag = 0;
+          }  else if (niu_spc_int_skew <= 10){
+  	     niu_spc_int_skew++;
+	     niu_siu_int_skew++;
+	     niu_ssi_int_skew++;
+          } else {
+	     niu_spc_int_skew = 4'hf;
+	     niu_ssi_int_skew = 4'hf;
+	     niu_siu_int_skew = 4'hf;
+          }
+	  niu_int_in_5cyc[niu_int_in_5cyc_idx]   =  (up_ucbpt.\$valid && (up_ucbpt.\$data[3:0] ==4'b1000) && (!niu_vld_flag));	
+	  if (|niu_int_in_5cyc){
+	  niu_ncu_int_des_reg[0] = count_pkt_num (myname, niu_int_in_5cyc, 2);
+	  }
+
+	  niu_int_in_20cyc[niu_int_in_20cyc_idx]  = (up_ucbpt.\$valid && (up_ucbpt.\$data[3:0] ==4'b1000) && (!niu_vld_flag));	
+	  if (|niu_int_in_20cyc){ 
+	  niu_ncu_int_des_reg[1] = count_pkt_num (myname, niu_int_in_20cyc, 4);
+	  }
+
+	  niu_int_in_50cyc[niu_int_in_50cyc_idx]  = (up_ucbpt.\$valid && (up_ucbpt.\$data[3:0] ==4'b1000) && (!niu_vld_flag));	
+	  if (|niu_int_in_50cyc){ 
+	  niu_ncu_int_des_reg[2] = count_pkt_num (myname, niu_int_in_50cyc, 8);
+	  }
+
+	  niu_int_in_150cyc[niu_int_in_150cyc_idx] = (up_ucbpt.\$valid && (up_ucbpt.\$data[3:0] ==4'b1000) && (!niu_vld_flag));	
+	  if (|niu_int_in_150cyc){ 
+	  niu_ncu_int_des_reg[3] = count_pkt_num (myname, niu_int_in_150cyc, 16);
+	  }
+
+	  niu_int_in_800cyc[niu_int_in_800cyc_idx] =  (up_ucbpt.\$valid && (up_ucbpt.\$data[3:0] ==4'b1000) && (!niu_vld_flag));	
+	  if (|niu_int_in_800cyc){ 
+	  niu_ncu_int_des_reg[4] = count_pkt_num (myname, niu_int_in_800cyc, 32);
+	  }
+
+	  if (|niu_int_in_5cyc || |niu_int_in_20cyc || |niu_int_in_150cyc || |niu_int_in_800cyc){
+		dbg.dispmon(myname, MON_INFO, psprintf("NIU_INT:: vld %0h data %0h vld_flag %0h, des%0h, in_5c%0h, in_20c %0h, in_50c %0h in_150c %0h,in_800c %0hidx %0d", 
+		up_ucbpt.\$valid, up_ucbpt.\$data[3:0], niu_vld_flag, niu_ncu_int_des_reg, niu_int_in_5cyc,niu_int_in_20cyc,niu_int_in_50cyc,niu_int_in_150cyc,niu_int_in_800cyc, niu_int_in_5cyc_idx));	
+	  }
+	  niu_int_in_5cyc_idx++;
+	  if (niu_int_in_5cyc_idx>4) niu_int_in_5cyc_idx =0;
+	  niu_int_in_20cyc_idx++;
+	  if (niu_int_in_20cyc_idx>19) niu_int_in_20cyc_idx = 0;
+	  niu_int_in_50cyc_idx++;
+	  if (niu_int_in_50cyc_idx>49) niu_int_in_50cyc_idx = 0;
+	  niu_int_in_150cyc_idx++;
+	  if (niu_int_in_150cyc_idx>149) niu_int_in_150cyc_idx = 0;
+	  niu_int_in_800cyc_idx++;
+	  if (niu_int_in_800cyc_idx>799) niu_int_in_800cyc_idx = 0;
+	  if (up_ucbpt.\$valid){
+		niu_vld_flag=1;
+	  } else {
+		niu_vld_flag=0;
+	  }
+      }	
+     //=============================
+           if (up_ucbpt.\$valid && !up_ucbpt.\$stall && !case1_flag){
+		reg [8:0] up_bits;
+		reg [8:0] low_bits;
+		up_bits  = (ucb_data_width*(rev_cyc_cnt+1)) -1;
+	        low_bits = ucb_data_width*rev_cyc_cnt;
+                rev_pkt[up_bits:low_bits] = up_ucbpt.\$data;
+                //rev_pkt[(ucb_data_width*(rev_cyc_cnt+1))-1:ucb_data_width*rev_cyc_cnt] = up_ucbpt.\$data;
+           	dbg.dispmon(myname, MON_INFO, psprintf("rev_pkt %0h, rev_pkt[%0d:%0d] %0h ucb_data_width %0d rev_cyc_cnt %0d get_pkt_flag %h", 
+						       rev_pkt, up_bits, low_bits, rev_pkt[up_bits:low_bits], ucb_data_width,rev_cyc_cnt,get_pkt_flag));
+                get_pkt_flag = 1;
+                rev_cyc_cnt++;
+           }
+           else if (up_ucbpt.\$valid && up_ucbpt.\$stall && !case1_flag ) {
+		reg [8:0] up_bits;
+		reg [8:0] low_bits;
+		up_bits  = (ucb_data_width*(rev_cyc_cnt+1)) -1;
+	        low_bits = ucb_data_width*rev_cyc_cnt;
+                rev_pkt[up_bits:low_bits] = up_ucbpt.\$data;
+           	dbg.dispmon(myname, MON_INFO, psprintf("rev_pkt %0h, rev_pkt[%0d:%0d] %0h ucb_data_width %0d rev_cyc_cnt %0d get_pkt_flag %h", 
+						       rev_pkt, up_bits, low_bits, rev_pkt[up_bits:low_bits], ucb_data_width,rev_cyc_cnt,get_pkt_flag));
+                //rev_pkt[(ucb_data_width*(rev_cyc_cnt+1))-1:ucb_data_width*rev_cyc_cnt] = up_ucbpt.\$data;
+                get_pkt_flag = 1;
+                rev_cyc_cnt++;
+                case1_flag = 1;
+           } else if (up_ucbpt.\$valid && !up_ucbpt.\$stall && case1_flag){
+                case1_flag = 0;
+           } else if (!up_ucbpt.\$valid ){
+                if (get_pkt_flag) { // get one pakcet for check
+		    ucb_ncu_type = rev_pkt[3:0];
+		    ucb_ncu_cpuid = rev_pkt[9:4];
+		    ucb_ncu_bufid = rev_pkt[11:10];
+		    ucb_ncu_deviceid = rev_pkt[18:10];
+		    ucb_ncu_int_vec = rev_pkt[56:51];
+		    ucb_ncu_size = rev_pkt[14:12];
+       		    if (myname.match("tcu_ncu") ){
+			tcu_ncu_add = rev_pkt[54:47];
+	            }
+		    b2b_cnt++;
+		    //==============================
+		    if (ucb_ncu_type ===4'b1000){ //UCB_PKT_INT             4'b1000
+		        if (myname.match("niu_ncu") ){
+		    	    niu_int_flag = 1;
+           	         dbg.dispmon(myname, MON_INFO, psprintf("niu_ncu_int_des_cnt %0d niu_ncu_int_des_clk_cnt %0d ", 
+								 niu_ncu_int_des_cnt,    niu_ncu_int_des_clk_cnt ));
+		        }
+		        if (myname.match("ssi_ncu") ){
+		    	    ssi_int_flag = 1;
+		        }
+	             }
+           	    dbg.dispmon(myname, MON_INFO, psprintf("type %h cpu id %h buffer id %h, b2b_cnt %0d", 
+					ucb_ncu_type, ucb_ncu_cpuid, ucb_ncu_bufid, b2b_cnt));
+	   	    trigger (ucb_ncu_sample_evnt_trig);
+                } else {
+		   b2b_cnt=0;
+		}
+                rev_pkt = {32{4'hx}};
+                get_pkt_flag = 0;
+                rev_cyc_cnt = 0;
+                case1_flag = 0;
+                case1_flag = 0;
+           }
+        }
+}
+
+task ncu_intf_cov::set_ncu_ucb_cov_point(string myname, 
+			reg [5:0] ucb_data_width,
+		    	var reg [3:0] ncu_ucb_type,
+		    	var reg [5:0] ncu_ucb_cpuid ,
+		    	var reg [1:0] ncu_ucb_bufid ,
+		    	var reg [39:0] ncu_ucb_add ,
+		    	var reg [2:0] ncu_ucb_size ,
+			var reg [31:0] b2b_cnt,
+			var reg [31:0] stall_b2b_cnt,
+			var reg [31:0] vld_to_stall_cnt,
+			var reg [31:0] ucb_pkt_gap,
+			ncu_cov_com_io_port1 dw_ucbpt, 
+			var event ncu_ucb_sample_evnt_trig
+){
+
+ reg [127:0] rev_pkt;
+ reg [5:0] rev_cyc_cnt;
+ reg get_pkt_flag;
+ reg ucb_pkt_gap_flag = 0;
+
+        get_pkt_flag  = 0;
+        rev_cyc_cnt       = 0;
+	
+	ucb_pkt_gap= 0;
+
+
+        myname = {myname,  ".set_ncu_ucb_cov_point"};
+           //dbg.dispmon(myname, MON_DEBUG, psprintf("receive_pkts() task is on"));
+  	b2b_cnt=0;
+	stall_b2b_cnt = 0;	
+	vld_to_stall_cnt = 0;
+        while (1) {
+           @(posedge dw_ucbpt.\$clk);
+//----------------
+	fork
+           if (dw_ucbpt.\$valid && !dw_ucbpt.\$stall_in){
+		vld_to_stall_cnt++;
+	   } else if (~dw_ucbpt.\$valid ||  dw_ucbpt.\$stall_in){
+		if (dw_ucbpt.\$stall_in){
+           	    @(posedge dw_ucbpt.\$clk);
+	        }
+		vld_to_stall_cnt = 0;	
+	   }
+	 join none
+
+	if (dw_ucbpt.\$valid) {
+	   if (ucb_pkt_gap>0){
+           dbg.dispmon(myname, MON_INFO, psprintf("ucb_pkt_gap %0d", ucb_pkt_gap));
+	   trigger (ncu_ucb_sample_evnt_trig);
+	   }
+	   fork {
+		@(negedge dw_ucbpt.\$clk);
+	        ucb_pkt_gap = 0;
+		ucb_pkt_gap_flag = 1;
+	   } join none
+        } else {
+	   if (ucb_pkt_gap_flag) {
+	      ucb_pkt_gap++;
+	   }
+ 	}
+//----------------
+	   if (dw_ucbpt.\$stall_in){
+		stall_b2b_cnt++;
+	   	trigger (ncu_ucb_sample_evnt_trig);
+	   } else {
+		stall_b2b_cnt = 0;
+	   }	
+
+//----------------
+           if (dw_ucbpt.\$valid && !dw_ucbpt.\$stall_in){
+		reg [8:0] up_bits;
+		reg [8:0] low_bits;
+		up_bits  = (ucb_data_width*(rev_cyc_cnt+1)) -1;
+	        low_bits = ucb_data_width*rev_cyc_cnt;
+                rev_pkt[up_bits:low_bits] = dw_ucbpt.\$data;
+                //rev_pkt[(ucb_data_width*(rev_cyc_cnt+1))-1:ucb_data_width*rev_cyc_cnt] = up_ucbpt.\$data;
+                get_pkt_flag = 1;
+           	dbg.dispmon(myname, MON_INFO, psprintf("rev_pkt %0h, rev_pkt[%0d:%0d] %0h ucb_data_width %0d rev_cyc_cnt %0d get_pkt_flag %h", 
+						       rev_pkt, up_bits, low_bits, rev_pkt[up_bits:low_bits], ucb_data_width,rev_cyc_cnt,get_pkt_flag));
+                rev_cyc_cnt++;
+           } else if (!dw_ucbpt.\$valid && get_pkt_flag) { // get one pakcet for check
+                rev_cyc_cnt = 0;
+                get_pkt_flag = 0;
+		    ncu_ucb_type = rev_pkt[3:0];
+		    ncu_ucb_cpuid = rev_pkt[9:4];
+		    ncu_ucb_bufid = rev_pkt[11:10];
+		    ncu_ucb_add = rev_pkt[54:15];
+		    ncu_ucb_size = rev_pkt[14:12];
+		    b2b_cnt++;
+           	    dbg.dispmon(myname, MON_INFO, psprintf("type %h cpu id %h buffer id %h, b2b_cnt %0d", 
+					ncu_ucb_type, ncu_ucb_cpuid, ncu_ucb_bufid, b2b_cnt));
+	   	    trigger (ncu_ucb_sample_evnt_trig);
+           } else if (!get_pkt_flag) {
+		b2b_cnt = 0;
+	   }
+        }
+           //dbg.dispmon(myname, MON_DEBUG, psprintf("task is off"));
+}
+task ncu_intf_cov::set_cpx_cov_point (string myname, ncu_cov_cpx_port cpxpt)
+{
+   myname = {myname,  ".set_cpx_cov_point"};
+
+   //dbg.dispmon(myname, MON_DEBUG, psprintf("Task is on"));
+   ncu_cpx_b2b=0;
+   while (1) {
+        @(posedge cpxpt.\$clk);
+   	if (|cpxpt.\$gnt ){
+	   if (ncu_cpx_cpu == cpxpt.\$gnt){
+		ncu_cpx_req_to_gnt_cnt = 0;
+	   }
+	}
+
+        if (| cpxpt.\$req) {
+	    reg [4:0] idx;
+            ncu_cpx_cpu = cpxpt.\$req;
+	    ncu_cpx_req_to_gnt_cnt++;
+	    for (idx=0; idx <8; idx++){
+	       if (ncu_cpx_cpu[idx] ){
+		   ncu_cpx_cpu_thr_id[5:3] = idx;	
+		} 
+	    }
+            ncu_cpx_type = cpxpt.\$data[144:141];
+            ncu_cpx_err  = cpxpt.\$data[139:138];
+            ncu_cpx_cpu_thr_id[2:0]  = cpxpt.\$data[136:134];
+	    ncu_cpx_b2b++;
+	    if(ncu_cpx_type === 4'b0111){
+		ncu_cpx_int_vec =  cpxpt.\$data[5:0];
+	    }
+	    
+		ncu_io_sample_flag = 1; 
+	    trigger (cpx_sample_evnt_trig);
+            dbg.dispmon(myname, MON_INFO, psprintf("type %h cpu  %h err %h, thr_id %h b2b_cnt %0d", 
+				ncu_cpx_type, ncu_cpx_cpu, ncu_cpx_err, ncu_cpx_cpu_thr_id, ncu_cpx_b2b));
+        } else {
+		
+		ncu_cpx_cpu = 8'hxx;
+		ncu_cpx_type = 4'hx;
+		ncu_cpx_err = 2'hx;
+		ncu_cpx_cpu_thr_id = 6'hxx;
+		ncu_cpx_int_vec = 6'hxx;	
+		ncu_cpx_b2b=0;
+	}
+   }
+
+} 
+
+task ncu_intf_cov::set_siu_cov_point (string myname, ncu_cov_siu_port siupt)
+{
+   reg [6:0] index;
+   reg  rev_pkt_flag;
+   reg [159:0] rev_pkt;
+   reg siu_ncu_pkt_gap_cnt_flag = 0;
+   bit [127:0] siu_playload ;
+	
+
+   myname = {myname,  ".set_siu_cov_point"};
+
+   index = 0;
+   rev_pkt_flag = 0;
+   ncu_siu_b2b=0;
+   //dbg.dispmon(myname, MON_DEBUG, psprintf(" task is on"));
+   while (1) {
+     @ (posedge siupt.\$clk);
+
+     	  //=============================
+     	  if (siu_int_flag ){
+             siu_spc_int_skew++;
+             siu_niu_int_skew++;
+             siu_ssi_int_skew++;
+             siu_int_flag = 0;
+          }  else if (siu_spc_int_skew <= 10){
+  	     siu_spc_int_skew++;
+	     siu_niu_int_skew++;
+	     siu_ssi_int_skew++;
+          } else {
+	     siu_spc_int_skew = 4'hf;
+	     siu_ssi_int_skew = 4'hf;
+	     siu_niu_int_skew = 4'hf;
+          }
+
+        if (rev_pkt_flag) {
+		reg [8:0] up_bits;
+		reg [8:0] low_bits;
+	    if (index >0){
+		up_bits  = index*32-1;
+	        low_bits = (index-1)*32;
+                rev_pkt[up_bits:low_bits] = siupt.\$data;
+           	dbg.dispmon(myname, MON_INFO, psprintf("rev_pkt %0h, rev_pkt[%0d:%0d] %h", rev_pkt, up_bits, low_bits, rev_pkt[up_bits:low_bits]));
+	    }
+	    if (index == 0 && ~rev_pkt[15]){
+		siu_int_flag = 1;
+		
+	    }
+           if (siupt.\$req){
+		ncu_siu_req_cnt++;	
+	   }
+            index++;
+            if (index >5) {
+                index=0;
+                rev_pkt_flag = 0;
+                ncu_siu_err  = rev_pkt[31:28];
+		ncu_siu_pio = rev_pkt[15];
+                if (rev_pkt[15]){
+            	  ncu_siu_credid = rev_pkt[11:8];
+		  ncu_siu_cpu = rev_pkt[5:0];
+		  ncu_siu_bufid = rev_pkt[7:6];
+		} else {
+		  siu_playload = rev_pkt[159:32];
+		   
+		  ncu_siu_cpu    = siu_playload[43:38];
+		  ncu_siu_mondid = {rev_pkt[14:11],rev_pkt[2:1]};
+		}
+		ncu_siu_b2b++;
+	        trigger (siu_sample_evnt_trig);
+	        dbg.dispmon(myname, MON_INFO, psprintf("rev_pkt %0h, siu_playload %h", rev_pkt,siu_playload ));
+                dbg.dispmon(myname, MON_INFO, psprintf("err %h credid %h mondid %h, bufid %h b2b_cnt %0d, cpu %0d, pio %b",                                 ncu_siu_err, ncu_siu_credid, ncu_siu_mondid, ncu_siu_bufid, ncu_siu_b2b, ncu_siu_cpu, ncu_siu_pio)); 
+		
+            }
+        } else {
+	   ncu_siu_cpu = 6'hxx;
+	   ncu_siu_bufid = 2'hx;
+	   ncu_siu_credid = 4'hx;
+  	   ncu_siu_mondid = 6'hxx;
+	   ncu_siu_type = 1'bx;	
+	   ncu_siu_err = 3'hx;
+	   ncu_siu_b2b = 0;
+	   ncu_siu_pio = 1'bx;
+	}
+        if (siupt.\$gnt){
+           rev_pkt_flag = 1;
+	   trigger (siu_sample_evnt_trig);
+	   siu_ncu_pkt_gap_cnt_flag = 1;
+		
+  	   fork
+	   {
+     	     @(posedge siupt.\$clk);
+	     siu_ncu_pkt_gap_cnt = 0;
+	    }
+	   join none
+	   ncu_siu_req_cnt = 0;	
+	   
+        } else {
+	  if (siu_ncu_pkt_gap_cnt_flag){
+	   siu_ncu_pkt_gap_cnt++;
+	  }
+	}
+   }
+
+} 
+task ncu_intf_cov::set_pio_cov_point (string myname, ncu_cov_pio_port piopt)
+{
+
+   reg [63:0] rev_hdr;
+  reg data_valid =0;
+  reg mmu_vld_flag  = 0;
+  reg pio_vld_flag  = 0;
+  ncu_pio_b2b=0;
+  myname = {myname, ".set_pio_cov_point"};
+  while (1) {
+        @(posedge piopt.\$clk);
+	if (ncu_cov_ios.dmu_ncu_wrack_vld){
+	    trigger (pio_sample_evnt_trig);
+	}
+///---------for pkt_gap-----------
+	if (pio_vld_flag && piopt.\$mmu_vld){
+	   ncu_pio_mmu[1] = 1'b1;
+	    trigger (pio_sample_evnt_trig);
+        } else if (piopt.\$hdr_vld) {
+	   pio_vld_flag = 1;
+        dbg.dispmon(myname, MON_INFO, psprintf("mmu_vld_flag  %h pio_vld_flag %h ncu_pio_mmu %b, mmu_vld %h",mmu_vld_flag,pio_vld_flag,ncu_pio_mmu, piopt.\$mmu_vld));
+	    trigger (pio_sample_evnt_trig);
+	} else {
+	   pio_vld_flag = 0;
+	}
+	if (mmu_vld_flag && piopt.\$hdr_vld){
+	   ncu_pio_mmu[2] = 1'b1;
+	    trigger (pio_sample_evnt_trig);
+	} else if (piopt.\$mmu_vld){
+	   ncu_pio_mmu[0] = 1'b1;
+	   mmu_vld_flag = 1;
+        dbg.dispmon(myname, MON_INFO, psprintf("mmu_vld_flag  %h pio_vld_flag %h ncu_pio_mmu %b, mmu_vld %h",mmu_vld_flag,pio_vld_flag,ncu_pio_mmu, piopt.\$mmu_vld));
+	    trigger (pio_sample_evnt_trig);
+	} else {
+	   mmu_vld_flag = 0;
+	}
+
+	
+///---------for pkt_gap-----------
+        if (piopt.\$hdr_vld) {
+	   if (ncu_pio_pkt_gap>0){
+	    trigger (pio_sample_evnt_trig);
+	   }	
+	   ncu_pio_pkt_gap = 0;
+	} else {
+	   ncu_pio_pkt_gap++;
+	}
+
+///---------for pio_pkt-----------
+        if (piopt.\$hdr_vld) {
+            rev_hdr = piopt.\$data;
+	    ncu_pio_type   = rev_hdr[60];
+	    ncu_pio_credit = rev_hdr[58:55];
+	    ncu_pio_size   = rev_hdr[53:50];
+	    ncu_pio_bufid  = rev_hdr[47:46];
+	    ncu_pio_cpu    = rev_hdr[45:40];
+	    ncu_pio_cmap   = rev_hdr[49:48];
+	    ncu_pio_add    = rev_hdr[35:0];
+ 	    ncu_pio_b2b++;
+	    if (!rev_hdr[60]){ data_valid = 1;	}
+	    trigger (pio_sample_evnt_trig);
+            dbg.dispmon(myname, MON_INFO, psprintf("type  %h credid %h size %h, bufid %h cpuid %h b2b_cnt %0d",
+				 ncu_pio_type, ncu_pio_credit, ncu_pio_size, ncu_pio_bufid, ncu_pio_cpu, ncu_pio_b2b));
+        } else if (data_valid){
+		data_valid = 0;
+	    ncu_pio_type = 1'bx;
+	    ncu_pio_credit = 4'hx;
+	    ncu_pio_size = 4'hx;
+	    ncu_pio_cmap = 2'hx;
+	    ncu_pio_bufid = 2'hx;
+	    ncu_pio_cpu = 5'hxx;
+	    ncu_pio_add = 35'hxxxxxxxxx;
+            dbg.dispmon(myname, MON_INFO, psprintf("type  %h credid %h size %h, bufid %h cpuid %h b2b_cnt %0d",
+				 ncu_pio_type, ncu_pio_credit, ncu_pio_size, ncu_pio_bufid, ncu_pio_cpu, ncu_pio_b2b));
+	} else {
+	  ncu_pio_b2b = 0;
+	}
+   }
+} 
+task ncu_intf_cov::set_mondo_cov_point (string myname,  reg [1:0] mondo_id, var reg [3:0] mondo_wait_id_reg, reg mondo_type=0)
+{
+reg [1:0] mondo_id0;
+reg [1:0] mondo_id1;
+reg [1:0] mondo_id2;
+reg mondo_req_ack_hit0;
+reg mondo_req_ack_hit1;
+reg mondo_req_ack_hit2;
+reg [5:0] mondo_id_nack;
+reg mondo_id_nack_flag = 0;
+
+   myname = {myname,  ".set_mondo_cov_point"};
+   mondo_id0 = mondo_id+1; 
+   mondo_id1 = mondo_id+2; 
+   mondo_id2 = mondo_id+3; 
+ 
+   while (1){
+	@(posedge ncu_cov_ios.clk);
+	if (mondo_type){
+	   if (ncu_cov_ios.ncu_dmu_mondo_nack ){
+		mondo_id_nack = ncu_cov_ios.ncu_dmu_mondo_id;
+		mondo_id_nack_flag = 1;
+	   } else if (mondo_id_nack_flag && (ncu_cov_ios.ncu_dmu_mondo_id !== mondo_id_nack) && ncu_cov_ios.ncu_dmu_mondo_ack){
+		mondo_ack_nack_cov_flag = 1;
+		mondo_id_nack_flag = 0;
+	        trigger (mondo_wait_id_reg_cov_trig);
+	   } else if (mondo_id_nack_flag && (ncu_cov_ios.ncu_dmu_mondo_id == mondo_id_nack) && ncu_cov_ios.ncu_dmu_mondo_ack){
+		mondo_id_nack_flag = 0;
+	   }
+	} else {
+	  if (ncu_cov_ios.ncu_dmu_mondo_nack  && (ncu_cov_ios.ncu_dmu_mondo_id[1:0] == mondo_id)){
+	    
+	    fork
+		detect_other_mondo_int(myname, mondo_id, mondo_id0,mondo_req_ack_hit0);	
+		detect_other_mondo_int(myname, mondo_id, mondo_id1,mondo_req_ack_hit1);	
+		detect_other_mondo_int(myname, mondo_id, mondo_id2,mondo_req_ack_hit2);	
+	    join 
+	        
+	    mondo_wait_id_reg[mondo_id0] = mondo_req_ack_hit0;
+	    mondo_wait_id_reg[mondo_id1] = mondo_req_ack_hit1;
+	    mondo_wait_id_reg[mondo_id2] = mondo_req_ack_hit2;
+	    mondo_wait_id_reg[mondo_id] = 1'b1;
+	    dbg.dispmon(myname, MON_INFO, psprintf("  %0d mondo pending and other monod ack. mondo_wait_id_reg  %0h", mondo_id, mondo_wait_id_reg));
+	    trigger (mondo_wait_id_reg_cov_trig);
+	  }	 
+	}
+   }
+}
+
+task ncu_intf_cov::detect_other_mondo_int (string myname,  reg [1:0] mondo_id, reg [1:0] detect_mondo_id, var reg mondo_req_ack_hit)
+{
+reg  main_mondo_ack = 1; 	
+reg ncu_siu_hdr_flag = 0;
+   myname = {myname,  ".detect_other_mondo_int"};
+   mondo_req_ack_hit = 0; 
+   dbg.dispmon(myname, MON_INFO, psprintf("  %0d mondo pending and waiting monod %0d complete.", mondo_id, detect_mondo_id));
+   while (main_mondo_ack){
+	@(posedge ncu_cov_ios.clk);
+	if ( ncu_cov_ios.ncu_dmu_mondo_ack  && (ncu_cov_ios.ncu_dmu_mondo_id[1:0] == mondo_id)){
+	   main_mondo_ack = 0;
+	   dbg.dispmon(myname, MON_INFO, psprintf(" Get %0d mondo ack for mondo %0d. Exist routine ", mondo_id, detect_mondo_id));
+	}
+	if (ncu_cov_ios.ncu_dmu_mondo_ack && (ncu_cov_ios.ncu_dmu_mondo_id[1:0] === detect_mondo_id)){
+		mondo_req_ack_hit = 1;	
+		main_mondo_ack = 0;
+	 	dbg.dispmon(myname, MON_INFO, psprintf(" pending mondo %0d get %0d mondo interrupt ack .",  mondo_id, detect_mondo_id));
+	}
+   }
+    dbg.dispmon(myname, MON_INFO, psprintf("  %0d mondo pending and waiting monod %0d complete done.", mondo_id, detect_mondo_id));
+}
+
+
+task ncu_intf_cov::set_ncu_ras_soc_report_point (string myname, ncu_cov_com_io_port ncu_pcxpt, ncu_cov_cpx_port cpxpt)
+{
+  reg [39:0] pcx_add;
+  reg [7:0]  pcx_size;
+  reg [4:0]  pcx_type;
+  reg [2:0]  pcx_cpu;
+  reg [2:0]  pcx_thr;
+  reg [7:0]  cpx_cpu;
+  reg [2:0]  cpx_thr;
+  reg [3:0]  cpx_type;
+  reg per_read_flag;
+
+   myname = {myname,  ".set_ncu_ras_soc_report_point"};
+   per_read_flag = 0;
+
+  fork
+   while (1) {
+     @ (posedge ncu_pcxpt.\$clk);
+     if (!ncu_pcxpt.\$stall && ncu_pcxpt.\$valid) {
+         pcx_add = ncu_pcxpt.\$data[103:64];
+         pcx_type = ncu_pcxpt.\$data[128:124];
+         pcx_size = ncu_pcxpt.\$data[111:104];
+
+	 dbg.dispmon(myname, MON_INFO, psprintf("pcx_add %h pcx_type %h size %h ", pcx_add, pcx_type, pcx_size));
+	 if ((pcx_add == NCU_PER_REG) && (pcx_type == PCX_PKT_LOAD) && (pcx_size == PCX_LOAD_8BYTE)){
+		pcx_cpu = ncu_pcxpt.\$data[122:120];
+         	pcx_thr = ncu_pcxpt.\$data[119:117];
+		per_read_flag = 1;	
+	  	//dbg.dispmon(myname, MON_INFO, psprintf(" PER read"));
+	   dbg.dispmon(myname, MON_INFO, psprintf("pcx_cpu %h pcx_thr %h per_read_flag %h ", pcx_cpu, pcx_thr, per_read_flag));
+	}
+	
+     } 
+   }
+
+   while (1) {
+      @(posedge cpxpt.\$clk);
+      if (per_read_flag){
+	    dbg.dispmon(myname, MON_INFO, psprintf(" cpx_pcu %0h cpx_type %0h, cpx_thr %h ", cpx_cpu, cpx_type, cpx_thr));
+        if (|cpxpt.\$req) {
+            cpx_cpu = cpxpt.\$req;
+
+            cpx_type = cpxpt.\$data[144:141];
+            cpx_thr  = cpxpt.\$data[136:134];
+	
+	    dbg.dispmon(myname, MON_INFO, psprintf(" cpx_cpu %0h cpx_type %0h, pcx_thr %h , pcx_cpu %0d", cpx_cpu, cpx_type, cpx_thr, pcx_cpu));
+	    if ((cpx_cpu[pcx_cpu]) && (pcx_thr == cpx_thr) && (cpx_type  == CPX_PKT_LOAD_RTN)){
+		ncu_soc_err[23:0]  = cpxpt.\$data[23:0];
+		ncu_soc_err[28:24] = cpxpt.\$data[29:25];
+		ncu_soc_err[30:29] = cpxpt.\$data[32:31];
+		ncu_soc_err[32:31] = cpxpt.\$data[35:34];
+		ncu_soc_err[34:33] = cpxpt.\$data[38:37];
+		ncu_soc_err[37:35] = cpxpt.\$data[42:40];
+		per_read_flag = 0;	
+	        trigger (ncu_soc_report_sample_evnt_trig);
+	  	dbg.dispmon(myname, MON_INFO, psprintf(" ncu_soc_report_sample_evnt_trig is trigger data %0h, ncu_soc_err %0h",  cpxpt.\$data, ncu_soc_err));
+	
+	    }
+
+        } 
+     }	
+
+   }
+
+ join 
+
+
+} 
+
+function reg  ncu_intf_cov::count_pkt_num(string myname, reg [1000:0] base_reg,  reg [9:0] pkt_num)
+{
+reg [9:0] reg_1_cnt = 0;  
+reg [31:0] base_reg_idx = 0;
+reg multi_pkt_hit = 0;
+
+   myname={myname, ".count_pkt_num"};
+  dbg.dispmon(myname, MON_INFO, psprintf("base_reg %0h, pkt_num %0d",  base_reg,   pkt_num));
+   while (|base_reg){
+	if (base_reg[base_reg_idx]){	
+	   base_reg[base_reg_idx]=0;
+	   reg_1_cnt++;	
+	}
+	base_reg_idx++;
+   }
+   if (reg_1_cnt >= pkt_num){
+   	multi_pkt_hit = 1;
+   }
+   dbg.dispmon(myname, MON_INFO, psprintf("reg_1_cnt %0d multi_pkt_hit %b\n",  reg_1_cnt,   multi_pkt_hit));
+   count_pkt_num = multi_pkt_hit;
+}
+
+task ncu_intf_cov::set_int_pkt_points (string myname) 
+{
+reg [9:0] niu_int_reg = 0;
+reg [9:0] spc_int_reg = 0;
+reg [9:0] siu_int_reg = 0;
+reg [9:0] ssi_int_reg = 0;
+reg [39:0] cpx_int_reg =0;
+reg niu_multi_pkt_hit;
+reg siu_multi_pkt_hit;
+reg ssi_multi_pkt_hit;
+reg spc_multi_pkt_hit;
+reg [3:0] trip_int_reg_idx = 0;
+reg [5:0] cpx_int_reg_idx = 0;
+   myname = {myname, ".set_int_pkt_points"}; 
+   while (1){
+	
+	@(posedge ncu_cov_ios.clk);
+	niu_int_reg[trip_int_reg_idx] =  ncu_cov_ios.niu_int_vld ;
+	siu_int_reg[trip_int_reg_idx] =  ncu_cov_ios.sii_mondo_vld;
+	ssi_int_reg[trip_int_reg_idx] =  ncu_cov_ios.ssi_int_vld ;
+	spc_int_reg[trip_int_reg_idx] =  ncu_cov_ios.spc_int_vld;
+ 	cpx_int_reg[cpx_int_reg_idx] =  ncu_cov_ios.spc_int_vld;
+
+	if (ncu_cov_ios.spc_int_vld | ncu_cov_ios.niu_int_vld |ncu_cov_ios.sii_mondo_vld |ncu_cov_ios.ssi_int_vld)
+	{
+
+	   ncu_cpx_int_multi_pkt[0] = count_pkt_num(myname, cpx_int_reg, 5);
+   	   ncu_cpx_int_multi_pkt[1] = count_pkt_num(myname, cpx_int_reg, 10);
+	   ncu_cpx_int_multi_pkt[2] = count_pkt_num(myname, cpx_int_reg, 15);
+	   ncu_cpx_int_multi_pkt[3] = count_pkt_num(myname, cpx_int_reg, 20);
+
+      	   niu_siu_ssi[0] =  ncu_cov_ios.niu_int_vld && ncu_cov_ios.sii_mondo_vld && ncu_cov_ios.ssi_int_vld;
+
+	   siu_ssi_spc[0] =  ncu_cov_ios.sii_mondo_vld && ncu_cov_ios.ssi_int_vld && ncu_cov_ios.spc_int_vld;
+
+	   ssi_spc_niu[0] =  ncu_cov_ios.ssi_int_vld && ncu_cov_ios.spc_int_vld && ncu_cov_ios.niu_int_vld;
+
+	   spc_niu_siu[0] =  ncu_cov_ios.spc_int_vld && ncu_cov_ios.niu_int_vld && ncu_cov_ios.sii_mondo_vld;
+
+
+           niu_multi_pkt_hit  = count_pkt_num(myname, niu_int_reg, 5); 
+           siu_multi_pkt_hit  = count_pkt_num(myname, siu_int_reg, 5); 
+           ssi_multi_pkt_hit  = count_pkt_num(myname, ssi_int_reg, 5); 
+           spc_multi_pkt_hit  = count_pkt_num(myname, spc_int_reg, 5); 
+
+	   niu_siu_ssi[1] = niu_multi_pkt_hit && siu_multi_pkt_hit && ssi_multi_pkt_hit;
+
+	   siu_ssi_spc[1] = siu_multi_pkt_hit && ssi_multi_pkt_hit && spc_multi_pkt_hit; 
+
+	   ssi_spc_niu[1] = ssi_multi_pkt_hit && spc_multi_pkt_hit && niu_multi_pkt_hit;
+
+	   spc_niu_siu[1] = spc_multi_pkt_hit && niu_multi_pkt_hit && siu_multi_pkt_hit;
+	                    
+	   niu_siu_ssi[2] = |niu_int_reg && |siu_int_reg && |ssi_int_reg;
+
+	   siu_ssi_spc[2] = |siu_int_reg && |ssi_int_reg && |spc_int_reg;
+
+	   ssi_spc_niu[2] = |ssi_int_reg && |spc_int_reg && |niu_int_reg;
+
+	   spc_niu_siu[2] = |spc_int_reg && |niu_int_reg && |siu_int_reg;
+
+ 	      dbg.dispmon(myname, MON_INFO, psprintf(" niu_int_reg %b, siu_int_reg %b ssi_int_reg %b spc_int_reg %b cpx_int_reg %b", 
+						 niu_int_reg,       siu_int_reg,    ssi_int_reg,    spc_int_reg, cpx_int_reg));
+	
+ 	      dbg.dispmon(myname, MON_INFO, psprintf(" niu_siu_ssi %b, siu_ssi_spc %b ssi_spc_niu %b spc_niu_siu %b,spc_multi_pkt_hit %b", 
+						 niu_siu_ssi,       siu_ssi_spc,   ssi_spc_niu,   spc_niu_siu,  spc_multi_pkt_hit));
+	}
+	trip_int_reg_idx++;
+	if (trip_int_reg_idx >9){
+	   trip_int_reg_idx=0;
+	}
+	cpx_int_reg_idx++;
+	if (cpx_int_reg_idx >39){
+	   cpx_int_reg_idx=0;
+	}
+
+   }
+}
+

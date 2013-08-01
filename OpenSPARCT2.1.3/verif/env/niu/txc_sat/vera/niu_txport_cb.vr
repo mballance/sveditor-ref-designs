@@ -1,0 +1,428 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_txport_cb.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "niu_tx_descp.vrh"
+#include "dmc_memory_map.vri"
+#include "txc_memory_map.vri"
+extern mbox_class mbox_id;
+#include "cMesg.vrh"
+extern Mesg            be_msg;
+
+// To Support MAC Loop back mode
+#include "niu_rxtoken.vrh"
+
+#include "niu_cbclass.vrh"
+#include "niu_txcbmgr.vrh"
+#include "hostRdCbMgr.vrh"
+extern CHostRdCbMgr     hostRdCbMgr;
+#define  TIME {get_time(HI), get_time(LO)}
+
+
+#define HOSTMTU 64 // TMP ONLY
+class CTxSemId {
+  integer id;
+  integer port_id;
+  integer noOfReqs;
+  integer noOfResp;
+  integer trans_id;
+  bit[63:0] address[15]; // 15 gathers
+  integer length[15]; // 15 gathers
+  integer NoofGathers;
+
+  task SetCb() ;
+  task spawm_mini_cbs(bit[63:0] address, integer no_of_chunks, integer semId);
+  task WaitForRelease(integer semId, integer InitialNoOfReqs);
+
+  task new(integer i) {
+    noOfReqs = -1;
+    port_id = i;
+   }
+}
+task CTxSemId::spawm_mini_cbs(bit[63:0] address, integer no_of_chunks, integer semId){
+ 
+   CcbMem cb;
+   integer i;
+   bit[63:0] address_incr;
+
+   for(i=0;i<no_of_chunks;i++) {
+     cb = new(semId);
+     address_incr = address + HOSTMTU *i;
+     printf("spawm_mini_cbs - Address - %x i - %d SemId 0 %d \n",address_incr,i,semId);
+     cb.set(address_incr,GOOD_PACKET) ;
+     hostRdCbMgr.setCallBack(cb);
+   }
+
+}
+
+task CTxSemId::SetCb() {
+// for each address/length - split them into MTU chunks and 
+// set the callback
+
+ integer i;
+ integer semId;
+ integer no_of_chunks;
+ bit[63:0] adjusted_address[15];
+ bit[63:0] adjusted_length[15];
+ integer InitialNoOfReqs;
+
+// This code applicable for N2 only - 
+ for(i=0;i<NoofGathers;i++) {
+   adjusted_address[i] = (address[i] >>6 )<<6; // 64 bytes aligned
+   adjusted_length[i] = length[i] + ( address[i] & 6'h3f ); // extra offset due to alignment
+ }
+
+ noOfReqs = 0;
+ for(i=0;i<NoofGathers;i++) {
+  no_of_chunks =  adjusted_length[i]/ HOSTMTU + ( (adjusted_length[i]%HOSTMTU) ? 1:0);
+  noOfReqs+=no_of_chunks;
+ }
+ semId = alloc(SEMAPHORE,0,1,0);
+ printf("After alloc - %d id - %d\n",noOfReqs,semId);
+ noOfReqs = 0;
+
+ for(i=0;i<NoofGathers;i++) {
+  no_of_chunks =  adjusted_length[i]/ HOSTMTU + ( (adjusted_length[i]%HOSTMTU) ? 1:0);
+  spawm_mini_cbs(adjusted_address[i],no_of_chunks,semId);
+  noOfReqs+=no_of_chunks;
+  printf(" SetCb no_of_chunks - %d \n",no_of_chunks);
+ }
+ InitialNoOfReqs = noOfReqs;
+ printf("InitialNoOfReqs - %d\n",InitialNoOfReqs);
+fork {
+  WaitForRelease(semId, InitialNoOfReqs);
+ } join none
+
+
+}
+task CTxSemId::WaitForRelease(integer semId, integer InitialNoOfReqs) {
+
+ printf("WaitForRelease noOfReqs - %d SemId - %d \n",InitialNoOfReqs,semId); 
+ 
+ @(posedge CLOCK);
+ while(semaphore_get(WAIT,semId,InitialNoOfReqs) != 1 ) {
+       repeat(100) @(posedge CLOCK); 
+ }
+ printf("before mailbox WaitForRelease noOfReqs - %d SemId - %d \n",noOfReqs,semId); 
+ // free this id and send the appropriate message further
+ mailbox_put(mbox_id.niu_tx_cb[port_id], this.trans_id);
+
+}
+
+class CTxPortCbMgr {
+  integer port_id;
+  integer cb_enable;
+
+  VeraList_CTxToken PortTxTokenList;
+  event lock_for_mark;
+  event freeze_token_list;
+  
+  CTxSemId TxSemId[];
+  CTxToken TxTokenReqs[];
+  CcbTxIdMgr cbTxIdMgr;
+  CcbTxIdMgr cbTxReqIdMgr;
+  event lock_port_queue;
+  task new(integer i=0);
+  task pushToPortTokenList(CTxToken TxToken);
+  function integer  PullPortTokenList(var CTxToken TxToken) ;
+  local function integer isQueEmpty() ;
+  local function integer isQueHeadValid();
+  local task forward_token() ;
+  local task checkForSemRelease();
+  local task MarkTokens(integer trans_id);
+  local task free_transid(integer trans_id);
+  local task free_req_transid(integer trans_id) ;
+  local task SetCb(CTxToken TxToken) ;
+  task CheckReqCbs(CTxToken TxToken) ;
+  task FreezeCurrentTokenList();
+
+
+}
+
+task CTxPortCbMgr::CheckReqCbs(CTxToken TxToken) {
+
+    integer trans_id;
+    bit[39:0] address;
+    integer semId;
+    CcbMem cb;
+    CTxToken txtoken;
+
+  if(cb_enable) {
+   fork { 
+
+    while(!cbTxReqIdMgr.isAvailable() ) {
+      repeat(10) @(posedge CLOCK);
+     }
+
+    trans_id = cbTxReqIdMgr.getTransId(); // tmp for now
+    address=TxToken.xlate_gather_address[0];
+    TxTokenReqs[trans_id] = TxToken;
+   
+    semId = alloc(SEMAPHORE,0,1,0);
+    cb = new(semId);
+    address = (address >>6 )<<6; // 64 bytes aligned
+    cb.set(address,READ_REQUEST) ;
+    hostRdCbMgr.setCallBack(cb);
+
+    while(semaphore_get(WAIT,semId,1) != 1 ) {
+       repeat(100) @(posedge CLOCK);
+    }
+
+   txtoken = TxTokenReqs[trans_id];
+   txtoken.pgToken.tx_request_seen = 1;
+   printf("CheckReqCbs:: TX REQUEST SEEN FOR ADDRESS - %x ID - %d\n", address,txtoken.pgToken.gId);
+   free_req_transid(trans_id);
+   
+  } join none
+ }
+
+}
+
+task CTxPortCbMgr::FreezeCurrentTokenList() {
+
+  VeraListIterator_CTxToken item, next_item;
+  CTxToken Entry;
+  integer i;
+  sync(ALL,lock_for_mark);
+  trigger(OFF,freeze_token_list);
+
+  if(PortTxTokenList.size() ==1) {
+	Entry = PortTxTokenList.back();
+	Entry.CannotTouch = 1;
+	PortTxTokenList.pop_back();
+	PortTxTokenList.push_back(Entry);
+  } else if(PortTxTokenList.size() >1) {
+   item = PortTxTokenList.start();
+   while( item.neq(PortTxTokenList.finish())) {
+      Entry = item.data();
+      printf("CTxPortCbMgr::FreezeCurrentTokenList  Freezing Entry: Token id - %d Size - %d Address - %x \n",Entry.id,PortTxTokenList.size(),Entry.xlate_gather_address[0]);
+      next_item = PortTxTokenList.erase(item);
+      Entry.CannotTouch = 1;
+      PortTxTokenList.insert(next_item,Entry);
+      item = next_item;
+      }
+  }
+  trigger(ON,freeze_token_list);
+}
+
+task CTxPortCbMgr::pushToPortTokenList(CTxToken TxToken) {
+  // Look at the addresses, length set the call back table etc here
+  CTxToken tmp;
+
+  // TxToken.port_data_valid = 0;
+  if(TxToken.CallBackPending) {
+   printf("DEBUG  Added : cb pending pushToPortTokenList id - %d Size - %d Time - %d \n",TxToken.id,PortTxTokenList.size(),TIME);
+  } else {
+   printf("DEBUG  Added : cb to be set pushToPortTokenList id - %d Size - %d Time - %d \n",TxToken.id,PortTxTokenList.size(),TIME);
+  }
+    if(TxToken.CallBackPending==0) {
+     fork {
+       SetCb(TxToken);
+      } join none
+     TxToken.CallBackPending = 1;
+    }
+  sync(ALL,lock_for_mark);
+  PortTxTokenList.push_back(TxToken);
+  tmp = PortTxTokenList.back();
+  printf("DEBUG trans_id Added Address - %x Size - %d Time - %d \n",tmp.xlate_gather_address[0],PortTxTokenList.size(),TIME);
+
+
+}
+function integer  CTxPortCbMgr::PullPortTokenList(var CTxToken TxToken) {
+  sync(ALL,lock_for_mark);
+  sync(ALL,freeze_token_list);
+  if(PortTxTokenList.size()==0) {
+    PullPortTokenList = 0;
+  } else {
+   TxToken = PortTxTokenList.back();
+   if(TxToken.CannotTouch) {
+    PullPortTokenList = 0;
+   } else {
+     printf("PullPortTokenList: DEBUG trans_id - Size -%d Address - %x Time - %d  id - %d \n",PortTxTokenList.size(),TxToken.xlate_gather_address[0],TIME,TxToken.id);
+    PortTxTokenList.pop_back();
+    PullPortTokenList = 1;
+   }
+  }
+}
+
+task CTxPortCbMgr::SetCb(CTxToken TxToken) {
+
+     CTxSemId TxSemIdlocal;
+     integer i;
+     integer trans_id;
+
+     while(!cbTxIdMgr.isAvailable() ) {
+      repeat(10) @(posedge CLOCK);
+     }
+     TxToken.call_back_set = 1;
+
+     TxSemIdlocal= new(port_id);
+     // TxSemIdlocal.semId = cbTxIdMgr.getSemId();
+     // trans_id = cbTxIdMgr.getTransId();
+     trans_id = cbTxIdMgr.getTransId(); // tmp for now
+     TxSemIdlocal.trans_id = trans_id;
+
+     // TxSemId.NoofGathers = TxToken.getNoofGathers();
+     TxSemIdlocal.NoofGathers = TxToken.NoofGathers;
+
+     for(i=0;i<TxSemIdlocal.NoofGathers;i++) {
+       TxSemIdlocal.address[i] = TxToken.xlate_gather_address[i];
+       TxSemIdlocal.length[i] = TxToken.gather_pkt_length[i] ;
+
+     }
+
+     TxSemId[trans_id] = new TxSemIdlocal;
+     for(i=0;i<TxSemId[trans_id].NoofGathers;i++) {
+       printf("SetCb: DEBUG trans_id - %d Address - %x i = %d \n",trans_id,TxSemId[trans_id].address[i],i);
+       printf("Token: DEBUG trans_id - %d Address - %x i = %d \n",trans_id,TxToken.xlate_gather_address[i],i);
+     }
+
+     TxSemId[trans_id].SetCb();
+}
+
+task CTxPortCbMgr::new(integer i=0) {
+  port_id = i;
+  PortTxTokenList = new();
+  trigger(ON,lock_port_queue);
+  trigger(ON,lock_for_mark);
+  trigger(ON,freeze_token_list);
+
+  if (get_plus_arg(CHECK, "SIU_CB_ENABLE")) {
+       cb_enable = 1;
+  } else {
+       cb_enable = 0;
+  }
+
+  cbTxIdMgr = new(1000);
+  cbTxReqIdMgr = new(5000);
+  fork{
+    forward_token();
+  } join none
+  fork {
+    checkForSemRelease();
+  } join none
+}
+function integer CTxPortCbMgr::isQueEmpty() {
+  if(PortTxTokenList.size()) {
+     isQueEmpty = 0;
+  } else {
+     isQueEmpty = 1;
+  }
+}
+function integer CTxPortCbMgr::isQueHeadValid() {
+   CTxToken TxToken;
+   printf("CTxPortCbMgr::isQueHeadValid Size - %d \n",PortTxTokenList.size());
+   if(PortTxTokenList.size()==0) isQueHeadValid=0;
+   else {
+     TxToken = PortTxTokenList.front();
+     isQueHeadValid = TxToken.port_data_valid;
+     printf("CTxPortCbMgr::isQueHeadValid Valid - %d Address - %x \n",isQueHeadValid,TxToken.xlate_gather_address[0]);
+
+   }
+}
+
+task CTxPortCbMgr::checkForSemRelease() {
+ integer trans_id;
+ integer no_of_entries;
+ while(1) {
+  @(posedge CLOCK);
+  no_of_entries = mailbox_get(WAIT,mbox_id.niu_tx_cb[port_id], trans_id);
+  printf("Before Sync ALL Time - %d \n",TIME);
+  sync(ALL,lock_port_queue);
+  printf("After Sync ALL Time - %d \n",TIME);
+  
+  printf("checkForSemRelease  releasing %d \n",trans_id);
+  sync(ALL,freeze_token_list);
+  trigger(OFF,lock_for_mark);
+  MarkTokens(trans_id);
+  trigger(ON,lock_for_mark);
+ }
+}
+task CTxPortCbMgr::MarkTokens(integer trans_id) {
+  bit[63:0] packet_address;
+  VeraListIterator_CTxToken item, next_item;
+  CTxToken Entry;
+  bit match;
+  integer status;
+  integer i;
+
+  packet_address = TxSemId[trans_id].address[0]; 
+  for(i=0;i<TxSemId[trans_id].NoofGathers;i++) {
+   printf("MarkTokens DEBUG trans_id - %d Address - %x i = %d Size - %d Time - %d \n",trans_id,TxSemId[trans_id].address[i],i,PortTxTokenList.size(),TIME);
+  }
+  // scan through the token list for this address and mark it good
+  match = 0;
+  item = PortTxTokenList.start();
+  while(!match &  item.neq(PortTxTokenList.finish())) {
+      Entry = item.data();
+      printf("DEBUG packet_address - %x Entry.xlate_gather_address[0] - %x \n",packet_address,Entry.xlate_gather_address[0]);
+      if(Entry.xlate_gather_address[0] == packet_address)  { 
+        next_item = PortTxTokenList.erase(item);
+        Entry.port_data_valid = 1;
+        printf(" CTxPortCbMgr::MarkTokens  Validating Entry: Token id - %d Size - %d Address - %x \n",Entry.id,PortTxTokenList.size(),packet_address);
+        PortTxTokenList.insert(next_item,Entry);
+        match = 1;
+      } else {
+       item.next();
+      }
+  }
+  if(match==0)  printf(" SOMETHING WRONG!! CTxPortCbMgr::MarkTokens ERROR Time - %d \n",TIME);
+  free_transid(trans_id);
+  
+  
+}
+
+task CTxPortCbMgr::free_transid(integer trans_id) {
+  integer status;
+  status = assoc_index(DELETE,TxSemId,trans_id);
+  cbTxIdMgr.releaseId(trans_id);
+}
+task CTxPortCbMgr::free_req_transid(integer trans_id) {
+  integer status;
+  status = assoc_index(DELETE,TxTokenReqs,trans_id);
+  cbTxReqIdMgr.releaseId(trans_id);
+}
+task CTxPortCbMgr::forward_token() {
+CTxToken TxToken;
+
+ while(1) {
+   while(isQueEmpty()) @(posedge CLOCK);
+   while(isQueHeadValid()==0) @(posedge CLOCK);
+   sync(ALL,lock_for_mark);
+   sync(ALL,freeze_token_list);
+   TxToken = PortTxTokenList.front();
+   printf("DEBUG trans_id  Forwarding Token: Address - %x Time - %d  id - %d \n",TxToken.xlate_gather_address[0],TIME,TxToken.id);
+   mailbox_put(mbox_id.mac_opp[this.port_id],TxToken.pgToken);
+   PortTxTokenList.pop_front();
+ }
+}

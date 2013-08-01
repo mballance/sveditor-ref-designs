@@ -1,0 +1,237 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: utilsClass.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <std_display_defines.vri>
+#include <ccxDevicesDefines.vri>
+
+#include <globals.vri>
+
+#include <std_display_class.vrh>
+#include <baseParamsClass.vrh>
+#include <sparcParams.vrh>
+#include <baseUtilsClass.vrh>
+#include <sparcBenchUtils.vrh>
+#include <memArray.vrh>
+#include <ccxPktMon.vrh>
+#include <sparcBenchUtils_if.vrh>
+
+#ifndef GATESIM
+extern verilog_task SetTrapCount(bit [8:0] count);
+#endif
+
+#define CLASSNAME Utils
+#define CLASSNAMEQ "Utils"
+
+class CLASSNAME extends SparcBenchUtils {
+  
+  local string className = "UtilsClass";
+  local StandardDisplay dbg;
+  local integer clockPeriod;
+
+  task new(StandardDisplay dbgHndl, integer clockPeriod = 100);
+  
+  task initTB(integer useMCUbfms = 0,
+              reg useL1Tags = 0,
+              reg useL2bfms = 0,
+              reg loadOnlyIOmem = 1);
+  
+  task resetDut();
+  
+  task initDut(integer wait = 0);
+  
+  task sendIntr(reg [5:0] tid,
+                reg [1:0] type,
+                reg [5:0] vect,
+                integer sendPort = DEV_NCU);
+
+task l2_trap_count(integer count);
+
+}
+
+
+task CLASSNAME::new(StandardDisplay dbgHndl, integer clockPeriod = 100) {
+  super.new(dbgHndl, clockPeriod);
+  srandom(gSeed,this);
+  this.dbg = dbgHndl;
+  void = randomize(); // keep!
+}
+
+
+task CLASSNAME::resetDut()
+{
+  super.resetDut();
+}
+
+task CLASSNAME::initTB(integer useMCUbfms = 0,
+                       reg useL1Tags = 0,
+                       reg useL2bfms = 0,
+                       reg loadOnlyIOmem = 1) {
+
+  // mem array.
+  // 3rd param will return random data (in place of 0) from mem if set.
+  gMem = new(0,gDbg,0);
+
+  // Initialize main memory from mem.image
+  gMem.loadMem("mem.image", loadOnlyIOmem);
+
+  
+  // Put all binds into global handles so that various objects
+  // will have access to HW.
+  
+  // SPC
+  gPcxPort[DEV_SPC0] = pcxBindDEV_SPC0;
+  gCpxPort[DEV_SPC0] = cpxBindDEV_SPC0;
+  gPcxPort[DEV_SPC1] = pcxBindDEV_SPC1;
+  gCpxPort[DEV_SPC1] = cpxBindDEV_SPC1;
+  gPcxPort[DEV_SPC2] = pcxBindDEV_SPC2;
+  gCpxPort[DEV_SPC2] = cpxBindDEV_SPC2;
+  gPcxPort[DEV_SPC3] = pcxBindDEV_SPC3;
+  gCpxPort[DEV_SPC3] = cpxBindDEV_SPC3;
+  gPcxPort[DEV_SPC4] = pcxBindDEV_SPC4;
+  gCpxPort[DEV_SPC4] = cpxBindDEV_SPC4;
+  gPcxPort[DEV_SPC5] = pcxBindDEV_SPC5;
+  gCpxPort[DEV_SPC5] = cpxBindDEV_SPC5;
+  gPcxPort[DEV_SPC6] = pcxBindDEV_SPC6;
+  gCpxPort[DEV_SPC6] = cpxBindDEV_SPC6;
+  gPcxPort[DEV_SPC7] = pcxBindDEV_SPC7;
+  gCpxPort[DEV_SPC7] = cpxBindDEV_SPC7;
+
+  // L2
+#ifndef RTL_NO_BNK01
+  gPcxPort[DEV_MEM0] = pcxBindDEV_MEM0;
+  gCpxPort[DEV_MEM0] = cpxBindDEV_MEM0;
+  gPcxPort[DEV_MEM1] = pcxBindDEV_MEM1;
+  gCpxPort[DEV_MEM1] = cpxBindDEV_MEM1;
+#endif
+#ifndef RTL_NO_BNK23
+  gPcxPort[DEV_MEM2] = pcxBindDEV_MEM2;
+  gCpxPort[DEV_MEM2] = cpxBindDEV_MEM2;
+  gPcxPort[DEV_MEM3] = pcxBindDEV_MEM3;
+  gCpxPort[DEV_MEM3] = cpxBindDEV_MEM3;
+#endif
+#ifndef RTL_NO_BNK45
+  gPcxPort[DEV_MEM4] = pcxBindDEV_MEM4;
+  gCpxPort[DEV_MEM4] = cpxBindDEV_MEM4;
+  gPcxPort[DEV_MEM5] = pcxBindDEV_MEM5;
+  gCpxPort[DEV_MEM5] = cpxBindDEV_MEM5;
+#endif
+#ifndef RTL_NO_BNK67
+  gPcxPort[DEV_MEM6] = pcxBindDEV_MEM6;
+  gCpxPort[DEV_MEM6] = cpxBindDEV_MEM6;
+  gPcxPort[DEV_MEM7] = pcxBindDEV_MEM7;
+  gCpxPort[DEV_MEM7] = cpxBindDEV_MEM7;
+#endif
+  
+  // ncu
+  gPcxPort[DEV_NCU] = pcxBindDEV_NCU;
+  gCpxPort[DEV_NCU] = cpxBindDEV_NCU;
+
+  // basic probes
+  gProbesPort = probesBind;
+
+
+  // if NCU RTL, ldStSync needs to look in RTL
+#ifndef NCURTL
+  gLdStSyncPort[16] = ldStSync_bind_b8;
+#endif
+
+
+}
+
+
+task CLASSNAME::initDut(integer wait = 0) {
+
+  integer i;
+  VeraRandomState rstate;
+  
+
+  // wait for reset done
+  if (probe_if.rst_l !== 1) @(posedge probe_if.rst_l);
+  if (probe_if.flush_reset_complete !== 1) @(posedge probe_if.flush_reset_complete);
+
+  
+  // optional packet printing AFTER flush_reset_complete
+  if (gParam.ccxPktPrintOn) {
+    CCXpktMon pktMon[17];
+    
+    
+    getstate(rstate);
+    vera_save_rng_state(this);  
+
+    for (i=DEV_SPC0;i<=DEV_SPC7; i++) { // 0-7
+      if (gParam.coreAvilable[i]) pktMon[i] = new(i, gPcxPort[i], gCpxPort[i]);
+      else pktMon[i] = null;
+    }
+    for (i=DEV_MEM0;i<=DEV_MEM7; i++) {
+      if (gParam.banksMask[i-8]) pktMon[i] = new(i, gPcxPort[i], gCpxPort[i]);
+      else pktMon[i] = null;
+    }
+    pktMon[DEV_NCU] = new(DEV_NCU, gPcxPort[DEV_NCU], gCpxPort[DEV_NCU]);
+
+    
+    setstate(rstate);
+    vera_restore_rng_state(this); 
+  }
+
+  repeat (wait) @(posedge CLOCK);
+}
+
+//task for err injector L2
+task CLASSNAME::l2_trap_count(integer count)
+{
+#ifndef GATESIM
+        SetTrapCount(count);
+#endif
+}
+
+
+// generic call to send intr from NCU port. for $EV user events
+task CLASSNAME::sendIntr(reg [5:0] tid,
+                         reg [1:0] type,
+                         reg [5:0] vect,
+                         integer sendPort = DEV_NCU)
+{
+//   CpxPkt     reqPkt;
+// 
+//   reqPkt = new();
+//   reqPkt.createIntr(tid,type,vect); // INTR_RESET,INTR_POR
+//   reqPkt.sendPorts = 1 << sendPort;
+//   reqPkt.targetPorts = 1 << tid[5:3];
+//   PR_NORMAL(CLASSNAMEQ, MON_NORMAL,
+//             psprintf ("Send Interrupt to C%0d T%0d  type=%b  vector=%b",
+//                       tid[5:3],tid[2:0],type,vect));
+//   reqPkt.send(1);
+}
+

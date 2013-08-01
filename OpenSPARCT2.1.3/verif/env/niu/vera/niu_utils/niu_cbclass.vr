@@ -1,0 +1,107 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_cbclass.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+
+#include "niu_cb_events.vri"
+#include "niu_error_dfn.vri"
+
+/* A generic call back class to be used for Memory */
+
+
+class CcbMem {
+
+    integer eventdfn;
+    integer semId;
+    integer callId;
+
+    bit [63:0] attr;
+
+    task new( ( integer i = -1)) {
+      semId = i;
+    }
+    task set ( bit [63:0] a, ( integer e = -1)) {
+       attr = a;
+       eventdfn = e;
+    }
+}
+
+// class for error callbacks
+
+
+class CcbErrDfn {
+   bit [63:0] address;
+   integer error_code;
+}
+
+MakeVeraList(CcbErrDfn) //
+
+class CcbErrArray {
+  VeraList_CcbErrDfn cbs;
+  task new() {
+    cbs = new();
+  }
+  task add_front(CcbErrDfn cb){
+    cbs.push_front(cb);
+  }
+  task add(CcbErrDfn cb){
+    // printf("CcbErrArray::add Address - %x error_code - %d \n",cb.address,cb.error_code);
+    cbs.push_back(cb);
+    // printf("CcbErrArray::add Size - %d \n",cbs.size());
+  }
+  function integer get(var CcbErrDfn cb){
+    if(cbs.empty()){
+      get = -1;
+    } else {
+      cb= cbs.front();
+      // printf("CcbErrArray::get Address - %x error_code - %d \n",cb.address,cb.error_code);
+      cbs.pop_front();
+      if(cbs.empty()){
+	get = 0;
+      } else get = 1;
+    }
+  // printf("CcbErrArray::get status - %d size - %d  \n",get,cbs.size());
+  }
+}
+
+
+class CfuncCheck {
+   bit[63:0] address;
+   integer func;
+   task new(){}
+}
+
+
+

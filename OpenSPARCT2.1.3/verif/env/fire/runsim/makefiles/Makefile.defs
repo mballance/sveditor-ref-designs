@@ -1,0 +1,149 @@
+# ========== Copyright Header Begin ==========================================
+# 
+# OpenSPARC T2 Processor File: Makefile.defs
+# Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+# 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+#
+# * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+#
+# For the avoidance of doubt, and except that if any non-GPL license 
+# choice is available it will apply instead, Sun elects to use only 
+# the General Public License version 2 (GPLv2) at this time for any 
+# software where a choice of GPL license versions is made 
+# available with the language indicating that GPLv2 or any later version 
+# may be used, or where a choice of which version of the GPL is applied is 
+# otherwise unspecified. 
+#
+# Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+# CA 95054 USA or visit www.sun.com if you need additional information or 
+# have any questions. 
+# 
+# ========== Copyright Header End ============================================
+# -*-Makefile-*-  tell emacs what mode to use
+
+# This make file is to be included by all the makefiles for 
+# each sub modules. This should not be edited unless it is absolutely
+# necessary. 
+
+#-------------------------------------------------------------------------------
+# common directory variables, group dir
+#-------------------------------------------------------------------------------
+testbench_home_dir	 	= $(shell pwd)
+grp_dir 			= $(DV_ROOT)/verif/env/fire
+runsim_dir			= $(grp_dir)/runsim
+export grp_tools_bin_dir	= $(grp_dir)/runsim/bin
+grp_tools_inc_dir		= $(grp_dir)/runsim/include
+#grp_tools_lib_dir		= $(grp_dir)/runsim/lib
+grp_tools_src_dir		= $(grp_dir)/runsim/pli_src
+grp_tools_src_dir		= $(grp_dir)/runsim/pli_src
+
+#-------------------------------------------------------------------------------
+# If you want to see the entire build process define `verbose_make' like so:
+# verbose_make = 1
+#-------------------------------------------------------------------------------
+
+SPEW_START	= @$(echo) "----------------- Building $(lib)/$(@F) -----------------"
+SPEW_END	= @$(echo) "----------------- Done $(lib)/$(@F) ------------------\n"
+
+#-------------------------------------------------------------------------------
+# Select tool versions, set _HOME variables as required
+#-------------------------------------------------------------------------------
+
+export csrtool		 = csrtool
+export vera		 = vera
+
+# export cc  = /net/suntools/export/tools/sparc/bin/gcc
+# export cpp = /net/suntools/export/tools/sparc/bin/g++
+# export ld  = /net/suntools/export/tools/sparc/bin/g++
+export cc  = gcc
+export cpp = g++
+export ld  = g++
+export ar  = /usr/ccs/bin/ar
+#VCS_HOME   = /import/vcs-release/$(shell configsrch vcs $(TRE_ENTRY))
+#VERA_HOME  = /import/vcs-release/vera,$(shell configsrch vera $(TRE_ENTRY))/5.x
+#denali_dir = /net/inandout/export/home2/corpcad/tools/commercial/denali/v14/denali
+#denali_dir = /net/cadcombo1/export/home3/corpcad/tools/commercial/denali/pcie,v1.0_23
+denali_dir = $(DENALI)
+
+RM         = /bin/rm -f
+cp         = /bin/cp
+
+#-------------------------------------------------------------------------------
+# Perl scripts and other executables.  Define the complete path so everyone
+# uses the same versions.  Bsub and lsmake are left alone since they are
+# links through mwtool.  SHELL defaults to the right thing (/bin/sh).
+#-------------------------------------------------------------------------------
+
+export ar		 = /usr/ccs/bin/ar
+export basename		 = /bin/basename
+export bsub		 = /import/camelot/exe/csub
+export cat		 = /bin/cat
+export CC		 = cc
+export chmod		 = /bin/chmod -f
+export cp		 = /usr/bin/cp
+export echo		 = /bin/echo
+export egrep		 = /usr/xpg4/bin/egrep
+export find		 = /usr/bin/find
+export gcc		 = gcc
+export gzip		 = /usr/dist/exe/gzip # ENV{GZIP} is used by the gzip program. be careful
+export ld		 = g++
+export link		 = ln -sf
+export mkdir		 = /usr/bin/mkdir
+export rm		 = $(RM)
+export sed		 = /bin/sed
+export tee		 = /bin/tee
+export test		 = /bin/test
+export touch		 = /usr/bin/touch
+export tr		 = /usr/ucb/tr
+export zgrep		 = /usr/dist/exe/zgrep
+
+sh_it			 = /bin/sh
+#export make_lib_depends = $(grp_tools_bin_dir)/make_lib_depends2.pl
+export make_lib_depends	 = $(grp_tools_bin_dir)/make_lib_depends.pl
+
+gen_csr_input		 = $(grp_tools_bin_dir)/gen_csr_input.pl
+fix_csr_output		 = $(grp_tools_bin_dir)/fix_csr_output.pl
+vrhfix			 = $(sh_it) $(grp_tools_bin_dir)/vrhfix.pl
+export reggie		 = $(grp_dir)/runsim/reggie/reggie.pl
+#register_logfile	 = register-logfile
+
+export report_dir	 = $(grp_dir)/runsim/pli_src/report
+export report_pp_dir	 = $(report_dir)/report_pp
+export report_pp	 = cd $(report_pp_dir); ./report_pp.pl
+
+
+#----------------------------------------------------------------------------
+# Make the `force' dependency work
+#----------------------------------------------------------------------------
+.PHONY:	force
+force : 
+
+#----------------------------------------------------------------
+# Don't mess with NULLSTRING or SPACE.  These enable insertion of spaces
+# (ascii 0x20) into macro definitions.  The space between `$(NULLSTRING)'
+# and the `#' in the SPACE definition is the actual value of the SPACE
+# macro.
+NULLSTRING :=
+SPACE := $(NULLSTRING) # keep that space.
+
+# What time is it?
+_HOUR = "%H"
+_MIN  = "%M"
+_SEC  = "%S"
+_FORMAT = "%Y%h%d."$(_HOUR)$(_MIN)$(_SEC)
+NOW := $(shell /usr/bin/date +"$(_FORMAT)")
+
+#============================= The End =================================

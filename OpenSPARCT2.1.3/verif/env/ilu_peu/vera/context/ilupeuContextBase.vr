@@ -1,0 +1,277 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuContextBase.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "CTContextBase.vrh"
+
+virtual class ilupeuContextBase extends CTContextBase {
+
+  // --------------------------------------------------------
+  //  Public Parameters
+  // --------------------------------------------------------
+  //Number of strategies for each type
+  integer tlpNumStrat, tlpStratDone, tlpStratNum;  
+  integer dllpNumStrat, dllpStratDone, dllpStratNum;  
+ 
+  //Min and ax issue delay values
+  integer tlpMinDelay;
+  integer tlpMaxDelay;
+  integer dllpMinDelay;
+  integer dllpMaxDelay;
+ 
+  //Min and ax active strats values
+  integer tlpMinActiveStrats;
+  integer tlpMaxActiveStrats;
+  integer dllpMinActiveStrats;
+  integer dllpMaxActiveStrats;
+
+  integer tlpHangDetect = 0;
+  integer tlpWaitCount = 0;
+  integer dllpHangDetect = 0;
+  integer dllpWaitCount = 0;
+
+  // --------------------------------------------------------
+  // Protected Members
+  // --------------------------------------------------------
+
+  protected CSRCollection     CSR;
+  protected ReportClass       Report;
+  protected ilupeuPodClass     Pod;
+  protected ilupeuScenario     Scenario;
+
+  //Random Utilities
+  FNXRandomUtil RandUtil;
+ 
+
+  
+  // --------------------------------------------------------
+  // Local Members
+  // --------------------------------------------------------
+
+
+  // --------------------------------------------------------
+  // Methods
+  // -------------------------------------------------------- 
+
+  // Constructor
+  task new ( ReportClass      _Report,
+             CSRCollection    _CSR,
+             ilupeuPodClass   _Pod ,    //Xactors
+             ilupeuScenario   _Scenario, //Test Parameters
+             string           Name = "" );
+
+  // Public Methods
+  task ExecuteTlp();
+  task ExecuteDllp();
+  virtual function CTStrategyBase ProvideTlpStrategy();
+  virtual function CTStrategyBase ProvideDllpStrategy();
+  virtual function CTStrategyBase FinalizeTlpParms(CTStrategyBase FinalStrategy);
+  virtual function CTStrategyBase FinalizeDllpParms(CTStrategyBase FinalStrategy);
+
+  // Protected Methods
+  protected task DelayIssueTlp();
+  protected task DelayIssueDllp();
+}
+
+// Constructor
+task ilupeuContextBase::new ( ReportClass      _Report,
+	     		      CSRCollection    _CSR,
+			      ilupeuPodClass   _Pod,
+			      ilupeuScenario   _Scenario,
+                              string           Name = "" )
+{
+  super.new( Name );
+  Report = _Report;
+  CSR = _CSR;
+  Pod = _Pod;
+  Scenario =  _Scenario;
+  RandUtil = new( Report );
+
+}
+
+function CTStrategyBase ilupeuContextBase::ProvideTlpStrategy() {}
+function CTStrategyBase ilupeuContextBase::ProvideDllpStrategy() {}
+function CTStrategyBase ilupeuContextBase::FinalizeTlpParms(CTStrategyBase FinalStrategy) {}
+function CTStrategyBase ilupeuContextBase::FinalizeDllpParms(CTStrategyBase FinalStrategy) {}
+
+
+task ilupeuContextBase::ExecuteTlp() {
+
+  CTStrategyBase FinalTlpStrategy;
+
+
+  for (tlpStratDone = 0, tlpStratNum=1; tlpStratNum<=tlpNumStrat; ++tlpStratNum) {
+
+     // There are five distinct steps in setting up and launching a strategy thread.
+
+     //Wait for a user-defined synchronization event
+     DelayIssueTlp();
+
+     fork
+      {  
+          // Step 1:
+          FinalTlpStrategy = ProvideTlpStrategy();
+
+          // Step 2:
+          FinalTlpStrategy = FinalizeTlpParms(FinalTlpStrategy);
+
+          // Step 3: Not needed at this time
+          //CheckParms(FinalTlpStrategy);
+
+          // Step 4:
+          // If it made it this far, give the strategy a unique identifier.
+          FinalTlpStrategy.SetID({(ID.GetContextID()*10) + 0 }, tlpStratNum );
+
+          // Step 5:
+          // Kick it off.
+          FinalTlpStrategy.RunThread();
+          ++tlpStratDone;
+          QuickReport( Report,
+                       RTYP_INFO,
+                       "%s ilupeuContextBase::ExecuteTlp() FinalTlpStrategy.RunThread() complete! tlpStratDone=%0d tlpNumStrat=%0d ",ID.GetString(),tlpStratDone,tlpNumStrat );
+
+      }  
+    join none
+  }
+
+  // This loop works like a breakable wait_child() and causes Execute
+  // to block until all its strategies are complete.
+  while ( tlpStratDone < tlpNumStrat ) {
+
+    if (tlpHangDetect) {
+      --tlpWaitCount;
+      if (tlpWaitCount <= 0)
+        error("Hang Detected In Context %s ExecuteTlp ID = %0d\n", Name, ID.GetContextID());
+    }
+ 
+    @(posedge CLOCK);
+  }
+
+  QuickReport( Report,RTYP_INFO, "Context %s ID = %0d ExecuteTlp() complete!",
+                       Name, ID.GetContextID() );
+}	//End ExecuteTlp
+
+task ilupeuContextBase::DelayIssueTlp()
+{
+  repeat (RandUtil.Rand32(tlpMinDelay,tlpMaxDelay)) @(posedge CLOCK);
+  
+  // Wait For ILUPEU TLP Stratey Threads to Free Up
+  if ( tlpNumStrat != 0 ) {
+    if ( (tlpStratNum - tlpStratDone) >= tlpMaxActiveStrats ) {
+      while ( (tlpStratNum - tlpStratDone) > tlpMinActiveStrats) {
+	@(posedge CLOCK);
+	QuickReport(Report, RTYP_DEBUG_3,
+                      "%s: Context ID=%0d DelayIssueTlp()>WAITING tlpMinActiveStrats=%0d tlpMaxActiveStrats=%0d #TLP Strats Outstanding=%0d",
+			 Name, ID.GetContextID(), tlpMinActiveStrats, tlpMaxActiveStrats,
+                          (tlpStratNum - tlpStratDone) );
+      }
+    }
+  }
+}	//End DelayIssueTlp
+
+
+
+task ilupeuContextBase::ExecuteDllp() {
+
+  integer dllpStratDone, dllpStratNum;
+  CTStrategyBase FinalDllpStrategy;
+
+
+  for (dllpStratDone = 0, dllpStratNum=1; dllpStratNum<=dllpNumStrat; ++dllpStratNum) {
+
+     // There are five distinct steps in setting up and launching a strategy thread.
+
+     //Wait for a user-defined synchronization event
+     DelayIssueDllp();
+
+     fork
+      {  
+          // Step 1:
+          FinalDllpStrategy = ProvideDllpStrategy();
+
+          // Step 2:
+          FinalDllpStrategy = FinalizeDllpParms(FinalDllpStrategy);
+
+          // Step 3: Not needed at this time
+          //CheckParms(FinalDllpStrategy);
+
+          // Step 4:
+          // If it made it this far, give the strategy a unique identifier.
+          FinalDllpStrategy.SetID({(ID.GetContextID()*10) + 1 }, dllpStratNum );
+
+          // Step 5:
+          // Kick it off.
+          FinalDllpStrategy.RunThread();
+          ++dllpStratDone;
+          QuickReport( Report,
+                       RTYP_INFO,
+                       "%s ilupeuContextBase::ExecuteDllp() FinalDllpStrategy.RunThread() complete! dllpStratDone=%0d dllpNumStrat=%0d ",ID.GetString(),dllpStratDone,dllpNumStrat );
+
+      }  
+    join none
+  }
+
+  // This loop works like a breakable wait_child() and causes Execute
+  // to block until all its strategies are complete.
+  while ( dllpStratDone < dllpNumStrat ) {
+
+    if (dllpHangDetect) {
+      --dllpWaitCount;
+      if (dllpWaitCount <= 0)
+        error("Hang Detected In Context %s ExecuteDllp ID = %0d\n", Name, ID.GetContextID());
+    }
+ 
+    @(posedge CLOCK);
+  }
+
+  QuickReport( Report,RTYP_INFO, "Context %s ID = %0d ExecuteDllp() complete!",
+                       Name, ID.GetContextID() );
+}	//End ExecuteDllp
+
+task ilupeuContextBase::DelayIssueDllp()
+{
+  repeat (RandUtil.Rand32(dllpMinDelay,dllpMaxDelay)) @(posedge CLOCK);
+  
+  // Wait For ILUPEU DLLP Stratey Threads to Free Up
+  if ( dllpNumStrat != 0 ) {
+    if ( (dllpStratNum - dllpStratDone) >= dllpMaxActiveStrats ) {
+      while ( (dllpStratNum - dllpStratDone) > dllpMinActiveStrats) {
+	@(posedge CLOCK);
+	QuickReport(Report, RTYP_DEBUG_3,
+                      "%s: Context ID=%0d DelayIssueDllp()>WAITING dllpMinActiveStrats=%0d dllpMaxActiveStrats=%0d #DLLP Strats Outstanding=%0d",
+			 Name, ID.GetContextID(), dllpMinActiveStrats, dllpMaxActiveStrats,
+                          (dllpStratNum - dllpStratDone) );
+      }
+    }
+  }
+}	//End DelayIssueDllp

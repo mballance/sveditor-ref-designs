@@ -1,0 +1,142 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilu_peu.bind.vri
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#ifndef INC_ILU_PEU_BIND_VRI
+#define INC_ILU_PEU_BIND_VRI
+
+#include <vera_defines.vrh>
+#include "XactorClk.port.vri"
+#include "FNXPCIEXactorPorts.vri"
+#include "DMUXtrPorts.vri"
+#include "CCCXactor.port.vri"
+
+#include "denali_root_monitor_PCIEXactorPorts.vri"
+
+////////////////// PCIE Bindings ///////////////////////////////
+bind XactorClk FNXPCIEClkPort {
+  XClk 			if_ILU_PEU_PCIE.refclk;
+}
+
+bind FNXPCIEXactorDenaliClkPort FNXPCIEDenaliClkPortA {
+  tx_clk                if_ILU_PEU_PCIE_RX.refclk;
+  rx_clk                if_ILU_PEU_PCIE.DEN_CLK_RX;
+}
+
+bind  FNXPCIEXactorMiscPort FNXPCIEXactorMiscPortA {
+  clk                   if_ILU_PEU_PCIE_RX.refclk;
+  denaliReset           if_ILU_PEU_PCIE.DEN_RESET;
+  rcvDetMode            if_ILU_PEU_PCIE.RCV_DET_MODE;  //Needed for FNX but not N2
+  rcvDetLanes           if_ILU_PEU_PCIE.RCV_DET_LANES; //Needed for N2
+  elecIdleLanes         if_ILU_PEU_PCIE.ELEC_IDLE_LANES; //Needed for N2
+}
+
+////////////////// denali Root monitor PCIE Bindings ///////////////////////////////
+
+bind XactorClk denali_root_monitor_PCIEClkPort {
+  XClk                  if_denali_root_monitor_PCIE.refclk;
+}
+
+bind denali_root_monitor_PCIEXactorDenaliClkPort denali_root_monitor_PCIEDenaliClkPortA {
+  tx_clk                if_denali_root_monitor_PCIE.denali_root_monitor_CLK_TX;
+  rx_clk                if_denali_root_monitor_PCIE.denali_root_monitor_CLK_RX;
+}
+
+bind  denali_root_monitor_PCIEXactorMiscPort denali_root_monitor_PCIEXactorMiscPortA {
+  clk                   if_denali_root_monitor_PCIE.denali_root_monitor_CLK_TX;
+  denaliReset           if_denali_root_monitor_PCIE.denali_root_monitor_RESET;
+}
+
+////////////////// DMUXtr Bindings ///////////////////////////////
+#ifndef PEU_GATE
+bind po_DMUegress bindDMUegress {
+  deq          if_ILU_PEU.y2k_rcd_deq;
+  addr         if_ILU_PEU.y2k_buf_addr;
+  relrcd       if_ILU_PEU.y2k_rel_rcd;
+  relrcdenq    if_ILU_PEU.y2k_rel_enq;
+#ifndef	N2_FC
+  recd         if_ILU_PEU.k2y_rcd;
+  enq          if_ILU_PEU.k2y_rcd_enq;
+  data         if_ILU_PEU.k2y_buf_data;
+  par          if_ILU_PEU.k2y_buf_dpar;
+  douvalid     if_ILU_PEU.k2y_dou_vld;
+  douaddr      if_ILU_PEU.k2y_dou_dptr;
+  douerr       if_ILU_PEU.k2y_dou_err;
+#endif
+}
+#endif
+
+#ifndef PEU_GATE
+bind po_DMUingress bindDMUingress {
+  recd         if_ILU_PEU.y2k_rcd;
+  enq          if_ILU_PEU.y2k_rcd_enq;
+#ifndef	N2_FC
+  deq          if_ILU_PEU.k2y_rcd_deq;
+  data         if_ILU_PEU.y2k_buf_data;
+  par          if_ILU_PEU.y2k_buf_dpar;
+  addr         if_ILU_PEU.k2y_buf_addr;
+  relrcdenq    if_ILU_PEU.k2y_rel_enq;
+  relrcd       if_ILU_PEU.k2y_rel_rcd;
+#endif
+}
+#endif
+
+#ifndef PEU_GATE
+bind po_DMUmisc bindDMUmisc {
+#ifndef	N2_FC
+  pwrOnRstN    if_ILU_PEU.j2d_por_l;
+  resetN       if_ILU_PEU.j2d_rst_l; 
+#endif
+  int          if_ILU_PEU.y2k_int_l;
+  mps          if_ILU_PEU.y2k_mps;
+  drain        if_ILU_PEU.p2d_drain;
+}
+#endif
+
+#ifndef PEU_GATE
+bind CCCXactorRingDataIn RingXactorDataInBind
+{
+  clk           if_ILU_PEU.iol2clk;
+  ring_data_in  if_ILU_PEU.k2y_csr_ring_out;
+}
+#endif
+
+#ifndef PEU_GATE
+bind CCCXactorRingDataOut RingXactorDataOutBind
+{
+  clk           if_ILU_PEU.iol2clk;
+  ring_data_out if_ILU_PEU.y2k_csr_ring_in;
+}
+#endif
+
+#endif 

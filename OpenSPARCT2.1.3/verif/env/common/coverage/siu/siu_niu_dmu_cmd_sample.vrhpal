@@ -1,0 +1,125 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: siu_niu_dmu_cmd_sample.vrhpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#inc "siu_cov_inc.pal";
+
+#ifndef SIU_INTF_COV
+. for ($i=0; $i<5; $i++)
+. {
+sample arb_niu_cmd_sample_${i}_clk_this (this_niu_cmd)
+{
+  state RDD_ord        ( 7'b0010_100 ) if (niu_dmu_back_to_back==$i);
+  state RDD_byp        ( 7'b0010_101 ) if (niu_dmu_back_to_back==$i);
+  state WRI_npt_ord    ( 7'b0000_100 ) if (niu_dmu_back_to_back==$i);
+  state WRI_npt_byp    ( 7'b0000_101 ) if (niu_dmu_back_to_back==$i);
+  state WRI_pst_ord    ( 7'b0100_100 ) if (niu_dmu_back_to_back==$i);
+  state WRI_pst_byp    ( 7'b0100_101 ) if (niu_dmu_back_to_back==$i);
+
+  cov_weight = 0;
+}
+. }
+
+sample arb_dmu_cmd_sample_this (this_dmu_cmd)
+{
+  state RDD_ord          ( 7'b0010_100 );
+  state WRI_pstd_ord     ( 7'b0100_100 );
+  state WRM_pstd_ord     ( 7'b0101_100 );
+  state PIO_RD_RET       ( 7'b1010_011 );
+  state INT              ( 7'b0000_010 );
+
+  cov_weight = 0;
+}
+
+
+. for ($i=0; $i<5; $i++)
+. {
+    cross siu_arb_niu_dmu_${i}_clk_cross (arb_niu_cmd_sample_${i}_clk_this, arb_dmu_cmd_sample_this); 
+. }
+
+
+#else
+// FC
+. for ($i=0; $i<3; $i++)
+. {
+sample arb_niu_cmd_sample_${i}_clk_this (this_niu_cmd)
+{
+  state RDD_byp        ( 7'b0010_101 ) if (niu_dmu_back_to_back==$i);
+  state WRI_npt_ord    ( 7'b0000_100 ) if (niu_dmu_back_to_back==$i);
+  state WRI_pst_byp    ( 7'b0100_101 ) if (niu_dmu_back_to_back==$i);
+
+  cov_weight = 0;
+}
+. }
+
+sample arb_dmu_cmd_sample_this (this_dmu_cmd)
+{
+  state RDD_ord          ( 7'b0010_100 );
+  state WRI_pstd_ord     ( 7'b0100_100 );
+  state WRM_pstd_ord     ( 7'b0101_100 );
+  state PIO_RD_RET       ( 7'b1010_011 );
+  state INT              ( 7'b0000_010 );
+
+  cov_weight = 0;
+}
+
+. for ($i=0; $i<3; $i++)
+. {
+    cross siu_arb_niu_dmu_${i}_clk_cross (arb_niu_cmd_sample_${i}_clk_this, arb_dmu_cmd_sample_this);
+. }
+#endif
+
+
+//FC: another Flexible version
+sample arb_niu_cmd_sample_this_fc (this_niu_cmd)
+{
+  state RDD_byp        ( 7'b0010_101 ) if ((niu_dmu_back_to_back==0) || (niu_dmu_back_to_back==1) || (niu_dmu_back_to_back==2) || (niu_dmu_back_to_back==3));
+  state WRI_npt_ord    ( 7'b0000_100 ) if ((niu_dmu_back_to_back==0) || (niu_dmu_back_to_back==1) || (niu_dmu_back_to_back==2) || (niu_dmu_back_to_back==3));
+  state WRI_pst_byp    ( 7'b0100_101 ) if ((niu_dmu_back_to_back==0) || (niu_dmu_back_to_back==1) || (niu_dmu_back_to_back==2) || (niu_dmu_back_to_back==3));
+
+  cov_weight = 0;
+}
+
+sample arb_dmu_cmd_sample_this_fc (this_dmu_cmd)
+{
+  state RDD_ord          ( 7'b0010_100 );
+  state WRI_pstd_ord     ( 7'b0100_100 );
+  state WRM_pstd_ord     ( 7'b0101_100 );
+  state PIO_RD_RET       ( 7'b1010_011 );
+  state INT              ( 7'b0000_010 );
+
+  cov_weight = 0;
+}
+
+cross siu_arb_niu_dmu_fc_cross (arb_niu_cmd_sample_this_fc, arb_dmu_cmd_sample_this_fc);
+

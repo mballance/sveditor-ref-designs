@@ -1,0 +1,347 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: FNXPCIEXactorExports.vri
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+// **************************************************************************
+// Copyright (c) 2003 by Sun Microsystems Inc.
+//
+// All rights reserved. No part of this design may be reproduced stored
+// in a retrieval system, or transmitted, in any form or by any means,
+// electronic, mechanical, photocopying, recording, or otherwise, without
+// prior written permission of Sun Microsystems, Inc.
+//
+// Sun Proprietary and Confidential
+//
+// File_Name      :  /vobs/eagle/verif/asic/fnx/common/vlib/FNXPCIEXactor/include/FNXPCIEXactorExports.vri
+// Creation_Date  :  Wed Aug 27 2003
+// Created by     :  Jeff Banta
+// Version        :  %auto-insertion% (current checked-out version)
+// Last_Update    :  %auto-insertion% (last time check-in)
+// Description    :  FNX PCIE Xactor Exported Tasks
+//
+// Revision History :   <-NOTE-  put the latest entry at the bottom of the list>
+//
+// <mm/dd/yy>  <who>    <revision note>
+//  08/27/03   jbanta      Created
+//
+// ********************************************************************************
+
+#include "FNXPCIEXactor.vrh"
+#include "FNXPCIEXactorReportMacros.vri"
+
+/////////////////////////////////////////////////
+// Global Denali Register Callback Handler
+//
+// Places Denali Register Callbacks Into FNX Denali Device's Register Callback Mailbox
+export task FNXPCIEXactorRegCbTask(integer id, integer access, integer portNum)
+{
+  denaliPcieDevice      denDev;
+  denaliPcieDeviceList  devList;
+  FNXPCIEXactorRegCbRecord  regCbRecord;
+  FNXPCIEXactorDenaliDevice fnxDev;
+  denali_root_monitor_PCIEXactorDenaliDevice denali_root_monitor_Dev;
+  bit [31:0] bData, bMask;
+  bit [63:0] address;
+  integer iWidth, iErr, status;
+  ReportClass MyReport;
+  string ClassName = "Global";
+  string MethodName = "FNXPCIEXactorRegCbTask";
+//   int denali_root_monitor_id; 
+  bit root_monitor_id = 0; 
+  
+  
+  iErr = DenaliDDVaccCbkGetDataAndMask( iWidth, bData, bMask, address );
+
+  // Gen Denali Device Associated With Callback
+  devList = new();
+  denDev = devList.getDeviceFromId( id-1 );
+  if ( denDev === null ) {
+    MyReport = new();
+    PCIEX_QR_D3( "Denali Device Retrieved From Id=%0d is Null. Not Processing.", id-1 );
+    return;
+  }
+/*
+  //
+    printf( "AC: inside FNXPCIEExports, Id=%0d \n", id);
+    status = DenaliDDVgetIdByName("`tb_top.pcieA", endpoint_id, );  
+    status = DenaliDDVgetIdByName("`tb_top.", denali_root_monitor_id, );  
+    if (status == 0) {
+      if (id == endpoint_id) { 
+        // endpoint_device
+        newDev = fnxDev; 
+      }
+      if (id == denali_root_monitor_id) {
+        newDev = denali_root_monitor_Dev; 
+      }
+      else {
+        printf("ERROR, id = %d does not match root_monitor id %d, nor endpoint id %d \n", id, endpoint_id, denali_root_monitor_id); 
+      }
+    }
+  //  
+   
+*/
+
+  // Cast Assign to FNX PCIE Xactor Specific Device
+  status = cast_assign( fnxDev, denDev, CHECK );
+  if (status == 0) {
+     root_monitor_id = 1; 
+     status = cast_assign( denali_root_monitor_Dev, denDev, CHECK );
+  }
+  if (status == 0) {
+    MyReport = new();
+    PCIEX_QR_ERR( "Cast Assign to FNXPCIEXactorDenaliDevice Failed" );
+    return;
+  }
+  
+  // Retrive Report Class From FNX PCIE Device
+ if (!root_monitor_id) {
+    MyReport = fnxDev.CreateReport();
+  
+    // Place Register Callback Into Device Queue
+    regCbRecord = new( address,
+  		     bData,
+  		     portNum,
+  		     access );
+    fnxDev.PushRegCbRecord( regCbRecord );
+  
+    PCIEX_QR_D3( "Callback Enqueued for Device=%s:\n  %s", fnxDev.getInstName(), regCbRecord.GetStr() );
+  
+    // Wait For Transactor To Process Callback Record
+    regCbRecord.WaitUntilProcessed();
+    
+    PCIEX_QR_D3( "Callback Processed for Device=%s:\n  %s", fnxDev.getInstName(), regCbRecord.GetStr() ); 
+ }
+ else {
+    MyReport = denali_root_monitor_Dev.CreateReport();
+  
+    // Place Register Callback Into Device Queue
+    regCbRecord = new( address,
+  		     bData,
+  		     portNum,
+  		     access );
+    denali_root_monitor_Dev.PushRegCbRecord( regCbRecord );
+  
+    PCIEX_QR_D3( "Callback Enqueued for Device=%s:\n  %s", denali_root_monitor_Dev.getInstName(), regCbRecord.GetStr() );
+  
+    // Wait For Transactor To Process Callback Record
+    regCbRecord.WaitUntilProcessed();
+    
+    PCIEX_QR_D3( "Callback Processed for Device=%s:\n  %s", denali_root_monitor_Dev.getInstName(), regCbRecord.GetStr() ); 
+
+ }
+}
+
+/////////////////////////////////////////////////
+// Global Denali Packet Callback Handler
+//
+// Place Denali Packet Callbacks Into FNX Denali Device's Register Callback Mailbox
+export task FNXPCIEXactorPktCbTask(integer devId, integer transId, integer irsn, integer itype)
+{
+  denaliPcieCbReasonT   rsn;
+  denaliPciePktTypeT    type;
+  denaliPcieDevice      denDev;
+  denaliPcieDeviceList  devList;
+  denaliPciePacket      denPkt;
+  denaliPcieRawPacket   rawDenPkt;
+  denaliPcieBaseData    baseData;
+  denaliPcieErrorTypeT  covPt;
+
+  FNXPCIEXactorDenaliDevice     fnxDev;
+  denali_root_monitor_PCIEXactorDenaliDevice denali_root_monitor_Dev;
+  FNXPCIEXactorPktCbRecord      pktCbRecord;
+  integer status;
+  ReportClass MyReport;
+
+  string ClassName = "Global";
+  string MethodName = "FNXPCIEXactorPktCbTask";
+
+  bit root_monitor_id = 0; 
+
+  // Get Denali Device Associated With Callback
+  devList = new();
+  denDev = devList.getDeviceFromId( devId );
+  if ( denDev === null ) {
+    MyReport = new();
+    PCIEX_QR_D1 ( "Denali Device Retrieved From Id=%0d is Null. Not Processing.", devId );
+    return;
+  }
+
+  // Cast Assign to FNX PCIE Xactor Specific Device
+  status = cast_assign( fnxDev, denDev, CHECK );
+  if (status == 0 ) {
+     root_monitor_id = 1; 
+     status = cast_assign( denali_root_monitor_Dev, denDev, CHECK );
+     printf("process cast_assign of denali_root_monitor in FNXPCIEXactorExports, method = %s", MethodName); 
+  }
+  if (status == 0) {
+    MyReport = new();
+    PCIEX_QR_ERR( "Cast Assign to FNXPCIEXactorDenaliDevice Failed" );
+    return;
+  }
+ 
+ if (!root_monitor_id) {
+  // Retrive Report Class From FNX PCIE Device
+  MyReport = fnxDev.CreateReport();
+
+  // Determine Reason and Type of Callback
+  if (cast_assign(rsn, irsn, CHECK) == 0) {
+    PCIEX_QR_ERR( "Cast Assign Failed for Callback Rsn=%0d\n", irsn );
+    return;
+  }
+  if (cast_assign(type, itype, CHECK) == 0) {
+    PCIEX_QR_ERR( "Cast Assign Failed for Callback Type=%0d\n", itype );
+    return;
+  }
+
+  // Create Callback Record and Add Reason and Type
+  pktCbRecord = new();
+  pktCbRecord.Rsn = rsn;
+  pktCbRecord.Type = type;
+  
+  // Get Denali Packet Associated With Callback
+  if (rsn === PCIE_CB_PL_RX_start_packet || rsn === PCIE_CB_PL_RX_end_packet) {
+    denPkt = fnxDev.getCbPkt( transId );
+    if ( denPkt === null ) {
+      PCIEX_QR_D3( "WARNING:Denali Packet Retrieved From Device=%s is Null rsn=%0d type=%0d transId=%0d  PCIE_CB_RX_discard=%0d PCIE_CB_assert_pass=%0d PCIE_CB_TL_transmit_queue_enter=%0d", fnxDev.getInstName(),rsn,type,transId,PCIE_CB_RX_discard,PCIE_CB_assert_pass,PCIE_CB_TL_transmit_queue_enter );
+      return;
+    }
+  }
+  // NOTE: PCIE_CB_assert_pass Callbacks May Not Have a Packet Assoicated With Them
+  else if (rsn !== PCIE_CB_assert_pass) {
+    denPkt = fnxDev.getCbPkt( transId );
+    if ( denPkt === null ) {
+      PCIEX_QR_ERR( "Denali Packet Retrieved From Device=%s is Null rsn=%0d type=%0d transId=%0d  PCIE_CB_RX_discard=%0d PCIE_CB_assert_pass=%0d PCIE_CB_TL_transmit_queue_enter=%0d", fnxDev.getInstName(),rsn,type,transId,PCIE_CB_RX_discard,PCIE_CB_assert_pass,PCIE_CB_TL_transmit_queue_enter );
+      return;
+    }
+  }
+  else {
+    // Add Assert Coverage Point to Callback Record
+    denPkt = null;
+    baseData = new();
+    if (denaliVeraGetPacketBaseFields( transId, 
+				       baseData.pktType, 
+				       baseData.ipg, 
+				       baseData.callback,
+				       baseData.errInjectLen,
+				       baseData.err,
+				       baseData.pktDataLen,
+				       baseData.internalUserDataIndex,
+				       baseData.pktDelay,
+				       baseData.pktInfo,
+				       baseData.pktErrInfo) === 0) {
+      cast_assign( covPt, baseData.err );
+    }
+    else
+      covPt = PCIE_NO_ERROR;
+    pktCbRecord.covPt = covPt;
+  }
+  
+  // Add Denali Pkt to Callback Record
+  pktCbRecord.Pkt = denPkt;
+  
+  fnxDev.PushPktCbRecord( pktCbRecord );
+  
+  PCIEX_QR_D3( "Callback Enqueued for Device=%s:\n  %s", fnxDev.getInstName(), pktCbRecord.GetStr() );
+  
+  // Wait For Transactor To Process Callback Record
+  pktCbRecord.WaitUntilProcessed();
+  
+  PCIEX_QR_D3( "Callback Processed for Device=%s:\n  %s", fnxDev.getInstName(), pktCbRecord.GetStr() ); 
+
+ }
+ else {
+ 
+ 
+  // Retrive Report Class From FNX PCIE Device
+  MyReport = denali_root_monitor_Dev.CreateReport();
+
+  // Determine Reason and Type of Callback
+  if (cast_assign(rsn, irsn, CHECK) == 0) {
+    PCIEX_QR_ERR( "Cast Assign Failed for Callback Rsn=%0d\n", irsn );
+    return;
+  }
+  if (cast_assign(type, itype, CHECK) == 0) {
+    PCIEX_QR_ERR( "Cast Assign Failed for Callback Type=%0d\n", itype );
+    return;
+  }
+
+  // Create Callback Record and Add Reason and Type
+  pktCbRecord = new();
+  pktCbRecord.Rsn = rsn;
+  pktCbRecord.Type = type;
+  
+  // Get Denali Packet Associated With Callback
+  // NOTE: PCIE_CB_assert_pass Callbacks May Not Have a Packet Assoicated With Them
+  if (rsn !== PCIE_CB_assert_pass) {
+    denPkt = denali_root_monitor_Dev.getCbPkt( transId );
+    if ( denPkt === null ) {
+      PCIEX_QR_ERR( "Denali Packet Retrieved From Device=%s is Null", denali_root_monitor_Dev.getInstName() );
+      return;
+    }
+  }
+  else {
+    // Add Assert Coverage Point to Callback Record
+    denPkt = null;
+    baseData = new();
+    if (denaliVeraGetPacketBaseFields( transId, 
+				       baseData.pktType, 
+				       baseData.ipg, 
+				       baseData.callback,
+				       baseData.errInjectLen,
+				       baseData.err,
+				       baseData.pktDataLen,
+				       baseData.internalUserDataIndex,
+				       baseData.pktDelay,
+				       baseData.pktInfo,
+				       baseData.pktErrInfo) === 0) {
+      cast_assign( covPt, baseData.err );
+    }
+    else
+      covPt = PCIE_NO_ERROR;
+    pktCbRecord.covPt = covPt;
+  }
+  
+  // Add Denali Pkt to Callback Record
+  pktCbRecord.Pkt = denPkt;
+  
+  denali_root_monitor_Dev.PushPktCbRecord( pktCbRecord );
+  
+  PCIEX_QR_D3( "Callback Enqueued for Device=%s:\n  %s", denali_root_monitor_Dev.getInstName(), pktCbRecord.GetStr() );
+  
+  // Wait For Transactor To Process Callback Record
+  pktCbRecord.WaitUntilProcessed();
+  
+  PCIEX_QR_D3( "Callback Processed for Device=%s:\n  %s", denali_root_monitor_Dev.getInstName(), pktCbRecord.GetStr() ); 
+
+ }
+}

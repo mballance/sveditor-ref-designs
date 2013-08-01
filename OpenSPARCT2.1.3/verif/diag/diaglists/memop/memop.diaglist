@@ -1,0 +1,166 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: memop.diaglist
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+<sys(memop_all) name=sys(memop_all)>
+<sys(all)>
+<sys(daily)>
+
+////////////////////////
+// Single thread diags
+///////////////////////
+
+<runargs -midas_args=-DCMP_THREAD_START=0x1 -finish_mask=1>
+<runargs -sas>
+
+memop_all_atomics	memop_all_atomics.s
+
+memop_all_mcu		memop_all_mcu.s
+
+memop_all_stores	memop_all_stores.s
+
+memop_byte_mask		memop_byte_mask.s
+
+memop_ccx_packets	memop_ccx_packets.s
+
+memop_halfword_byte_mask	memop_halfword_byte_mask.s
+
+memop_l2_disable	memop_l2_disable.s
+
+memop_word_byte_mask	memop_word_byte_mask.s
+
+memop_all_loads		memop_all_loads.s	-vcs_run_args=+l2warm=1
+
+</runargs>
+
+<runargs -nosas>
+
+#ifndef CCM
+
+// Must '-nosas' until Riesling support MCU CSR's
+
+memop_mcu_regs_ro	memop_mcu_regs_ro.s
+
+memop_mcu_regs_rw	memop_mcu_regs_rw.s
+
+memop_mcu_regs_other	memop_mcu_regs_other.s -vcs_run_args=+mcu_errmon_disable
+
+#endif
+
+// Must use '-nosas' since follow me support is not there for SPU interrupts
+
+// memop_all_packet	memop_all_packet.s -midas_args=-allow_tsb_conflicts
+
+memop_all_l2_banks	memop_all_l2_banks.s
+
+memop_all_mcu_banks	memop_all_mcu_banks.s
+
+memop_l2_vuad_access	memop_l2_vuad_access.s
+
+memop_walk_one_addr	memop_walk_one_addr.s
+
+memop_l2_control_reg	memop_l2_control_reg.s
+
+</runargs>
+
+memop_mem_out_of_range	memop_mem_out_of_range.s -vcs_run_args=+l2esr_mon_off -vcs_run_args=+8_FBDIMMS
+
+memop_l2_size		memop_l2_size.s -midas_args=-allow_tsb_conflicts
+
+memop_all_byte_mask	memop_all_byte_mask.s
+
+memop_l2_err_en_reg	memop_l2_err_en_reg.s
+
+memop_l2_err_address_reg	memop_l2_err_address_reg.s
+
+memop_l2_err_status_reg	memop_l2_err_status_reg.s
+
+memop_l2_err_inject_reg	memop_l2_err_inject_reg.s
+
+memop_l2_notdata_err_addr_reg	memop_l2_notdata_err_addr_reg.s
+
+</runargs>
+
+/////////////////////////
+// Multiple thread diags
+////////////////////////
+
+<runargs -sas>
+
+memop_mt_l2_dep_store	memop_mt_l2_dep_store.s -nosas -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff
+
+memop_mt_l2_miss_buff	memop_mt_l2_miss_buff.s -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff
+
+memop_random_noatomic_multithrd	memop_random_noatomic_multithrd.s -vcs_run_args=+TB_RANDOM_XIR  -midas_args=-DPART_0_BASE=0x200000000 -midas_args=-DL2_REG_PROG -nofast_boot -vcs_run_args=+ios_0in_ras_chk_off
+
+#if (! defined FC)
+
+memop_mt_fpu_ld_st	memop_mt_fpu_ld_st.s -midas_args=-DCMP_THREAD_START=0x01010101010101 -nosas -finish_mask=01010101010101
+
+#endif
+
+#if (! defined CCM)
+
+memop_mt2_invalidate_l1	memop_mt2_invalidate_l1.s -midas_args=-DCMP_THREAD_START=0x3 -nosas -midas_args=-allow_tsb_conflicts -finish_mask=3 -midas_args=-DSYNC_THREADS 
+
+#endif
+
+</runargs>
+
+////////////////////////
+
+///////////////////////
+
+<runargs -vcs_run_args=+0in_no_checksim_db -vcs_run_args=+0in_no_statistics >
+
+n2_8tload_weight_486046  n2_8tload_weight_486046.s -nosas -midas_args=-DCMP_THREAD_START=0xff -midas_args=-allow_tsb_conflicts -max_cycle=+3000000 -drm_freeram=4000 -drm_freeswap=2000 -tg_seed=1600189735 -finish_mask=ff
+
+</runargs>
+
+</sys(daily)>
+</sys(all)>
+
+
+////////////////////////
+//  Long (over 20 hrs) memop diags
+////////////////////////
+
+<runargs -sas -midas_args=-DCMP_THREAD_START=0x1 -finish_mask=1>
+
+memop_l2_data_access	memop_l2_data_access.s -nosas
+
+memop_l2_tag_access	memop_l2_tag_access.s -nosas
+
+</runargs>
+
+</sys(memop_all)>

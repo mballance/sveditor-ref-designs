@@ -1,0 +1,109 @@
+!-----------------------------------------------------------------------
+! Run 8 threads on one core with DMA on thread 5.
+!-----------------------------------------------------------------------
+TSOTOOL.PROCESSOR niagara2.rtl
+TSOTOOL.MODE GEN
+TSOTOOL.N_THREADS 8
+TSOTOOL.TEST_NAME fc1_prop_diag
+TSOTOOL.BATCH Y
+!
+!  It appears that DMA generating threads are about 18% efficient.
+!  In other words, if all threads try to execute the same number
+!  of 'instructions' the non-DMA threads will finish long before
+!  the DMA threads. The sollowing weighting seems to work for an
+!  FC1 model with one thread doing DMA.
+!
+!                        0    1    2    3    4    5    6    7
+GEN.N_INSTR_PER_THREAD 100, 100, 100, 100, 100,  19, 100, 100, 
+GEN.AVG_LOOP_SIZE 0
+GEN.AVG_LOOP_ITER 0
+! GEN.SEED 499406026
+ADMAP.RTL.REGION_PA_SEPARATION 8M
+ADMAP.N_REGIONS 4
+ADMAP.REGION_SIZE 64K
+ADMAP.REGION_OFFSETS 916-920-984-1012, 180-1416-2228-3228, 316-692-1268-1520-1560-2404, 2108-2132-2156-2304-2412-2544-2556
+ADMAP.ATTRIBUTES CV=1110,CP=1110
+ADMAP.NC_MEMMAP 0xc800002000:8G
+ADMAP.N_ALIASES 0
+ADMAP.ALIAS_FREQUENCY 64
+ADMAP.ALIAS_OFFSET 8388608
+RUN.SIMULATOR no_simulator_defined
+WT.PCT_FP_INSTR 10
+WT.PCT_LITTLE_ENDIAN 5
+WT.PCT_LOADS_NF 0
+WT.PCT_NFS_FAULT 0
+WT.PCT_PREFETCH_FAULT 20
+WT.PCT_PREFETCH_UNIMP 20
+WT.PCT_CBRANCH 0
+WT.PCT_SECONDARY_CTX 0
+WT.PCT_NUCLEUS_CTX 0
+WT.REPLACEMENT 5 0 cpu=5
+WT.INTERRUPT 0
+WT.LD 10 0 cpu=5
+WT.BLD 0 5 cpu=0-4,6,7 region=0-2 
+WT.DWLD 0 1 cpu=0-4,6,7 region=0-2 
+WT.LDD 0
+WT.QWLD 0
+WT.AQLD 0 1 cpu=0-4,6,7 region=1
+WT.ST 5 0 cpu=7
+WT.BST 0 10 cpu=0-4,6,7 region=0-2
+WT.BSTC 0
+WT.ST_BINIT 0
+WT.DWST_BINIT 0
+WT.DWST 0 10 cpu=0-4,6,7 region=0-2
+WT.QWST 0
+WT.SWAP 0 5 cpu=0-4,6,7 region=0-2
+WT.CAS 0 5 cpu=0-4,6,7 region=0-2
+WT.CASX 0 5 cpu=0-4,6,7 region=0-2
+WT.ASI_L2_FLUSH 0
+WT.FLUSHI 0
+WT.MEMBAR 0
+WT.PREFETCH 10 0 cpu=5
+WT.NOP 0
+ADV.L2_WAYS 16
+ADV.RESULTS_TO_MEM N
+ADV.BST_MEMBARS Y
+ADV.BLD_MEMBARS Y
+ADV.FP_FLUSH_MEMBARS Y
+ADV.CAS_IMPLICIT_MEMBARS Y
+ADV.WARMUP_ITERATIONS 0
+ADV.TEST_REPETITIONS 1
+
+! PEP based DMA operation weights
+! The weights here try to skew for mostly small
+! and large DMAs, with the emphasis on large and
+! skewed towards writes.
+
+WT.MACRO.ALM_DMA0_RD 0 10 cpu=5 region=0-2
+WT.MACRO.ALM_DMA1_RD 0 10 cpu=5 region=0-2
+WT.MACRO.ALM_DMA2_RD 0 10 cpu=5 region=0-2
+WT.MACRO.ALM_DMA3_RD 0 10 cpu=5 region=0-2
+WT.MACRO.DMA0_RD_0x8 0 15 cpu=5 region=0-2
+WT.MACRO.DMA0_RD_0xC 0 4 cpu=5 region=0-2
+WT.MACRO.DMA0_RD_0x10 0 4 cpu=5 region=0-2
+WT.MACRO.DMA0_RD_0x14 0 4 cpu=5 region=0-2
+WT.MACRO.DMA0_RD_0x20 0 4 cpu=5 region=0-2
+WT.MACRO.DMA0_RD_0x30 0 4 cpu=5 region=0-2
+WT.MACRO.DMA0_RD_0x3C 0 30 cpu=5 region=0-2
+WT.MACRO.DMA0_RD_0x40 0 10 cpu=5 region=0-2
+WT.MACRO.DMA1_RD_0x40 0 10 cpu=5 region=0-2
+WT.MACRO.DMA2_RD_0x40 0 10 cpu=5 region=0-2
+WT.MACRO.DMA3_RD_0x40 0 10 cpu=5 region=0-2
+
+WT.MACRO.ALM_DMA0_WR 0 10 cpu=5 region=0-2
+WT.MACRO.ALM_DMA1_WR 0 10 cpu=5 region=0-2
+WT.MACRO.ALM_DMA2_WR 0 10 cpu=5 region=0-2
+WT.MACRO.ALM_DMA3_WR 0 10 cpu=5 region=0-2
+WT.MACRO.DMA0_WR_0x8 0 30 cpu=5 region=0-2
+WT.MACRO.DMA0_WR_0xC 0 10 cpu=5 region=0-2
+WT.MACRO.DMA0_WR_0x10 0 10 cpu=5 region=0-2
+WT.MACRO.DMA0_WR_0x14 0 10 cpu=5 region=0-2
+WT.MACRO.DMA0_WR_0x20 0 10 cpu=5 region=0-2
+WT.MACRO.DMA0_WR_0x30 0 10 cpu=5 region=0-2
+WT.MACRO.DMA0_WR_0x3C 0 80 cpu=5 region=0-2
+WT.MACRO.DMA0_WR_0x40 0  25 cpu=5 region=0-2
+WT.MACRO.DMA1_WR_0x40 0  25 cpu=5 region=0-2
+WT.MACRO.DMA2_WR_0x40 0  25 cpu=5 region=0-2
+WT.MACRO.DMA3_WR_0x40 0  25 cpu=5 region=0-2
+
+WT.MACRO.ALM_DMA0_INT 0 40 cpu=5 region=0-2

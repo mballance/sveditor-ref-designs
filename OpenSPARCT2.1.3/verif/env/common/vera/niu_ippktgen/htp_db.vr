@@ -1,0 +1,512 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: htp_db.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#define HTP_DB 
+
+class htp_db {
+
+    //=======================================================
+    //=   HTP Transmitter Descriptor structure  	  ===
+    //=======================================================
+
+    bit [13:0] packet_length                    = 14'h0040; // packet_length
+
+    bit [13:0] buffer_length[];                             // buffer_length
+
+    bit [4:0] chksum_start                      = 5'h00;  // check sum start
+
+    bit [7:0] chksum_stuff                      = 8'h00;  // check sum stuff
+
+    bit chksum_enable                           = 1'b1;  // check sum enable
+
+    bit no_crc                                  = 1'b1;  // when set crc not inserted 
+                                                         // into the outgoing frame 
+
+    bit int_me                                  = 1'b0; // when set TX_INT_ME 
+                                                        // will be set upon
+                                                        // loading the entire 
+                                                        // frame into the TX_FIFO
+
+        
+    bit [3:0] qos                               = 4'h0; // service level of packet
+
+   
+    bit [7:0] qp                                = 8'h00;
+
+
+    bit [3:0] fdst                              = 4'h0; // final destination
+                                                        // 4'b0000      - None
+                                                        // 4'b0001      - IB
+                                                        // 4'b0010      - Network
+                                                        // 4'b1000      - IPSec
+                                                        // 4'b1010      - TE
+                                                        // 4'b1011      - CPU
+
+    bit [3:0] idst                              = 4'h0; // initial destination
+
+
+    bit [3:0] pkt_src                           = 4'h0; // Packet source
+                                                        // 4'b0000      - None
+                                                        // 4'b0001      - IB
+                                                        // 4'b0010      - Network
+                                                        // 4'b1000      - IPSec
+                                                        // 4'b1010      - TE
+                                                        // 4'b1011      - CPU
+   
+    bit [3:0]  pkt_type                         = 4'bx;  // Packet type
+							 // 4'b0xxx  - Reserved
+							 // 4'b0001  - IB Management 
+							 // 4'b0010  - Ethernet Packet
+							 // 4'b0011  - IPSec(decrypted)
+							 // 4'b0100  - IPSec(encrypted)
+							 // 4'b0101  - Reserved
+							 // 4'b0110  - TCP Termiantion
+							 // 4'b0111  - Rdma Read
+							 // 4'b1000  - Rdma Write
+							 // 4'b1001  - CPU-host management packet
+                                                         //          - for other QP(2-127)            
+
+    bit [7:0] packet_type                     =8'hxx;   // irx_packet type                
+
+    bit [7:0] dst_port                         = 8'hxx;  // destination mac port sent to irx cntrl wd
+
+    bit [7:0] ib_dst_port                         = 8'hxx;  // destination mac port sent to irx cntrl wd
+
+    bit eop[]; // End of packet
+
+    bit sop[]; // Start of packet 
+
+    bit [6:0] mac_index;                                 // mac_index 
+ 
+    bit ib_port;                                         // ib port
+
+    bit [1:0] mac_port;                                  // mac port
+ 
+    // fields of the IRX CONTROL WD
+
+    bit [15:0]  chksum_data                     = 16'h0000;
+
+    bit [10:0]  bucket_cnt                      = 11'h000;
+
+    bit [10:0]  eop_offset                      = 11'h000;
+
+    bit [3:0]   VL                              = 4'h00;
+
+    bit [6:0]   data_offset                     = 7'h00;
+
+    bit         single_bkt                      = 1'b0;
+
+    bit         strip                           = 1'b0;
+
+    bit [5:0]   reserved                        = 6'h00;
+
+    bit [127:0]  status_wd                      = 128'b0;  // status word for IRX INTF
+  
+    bit          bad_pkt                        = 1'b0;   // bad pkt bit
+
+    bit [1:0]    la4_prot                       = 2'b00; // 00 -> uninterested
+                                                         // 01 -> tcp
+                                                         // 10 -> udp
+                                                         // 11 -> reserved
+
+    bit [1:0]    la3_vers                       = 2'b00; // 00 -> uninterested
+                                                         // 01 -> ipv4
+                                                         // 10 -> ipv6
+                                                         // 11 -> reserved
+
+    bit [2:0]    la2_opti                       = 3'b000; // 000 -> ethernet
+                                                          // 001 -> vlan
+                                                          // 010 -> llc
+                                                          // 011 -> vlan-llc
+                                                          // 1xx -> oc192
+
+    // adding the null pkt bit
+
+    bit null_pkt                                 = 1'b0; // default not a null pkt
+                                                         // if set to 1 null pkt
+
+    bit err_pkt                                  = 1'b0; // default not a err pkt
+                                                         // if set to 1 err_pkt
+
+    bit no_sop_pkt                               = 1'b0; // default the pkt has sop
+                                                         // if set to 1 no sop
+
+    bit no_eop_pkt                               = 1'b0; // default the pkt has eop
+                                                         // if set to 1 no eop
+
+    bit pkt_len_err                              = 1'b0; // default pkt has no len err
+                                                         // if 1 pkt has len err
+
+    // bit [127:0]  htp_txdesc                     = 128'hx; // This is the descriptor
+                                                          // written into the host memory
+
+    // bit [127:0] htp_irx_ctrlwd                  = 128'hx; // This is the control word
+                                                          // passed to IRX by HTP
+
+    // new bits of IBTP control word1 (BMC)
+
+   bit [4:0] ipsec_reserved = 5'h00;
+   bit [2:0] ipsec_reserved2 = 3'b000;
+   bit [5:0] ipsec_reserved3 = 5'h00;
+   bit [15:0] tcp_chksum = 16'hffff;
+   bit tcp_fullchksum_ok = 1'b1;
+   bit tcp_fullchksum = 1'b1;
+   bit partial_chksum = 1'b0;
+   bit ip_hdr_chksum_ok = 1'b0;
+   bit [7:0] ipsec_mac_index = 8'h00;
+   bit [11:0] mac_default = 12'h000;
+   bit [3:0] ipsec_mac_port = 4'hf;
+   bit jumbo_pkt = 1'b0;
+   bit [10:0] ipsec_eop_offset = 11'h000;
+   bit [10:0] ipsec_bucket_cnt = 11'h000;
+
+    // other bits for the control word two
+
+ bit [7:0] QPN_bypass = 8'h00;
+ bit [1:0] mode_bit = 2'b00;
+ bit [7:0] hdr_len = 8'h00;
+ bit       use_mc_index = 1'b0;
+ bit [15:0] tt_index = 16'h0000;
+ bit [31:0] TCP_seq = 32'h0000_0000;
+ bit [15:0] tcp_seg_len = 16'h0000;
+ bit        push_bit = 1'b0;
+ bit        TOE_wbn = 1'b0;
+ bit [12:0] first_bkt_ptr = 13'h0000;
+ bit [12:0] last_bkt_ptr = 13'h0000;
+
+   // htp-fflp driver values after the look up
+
+ // cycle one data
+
+ bit multicast = 1'b0;
+ bit [2:0] l2_option = 3'b000;
+ bit [1:0] l3_option = 2'b01;
+ bit [1:0] l4_option = 2'b01;
+ bit [3:0] l4_hdr_len = 4'h0;
+ bit solicited_event = 1'b0;
+ bit [31:0] seq_num = 32'h0000_0000;
+
+ // cycle two data
+
+ bit [15:0] cam_index = 16'h0000;
+
+ // cycle three data
+
+ bit drop_pkt = 1'b0;
+ bit [1:0] pkt_dest = 2'b00;
+ bit [1:0] pkt_mode = 2'b00;
+ bit vlan_match = 1'b0;
+ bit cfg_def_vlan_ena = 1'b0;
+ bit reserved_fflp = 1'b0;
+ bit [7:0] ehp_qp_info = 8'h00;
+ bit cam_match = 1'b0;
+ 
+   
+ // completion data handle
+
+ integer comp_data = 1; 
+ bit     last_pkt = 1'b0;
+
+ // buffer pointer of the pkt
+
+ bit [39:0] buffer_ptr = 40'h00_00000_0000;
+
+ bit [15:0] comp_offset = 16'h0000;
+
+    // adding the task definition
+
+    task new();
+
+    function bit [127:0] get_tx_descriptor(bit [39:0] pkt_bufptr, integer i);
+
+    function bit [127:0] get_htp_irx_ctrlwd();
+
+    function bit [31:0] get_irx_route_tag();
+
+    function bit [127:0] get_status_wd();
+
+    // functions to get the control word for htp_bmc in case of IPSED decrypted packet
+
+    function bit [127:0] get_htp_bmc_ctrlwd1();
+
+    function bit [127:0] get_htp_bmc_ctrlwd2();
+
+    // completion wr back word
+
+    function bit [127:0] get_comp_wrbk_wd(integer buf_indx, bit [1:0] chnl);
+
+} // end of class htp_txdesc_db 
+
+
+// initializing the commonc parameters
+
+task htp_db :: new ()
+{
+  integer i,j,k;
+
+  printf("Intializing the buffer length array\n");
+  for(i=0;i<128;i++) {
+     buffer_length[i] = 14'h0000;
+   }
+ 
+  printf("Intializing the EOP array\n");
+  for(j=0;j<128;j++) {
+     eop[j] = 1'b0;
+  }
+
+  printf("Intializing the SOP array\n");
+  for(k=0;k<128;k++) {
+     sop[k] = 1'b0;
+  }
+}
+     
+function bit [127:0] htp_db :: get_tx_descriptor(bit [39:0] pkt_bufptr, integer i)
+{
+  bit [127:0] htp_txdesc;
+
+  // idst = fdst;
+
+  htp_txdesc = {ib_port,
+                mac_port,
+                mac_index,
+                packet_length,
+                pkt_bufptr,
+                sop[i],
+                eop[i],
+                pkt_type,
+                pkt_src,
+                idst,
+                fdst,
+                qos,
+                qp,
+                VL,
+                int_me,
+                no_crc,
+                chksum_enable,
+                chksum_stuff,
+                chksum_start, 
+                buffer_length[i]};
+
+  buffer_ptr = pkt_bufptr;
+  get_tx_descriptor = htp_txdesc;
+}  
+
+function bit [127:0] htp_db :: get_htp_irx_ctrlwd()
+{
+  bit [127:0] htp_irx_ctrlwd;
+
+  dst_port = {6'h00,mac_port};
+  
+  case(pkt_type) {
+  4'b0000 : packet_type = 8'b0xxx_xxxx;
+  4'b0001 : packet_type = 8'b1000_0001;
+  4'b0010 : packet_type = 8'b1000_0010;
+  4'b0011 : packet_type = 8'b1000_0011;
+  4'b0100 : packet_type = 8'b1000_0100;
+  4'b0101 : packet_type = 8'b1000_0101;
+  4'b0110 : packet_type = 8'b1000_0110;
+  4'b0111 : packet_type = 8'b1000_0111;
+  4'b1000 : packet_type = 8'b1000_1000;
+  4'b1001 : packet_type = 8'b1000_1001;
+  } 
+
+
+ // idst = fdst;
+
+  htp_irx_ctrlwd = {packet_type,
+                    pkt_src,
+                    idst,
+                    fdst,
+                    dst_port,
+                    2'b00,qos[1:0],
+                    chksum_enable,
+                    chksum_stuff,
+                    qos[2],chksum_start,
+                    chksum_data,
+                    bucket_cnt,
+                    eop_offset,
+                    ib_port,
+                    VL,
+                    qp,
+                    data_offset,
+                    packet_length,
+                    no_crc,
+                    single_bkt,
+                    strip,
+                    reserved};
+
+  get_htp_irx_ctrlwd = htp_irx_ctrlwd;
+} 
+
+function bit [31:0] htp_db :: get_irx_route_tag()
+{
+  bit [31:0] htp_irx_route_tag;
+
+  // idst = fdst;
+
+  htp_irx_route_tag = {packet_type,pkt_src,idst,fdst,dst_port,qos};
+
+  get_irx_route_tag = htp_irx_route_tag;
+}
+
+
+// status word for IRX interface
+
+function bit [127:0] htp_db :: get_status_wd()
+{
+  bit [127:0] htp_irx_status_wd;
+
+  htp_irx_status_wd = {bad_pkt,111'b0,chksum_data};
+
+  get_status_wd = htp_irx_status_wd;
+}
+
+// this is used for IPSEC packet in the TCP flow mode going to the IB_PORT
+
+function bit [127:0] htp_db :: get_htp_bmc_ctrlwd1()
+{
+  bit [127:0] htp_bmc_ctrlwd1;
+
+  // dst_port = {6'h00,mac_port};
+
+  case(pkt_type) {
+  4'b0000 : packet_type = 8'b0xxx_xxxx;
+  4'b0001 : packet_type = 8'b1000_0001;
+  4'b0010 : packet_type = 8'b1000_0010;
+  4'b0011 : packet_type = 8'b1000_0011;
+  4'b0100 : packet_type = 8'b1000_0100;
+  4'b0101 : packet_type = 8'b1000_0101;
+  4'b0110 : packet_type = 8'b1000_0110;
+  4'b0111 : packet_type = 8'b1000_0111;
+  4'b1000 : packet_type = 8'b1000_1000;
+  4'b1001 : packet_type = 8'b1000_1001;
+  }
+
+
+  htp_bmc_ctrlwd1 = {packet_type,
+                     pkt_src,
+                     idst,
+                     fdst,
+                     ib_dst_port,
+                     qos,
+                     ipsec_reserved3,
+                     jumbo_pkt,
+                     ipsec_mac_port,
+                     mac_default,
+                     ipsec_mac_index,
+                     ipsec_bucket_cnt,
+                     ipsec_eop_offset,
+                     ip_hdr_chksum_ok,
+                     partial_chksum,
+                     tcp_fullchksum,
+                     tcp_fullchksum_ok,
+                     tcp_chksum,
+                     packet_length,
+                     ipsec_reserved2,1'b0,
+                     ipsec_reserved};
+
+  get_htp_bmc_ctrlwd1 = htp_bmc_ctrlwd1;
+}
+
+// this is used for IPSEC packet in the TCP flow mode going to the IB_PORT
+
+function bit [127:0] htp_db :: get_htp_bmc_ctrlwd2()
+{
+  bit [127:0] htp_bmc_ctrlwd2;
+
+  // mode_bit = chksum_start[4:3];
+  // use_mc_index = chksum_start[2];
+  // push_bit = chksum_start[1];
+  // TOE_wbn = chksum_start[0];
+
+
+
+ htp_bmc_ctrlwd2 = {1'b0,
+                    last_bkt_ptr,
+                    first_bkt_ptr,
+                    TOE_wbn,
+                    push_bit,
+                    tcp_seg_len,
+                    TCP_seq,
+                    tt_index,
+                    use_mc_index,
+                    hdr_len,
+                    2'b00,packet_length,
+                    mode_bit,
+                    QPN_bypass};
+
+
+  get_htp_bmc_ctrlwd2 = htp_bmc_ctrlwd2;
+}
+
+
+//--------------------------------------------------
+//----- comp write back word function --------------
+//--------------------------------------------------
+
+function bit [127:0] htp_db :: get_comp_wrbk_wd(integer buf_indx, bit [1:0] chnl) 
+{
+  bit [127:0] htp_cp_wrbk_wd;
+  comp_offset = buf_indx;
+
+  htp_cp_wrbk_wd = { 
+                     pkt_type,
+                     pkt_src,
+                     idst,
+                     fdst,
+                     8'h0,
+                     buffer_ptr,
+                     2'b00,
+                     packet_length,
+                     2'b00,
+                     buffer_length[buf_indx],
+                     sop[buf_indx],
+                     eop[buf_indx],
+                     1'b0,
+                     err_pkt,
+                     2'b00,
+                     chnl,
+                     qp,
+                     comp_offset
+                   };
+
+   get_comp_wrbk_wd = htp_cp_wrbk_wd;
+}
+                    
+                                          
+                     
+                     
+
+
+

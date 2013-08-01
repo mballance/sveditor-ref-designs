@@ -1,0 +1,266 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuPioMWrStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class PioMWrPEUStr extends PioBasePEUStr {
+
+
+  // ******************************************************************
+  // The Test Environment objects need to execute the strategy.
+  // ******************************************************************
+  protected PEUTestEnv              _env;
+
+
+  // ******************************************************************
+  // TLP Fields - These fields will be randomized using the parameters
+  // in the following section, and obeying the constraints defined
+  // within this class.
+  // ******************************************************************
+  protected         bit [1:0]       _format;
+  protected         bit [4:0]       _type;
+
+  protected         bit [2:0]       _tc;
+  
+  protected         bit             _td;
+  protected         bit             _ep;
+  
+  protected         bit [1:0]       _attr;
+  protected rand    bit [9:0]       _len;
+  protected         bit [15:0]      _req_id;
+  protected         bit [7:0]       _tag;
+  protected rand    bit [31:0]      _addr_lsb;
+  protected rand    bit [31:0]      _addr_msb;
+
+  protected rand    bit [3:0]       _last_dwbe;
+  protected rand    bit [3:0]       _first_dwbe;
+
+  protected         bit [63:0]      _data;
+  protected         bit [7:0]			dataAddr;
+  protected	    bit [PEC_PCI__HDR]		pktHdr;
+
+  
+  // ******************************************************************
+  // The following constraint is used to generate the correct values
+  // for the TLP.
+  // ******************************************************************  
+  constraint generate_tlp {
+
+    this._len in {this._len_min : this._len_max};
+
+    this._addr_msb in {this._addr_msb_min : this._addr_msb_max};
+
+    this._addr_lsb in {this._addr_lsb_min : this._addr_lsb_max};
+    ({8'b_000_0000, this._addr_lsb[5:2]} + {2'b_0, this._len}) <= 12'h_010;
+
+    this._first_dwbe in {this._first_dwbe_min : this._first_dwbe_max};
+    this._last_dwbe  in {this._last_dwbe_min  : this._last_dwbe_max };
+
+    if (this._len > 10'h_001) {
+      this._first_dwbe != 4'b_0000;
+      this._last_dwbe  != 4'b_0000;   
+    }
+    else { // _len == 1
+      if ((_first_dwbe_min !=_first_dwbe_max) && (_last_dwbe_min != _last_dwbe_max)) {
+        this._first_dwbe != 4'b_0000;
+        this._last_dwbe  == 4'b_0000;
+      }
+    }
+      
+    // N2 can have any value byte mask, via the VIS partial store instruction -somePerson
+    // also, if len==1, either first_dwbe or last_dwbe must be 0 and the other non-0
+    
+    //if (((this._len == 10'h_002) && (this._addr_lsb[2] != 1'b_0)) ||
+    //    (this._len >= 10'h_003))
+    //  this._first_dwbe in { 4'b_1111, 4'b_1110, 4'b_1100, 4'b_1000 };
+
+    //if (this._len == 10'h_001)
+    //  this._last_dwbe == 4'b_0000;
+
+    //if (((this._len == 10'h_002) && (this._addr_lsb[2] != 1'b_0)) ||
+    //    (this._len >= 10'h_003))
+    //  this._last_dwbe in { 4'b_1111, 4'b_0111, 4'b_0011, 4'b_0001 };
+  }
+
+
+  // ******************************************************************
+  // Constructor
+  // ******************************************************************
+  public task new(PEUTestEnv a_env);
+
+
+  // ******************************************************************
+  // set the packet Parameters
+  // ******************************************************************
+  public task SetPacketParams();
+
+  
+  // ******************************************************************
+  // Execute the strategy.  Drive a TLP into the ILU, and expect it out
+  // of the PEU.
+  // ******************************************************************
+  public task Execute();  
+}
+
+
+
+//-------------------------------------------------------------------
+// Method Name: 
+// Description: 
+//-------------------------------------------------------------------
+task PioMWrPEUStr::new(PEUTestEnv a_env) {
+
+  
+  super.new(a_env);
+  this._env = a_env;  
+}
+
+
+
+//-------------------------------------------------------------------
+// Method Name: 
+// Description: 
+//-------------------------------------------------------------------
+task PioMWrPEUStr::SetPacketParams() {
+  integer pass_constrain = 0;
+  this._env.allocWrTag(this._tag, dataAddr);
+
+  
+  this._type = PEC_PCI__TYPE_MEM;
+  this._tc   = 3'b_000;
+  this._td   = 1'b_0;
+  this._ep   = 1'b_0;
+  this._attr = 2'b_00;
+
+  
+  this._req_id      = urandom_range(this._req_id_max, this._req_id_min);
+  this._data[63:32] = urandom_range(this._data_max[63:32],   this._data_min[63:32]);
+  this._data[31: 0] = urandom_range(this._data_max[31: 0],   this._data_min[31: 0]);
+
+  
+  randcase {
+    this._format_req_prob_3dw : this._format = PEC_PCI__FMT_DATA_3DW;
+    this._format_req_prob_4dw : this._format = PEC_PCI__FMT_DATA_4DW;
+  }
+
+
+//N2 only suports 8 byte PIO write, 16 byte PIO read.
+//So if _len_max happens to get set too high adjust it
+//# of payload bytes = _len*4
+    if( this._len_max >= 10'h_002 ){
+       this._len_max = 10'h_002;
+    }
+    if( this._len_min > this._len_max ){
+       this._len_min = this._len_max;
+    }
+  
+// 8/20 Fu: bypass randomize for it create problem for gate sim
+#ifdef N2_FC
+  while (!pass_constrain)
+  {
+    this._len = urandom_range(this._len_max, this._len_min);
+    this._addr_msb = urandom_range(this._addr_msb_max, this._addr_msb_min);
+    this._addr_lsb = urandom_range(this._addr_lsb_max, this._addr_lsb_min);
+
+    pass_constrain = ((this._addr_lsb[5:2] + this._len) <= 16) ? 1 : 0; 
+    printf ("GATE DEBUG RANDOMIZE: addr_msb = %x, addr_lsb = %x, len = %x\n", _addr_msb, _addr_lsb, _len);
+  }
+
+  pass_constrain = 0;
+  while (!pass_constrain)
+  {
+    this._first_dwbe = urandom_range(this._first_dwbe_max, this._first_dwbe_min);
+    this._last_dwbe = urandom_range(this._last_dwbe_max, this._last_dwbe_min);
+
+    pass_constrain = 1;
+     if (this._len > 10'h_001) {
+       if (this._first_dwbe == 4'b_0000) pass_constrain = 0;
+       if (this._last_dwbe  == 4'b_0000) pass_constrain = 0;
+    }
+    else { // _len == 1
+      if ((_first_dwbe_min !=_first_dwbe_max) && (_last_dwbe_min != _last_dwbe_max)) 
+      {
+        if (this._first_dwbe == 4'b_0000) pass_constrain = 0;
+        if (this._last_dwbe  != 4'b_0000) pass_constrain = 0;
+      }
+    }
+    printf ("GATE DEBUG RANDOMIZE: first_dwbe = %x, last_dwbe = %x\n", _first_dwbe, _last_dwbe);
+  }
+//
+#else
+
+  if( this.randomize() != OK ) {
+    _env.Report.report(RTYP_TEST_ERROR,"PioMWrPEUStr::SetPacketParams - randomize failure \n" );
+  }
+#endif
+
+  pktHdr [PEC_PCI__HDR]         = {128{1'b_0}};
+  pktHdr [PEC_PCI__FMT]         = this._format;
+  pktHdr [PEC_PCI__TYPE]        = this._type;
+  pktHdr [PEC_PCI__TC]          = this._tc;
+  pktHdr [PEC_PCI__TD]          = this._td;
+  pktHdr [PEC_PCI__EP]          = this._ep;
+  pktHdr [PEC_PCI__ATTR]        = this._attr;
+  pktHdr [PEC_PCI__LEN]         = this._len;
+  pktHdr [PEC_PCI__REQ_ID]      = this._req_id;
+  pktHdr [PEC_PCI__TLP_TAG]     = this._tag;
+  pktHdr [PEC_PCI__LAST_DWBE]   = this._last_dwbe;
+  pktHdr [PEC_PCI__FIRST_DWBE]  = this._first_dwbe;
+
+//N2 email clarifying address alignment for PIOs
+//4.PIO write case (STORE_REQ)
+//There has been a change from NCU recently in order to support paritial
+//store. NCU spec needs to be updated for this. Core sends an 8-bit byte
+//mask (position mask) to NCU. NCU sends this 8-bit byte mask to DMU
+//unmodified. Also NCU will turn off the lower 3 bits of the PA before
+//forwarding the address to DMU. In other words the lower 3 bits of the PA
+//are beign ignored and force to 0 for PIO write case.
+//
+
+  //8 byte writes need to be aligned
+  this._addr_lsb[2] = this._len == 10'h002? 1'b0 : this._addr_lsb[2] ;
+  if (this._format[0] === 1'b1)
+    //pktHdr [PEC_PCI__ADDR] = { this._addr_msb, this._addr_lsb[31:3], 3'b_000 };
+    pktHdr [PEC_PCI__ADDR] = { this._addr_msb, this._addr_lsb[31:2], 2'b_00 };
+  else
+    //pktHdr [PEC_PCI__ADDR32] = { this._addr_lsb[31:3], 3'b_000 };
+    pktHdr [PEC_PCI__ADDR32] = { this._addr_lsb[31:2], 2'b_00 };
+}
+
+task PioMWrPEUStr::Execute() {
+
+  SetPacketParams();
+
+  this._env.driveILU(pktHdr, dataAddr, this._data);
+  
+  this._env.expectPCIE(pktHdr, this._data);    
+}

@@ -1,0 +1,73 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_mac_xpcs_sm.vri
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#define DESKEW_LOSS  (8'b00000000)
+#define ALIGN_DET1   (8'b00000001)
+#define ALIGN_DET2   (8'b00000010)
+#define ALIGN_DET3   (8'b00000100)
+#define DESKEW_OK    (8'b00001000)
+#define ALIGN_ERR1   (8'b00010000)
+#define ALIGN_ERR2   (8'b00100000)
+#define ALIGN_ERR3   (8'b01000000)
+
+sample niu_coverage_mac_xpcs_state_machine.cs_state
+{
+  state s_DESKEW_LOSS               (DESKEW_LOSS);
+  state s_ALIGN_DET1                (ALIGN_DET1);
+  state s_ALIGN_DET2                (ALIGN_DET2);
+  state s_ALIGN_DET3                (ALIGN_DET3);
+  state s_DESKEW_OK                 (DESKEW_OK);
+  state s_ALIGN_ERR1                (ALIGN_ERR1);
+//state s_ALIGN_ERR2                (ALIGN_ERR2); // Filter out until we get help from the designer
+//state s_ALIGN_ERR3                (ALIGN_ERR3); // Filter out until we get help from the designer
+
+  trans   t_LOSS_DET_01             (DESKEW_LOSS -> ALIGN_DET1);
+  trans   t_DET1_DET2_02            (ALIGN_DET1  -> ALIGN_DET2);
+//trans   t_DET1_LOSS_04            (ALIGN_DET1  -> DESKEW_LOSS);// Filter out until we get help from the designer
+  trans   t_DET2_DET3_06            (ALIGN_DET2  -> ALIGN_DET3);
+//trans   t_DET2_LOSS_08            (ALIGN_DET2  -> DESKEW_LOSS);// Filter out until we get help from the designer
+  trans   t_DET3_OK_09              (ALIGN_DET3  -> DESKEW_OK);
+//trans   t_DET3_LOSS_10            (ALIGN_DET3  -> DESKEW_LOSS);// Filter out until we get help from the designer
+  trans   t_OK_ERR1_11              (DESKEW_OK   -> ALIGN_ERR1);
+  trans   t_ERR1_OK_12              (ALIGN_ERR1  -> DESKEW_OK);
+//trans   t_ERR1_ERR2_13            (ALIGN_ERR1  -> ALIGN_ERR2); // Filter out until we get help from the designer
+//trans   t_ERR2_ERR1_14            (ALIGN_ERR2  -> ALIGN_ERR1); // Filter out until we get help from the designer
+//trans   t_ERR3_LOSS_15            (ALIGN_ERR3  -> DESKEW_LOSS);// Filter out until we get help from the designer
+//trans   t_ERR3_ERR2_16            (ALIGN_ERR3  -> ALIGN_ERR2); // Filter out until we get help from the designer
+
+ // bad transitions
+ // bad_trans   t_OK_LOSS_03           (DESKEW_OK  -> DESKEW_LOSS);
+ bad_trans   t_DET3_ERR1_05         (ALIGN_DET3  -> ALIGN_ERR1);
+ bad_trans   t_ERR3_DET1_07         (ALIGN_ERR3 -> ALIGN_DET1);
+}

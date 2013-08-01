@@ -1,0 +1,95 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: pcs_util.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "mac_defines.vri"
+#include "pcs_memory_map.vri"
+#include "pio_driver.vrh"
+#include "mac_pio_class.vrh"
+
+extern mac_pio_cl mac_pio_class;
+//extern pio_drv pio_driver_class;
+
+class pcs_util_class {
+
+        task new();
+        function bit[39:0] get_pcs_reg_base(integer iport);
+        task pcs_init ( integer iport);
+
+}
+
+        task pcs_util_class :: new(){ 
+
+        }
+
+
+         task pcs_util_class :: pcs_init ( integer iport) {
+
+		bit [39:0] base_addr;
+		bit [31:0] data;
+
+		base_addr = get_pcs_reg_base(iport);
+		if ( get_plus_arg(CHECK, "PCS_SERDES") )
+  			{
+                        	printf("In PCS init \n");
+
+			data=32'h0000_0023;
+			mac_pio_class.mac_pio_wr(base_addr + PCS_CONFIGURATION, data);
+                        printf("The address is %0h\n",base_addr + PCS_CONFIGURATION);
+			data=32'h0000_0000;
+			mac_pio_class.mac_pio_wr(base_addr + PCS_DATAPATH_MODE, data);
+                        printf("The address is %0h\n",base_addr + PCS_DATAPATH_MODE);
+  			}
+
+              else 
+			{ 
+			data      = 32'h0000_0002; 
+			mac_pio_class.mac_pio_wr(base_addr + PCS_DATAPATH_MODE,   data );
+			}
+
+}
+
+
+        function bit[39:0] pcs_util_class :: get_pcs_reg_base(integer iport){
+
+                case(iport) {
+                    0: get_pcs_reg_base = PCS0_BASE;
+                    1: get_pcs_reg_base = PCS1_BASE;
+                    2: get_pcs_reg_base = PCS2_BASE;
+                    3: get_pcs_reg_base = PCS3_BASE;
+                   default: error("Error: Invalid PORT (%0d) for get_pcs_reg_base task.\n",iport);
+                   }
+
+          }
+

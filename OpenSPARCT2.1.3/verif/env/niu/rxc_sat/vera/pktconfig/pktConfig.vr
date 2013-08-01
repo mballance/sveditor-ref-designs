@@ -1,0 +1,236 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: pktConfig.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+
+// Check these
+#include "pcg_defines.vri"
+#include "pcg_types.vri"
+#include "pack_db.vrh"
+#include "flow_db.vrh"
+#include "flow_db_tasks.vrh"
+#include "pg_top_pp.vrh"
+#include "pc_top_pp.vrh"
+#include "pcg_token.vrh"
+
+#include "mbox_class.vrh"
+#include "get_mbox_id.vrh"
+#include "niu_rxtoken.vrh"
+#include "ip_ingress_classes.vrh"
+#include "ip_util.vrh"
+#include "pgIdgen.vrh"
+#include "niu_lptoken.vrh"
+
+
+extern mbox_class      mbox_id;
+extern pg pack_gen[16];
+
+
+class CpktConfig {
+
+// Top level class which hold packet generator etc.
+   setup_cam_ram_fcram_class cam_ram_cl;
+   CpgIdgen pgIdgen;
+   bit [3:0] MAC_LOOP_BACK_MODE;
+   bit[15:0] packet_id[4];
+   integer modify_mac_src_addr = 0;
+// details to be worked out
+
+     task new() {
+      integer i,j;
+      string init_loopback,temp_port;
+      bit [31:0] loopback;
+
+
+      if (get_plus_arg(CHECK, "ENABLE_CTRL_FIFO_CHKR"))
+        cam_ram_cl = new;
+      pgIdgen = new();
+      for(i=0;i<4;i++) {
+        packet_id[i] = 0;
+      }	
+     
+      for(i=0;i<4;i++) {
+        if(mbox_id.niu_pktcfglp[i] == -1) {
+	  mbox_id.niu_pktcfglp[i] = alloc(MAILBOX,0,1);
+	}
+      }
+	
+      for(i=0;i<4;i++) {
+        if(mbox_id.niu_rxpath_mb[i] == -1) {
+        // Alocate Mailbox
+        mbox_id.niu_rxpath_mb[i] = alloc(MAILBOX,0,1);
+        // Check if we were succesfull allocating the mailbox
+        if(mbox_id.niu_rxpath_mb[i] == 0) {
+          printf("ERROR  Could not allocate the outgoing mailbox port %d \n",i);
+          mbox_id.niu_rxpath_mb[i] = -1;
+         return;
+        }
+       }
+     }
+      for(i=0;i<4;i++) {
+        if(mbox_id.mac_opp[i] == -1) {
+          // Alocate Mailbox
+          mbox_id.mac_opp[i] = alloc(MAILBOX,0,1);
+          // Check if we were succesfull allocating the mailbox
+          if(mbox_id.mac_opp[i] == 0) {
+            printf("ERROR  Could not allocate the outgoing mailbox port0\n");
+            mbox_id.mac_opp[i] = -1;
+            return;
+          }
+        }
+      }
+      
+      if (get_plus_arg (CHECK, "RX_DROP_PKT_CHECK"))
+        modify_mac_src_addr = 1; // tmp added until we find a place to add the id
+      else modify_mac_src_addr =0;
+
+      
+     if( get_plus_arg( CHECK, "MAC_LOOP_BACK=")) {
+       loopback = get_plus_arg( STR, "MAC_LOOP_BACK=");
+       init_loopback.bittostr(loopback);
+       for (j=0; j<init_loopback.len();j++)
+       { temp_port =init_loopback.substr(j,j);
+        MAC_LOOP_BACK_MODE = MAC_LOOP_BACK_MODE | ( 1<<temp_port.atoi()); }
+     } else MAC_LOOP_BACK_MODE = 0;
+
+      
+     // Start the mem_checker_mbox also here
+     if(mbox_id.niu_rxpacket_memchk_mb == -1) {
+        // Alocate Mailbox
+        mbox_id.niu_rxpacket_memchk_mb = alloc(MAILBOX,0,1);
+        // Check if we were succesfull allocating the mailbox
+        if(mbox_id.niu_rxpacket_memchk_mb == 0) {
+          printf("ERROR  Could not allocate the outgoing mailbox port %d \n",i);
+          mbox_id.niu_rxpacket_memchk_mb = -1;
+         return;
+        }
+      }
+   }
+
+ task gen_rxPacket(flow_desc flow, integer data_length,  integer dma_num,integer mac_id ,(integer last_packet=0),(CRxTestClass rx_test_class = null)  );
+ local task SendPktForLoopBack(flow_desc flow, integer data_length,integer dma_num,integer mac_id, integer last_packet = 0 ) ;
+ local task forward_RxToken(CRxToken RxToken);
+
+}
+
+task CpktConfig::gen_rxPacket(flow_desc flow, integer data_length,integer dma_num,integer mac_id, (integer last_packet = 0), (CRxTestClass rx_test_class = null) ) {
+
+        bit [13:0] pkt_length;
+        integer buf_sz;
+        bit[23:0] r;
+   	bit[15:0] id;
+        bit[1:0] m;
+        bit[5:0] d;
+
+
+        CRxToken RxToken;
+	CpgToken pgToken;
+        byte_array        nb;
+
+	Cpkt_info pkt_info;
+
+     if(modify_mac_src_addr) {
+       flow.src_node.l2_addr = pgIdgen.getMacSA(dma_num,mac_id);
+       printf("CpktConfig::gen_rxPacket Modified l2src address - %x \n",flow.src_node.l2_addr);
+     }
+
+
+
+   if ( !get_plus_arg (CHECK, "FFLP_TEST") && get_plus_arg(CHECK, "ENABLE_CTRL_FIFO_CHKR")) {
+     pkt_info = cam_ram_cl.construct_flow(0, TCP_SYN, flow);
+     mailbox_put(mbox_id.cntl_chkr_mbox[mac_id], pkt_info);
+   }
+
+     if( 0 /*MAC_LOOP_BACK_MODE[mac_id]*/ ) {
+	SendPktForLoopBack(flow, data_length,dma_num,mac_id,last_packet);
+     } else {
+       RxToken = new(); 
+       pack_gen[mac_id].pkt_gen(flow, data_length, 3, pgToken, O_WAIT_SEND);
+       pack_gen[mac_id].display_db(pgToken.pack_db);	
+       RxToken.id=pgToken.gId;
+	  // create a seperate entry indicating the padding
+       RxToken.pkt_length = data_length + flow.frame.l2_pad_length;
+       RxToken.pgToken = new pgToken;
+       RxToken.dma_num=dma_num;
+       RxToken.port_num=mac_id;
+       RxToken.error_info.error_code = flow.frame.error_code; // review Move this to a class
+       RxToken.last_packet=last_packet;
+       if(rx_test_class!=null) {
+        RxToken.rx_test_class = rx_test_class.object_copy();
+       }
+       forward_RxToken(RxToken);
+     }
+}
+
+task CpktConfig::forward_RxToken(CRxToken RxToken) {
+
+  integer mac_id,i;
+//  if(blunt_loopback=1) {
+if ( get_plus_arg(CHECK, "BLUNT_END_LOOPBACK") ) {
+    mac_id = RxToken.port_num;
+    // Copy header to out_header in pack_db
+       RxToken.pgToken.pack_db.out_header[mac_id] = new;
+       RxToken.pgToken.pack_db.out_header[mac_id].use_header = 0;
+       RxToken.pgToken.pack_db.out_header[mac_id].header[0] = new;
+       RxToken.pgToken.pack_db.out_header[mac_id].header_len[0] = RxToken.pgToken.pack_db.header_len[ RxToken.pgToken.pack_db.use_hdr ];       
+       for( i = 0; i < RxToken.pgToken.pack_db.out_header[mac_id].header_len[0]; i++ )
+          RxToken.pgToken.pack_db.out_header[mac_id].header[0].val[i] = 
+            RxToken.pgToken.pack_db.header[ RxToken.pgToken.pack_db.use_hdr ].val[i];
+
+
+    mailbox_put(mbox_id.mac_opp[mac_id],RxToken.pgToken);
+    mailbox_put(mbox_id.niu_rxpath_mb[mac_id],RxToken);
+    //mailbox_put(mbox_id.mac_opp[mac_id],RxToken);
+  } else{
+    mac_id = RxToken.port_num;
+    mailbox_put(mbox_id.niu_rxpath_mb[mac_id],RxToken);
+  }
+
+}
+
+task CpktConfig::SendPktForLoopBack(flow_desc flow, integer data_length,integer dma_num,integer mac_id, integer last_packet = 0 ) {
+  CpktCfgLp pktCfgLp;
+  
+
+   pktCfgLp = new();
+   pktCfgLp.flow = flow;
+   pktCfgLp.rx_dma = dma_num;
+   pktCfgLp.port_id = mac_id;
+   pktCfgLp.last_packet = last_packet;
+   pktCfgLp.data_length = data_length;
+
+   mailbox_put(mbox_id.niu_pktcfglp[mac_id],pktCfgLp);
+
+}

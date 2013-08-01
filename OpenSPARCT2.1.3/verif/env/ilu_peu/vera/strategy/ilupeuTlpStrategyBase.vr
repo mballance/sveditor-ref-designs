@@ -1,0 +1,875 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuTlpStrategyBase.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "CTStrategyBase.vrh"
+ 
+virtual class ilupeuTlpStrategyBase extends ilupeuStrategyBase {
+ 
+  //Inherited from ilupeuStrategyBase
+  //CSRCollection     CSR;
+  //ReportClass       Report;
+  //ilupeuPodClass     Pod;
+  //ilupeuScenario     Scenario;
+  //Random Utilities
+  //FNXRandomUtil RandUtil;
+
+  //Transaction and Packet Types
+  FNXPCIEXactorTransaction TlpTrans;
+  FNXPCIEXactorPacket      TlpPkt;
+  bit [ILUPEU_TLP_HDR_WIDTH-1:0] tlpHdr = {ILUPEU_TLP_HDR_WIDTH{1'b0}};
+//  LPUXtrDataTLP            LPUXtrTlpPkt;
+
+  //Payload arrays
+  bit [7:0] pyldByteAry[*];
+  bit [31:0] pyldDWAry[*];
+  bit [31:0] pyldDW;
+  integer length;
+  integer xtrLen = 0;
+  integer dataSpec = 0;
+
+  // 
+  bit [7:0] pyldFirstByteValue = 0;
+  bit [63:0] tlpAddr = 0;
+  bit address_set = 0;
+  integer tlp_type = 0;
+  bit tlp_type_set = 0;
+  bit [7:0] IOSReqTag;
+
+
+  bit uniqueTagSet = 0;
+  static integer unique_tag_region = alloc(REGION, 0, 1);
+  static integer unique_tag_semaphore = alloc(SEMAPHORE, 0, 1, 1);
+
+  bit Trans_Direction;
+
+  task new ( ReportClass      _Report,
+             CSRCollection    _CSR,
+             ilupeuPodClass    _Pod ,	//Xactors
+             ilupeuScenario    _Scenario );   //Test Parameters
+
+  task GenRandomPCIEXtrTlp( bit _Trans_Direction, 
+                            integer _DataSpec );
+  task ConvertPcieTlp2Hdr();
+  task ConvertHdr2LpuXtrTlpPkt();
+  function bit[FNX_PCIE_XTR_REQ_TAG_WIDTH-1:0] GenUniqueTag();
+  task FreeUniqueTag(bit[FNX_PCIE_XTR_REQ_TAG_WIDTH-1:0] unique_tag);
+ 
+  //Moved from DMUXtr 11/17/04 to make full chip easier
+  function bit[31:0] nextPayloadDW( var integer DataSpec );
+
+}
+ 
+// class constructor
+task ilupeuTlpStrategyBase::new( ReportClass     _Report,
+                                 CSRCollection   _CSR,
+                                 ilupeuPodClass  _Pod,
+                                 ilupeuScenario  _Scenario )
+{
+  super.new( _Report,
+             _CSR,
+             _Pod,
+             _Scenario );
+
+
+  //FNXPCIEXtr Transaction used to access Denali registers
+  regTrans = new( Pod.FNXPCIEBldr );
+
+}
+
+
+task ilupeuTlpStrategyBase::GenRandomPCIEXtrTlp( bit _Trans_Direction,
+                                                 integer _DataSpec ){
+//review - add a GenPCIEXtrTlp that all parameters can be passed in for
+
+   integer i,j, pyldByteValue;
+   bit [31:0] dataDW;
+
+
+   //Set the initial payload byte value 
+   pyldByteValue = _DataSpec;
+ 
+   TlpTrans = new( Pod.FNXPCIEBldr );
+   //Set up the CTTransactionID
+   TlpTrans.SetID( ID );
+
+
+   //Get the handle to the transaction packet 
+   TlpPkt = TlpTrans.MyPacket;
+
+   //Set the fields that are common to all TLP packets first 
+   Trans_Direction = _Trans_Direction;
+
+   TlpPkt.PktType = FNX_PCIE_XTR_PKT_TYPE_TLP;
+
+   //Determine the TLP type from test parameters
+   //and set the header CmnFmt and CmnType fields
+   if (tlp_type_set) {
+     TlpPkt.Set( "CmnFmtType", tlp_type);
+   } else {
+     if( Trans_Direction === ILUPEU_EGRESS_TRANS ){
+        randcase{
+              Scenario.EgrTlpMRd32Wt:          TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MRD_32 );
+              Scenario.EgrTlpMRd64Wt:          TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MRD_64 );
+              Scenario.EgrTlpMRd32LkdWt:       TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MRDLK_32 );
+              Scenario.EgrTlpMRd64LkdWt:       TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MRDLK_64 );
+              Scenario.EgrTlpMWr32Wt:          TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MWR_32 );
+              Scenario.EgrTlpMWr64Wt:          TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MWR_64 );
+              Scenario.EgrTlpIORdWt:           TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_IORD );
+              Scenario.EgrTlpIOWrWt:           TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_IOWR );
+              Scenario.EgrTlpCfgRd0Wt:         TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_CFGRD0 );
+              Scenario.EgrTlpCfgWr0Wt:         TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_CFGWR0 );
+              Scenario.EgrTlpCfgRd1Wt:         TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_CFGRD1 );
+              Scenario.EgrTlpCfgWr1Wt:         TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_CFGWR1 );
+              Scenario.EgrTlpMsgINTxWt:{       TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MSG );
+                                               TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_LOCAL; 
+                                               //Set up the TlpPkt.CmnType using MsgRouting
+                                               TlpPkt.CmnType[FNX_PCIE_XTR_FMT_TYPE_MSG_ROUTING_SLC] = TlpPkt.MsgRouting;
+                                               randcase{
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_INTX_ASSERT_A;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_INTX_ASSERT_B;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_INTX_ASSERT_C;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_INTX_ASSERT_D;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_INTX_DEASSERT_A;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_INTX_DEASSERT_B;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_INTX_DEASSERT_C;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_INTX_DEASSERT_D;
+                                               }
+                                       }
+              Scenario.EgrTlpMsgPMWt:  {       TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MSG );
+                                               randcase{
+                                                        10:{    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_PM_ACTIVE_STATE_NAK;
+                                                                TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_LOCAL; 
+                                                           }
+                                                        10:{    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_PM_PME;
+                                                                TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_ROUTED_TO_ROOT_CMPLX; 
+                                                           }
+                                                        10:{    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_PME_TURN_OFF;
+                                                                TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_BCAST_FROM_ROOT_CMPLX; 
+                                                           }
+                                                        10:{    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_PME_TO_ACK;
+                                                                TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_GNR_TO_ROOT_CMPLX; 
+                                                           }
+                                               }
+                                               //Set up the TlpPkt.CmnType using MsgRouting
+                                               TlpPkt.CmnType[FNX_PCIE_XTR_FMT_TYPE_MSG_ROUTING_SLC] = TlpPkt.MsgRouting;
+                                           }
+              Scenario.EgrTlpMsgErrSigWt:  {       TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MSG );
+                                                   TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_ROUTED_TO_ROOT_CMPLX; 
+                                                   //Set up the TlpPkt.CmnType using MsgRouting
+                                                   TlpPkt.CmnType[FNX_PCIE_XTR_FMT_TYPE_MSG_ROUTING_SLC] = TlpPkt.MsgRouting;
+                                                   randcase{
+                                                            10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_ERR_COR;
+                                                            10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_ERR_NONFATAL;
+                                                            10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_ERR_FATAL;
+                                                   }
+                                           }
+              Scenario.EgrTlpMsgUnLkWt:    {    TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MSG );
+                                                TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_BCAST_FROM_ROOT_CMPLX; 
+                                                //Set up the TlpPkt.CmnType using MsgRouting
+                                                TlpPkt.CmnType[FNX_PCIE_XTR_FMT_TYPE_MSG_ROUTING_SLC] = TlpPkt.MsgRouting;
+                                                TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_LOCK_UNLOCK;
+                                           }
+              Scenario.EgrTlpMsgHtPlgWt:   {    TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MSG );
+                                                TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_LOCAL; 
+                                                //Set up the TlpPkt.CmnType using MsgRouting
+                                                TlpPkt.CmnType[FNX_PCIE_XTR_FMT_TYPE_MSG_ROUTING_SLC] = TlpPkt.MsgRouting;
+                                                randcase{
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_HP_POWER_ON;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_HP_POWER_OFF;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_HP_POWER_BLINK;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_HP_ATTENTION_PRESSED;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_HP_ATTENTION_ON;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_HP_ATTENTION_OFF;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_HP_ATTENTION_BLINK;
+                                                }
+                                           }
+              Scenario.EgrTlpMsgDSltPwrLmtWt: {    TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MSGD );
+                                                   TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_LOCAL; 
+                                                   //Set up the TlpPkt.CmnType using MsgRouting
+                                                   TlpPkt.CmnType[FNX_PCIE_XTR_FMT_TYPE_MSG_ROUTING_SLC] = TlpPkt.MsgRouting;
+                                                   TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_SLOT_POWER_LIMIT;
+                                              }
+              Scenario.EgrTlpMsgVendorDefWt:  {    randcase{
+                                                            10:   TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MSG );
+                                                            10:   TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MSGD );
+                                                   }
+                                                   randcase{
+                                                            10:   TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_ROUTED_TO_ROOT_CMPLX;
+                                                            10:   TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_ROUTED_BY_ID;
+                                                            10:   TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_BCAST_FROM_ROOT_CMPLX;
+                                                            10:   TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_LOCAL;
+                                                   }
+                                                   //Set up the TlpPkt.CmnType using MsgRouting
+                                                   TlpPkt.CmnType[FNX_PCIE_XTR_FMT_TYPE_MSG_ROUTING_SLC] = TlpPkt.MsgRouting;
+                                                   randcase{
+                                                            10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_VD_TYPE0;
+                                                            10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_VD_TYPE1;
+                                                   }
+                                               }
+              Scenario.EgrTlpCplWt:            TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_CPL );
+              Scenario.EgrTlpCplDWt:           TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_CPLD );
+              Scenario.EgrTlpCplLkdWt:         TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_CPLLK );
+              Scenario.EgrTlpCplDLkdWt:        TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_CPLDLK );
+  
+        }
+     }
+     else{		//ILUPEU_INGRESS_TRANS
+        randcase{
+              Scenario.IngrTlpMRd32Wt:          TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MRD_32 );
+              Scenario.IngrTlpMRd64Wt:          TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MRD_64 );
+              Scenario.IngrTlpMRd32LkdWt:       TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MRDLK_32 );
+              Scenario.IngrTlpMRd64LkdWt:       TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MRDLK_64 );
+              Scenario.IngrTlpMWr32Wt:          TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MWR_32 );
+              Scenario.IngrTlpMWr64Wt:          TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MWR_64 );
+              Scenario.IngrTlpIORdWt:           TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_IORD );
+              Scenario.IngrTlpIOWrWt:           TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_IOWR );
+              Scenario.IngrTlpCfgRd0Wt:         TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_CFGRD0 );
+              Scenario.IngrTlpCfgWr0Wt:         TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_CFGWR0 );
+              Scenario.IngrTlpCfgRd1Wt:         TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_CFGRD1 );
+              Scenario.IngrTlpCfgWr1Wt:         TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_CFGWR1 );
+              Scenario.IngrTlpMsgINTxWt:{       TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MSG );
+                                                TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_LOCAL;
+                                                //Set up the TlpPkt.CmnType using MsgRouting
+                                                TlpPkt.CmnType[FNX_PCIE_XTR_FMT_TYPE_MSG_ROUTING_SLC] = TlpPkt.MsgRouting;
+                                                randcase{
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_INTX_ASSERT_A;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_INTX_ASSERT_B;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_INTX_ASSERT_C;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_INTX_ASSERT_D;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_INTX_DEASSERT_A;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_INTX_DEASSERT_B;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_INTX_DEASSERT_C;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_INTX_DEASSERT_D;
+                                                }
+                                        }
+              Scenario.IngrTlpMsgPMWt:  {       TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MSG );
+                                                randcase{
+                                                        10:{    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_PM_ACTIVE_STATE_NAK;
+                                                                TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_LOCAL;
+                                                           }   
+                                                        10:{    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_PM_PME;
+                                                                TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_ROUTED_TO_ROOT_CMPLX;
+                                                           }   
+                                                        10:{    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_PME_TURN_OFF;
+                                                                TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_BCAST_FROM_ROOT_CMPLX;
+                                                           }   
+                                                        10:{    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_PME_TO_ACK;
+                                                                TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_GNR_TO_ROOT_CMPLX;
+                                                           }   
+                                                }
+                                                //Set up the TlpPkt.CmnType using MsgRouting
+                                                TlpPkt.CmnType[FNX_PCIE_XTR_FMT_TYPE_MSG_ROUTING_SLC] = TlpPkt.MsgRouting;
+                                            }
+              Scenario.IngrTlpMsgErrSigWt:  {      TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MSG );
+                                                   TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_ROUTED_TO_ROOT_CMPLX;
+                                                   //Set up the TlpPkt.CmnType using MsgRouting
+                                                   TlpPkt.CmnType[FNX_PCIE_XTR_FMT_TYPE_MSG_ROUTING_SLC] = TlpPkt.MsgRouting;
+                                                   randcase{
+                                                            10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_ERR_COR;
+                                                            10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_ERR_NONFATAL;
+                                                            10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_ERR_FATAL;
+                                                   }           
+                                           }
+              Scenario.IngrTlpMsgUnLkWt:   {    TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MSG );
+                                                TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_BCAST_FROM_ROOT_CMPLX;
+                                                //Set up the TlpPkt.CmnType using MsgRouting
+                                                TlpPkt.CmnType[FNX_PCIE_XTR_FMT_TYPE_MSG_ROUTING_SLC] = TlpPkt.MsgRouting;
+                                                TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_LOCK_UNLOCK;
+                                           }
+              Scenario.IngrTlpMsgHtPlgWt:  {    TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MSG );
+                                                TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_LOCAL;
+                                                //Set up the TlpPkt.CmnType using MsgRouting
+                                                TlpPkt.CmnType[FNX_PCIE_XTR_FMT_TYPE_MSG_ROUTING_SLC] = TlpPkt.MsgRouting;
+                                                randcase{
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_HP_POWER_ON;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_HP_POWER_OFF;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_HP_POWER_BLINK;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_HP_ATTENTION_PRESSED;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_HP_ATTENTION_ON;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_HP_ATTENTION_OFF;
+                                                        10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_HP_ATTENTION_BLINK;
+                                                }
+                                            }
+              Scenario.IngrTlpMsgDSltPwrLmtWt: {   TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MSGD );
+                                                   TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_LOCAL;
+                                                   //Set up the TlpPkt.CmnType using MsgRouting
+                                                   TlpPkt.CmnType[FNX_PCIE_XTR_FMT_TYPE_MSG_ROUTING_SLC] = TlpPkt.MsgRouting;
+                                                   TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_SLOT_POWER_LIMIT;
+                                               }
+              Scenario.IngrTlpMsgVendorDefWt:  {    randcase{
+                                                            10:   TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MSG );
+                                                            10:   TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_MSGD );
+                                                   }
+                                                   randcase{
+                                                            10:   TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_ROUTED_TO_ROOT_CMPLX;                                                          10:   TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_ROUTED_BY_ID;
+                                                            10:   TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_BCAST_FROM_ROOT_CMPLX;
+                                                            10:   TlpPkt.MsgRouting = FNX_PCIE_XTR_MSG_ROUTING_LOCAL;
+                                                   }
+                                                   //Set up the TlpPkt.CmnType using MsgRouting
+                                                   TlpPkt.CmnType[FNX_PCIE_XTR_FMT_TYPE_MSG_ROUTING_SLC] = TlpPkt.MsgRouting;
+                                                   randcase{
+                                                            10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_VD_TYPE0;
+                                                            10:    TlpPkt.MsgCode = FNX_PCIE_XTR_MSG_CODE_VD_TYPE1;
+                                                   }
+                                               }
+              Scenario.IngrTlpCplWt:            TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_CPL );
+              Scenario.IngrTlpCplDWt:           TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_CPLD );
+              Scenario.IngrTlpCplLkdWt:         TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_CPLLK );
+              Scenario.IngrTlpCplDLkdWt:        TlpPkt.Set( "CmnFmtType", FNX_PCIE_XTR_FMT_TYPE_CPLDLK );
+  
+        }
+  
+     }
+   }
+
+   //Randomize other Common Header fields
+   TlpPkt.CmnTC = 0;	//Traffic Class - malformed packet error if not TC0 -Fire ASIC MAS pg1021
+   TlpPkt.CmnTD = 0;	//TLP Digest - 1 indicates tlp digest - ecrc at end of tlp
+   if( Trans_Direction === ILUPEU_INGRESS_TRANS ){	//Denali strips off ECRC - review
+       TlpPkt.CmnTD = 0;
+   }
+   TlpPkt.CmnEP = 0; //urandom();	//Poisoned - review need to test
+   TlpPkt.CmnRO = 0;	//Relaxed Ordering -Attribute[1] - Not suppported Fire ASIC MAS pg140 
+   TlpPkt.CmnSnoop = 0;	//No Snoop -Attribute[0] - Not suppported Fire ASIC MAS pg140]
+   //IO and Cfg packet types must set TC, RO,& Snoop to 0
+   if( (TlpPkt.CmnType >= FNX_PCIE_XTR_TYPE_IORD && TlpPkt.CmnType <= FNX_PCIE_XTR_TYPE_CFGWR1) ||
+       TlpPkt.CmnType[FNX_PCIE_XTR_TYPE_MSG_FIXED_SLC] == FNX_PCIE_XTR_TYPE_MSG_FIXED ){ //MSG and MSGD have same bits set
+
+      TlpPkt.CmnTC = 0;		//Traffic Class
+      TlpPkt.CmnRO = 0;		//Relaxed Ordering -Attribute[1]
+      TlpPkt.CmnSnoop = 0;	//No Snoop -Attribute[0]
+   }
+
+   //Set the length field based on Max payload size for either Egress or Ingress 
+   //length is payload size in DW(4 bytes)
+   if( (Trans_Direction === ILUPEU_EGRESS_TRANS)  && TlpPkt.CmnFmt[FNX_PCIE_XTR_FMT_DATA_SLC] ){
+
+      //Set length but don't go over MaxPayload size
+      length = RandUtil.Rand32(Scenario.EgrMinTlpPayloadLngth4Byt,
+                               ((13'h80 << Scenario.denaliMaxPayload) < Scenario.EgrMaxTlpPayloadLngth4Byt) ? 
+                                   (13'h80 << Scenario.denaliMaxPayload) :		//Min MaxPayload value is 128Bytes
+                                   Scenario.EgrMaxTlpPayloadLngth4Byt );
+      
+   }
+   else if( (Trans_Direction === ILUPEU_INGRESS_TRANS) && TlpPkt.CmnFmt[FNX_PCIE_XTR_FMT_DATA_SLC] ){
+
+      //Set length but don't go over MaxPayload size
+      length = RandUtil.Rand32(Scenario.IngrMinTlpPayloadLngth4Byt,
+                               ((13'h80 << Scenario.ilupeuMaxPayload) < Scenario.IngrMaxTlpPayloadLngth4Byt) ? 
+                                   (13'h80 << Scenario.ilupeuMaxPayload) :		//Min MaxPayload value is 128Bytes
+                                   Scenario.IngrMaxTlpPayloadLngth4Byt );
+   }
+   //Reads can have random lengths 
+   else if( ({TlpPkt.CmnFmt,TlpPkt.CmnType} === FNX_PCIE_XTR_FMT_TYPE_MRD_32) ||
+            ({TlpPkt.CmnFmt,TlpPkt.CmnType} === FNX_PCIE_XTR_FMT_TYPE_MRD_64) ||
+            ({TlpPkt.CmnFmt,TlpPkt.CmnType} === FNX_PCIE_XTR_FMT_TYPE_MRDLK_32) ||
+            ({TlpPkt.CmnFmt,TlpPkt.CmnType} === FNX_PCIE_XTR_FMT_TYPE_MRDLK_64) ){ 
+
+      length = urandom();
+   }
+   else{
+      length = 0;
+   }
+   //IO and Cfg packet types and MsgD's must set length = 1 
+   if( (TlpPkt.CmnType >= FNX_PCIE_XTR_TYPE_IORD && TlpPkt.CmnType <= FNX_PCIE_XTR_TYPE_CFGWR1) ||
+       ((TlpPkt.CmnType[FNX_PCIE_XTR_TYPE_MSG_FIXED_SLC] === FNX_PCIE_XTR_TYPE_MSG_FIXED ) &&
+         TlpPkt.CmnFmt[FNX_PCIE_XTR_FMT_DATA_SLC]) ){ //MSG and MSGD have same bits set
+      length = 1;
+   }
+   TlpPkt.CmnLength = length;
+
+   //Set all header fields that are common to Memory, IO, and Cfg Tlps
+   if (address_set) {
+     TlpPkt.ReqBusNum = 0;
+     TlpPkt.ReqDeviceNum = 0;
+     TlpPkt.ReqFuncNum = 0;
+     if( Trans_Direction === ILUPEU_EGRESS_TRANS ){
+       TlpPkt.ReqTag = IOSReqTag;
+       uniqueTagSet = 1'b1;
+     }
+     TlpPkt.BEFirstDW = 4'b1111;
+     TlpPkt.BELastDW = 4'b1111;
+   }
+   else if( !address_set && ( TlpPkt.CmnType <= FNX_PCIE_XTR_TYPE_CFGWR1) ){
+
+      TlpPkt.ReqBusNum = urandom(); 
+      TlpPkt.ReqDeviceNum = urandom(); 
+      TlpPkt.ReqFuncNum = urandom(); 
+      if( Trans_Direction === ILUPEU_EGRESS_TRANS ){
+         TlpPkt.ReqTag = GenUniqueTag(); 
+         uniqueTagSet = 1'b1;
+      } 
+      else{
+         TlpPkt.ReqTag = GenUniqueTag(); 
+         uniqueTagSet = 1'b1;
+      } 
+
+
+      //Follow the Byte Enable rules in PCIE 2.2.5
+      if (address_set) {
+        TlpPkt.BEFirstDW = 4'b1111;
+	TlpPkt.BELastDW = 4'b1111;
+      }
+      else if( TlpPkt.CmnLength === 0 ){
+         TlpPkt.BEFirstDW = 0; 
+         TlpPkt.BELastDW = 0; 
+      }
+      else if( TlpPkt.CmnLength === 1 ){
+         TlpPkt.BEFirstDW = RandUtil.Rand32( 4'h1, 4'hf ); 
+         TlpPkt.BELastDW = 0; 
+      }
+      else if( TlpPkt.CmnLength === 2 ){
+         TlpPkt.BEFirstDW = RandUtil.Rand32( 4'h1, 4'hf ); 
+         TlpPkt.BELastDW = RandUtil.Rand32( 4'h1, 4'hf ); 
+      }
+      else{
+         randcase{
+            1:{  TlpPkt.BEFirstDW = 4'b1111; 
+                 TlpPkt.BELastDW = 4'b1111;
+              }
+            0:{  TlpPkt.BEFirstDW = 4'b1000; 
+                 TlpPkt.BELastDW = 4'b0111;
+              }
+            0:{  TlpPkt.BEFirstDW = 4'b1100; 
+                 TlpPkt.BELastDW = 4'b0011;
+              }
+            0:{  TlpPkt.BEFirstDW = 4'b1110; 
+                 TlpPkt.BELastDW = 4'b0001;
+              }
+         } 
+      }
+   }	//End of common to Memory, IO, and Cfg Tlps
+
+   //Set address header fields for  Memory, IO
+   //Not checking for 4K boundary crossing
+   if( TlpPkt.CmnType <= FNX_PCIE_XTR_FMT_TYPE_IOWR ){
+
+//#ifdef  N2_FC
+     if (address_set) {
+      //
+       TlpPkt.AddrLower = tlpAddr[32:2];
+     } else {
+//#else
+      //TlpPkt.AddrLower = 30'h33220000; //review - urandom();
+       TlpPkt.AddrLower = urandom();
+       TlpPkt.AddrLower[7:0] = 8'h0;
+     }
+//#endif 
+
+
+      //If its a 64bit address then set upper address also
+      if( TlpPkt.CmnFmt[FNX_PCIE_XTR_FMT_64BIT_SLC] ){
+//#ifdef  N2_FC
+        if (address_set) {
+          //
+          TlpPkt.AddrUpper = tlpAddr[63:32];
+        } else {
+//#else
+          TlpPkt.AddrUpper = 32'h77665544; //review urandom();
+        }
+//#endif
+      }
+   }
+
+   //Set up DW3 fields for Configuration Requests
+   if( TlpPkt.CmnType >= FNX_PCIE_XTR_TYPE_CFGRD0 && TlpPkt.CmnType <= FNX_PCIE_XTR_TYPE_CFGWR1 ){
+      
+      TlpPkt.CfgBusNum = urandom();
+      TlpPkt.CfgDeviceNum = urandom();
+      TlpPkt.CfgFuncNum = urandom();
+      TlpPkt.CfgExtRegNum = urandom();
+      TlpPkt.CfgRegNum = urandom();
+   }
+
+   //Set up fields for Message Requests 
+   if( TlpPkt.CmnType[FNX_PCIE_XTR_TYPE_MSG_FIXED_SLC] === FNX_PCIE_XTR_TYPE_MSG_FIXED ){
+      
+      TlpPkt.ReqBusNum = urandom();
+      TlpPkt.ReqDeviceNum = urandom();
+      TlpPkt.ReqFuncNum = urandom();
+      if( Trans_Direction === ILUPEU_EGRESS_TRANS ){
+         TlpPkt.ReqTag = GenUniqueTag();
+         uniqueTagSet = 1'b1;
+         TlpPkt.MsgDW3 = urandom();	
+         TlpPkt.MsgDW4 = urandom();	
+      }
+      else{
+         TlpPkt.ReqTag = 0; //GenUniqueTag();
+         //uniqueTagSet = 1'b1;
+
+         //Denali sets the DW3 and DW4 fields to 0 if they are reserved, this only affects Ingress because
+         // the fields are set to 0 when they get transmitted
+         if( TlpPkt.MsgCode === FNX_PCIE_XTR_MSG_CODE_VD_TYPE0 || TlpPkt.MsgCode === FNX_PCIE_XTR_MSG_CODE_VD_TYPE1 ){
+            TlpPkt.MsgDW3 = 32'hffff;	
+            TlpPkt.MsgDW4 = 0;	
+         }
+         else{
+            TlpPkt.MsgDW3 = 0;	
+            TlpPkt.MsgDW4 = 0;	
+         }
+      }
+
+   }
+
+
+   //Set up fields for Completions - review CAN't be randmom anymore
+   if( TlpPkt.CmnType >= FNX_PCIE_XTR_TYPE_CPL && TlpPkt.CmnType <= FNX_PCIE_XTR_TYPE_CPLDLK ){
+
+      TlpPkt.CmplBusNum = urandom();
+      TlpPkt.CmplDeviceNum = urandom();
+      TlpPkt.CmplFuncNum = urandom();
+      TlpPkt.CmplStatus = urandom();	//review May need to limit to 0-4
+      TlpPkt.CmplBCM = urandom();
+      TlpPkt.CmplByteCount = urandom();
+      TlpPkt.CmplLowerAddr = urandom();
+      TlpPkt.ReqBusNum = urandom(); 
+      TlpPkt.ReqDeviceNum = urandom(); 
+      TlpPkt.ReqFuncNum = urandom(); 
+      if( Trans_Direction === ILUPEU_EGRESS_TRANS ){ 
+         TlpPkt.ReqTag = GenUniqueTag();
+         uniqueTagSet = 1'b1;
+      }   
+      else{
+         TlpPkt.ReqTag = GenUniqueTag();
+         uniqueTagSet = 1'b1;
+      }
+   }
+      
+
+
+   //Set up the random payload if needed 
+   if( TlpPkt.CmnFmt[FNX_PCIE_XTR_FMT_DATA_SLC] ){
+      if( TlpPkt.CmnLength === 0 ){
+         length = 1024;
+      }
+      else{
+         length = TlpPkt.CmnLength;
+      }
+
+      pyldByteAry = new[length*4];
+      //In order to use the DMUXtr env code -get a DW and then 
+      // put it into a byte array byte 0 = DW[31:24]
+      for( i=0; i< length; i++){
+// MAQ: PEU This is hack to test PEU env.  Need to put the correct data
+#ifdef	N2_FC
+          dataDW = 8'hA5;
+#else
+          dataDW = this.nextPayloadDW( pyldByteValue );
+#endif
+          for( j=0; j<4; j++){
+              pyldByteAry[(i*4)+j] = dataDW[31-(j*8):24-(j*8)];
+          }
+      }
+      TlpPkt.SetPyld( pyldByteAry );
+   }
+
+   //Add TLP Digest
+   if( TlpPkt.CmnTD ){
+      TlpPkt.ECRC = urandom();
+   }
+
+   //Turn off Denali automatic tag generation
+   TlpPkt.GenTag = 0;
+
+   TlpPkt.PktDisplay( RTYP_DEBUG_3, "ilupeuTlpStrategyBase::GenRandomPCIEXtrTlp()" );
+
+} 	//End GenRandomPCIEXtrTlp()
+
+
+task ilupeuTlpStrategyBase::ConvertPcieTlp2Hdr(){
+
+   integer i;
+
+   //Use the TlpPkt to build up a 3 or 4 DW header plus a payload if needed
+   //Handle all the common fields first
+   tlpHdr[ILUPEU_TLP_HDR_FMT_BITS] = TlpPkt.CmnFmt;
+   tlpHdr[ILUPEU_TLP_HDR_TYPE_BITS] = TlpPkt.CmnType;
+   tlpHdr[ILUPEU_TLP_HDR_TC_BITS] = TlpPkt.CmnTC;
+   tlpHdr[ILUPEU_TLP_HDR_TD_BITS] = TlpPkt.CmnTD;
+   tlpHdr[ILUPEU_TLP_HDR_EP_BITS] = TlpPkt.CmnEP;
+   tlpHdr[ILUPEU_TLP_HDR_RO_BITS] = TlpPkt.CmnRO;
+   tlpHdr[ILUPEU_TLP_HDR_SNOOP_BITS] = TlpPkt.CmnSnoop;
+   tlpHdr[ILUPEU_TLP_HDR_LEN_BITS] = TlpPkt.CmnLength;
+
+
+   //Set all header fields that are common to Memory, IO, and Cfg and Msg TLP's
+   if( TlpPkt.CmnType <= FNX_PCIE_XTR_TYPE_CFGWR1 ||
+       TlpPkt.CmnType[FNX_PCIE_XTR_TYPE_MSG_FIXED_SLC] === FNX_PCIE_XTR_TYPE_MSG_FIXED ){
+
+      tlpHdr[ILUPEU_TLP_HDR_REQ_BUS_NUM_BITS] = TlpPkt.ReqBusNum;
+      tlpHdr[ILUPEU_TLP_HDR_REQ_DEV_NUM_BITS] = TlpPkt.ReqDeviceNum;
+      tlpHdr[ILUPEU_TLP_HDR_REQ_FUNC_NUM_BITS] = TlpPkt.ReqFuncNum;
+      tlpHdr[ILUPEU_TLP_HDR_TAG_BITS] = TlpPkt.ReqTag;
+      if( TlpPkt.CmnType[FNX_PCIE_XTR_TYPE_MSG_FIXED_SLC] === FNX_PCIE_XTR_TYPE_MSG_FIXED ){
+
+         tlpHdr[ILUPEU_TLP_HDR_MSG_CODE_BITS] = TlpPkt.MsgCode;
+      }
+      else{
+         tlpHdr[ILUPEU_TLP_HDR_LAST_DWBE_BITS] = TlpPkt.BELastDW;
+         tlpHdr[ILUPEU_TLP_HDR_FIRST_DWBE_BITS] = TlpPkt.BEFirstDW;
+      }
+   }
+
+
+   //Set address header fields for  Memory, IO
+   //If this is a 64 bit address than assign both halves of the address
+   if( TlpPkt.CmnType <= FNX_PCIE_XTR_TYPE_IOWR ){
+      if( tlpHdr[ILUPEU_TLP_HDR_FMT_4DW_BITS] ){
+         tlpHdr[ILUPEU_TLP_HDR_ADDR64_UPPER_BITS] = TlpPkt.AddrUpper;
+         tlpHdr[ILUPEU_TLP_HDR_ADDR64_LOWER_BITS] = TlpPkt.AddrLower;
+      }
+      else{
+         tlpHdr[ILUPEU_TLP_HDR_ADDR32_BITS] = TlpPkt.AddrLower; 
+      }
+   }
+
+   //Set up DW3 header fields for Configuration Requests
+   if( TlpPkt.CmnType >= FNX_PCIE_XTR_TYPE_CFGRD0 && TlpPkt.CmnType <= FNX_PCIE_XTR_TYPE_CFGWR1 ){
+
+      tlpHdr[ILUPEU_TLP_HDR_CFG_BUS_NUM_BITS] = TlpPkt.CfgBusNum;
+      tlpHdr[ILUPEU_TLP_HDR_CFG_DEV_NUM_BITS] = TlpPkt.CfgDeviceNum;
+      tlpHdr[ILUPEU_TLP_HDR_CFG_FUNC_NUM_BITS] = TlpPkt.CfgFuncNum;
+      tlpHdr[ILUPEU_TLP_HDR_CFG_EXT_REG_NUM_BITS] = TlpPkt.CfgExtRegNum;
+      tlpHdr[ILUPEU_TLP_HDR_CFG_REG_NUM_BITS] = TlpPkt.CfgRegNum;
+   }
+
+
+
+   //Set up DW3 & DW4 fields for Messages 
+   if( TlpPkt.CmnType[FNX_PCIE_XTR_TYPE_MSG_FIXED_SLC] === FNX_PCIE_XTR_TYPE_MSG_FIXED ){
+
+      tlpHdr[ILUPEU_TLP_HDR_MSG_DW3_BITS] = TlpPkt.MsgDW3;
+      tlpHdr[ILUPEU_TLP_HDR_MSG_DW4_BITS] = TlpPkt.MsgDW4;
+   }
+
+
+   //Set up fields for Completions
+   if( TlpPkt.CmnType >= FNX_PCIE_XTR_TYPE_CPL && TlpPkt.CmnType <= FNX_PCIE_XTR_TYPE_CPLDLK ){
+
+      tlpHdr[ILUPEU_TLP_HDR_CPL_CPL_BUS_NUM_BITS] = TlpPkt.CmplBusNum;
+      tlpHdr[ILUPEU_TLP_HDR_CPL_CPL_DEV_NUM_BITS] = TlpPkt.CmplDeviceNum;
+      tlpHdr[ILUPEU_TLP_HDR_CPL_CPL_FUNC_NUM_BITS] = TlpPkt.CmplFuncNum;
+      tlpHdr[ILUPEU_TLP_HDR_CPL_STATUS_BITS] = TlpPkt.CmplStatus;
+      tlpHdr[ILUPEU_TLP_HDR_CPL_BCM_BITS] = TlpPkt.CmplBCM;
+      tlpHdr[ILUPEU_TLP_HDR_CPL_BYTECOUNT_BITS] = TlpPkt.CmplByteCount;
+      tlpHdr[ILUPEU_TLP_HDR_CPL_REQ_BUS_NUM_BITS] = TlpPkt.ReqBusNum;
+      tlpHdr[ILUPEU_TLP_HDR_CPL_REQ_DEV_NUM_BITS] = TlpPkt.ReqDeviceNum;
+      tlpHdr[ILUPEU_TLP_HDR_CPL_REQ_FUNC_NUM_BITS] = TlpPkt.ReqFuncNum;
+      tlpHdr[ILUPEU_TLP_HDR_CPL_TAG_BITS] = TlpPkt.ReqTag;
+      tlpHdr[ILUPEU_TLP_HDR_CPL_LOWADDR_BITS] = TlpPkt.CmplLowerAddr;
+   }
+
+
+/*
+DMUXtr payload specification
+  payloadByte = payload[7:0];
+  poisonedPayload = payload[15:8];
+  fillPayload = payload[16];
+  errPayload = payload[17];
+  errMask = payload[25:18];
+*/
+
+   //Convert the Byte Array Payload for Denali to a DW(4 byte) Array Payload
+   if( TlpPkt.CmnFmt[FNX_PCIE_XTR_FMT_DATA_SLC] ){
+      pyldDWAry = new[length];
+      //Denali swaps the data bits for a Cfg Write 
+      if( (TlpPkt.CmnType === FNX_PCIE_XTR_TYPE_CFGWR0 || TlpPkt.CmnType === FNX_PCIE_XTR_TYPE_CFGWR1) &&
+          (Trans_Direction === ILUPEU_INGRESS_TRANS) ){
+         for( i=0; i < length; i++ ){
+            pyldDW[ILUPEU_DW_BYTE_0_BITS] = pyldByteAry[ (i*4)+3 ];
+            pyldDW[ILUPEU_DW_BYTE_1_BITS] = pyldByteAry[ (i*4)+2 ];
+            pyldDW[ILUPEU_DW_BYTE_2_BITS] = pyldByteAry[ (i*4)+1 ];
+            pyldDW[ILUPEU_DW_BYTE_3_BITS] = pyldByteAry[ (i*4)+0 ];
+   
+            pyldDWAry[i] = pyldDW;
+         }
+      }
+      else{
+         for( i=0; i < length; i++ ){
+            pyldDW[ILUPEU_DW_BYTE_0_BITS] = pyldByteAry[ (i*4)+0 ];	//31:24
+            pyldDW[ILUPEU_DW_BYTE_1_BITS] = pyldByteAry[ (i*4)+1 ];
+            pyldDW[ILUPEU_DW_BYTE_2_BITS] = pyldByteAry[ (i*4)+2 ];
+            pyldDW[ILUPEU_DW_BYTE_3_BITS] = pyldByteAry[ (i*4)+3 ];
+   
+            pyldDWAry[i] = pyldDW;
+         }
+      }
+   }
+
+   QuickReport( Report,
+                RTYP_DEBUG_3,
+                "%s ilupeuTlpStrategyBase::ConvertPcieTlp2Hdr() tlpHdr=%h ",ID.GetString(),tlpHdr );
+
+}	//End ConvertPcieTlp2Hdr
+
+
+task ilupeuTlpStrategyBase::ConvertHdr2LpuXtrTlpPkt(){
+
+    integer i = 0;
+    integer j = 0;
+    integer hdrLen = 0;
+    integer dataLen = 0;
+    integer digestLen = 0;
+    integer LenAdjust = 0;
+
+/* review - Convert to DMU Xtr
+    //Now Convert the Header and Payload to LPUXtr packet
+    // Instantiate a new LPUXtr packet
+    LPUXtrTlpPkt = new( Pod.LPUXtrErrCntr, Pod.LPUXtrCfg );
+
+    // How big is the header and payload?
+    hdrLen = 3 + tlpHdr[ILUPEU_TLP_HDR_FMT_4DW_BITS];
+    if( tlpHdr[ILUPEU_TLP_HDR_FMT_DATA_BITS] ){
+       if( tlpHdr[ILUPEU_TLP_HDR_LEN_BITS] === 0 ){
+          dataLen = 1024;
+       }
+       else{
+          dataLen = tlpHdr[ILUPEU_TLP_HDR_LEN_BITS];
+       }
+    }
+    else{
+       dataLen = 0;
+    }
+  
+    digestLen = tlpHdr[ILUPEU_TLP_HDR_TD_BITS]; 
+
+    // How big is the TLP that we'll give to the transactor?
+    xtrLen = hdrLen + dataLen + digestLen + LenAdjust;
+    if( xtrLen < 1 ){
+       xtrLen = 2;
+    }
+
+    // Insert the Header
+    LPUXtrTlpPkt._TLP[0] = tlpHdr[ILUPEU_TLP_HDR_DW0_BITS];
+    if( xtrLen > 1 ){
+       LPUXtrTlpPkt._TLP[1] = tlpHdr[ILUPEU_TLP_HDR_DW1_BITS];
+    }
+    if( xtrLen > 2 ){
+       LPUXtrTlpPkt._TLP[2] = tlpHdr[ILUPEU_TLP_HDR_DW2_BITS];
+    }
+    if( xtrLen > 3 && hdrLen === 4 ){
+       LPUXtrTlpPkt._TLP[3] = tlpHdr[ILUPEU_TLP_HDR_DW3_BITS];
+    }
+
+    // and insert the payload
+    for( i = hdrLen, j = 0; i < hdrLen+dataLen; i++, j++){
+          LPUXtrTlpPkt._TLP[i] = pyldDWAry[j];
+    }
+
+    if( digestLen ){
+       LPUXtrTlpPkt._TLP[i] = TlpPkt.ECRC;
+       i++;
+    }
+    
+    // increase the payload length of the packet by LenAdjust if requested
+    for( ; i < xtrLen; i++ ){
+       LPUXtrTlpPkt._TLP[i] = urandom();
+    }
+
+    //Set any error or idle to 0
+    for( i=0; i<xtrLen; i++ ){
+       LPUXtrTlpPkt._badParity[i] = 0;
+       LPUXtrTlpPkt._idle[i] = 0;
+       LPUXtrTlpPkt._insertIdle[i] = 0;
+    }
+
+    //Set status to no error
+    LPUXtrTlpPkt._status = ILUPEUTLP_STATUS_NO_ERROR;
+    LPUXtrTlpPkt._abort = ILUPEUFALSE;
+*/
+
+}
+
+
+function bit[FNX_PCIE_XTR_REQ_TAG_WIDTH-1:0] ilupeuTlpStrategyBase::GenUniqueTag(){
+   integer loop_cnt = 10000;
+   bit[7:0] unique_tag;
+     if( Trans_Direction === ILUPEU_EGRESS_TRANS ){//review - Only for PioMWr
+         unique_tag = RandUtil.Rand32( 0, 8'h0f );
+         unique_tag[4] = 1'b1;
+      }
+      else{
+         unique_tag = RandUtil.Rand32( 0, 8'hff );
+      }
+
+ 
+   semaphore_get( WAIT, unique_tag_semaphore, 1);
+   while( ! ( region_enter( NO_WAIT, unique_tag_region, unique_tag) ) && loop_cnt ) {
+      if( Trans_Direction === ILUPEU_EGRESS_TRANS ){//review - Only for PioMWr
+         unique_tag = RandUtil.Rand32( 0, 8'h0f );
+         unique_tag[4] = 1'b1;
+      }
+      else{
+         unique_tag = RandUtil.Rand32( 0, 8'hff );
+      }
+      loop_cnt--;
+      //Bail out of test if stuck in this loop too long
+      if( !loop_cnt ){
+         Report.report( RTYP_TEST_ERROR, "GenUniqueTag() stuck in loop for 10000 cycles\n " );
+      }  
+   }
+   semaphore_put( unique_tag_semaphore, 1);
+
+printf(" :GenUniqueTag() unique_tag=%h \n",unique_tag );
+
+   GenUniqueTag = unique_tag;
+
+}
+
+task ilupeuTlpStrategyBase::FreeUniqueTag(bit[FNX_PCIE_XTR_REQ_TAG_WIDTH-1:0] unique_tag){
+
+   region_exit( unique_tag_region, unique_tag );
+
+}
+
+//
+function bit[31:0] ilupeuTlpStrategyBase::nextPayloadDW( var integer DataSpec )
+{
+  bit [7:0]  dataByte;
+  bit [31:0] dataDW;
+  integer    j;
+
+  dataByte = DataSpec;
+  dataDW = 32'b0;
+  for ( j=0; j<4; j++ )
+  {
+      dataDW = { dataDW[23:0], dataByte };
+      dataByte = dataByte + 1;
+  }
+
+  DataSpec = dataByte;
+
+  nextPayloadDW = dataDW;
+} /* end "nextPayloadDW" */
+

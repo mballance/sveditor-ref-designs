@@ -1,0 +1,227 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuEgrParErr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class EgrParErrStr extends PEUStrBase 
+  {
+  integer f_errQueue;				// A mailbox for bad pkt headers
+  integer f_len;				// The packet's payload length
+  bit f_lenSpecified;				// Was a length specified?
+  bit[4:0] f_type;				// The packet's type
+  bit f_typeSpecified;				// Was a type specified?
+  bit [1:0] f_injectType;
+  bit[7:0] f_mask;
+  bit f_bndySpecified;
+  integer f_bndy;
+  integer f_bndySize;
+  integer bit_flip;
+  integer cnt1,cnt2;
+
+  task new( PEUTestEnv a_env )
+    {
+    super.new( a_env );
+    f_errQueue = 0;
+    f_lenSpecified = 0;
+    f_typeSpecified = 0;
+    f_injectType = 0;
+    f_mask = 8'b0;
+    f_bndySpecified = 0;
+    bit_flip = random() % 16;
+    }
+
+  task SetErrQueue( integer a_queue )
+    {
+    f_errQueue = a_queue;
+    } /* end SetErrQueue */
+
+  task SetLength( integer a_len )
+    {
+    f_len = a_len;
+    f_lenSpecified = 1;
+    } /* end SetLength */
+
+  task SetType( integer a_type )
+    {
+    f_type = a_type;
+    f_typeSpecified = 1;
+    } /* end SetType */
+
+  task SetInjectType( bit [1:0] a_injectType )
+    {
+    f_injectType = a_injectType;
+    } 
+
+  task SetMask( bit[7:0] a_mask )
+    {
+    f_mask = a_mask;
+    } /* end SetMask */
+
+  task SetBndy( integer a_bndy, (integer a_size=64) )
+    {
+    f_bndySpecified = 1;
+    f_bndy = a_bndy;
+    f_bndySize = a_size;
+    } /* end SetBndy */
+
+  task Execute()
+    {
+    bit[PEC_PCI__HDR] egressHdr;		// The egress TLP's header
+    integer egressData;				// A payload descriptor
+    bit[7:0] egressTag;				// The tag for the TLP
+    bit[7:0] egressAddr;			// The DOU starting address
+    bit[PEC_PCI__HDR] ingressHdr;		// The ingress TLP's header
+    integer ingressData;			// A payload descriptor
+    bit[7:0] ingressTag;			// The tag for the TLP
+    bit [63:0] data;
+
+					// Build a TLP, using the specified
+					// type and length, if any.
+    if ( !f_typeSpecified )
+      {
+      randcase
+        { // do only mem write case with no completion for now
+        1 : { f_type = PEC_PCI__TYPE_MEM; f_len = urandom()%2 + 1; }
+        0 : { f_type = PEC_PCI__TYPE_CFG0; f_len = 1; }
+        0 : { f_type = PEC_PCI__TYPE_CFG1; f_len = 1; }
+        0 : { f_type = PEC_PCI__TYPE_IO; f_len = 1; }
+        }
+      }
+
+    else if ( !f_lenSpecified ) 
+      {
+      if ( f_type == PEC_PCI__TYPE_CPL )
+        f_len = urandom()%32 + 1;
+      else if ( f_type == PEC_PCI__TYPE_MEM )
+        f_len = urandom()%2 + 1;
+      else
+        f_len = 1;
+      }
+
+    if (f_injectType == 2) {
+      printf("Writing the ILU Diagnostic register\n");
+      data = f_env.readCSRdirect(f_env.getCSRaddr(e_CSR_ilu_diagnos));
+      data[FIRE_DLC_ILU_CIB_CSR_A_ILU_DIAGNOS_EHI_PAR_SLC] = 1 << (bit_flip % 4);
+      data[FIRE_DLC_ILU_CIB_CSR_A_ILU_DIAGNOS_EHI_TRIG_SLC] = 1;
+      f_env.writeCSRdirect(f_env.getCSRaddr(e_CSR_ilu_diagnos), data);
+    } else if (f_injectType == 1) {
+      printf("Writing the ILU Diagnostic register\n");
+      data = f_env.readCSRdirect(f_env.getCSRaddr(e_CSR_ilu_diagnos));
+      data[FIRE_DLC_ILU_CIB_CSR_A_ILU_DIAGNOS_EDI_PAR_SLC] = 1 << (bit_flip % 4);
+      data[FIRE_DLC_ILU_CIB_CSR_A_ILU_DIAGNOS_EDI_TRIG_SLC] = 1;
+      f_env.writeCSRdirect(f_env.getCSRaddr(e_CSR_ilu_diagnos), data);
+    } else {
+      printf("Writing the PEU Diagnostic register\n");
+      data = f_env.readCSRdirect(f_env.getCSRaddr(e_CSR_tlu_diag));
+      data[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_DIAG_EPI_PAR_SLC] = 1 << bit_flip;
+      data[FIRE_PLC_TLU_CTB_TLR_CSR_A_TLU_DIAG_EPI_TRG_SLC] = 1;
+      f_env.writeCSRdirect(f_env.getCSRaddr(e_CSR_tlu_diag), data);
+    }
+
+    if ( f_type == PEC_PCI__TYPE_CPL )
+      {
+      f_env.allocDmaTag( ingressTag );
+      f_env.genIngressRdReq( ingressTag, ingressHdr, ingressData, f_len );
+      if ( f_bndySpecified )
+        f_env.setAddrBndy( ingressHdr, f_bndy, f_bndySize );
+      f_env.genEgressCpl( ingressHdr, egressHdr, egressData );
+      f_env.allocCplData( ingressHdr[PEC_PCI__LEN],
+                          egressHdr[PEC_PCI__LOWADDR],
+                          egressAddr );
+      }
+    else
+      {
+      f_env.allocWrTag( egressTag, egressAddr );
+      f_env.genEgressWrReq( egressTag, egressHdr, egressData, f_len, f_type );
+      if ( f_bndySpecified )
+        f_env.setAddrBndy( egressHdr, f_bndy, f_bndySize );
+      }
+
+
+					// Present the TLP to the ILU, and 
+					// specify that parity errors are to
+					// accompany the payload.
+    f_env.driveILU( egressHdr, egressAddr, egressData );
+
+					// Expect the faulty TLP from the TLU.
+					// And wait for the TLU to signal the
+					// ILU to enter the "drain state".      
+					// We used to "disconnectEgressPipeline"
+					// when the TLU's behavior was wierd.
+
+      if (f_injectType == 2) { // ILU header parity error case
+        f_env.enterDrainState();
+//        f_env.expectPCIE( egressHdr, egressData ); // no packet for header parity error
+        f_env.waitDrainState();
+      } else if (f_injectType == 1) { // ILU data parity error case
+        f_env.enterDrainState();
+        f_env.Pod.FNXPCIEEnableTrans.ExpectNullPkt(); 
+        cnt1 = f_env.Pod.FNXPCIEBldr.SignalInterface.expectNullPkt;
+        f_env.expectPCIE( egressHdr, egressData );
+        cnt2 = f_env.Pod.FNXPCIEBldr.SignalInterface.expectNullPkt;
+        printf("Cnt1 was %0d and cnt2 was %0d\n", cnt1, cnt2);
+        if( cnt1 !== (cnt2 + 1)) { 
+          f_env.Report.report(RTYP_TEST_ERROR,"ilupeuEgrParErrStr Outgoing packet matched but a NullPkt wasn't received\n");
+        }
+        f_env.waitDrainState();
+      } else { // egress data parity error case
+
+        //If the packet gets transmitted than make sure its NULL
+        f_env.expectPCIE( egressHdr, egressData );
+      }
+
+					// Free the DMA tag if we just pushed
+					// a completion through the pipe.
+    if ( f_type == PEC_PCI__TYPE_CPL )
+      {
+      f_env.freeDmaTag( ingressTag );
+      }
+
+					// Tell the error-checker about this
+					// bad-boy.
+    if ( f_errQueue != 0 )
+      {
+      printf("sending over the error\n");
+      if (f_injectType == 2) {
+        mailbox_put( f_errQueue, e_ERR_oe_ehp );
+        mailbox_put( f_errQueue, 128'hx); // egressHdr ); //doesn't log header?
+      } else if (f_injectType == 1) {
+        mailbox_put( f_errQueue, e_ERR_oe_edp );
+        mailbox_put( f_errQueue, 128'hx); // egressHdr ); //doesn't log header?
+      } else {
+        mailbox_put( f_errQueue, e_ERR_oe_eip );
+        mailbox_put( f_errQueue, 128'hx); // egressHdr ); //doesn't log header?
+      }
+      }
+
+    } /* end Execute */
+  } /* end EdbErrPEUStr */

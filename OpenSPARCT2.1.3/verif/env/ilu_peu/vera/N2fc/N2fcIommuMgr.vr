@@ -1,0 +1,322 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: N2fcIommuMgr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+// model some of the NCU/PIU CSRs
+//extern N2fcPiuShadowRegs PiuCsrs;
+
+// This is for accessing MEMORY
+//#include "niu_mem.vrh"
+//extern CSparseMem SparseMem;
+
+class N2fcIommuMgr {
+
+  // bits in the MMU CONTROL reg
+  bit			process_disable  = 0;
+  bit			snoop_en         = 0;
+  bit [1:0]		cache_mode       = 0;
+  bit			busid_sel        = 0;
+  bit			sun4v_en         = 0;
+  bit			bypass_en        = 0;
+  bit			translation_en   = 0;
+
+  bit			tsb_valid        = 0;
+  bit [38:0]		tsb_pa           = 0;
+  bit [26:0]		tsb_offset       = 0;
+  bit [2:0]		tsb_pgsz         = 0;
+  bit [3:0]             tsb_tblsz        = 0;
+
+
+  bit                   iotte_valid      =  0;
+  bit                   iotte_write      =  0;
+  bit                   iotte_keyvld     =  0;
+  bit [38:0]            iotte_datapa     =  0;
+  bit [2:0]             iotte_fnm        =  0;
+  bit [15:0]            iotte_devkey     =  0;
+
+
+  bit                   msi              =  0;
+
+  // ******************************************************************
+  // Methods
+  // ******************************************************************
+
+  public task new ();
+
+  function bit get_physical_address(bit [63:0] va, var bit [39:0] pa, bit [7:0] busid, bit dmawr);
+  function bit get_sun4v_pa        (bit [63:0] va, var bit [39:0] pa, bit [7:0] busid, bit dmawr);
+
+  // helper functions
+  function bit is_bypass_mode(bit [63:0] va);
+  function bit is_sun4u_mode(bit [63:0] va);
+  function bit is_sun4v_mode(bit [63:0] va);
+
+  task                get_mmu_cntl_reg();
+  function bit [ 4:0] get_iotsb_no(bit [7:0] busid, bit va_bit63 );
+  function bit [63:0] get_sun4v_tsb(bit [4:0] iotsb_no );
+  function bit [63:0] get_iotte(bit [38:0] iotte_pa );
+
+  task set_msi(bit a_msi ) { msi = a_msi; }
+
+}
+
+//--------------------------------------------------------------------
+// Method Name: new()
+// Description: initialize iommu mgr
+//--------------------------------------------------------------------
+task N2fcIommuMgr::new()
+{
+  get_mmu_cntl_reg();
+}
+
+
+//--------------------------------------------------------------------
+// Method Name: get_mmu_cntl_reg()
+// Description: initialize iommu control bits
+//--------------------------------------------------------------------
+task N2fcIommuMgr::get_mmu_cntl_reg()
+{
+  // load up the control bits from the MMU CONTROL reg
+  process_disable  = PiuCsrs.IoMmuControl[12];
+  snoop_en         = PiuCsrs.IoMmuControl[10];
+  cache_mode       = PiuCsrs.IoMmuControl[9:8];
+  busid_sel        = PiuCsrs.IoMmuControl[3];
+  sun4v_en         = PiuCsrs.IoMmuControl[2];
+  bypass_en        = PiuCsrs.IoMmuControl[1];
+  translation_en   = PiuCsrs.IoMmuControl[0];
+}
+
+
+//--------------------------------------------------------------------
+// Method Name: get_physical_address
+// Description: return physical address, and whether it is valid
+//--------------------------------------------------------------------
+function bit N2fcIommuMgr::get_physical_address(    bit [63:0] va,
+                                                var bit [39:0] pa,
+                                                    bit [7:0]  busid,
+                                                    bit        dmawr )
+{
+  get_physical_address = 0;
+  if (is_bypass_mode(va)) {
+    pa = va[39:0];
+    get_physical_address = 1;
+  }
+  else if (is_sun4u_mode(va)) {
+    printf("N2fcIommuMgr::get_physical_address  sun4u mode support not ready yet, assumming V==R %0h\n", va);
+    pa = va[39:0];
+    get_physical_address = 1;
+  }
+  else if (is_sun4v_mode(va)) {
+    get_physical_address = get_sun4v_pa(va, pa, busid, dmawr);
+  }
+  else {
+    printf("N2fcIommuMgr::get_physical_address  %0h is not bypass, sun4u or sun4v. Probably an error.\n", va);
+  }
+}
+
+//--------------------------------------------------------------------
+// Method Name: get_sun4v_pa
+// Description: perform sun4v translation to get physical address
+//--------------------------------------------------------------------
+function bit N2fcIommuMgr::get_sun4v_pa(    bit [63:0] va,
+                                        var bit [39:0] pa,
+                                            bit [7:0]  busid,
+                                            bit        dmawr)
+{
+  bit [4:0] iotsb_no = get_iotsb_no(busid, va[63]);
+  bit [63:0] tsb;
+  bit [38:0] iotte_pa;
+  bit [38:0] num_pages;
+  bit [63:0] iotte;
+  bit [38:0] byte_offset, byte_offset_mask;
+
+  get_sun4v_pa = 0;
+  tsb = get_sun4v_tsb(iotsb_no);
+
+  if (!tsb_valid) {
+    printf("N2fcIommuMgr::get_sun4v_pa  tsb valid bit is 0. tsb is %h\n", tsb);
+    return;
+  }
+
+  if ((tsb_pgsz == 3'b010) || (tsb_pgsz == 3'b100) || (tsb_pgsz == 3'b110) || (tsb_pgsz == 3'b111) ) {
+    printf("N2fcIommuMgr::get_sun4v_pa invalid page size (%h) specified. tsb is %h\n", tsb_pgsz, tsb);
+    return;
+  }
+
+  // calculate the iotte address
+  iotte_pa = va[39:0] >> (13 + 3*tsb_pgsz);
+  if ( iotte_pa < tsb_offset ) {
+    printf("N2fcIommuMgr::get_sun4v_pa underflow subtracting offset %h from iotte_pa %h\n", tsb_offset, iotte_pa);
+    return;
+  }
+  iotte_pa = iotte_pa - tsb_offset; // this is the Adjusted Page Number
+
+  num_pages = 32'h400 << tsb_tblsz; // 11'b100_0000_0000 << tsb_tblsz;
+  if ( iotte_pa > num_pages) {
+    printf("N2fcIommuMgr::get_sun4v_pa  adjusted page number (%h) out of range: num pages %h\n", iotte_pa, num_pages);
+    return;
+  }
+
+  iotte_pa = (iotte_pa << 3) + tsb_pa;
+
+  // get the iotte from dram memory
+  iotte = get_iotte(iotte_pa);
+
+  if ( !iotte_valid ) {
+    printf("N2fcIommuMgr::get_sun4v_pa  iotte valid bit is not 1. iotte is %h @ %h\n", iotte, iotte_pa);
+    return;
+  }
+
+  if ( !iotte_write && dmawr ) {
+    printf("N2fcIommuMgr::get_sun4v_pa  write bit is 0 for dma write. iotte is %h @ %h\n", iotte, iotte_pa);
+    return;
+  }
+
+  if ( iotte_keyvld ) {
+    printf("N2fcIommuMgr::get_sun4v_pa  KEY_VLD not supportted yet. iotte is %h @ %h\n", iotte, iotte_pa);
+    //return;
+  }
+
+  // or the lower bits of the va with the iotte_datapa, and we're done!
+  byte_offset_mask = (1 << (13 + 3*tsb_pgsz)) - 1;
+  byte_offset      = va & byte_offset_mask;
+  pa               = iotte_datapa | byte_offset;
+  printf("N2fcIommuMgr::get_sun4v_pa  va %0h => pa %0h\n", va, pa);
+  get_sun4v_pa = 1;
+}
+
+//--------------------------------------------------------------------
+// Method Name: is_bypass_mode
+// Description: return 1 if va is a bypass address and bypass is enabled
+//              If this is an MSI address, then
+//              bypass does not have to be enabled).
+//--------------------------------------------------------------------
+function bit N2fcIommuMgr::is_bypass_mode(bit [63:0] va)
+{
+  if ((bypass_en || msi)  && (va[63:39] == 25'h1fff800))
+    is_bypass_mode = 1;
+  else
+    is_bypass_mode = 0;
+}
+
+//--------------------------------------------------------------------
+// Method Name: is_sun4u_mode
+// Description: return 1 if va is a virtual address and sun4u is enabled
+//--------------------------------------------------------------------
+function bit N2fcIommuMgr::is_sun4u_mode(bit [63:0] va)
+{
+  if (translation_en && !sun4v_en && (va[63:32] == 32'h0))
+    is_sun4u_mode = 1;
+  else
+    is_sun4u_mode = 0;
+}
+
+//--------------------------------------------------------------------
+// Method Name: is_sun4v_mode
+// Description: return 1 if va is a virtual address and sun4v is enabled
+//--------------------------------------------------------------------
+function bit N2fcIommuMgr::is_sun4v_mode(bit [63:0] va)
+{
+  if (translation_en && sun4v_en && (va[62:40] == 23'h000000))
+    is_sun4v_mode = 1;
+  else
+    is_sun4v_mode = 0;
+}
+
+
+//--------------------------------------------------------------------
+// Method Name: get_iotsb_no
+// Description: return the sunv4 iotsb number based on the busid select,
+//              the busid, and VA[63]
+//--------------------------------------------------------------------
+function bit [4:0] N2fcIommuMgr::get_iotsb_no(bit [7:0] busid,
+                                              bit       va_bit63 )
+{
+  bit [ 3:0]  dev2iotsb_reg_no = 0;
+  bit [ 2:0]  iotsb_no = 0;
+  bit [63:0]  temp_dev2iotsb_reg;
+
+  if (busid_sel) {
+    '{dev2iotsb_reg_no,iotsb_no} = {va_bit63,busid[5:0]};
+  }
+  else {
+    '{dev2iotsb_reg_no,iotsb_no} = {va_bit63,busid[6:1]};
+  }
+
+  temp_dev2iotsb_reg = PiuCsrs.IoMmuDev2Iotsb[dev2iotsb_reg_no];
+  get_iotsb_no = temp_dev2iotsb_reg[((iotsb_no+1)*8)-4:(iotsb_no*8)];
+}
+
+
+//--------------------------------------------------------------------
+// Method Name: get_sun4v_tsb
+// Description: return the sunv4 tsb, also break it up into fields
+//--------------------------------------------------------------------
+function bit [63:0] N2fcIommuMgr::get_sun4v_tsb(bit [4:0] iotsb_no )
+{
+  bit [63:0] tsb = PiuCsrs.IoMmuIoTsbDesc[iotsb_no];
+
+  tsb_valid   = tsb[63];
+  tsb_pa      = {tsb[59:34],13'b0};
+  tsb_offset  = tsb[33:7];
+  tsb_pgsz    = tsb[6:4];
+  tsb_tblsz   = tsb[3:0];
+
+  get_sun4v_tsb = tsb;
+}
+
+//--------------------------------------------------------------------
+// Method Name: get_iotte
+// Description: return the iotte, also break it up into fields
+//--------------------------------------------------------------------
+function bit [63:0] N2fcIommuMgr::get_iotte(bit [38:0] iotte_pa )
+{
+  //bit [63:0] iotte = gMem.read_mem(iotte_pa);
+  bit [63:0] iottele, iotte;
+  SparseMem.ReadMem(iotte_pa, iottele, 8'hff);
+  // ReadMem returns data in little endian format, so do byte swap
+  // so that it maskes sense
+  iotte = {iottele[7:0],iottele[15:8],iottele[23:16],iottele[31:24],
+           iottele[39:32],iottele[47:40],iottele[55:48],iottele[63:56]};
+  iotte_valid   = iotte[0];
+  iotte_write   = iotte[1];
+  iotte_datapa  = {iotte[38:13],13'b0};
+  iotte_fnm     = iotte[5:3];
+  iotte_devkey  = iotte[63:48];
+  iotte_keyvld  = iotte[2];
+
+  get_iotte = iotte;
+}
+

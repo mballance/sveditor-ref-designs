@@ -1,0 +1,426 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilupeuPioMRdStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class PioMRdPEUStr extends PioBasePEUStr {
+
+
+  // ******************************************************************
+  // The Test Environment objects need to execute the strategy.
+  // ******************************************************************
+  protected PEUTestEnv              _env;
+  protected integer                 _errQueue;
+  
+
+  // ******************************************************************
+  // TLP Fields - These fields will be randomized using the parameters
+  // in the following section, and obeying the constraints defined
+  // within this class.
+  //
+  // Request & Completion Field Pairs
+  // ******************************************************************  
+  protected         bit [1:0]       _format_req;
+  protected         bit [1:0]       _format_cpl;
+  protected         bit [4:0]       _type_req;
+  protected         bit [4:0]       _type_cpl;
+
+  protected         bit [2:0]       _tc;
+  
+  protected         bit             _td_req;
+  protected         bit             _td_cpl;
+  protected         bit             _ep_req;
+  protected         bit             _ep_cpl;
+
+  protected         bit [1:0]       _attr;
+  protected rand    bit [9:0]       _len_req;
+  protected         bit [9:0]       _len_cpl;  
+  protected         bit [15:0]      _req_id;
+  protected         bit [7:0]       _tag;
+  protected rand    bit [31:0]      _addr_lsb;
+  protected rand    bit [31:0]      _addr_msb;
+
+  protected rand    bit [3:0]       _last_dwbe;
+  protected rand    bit [3:0]       _first_dwbe;
+
+  protected         bit [15:0]      _cpl_id;
+  protected         bit [2:0]       _cpl_status;
+  protected         bit             _bcm;
+  protected         bit [11:0]      _byte_count;
+  protected         bit [6:0]       _lower_addr;
+  protected         integer         _data;
+  
+  protected	bit [PEC_PCI__HDR]	reqHdr;
+  protected	bit [PEC_PCI__HDR]	cplHdr;
+  protected	bit [PEC_PCI__HDR]	urHdr;
+  
+  // ******************************************************************
+  // The following constraint is used to generate the correct values
+  // for the TLP.
+  // ******************************************************************  
+  constraint generate_tlp {
+
+    this._len_req in {this._len_min : this._len_max};
+
+    this._addr_msb in {this._addr_msb_min : this._addr_msb_max};
+
+    this._addr_lsb in {this._addr_lsb_min : this._addr_lsb_max};
+    (this._addr_lsb[5:2] + this._len_req) <= 16;
+    
+    this._first_dwbe >= this._first_dwbe_min;    
+    this._first_dwbe <= this._first_dwbe_max;
+    if (this._len_req > 10'h_001)
+      this._first_dwbe != 4'b_0000;
+    if (((this._len_req == 10'h_002) && (this._addr_lsb[2] != 1'b_0)) ||
+        (this._len_req >= 10'h_003))
+      this._first_dwbe in { 4'b_1111, 4'b_1110, 4'b_1100, 4'b_1000 };
+      
+    this._last_dwbe >= this._last_dwbe_min;
+    this._last_dwbe <= this._last_dwbe_max;
+    if (this._len_req == 10'h_001) this._last_dwbe == 4'b_0000;
+    if (this._len_req > 10'h_001) this._last_dwbe != 4'b_0000;
+    if (((this._len_req == 10'h_002) && (this._addr_lsb[2] != 1'b_0)) ||
+        (this._len_req >= 10'h_003))
+      this._last_dwbe in { 4'b_1111, 4'b_0111, 4'b_0011, 4'b_0001 };
+  }     
+
+  
+  // ******************************************************************
+  // Constructor
+  // ******************************************************************
+  public task new(PEUTestEnv a_env, (integer a_errQueue = 'bx));
+
+  // ******************************************************************
+  // Sets the packet parameters
+  // ******************************************************************
+  public task SetPacketParams();
+  
+  // ******************************************************************
+  // Execute the strategy.  Drive a TLP into the ILU, and expect it out
+  // of the PEU.
+  // ******************************************************************
+   public task Execute();  
+}
+
+
+
+//-------------------------------------------------------------------
+// Method Name: 
+// Description: 
+//-------------------------------------------------------------------
+task PioMRdPEUStr::new(PEUTestEnv a_env, (integer a_errQueue = 'bx)) {
+
+  
+  super.new(a_env);
+  this._env = a_env;  
+  this._errQueue = a_errQueue;
+}
+
+
+
+//-------------------------------------------------------------------
+// Method Name: 
+// Description: 
+//-------------------------------------------------------------------
+task PioMRdPEUStr::SetPacketParams() {
+
+  integer pass_constrain = 0;
+  this._env.allocRdTag(this._tag);
+
+
+  this._type_req = PEC_PCI__TYPE_MEM;
+  this._type_cpl = PEC_PCI__TYPE_CPL;
+  this._tc       = 3'b_000;
+  this._td_req   = 1'b_0;
+  this._ep_req   = 1'b_0;
+  this._attr     = 2'b_00;
+  this._req_id   = 16'h_0000;
+
+  
+  this._cpl_id   = urandom_range(this._cpl_id_max, this._cpl_id_min);
+  this._data     = urandom_range(this._data_max,   this._data_min);  
+
+  
+  randcase { 
+    this._format_req_prob_3dw   : this._format_req = PEC_PCI__FMT_NO_DATA_3DW;
+    this._format_req_prob_4dw   : this._format_req = PEC_PCI__FMT_NO_DATA_4DW;  
+  }
+
+  randcase {
+    this._td_cpl_prob_false     : this._td_cpl = 1'b_0;
+    this._td_cpl_prob_true      : this._td_cpl = 1'b_1;
+  }
+    
+  randcase {
+    this._ep_cpl_prob_false     : this._ep_cpl = 1'b_0; 
+    this._ep_cpl_prob_true      : this._ep_cpl = 1'b_1; 
+  }
+  
+  randcase { 
+    this._cpl_status_prob_sc    : this._cpl_status = PEC_PCI__CPL_STATUS_SC;
+    this._cpl_status_prob_ur    : this._cpl_status = PEC_PCI__CPL_STATUS_UR;
+    this._cpl_status_prob_crs   : this._cpl_status = PEC_PCI__CPL_STATUS_CRS;
+    this._cpl_status_prob_ca    : this._cpl_status = PEC_PCI__CPL_STATUS_CA;
+    this._cpl_status_prob_rsvd1 : this._cpl_status = PEC_PCI__CPL_STATUS_RSVD1;
+    this._cpl_status_prob_rsvd2 : this._cpl_status = PEC_PCI__CPL_STATUS_RSVD2;
+    this._cpl_status_prob_rsvd3 : this._cpl_status = PEC_PCI__CPL_STATUS_RSVD3;
+    this._cpl_status_prob_rsvd4 : this._cpl_status = PEC_PCI__CPL_STATUS_RSVD4;
+  }
+
+  randcase {
+    this._bcm_prob_false        : this._bcm = 1'b_0;
+    this._bcm_prob_true         : this._bcm = 1'b_1;
+  }
+   
+// 8/19/06 Fu: bypass randomize
+#ifdef N2_FC
+  while (!pass_constrain)
+  {
+    this._len_req = urandom_range(this._len_max, this._len_min);
+    this._addr_lsb = urandom_range(this._addr_lsb_max, this._addr_lsb_min);
+    this._addr_msb = urandom_range(this._addr_msb_max, this._addr_msb_min);
+
+    pass_constrain = ((this._addr_lsb[5:2] + this._len_req) <= 16) ? 1 : 0; 
+    printf ("GATE DEBUG RANDOMIZE: addr_msb = %x, addr_lsb = %x, len = %x\n", _addr_msb, _addr_lsb, _len_req);
+
+  }
+
+  pass_constrain = 0;
+  while (!pass_constrain)
+  {
+    this._first_dwbe = urandom_range(this._first_dwbe_max, this._first_dwbe_min);
+    pass_constrain = 1;
+    if (this._len_req > 10'h_001)
+      if (this._first_dwbe == 4'b_0000) pass_constrain = 0;
+    if (((this._len_req == 10'h_002) && (this._addr_lsb[2] != 1'b_0)) ||
+        (this._len_req >= 10'h_003))
+	if ((_first_dwbe != 4'b1111) && (_first_dwbe != 4'b1110) && (_first_dwbe != 4'b1100) && (_first_dwbe != 4'b1000)) pass_constrain = 0;
+    printf ("GATE DEBUG RANDOMIZE: first_dwbe = %x\n", _first_dwbe);
+  }
+
+  pass_constrain = 0;
+  while (!pass_constrain)
+  {
+    this._last_dwbe = urandom_range(this._last_dwbe_max, this._last_dwbe_min);
+    pass_constrain = 1;
+    if (this._len_req == 10'h_001)
+      if (this._last_dwbe != 4'b_0000) pass_constrain = 0;
+    if (this._len_req > 10'h_001)
+      if (this._last_dwbe == 4'b_0000) pass_constrain = 0;
+    if (((this._len_req == 10'h_002) && (this._addr_lsb[2] != 1'b_0)) ||
+        (this._len_req >= 10'h_003))
+	if ((_last_dwbe != 4'b1111) && (_last_dwbe != 4'b0111) && (_last_dwbe != 4'b0011) && (_last_dwbe != 4'b0001)) pass_constrain = 0;
+    printf ("GATE DEBUG RANDOMIZE: last_dwbe = %x\n", _last_dwbe);
+  }
+//
+#else
+
+  if( this.randomize() != OK ) {
+    _env.Report.report(RTYP_TEST_ERROR,"PioMRdPEUStr::SetPacketParams - randomize failure \n" );
+  }
+#endif
+
+  this._format_cpl = (this._cpl_status === PEC_PCI__CPL_STATUS_SC) ?
+    PEC_PCI__FMT_DATA_3DW : PEC_PCI__FMT_NO_DATA_3DW;
+  
+  this._len_cpl = (this._cpl_status === PEC_PCI__CPL_STATUS_SC) ?
+    this._len_req : 10'h_000;
+
+
+  this._byte_count =
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_1111, 4'b_0000} ? 12'h_004 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_1101, 4'b_0000} ? 12'h_004 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_1011, 4'b_0000} ? 12'h_004 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_1001, 4'b_0000} ? 12'h_004 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_0111, 4'b_0000} ? 12'h_003 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_0101, 4'b_0000} ? 12'h_003 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_1110, 4'b_0000} ? 12'h_003 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_1010, 4'b_0000} ? 12'h_003 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_0011, 4'b_0000} ? 12'h_002 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_0110, 4'b_0000} ? 12'h_002 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_1100, 4'b_0000} ? 12'h_002 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_0001, 4'b_0000} ? 12'h_001 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_0010, 4'b_0000} ? 12'h_001 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_0100, 4'b_0000} ? 12'h_001 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_1000, 4'b_0000} ? 12'h_001 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_0000, 4'b_0000} ? 12'h_001 : 
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_xxx1, 4'b_1xxx} ? 4 * this._len_req - 0 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_xxx1, 4'b_01xx} ? 4 * this._len_req - 1 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_xx10, 4'b_1xxx} ? 4 * this._len_req - 1 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_xxx1, 4'b_001x} ? 4 * this._len_req - 2 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_xx10, 4'b_01xx} ? 4 * this._len_req - 2 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_x100, 4'b_1xxx} ? 4 * this._len_req - 2 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_xxx1, 4'b_0001} ? 4 * this._len_req - 3 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_xx10, 4'b_001x} ? 4 * this._len_req - 3 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_x100, 4'b_01xx} ? 4 * this._len_req - 3 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_1000, 4'b_1xxx} ? 4 * this._len_req - 3 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_xx10, 4'b_0001} ? 4 * this._len_req - 4 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_x100, 4'b_001x} ? 4 * this._len_req - 4 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_1000, 4'b_01xx} ? 4 * this._len_req - 4 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_x100, 4'b_0001} ? 4 * this._len_req - 5 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_1000, 4'b_001x} ? 4 * this._len_req - 5 :
+  {this._first_dwbe, this._last_dwbe} =?= {4'b_1000, 4'b_0001} ? 4 * this._len_req - 6 :
+  12'h_xxx;
+  
+  
+  this._lower_addr =
+    this._first_dwbe =?= 4'b_0000 ? ({this._addr_lsb[6:2], 2'b_00}) :
+    this._first_dwbe =?= 4'b_xxx1 ? ({this._addr_lsb[6:2], 2'b_00}) : 
+    this._first_dwbe =?= 4'b_xx10 ? ({this._addr_lsb[6:2], 2'b_01}) :
+    this._first_dwbe =?= 4'b_x100 ? ({this._addr_lsb[6:2], 2'b_10}) :
+    this._first_dwbe =?= 4'b_1000 ? ({this._addr_lsb[6:2], 2'b_11}) :
+    7'h_xx;
+
+
+  reqHdr [PEC_PCI__HDR]            = {128{1'b_0}};  
+  reqHdr [PEC_PCI__FMT]            = this._format_req;
+  reqHdr [PEC_PCI__TYPE]           = this._type_req;
+  reqHdr [PEC_PCI__TC]             = this._tc;
+  reqHdr [PEC_PCI__TD]             = this._td_req;
+  reqHdr [PEC_PCI__EP]             = this._ep_req;
+  reqHdr [PEC_PCI__ATTR]           = this._attr;
+  reqHdr [PEC_PCI__LEN]            = this._len_req;
+  reqHdr [PEC_PCI__REQ_ID]         = this._req_id;
+  reqHdr [PEC_PCI__TLP_TAG]        = this._tag;
+  reqHdr [PEC_PCI__LAST_DWBE]      = this._last_dwbe;
+  reqHdr [PEC_PCI__FIRST_DWBE]     = this._first_dwbe;
+  reqHdr [PEC_PCI__ADDR]           = (this._format_req[0] === 1'b1) ?
+    ({this._addr_msb, this._addr_lsb[31:2], 2'b_00}) :
+    ({this._addr_lsb[31:2], 2'b_00, 32'h_0000_0000});
+
+  cplHdr [PEC_PCI__HDR]            = {128{1'b_0}};
+  cplHdr [PEC_PCI__FMT]            = this._format_cpl;
+  cplHdr [PEC_PCI__TYPE]           = this._type_cpl;
+  cplHdr [PEC_PCI__TC]             = this._tc;
+  cplHdr [PEC_PCI__TD]             = this._td_cpl;
+  cplHdr [PEC_PCI__EP]             = this._ep_cpl;
+  cplHdr [PEC_PCI__ATTR]           = this._attr;
+  cplHdr [PEC_PCI__LEN]            = this._len_cpl;
+  cplHdr [PEC_PCI__CPL_ID]         = this._cpl_id;
+  cplHdr [PEC_PCI__CPL_STATUS]     = this._cpl_status;
+  cplHdr [PEC_PCI__BCM]            = this._bcm;
+  cplHdr [PEC_PCI__BYTECOUNT]      = this._byte_count;
+  cplHdr [PEC_PCI__CPL_REQ_ID]     = this._req_id;
+  cplHdr [PEC_PCI__CPL_TAG]        = this._tag;
+  cplHdr [PEC_PCI__LOWADDR]        = this._lower_addr;
+
+  urHdr [PEC_PCI__HDR]             = {128{1'b_0}};
+  urHdr [PEC_PCI__FMT]             = this._format_cpl;
+  urHdr [PEC_PCI__TYPE]            = this._type_cpl;
+  urHdr [PEC_PCI__TC]              = this._tc;
+  urHdr [PEC_PCI__TD]              = this._td_cpl;
+  urHdr [PEC_PCI__EP]              = this._ep_cpl;
+  urHdr [PEC_PCI__ATTR]            = this._attr;
+  urHdr [PEC_PCI__LEN]             = this._len_cpl;
+  urHdr [PEC_PCI__CPL_ID]          = this._cpl_id;
+  urHdr [PEC_PCI__CPL_STATUS]      = PEC_PCI__CPL_STATUS_UR;
+  urHdr [PEC_PCI__BCM]             = this._bcm;
+  urHdr [PEC_PCI__BYTECOUNT]       = this._byte_count;
+  urHdr [PEC_PCI__CPL_REQ_ID]      = this._req_id;
+  urHdr [PEC_PCI__CPL_TAG]         = this._tag;
+  urHdr [PEC_PCI__LOWADDR]         = this._lower_addr;
+
+}
+
+task PioMRdPEUStr::Execute() {
+
+  SetPacketParams();
+  
+  this._env.driveILU(reqHdr, 0, 0);
+
+  
+  this._env.expectPCIE(reqHdr, 0);
+
+  if ( (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD1) ||
+      (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD2) ||
+      (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD3) ||
+      (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD4)) {
+      this._env.Pod.FNXPCIEEnableTrans.tempSuppressDenaliErr( PCIE_TL_NONFATAL_TLP_MF_vlCplSt ); //Malformed Completion TLP - Reserved completion status (%u).
+  }
+
+  //
+  repeat( urandom_range( _env.Scenario.ilupeuPioMRdCplDelayMax, _env.Scenario.ilupeuPioMRdCplDelayMin)) @(posedge CLOCK);
+ 
+  if ( this._ep_cpl && super.f_abortErrTlp )
+    this._env.drivePCIE(cplHdr, this._data, *, *, *, 1);
+  else
+    this._env.drivePCIE(cplHdr, this._data);
+
+  
+  if ((this._cpl_status === PEC_PCI__CPL_STATUS_CA)    ||
+      (this._cpl_status === PEC_PCI__CPL_STATUS_UR)    ||
+      (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD1) ||
+      (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD2) ||
+      (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD3) ||
+      (this._cpl_status === PEC_PCI__CPL_STATUS_RSVD4)) {
+    
+    this._env.expectILU(urHdr, this._data);
+    mailbox_put(this._errQueue, e_ERR_oe_ruc);
+    mailbox_put(this._errQueue, cplHdr );
+  }
+
+  else if (this._cpl_status === PEC_PCI__CPL_STATUS_CRS) {
+
+    // Nothing pops out here.
+    this._env.waitIngressLatency(cplHdr);
+    mailbox_put(this._errQueue, e_ERR_ue_mfp);
+    mailbox_put(this._errQueue, cplHdr );
+  }
+    
+  else if (this._ep_cpl === 1'b_1) {
+    
+    repeat(2) @(posedge CLOCK);
+    cplHdr [PEC_PCI__EP] = 0;
+    this._env.drivePCIE(cplHdr, this._data);
+    this._env.expectILU(cplHdr, this._data);
+    if ( this._errQueue != 0 )
+      {
+      //N2 - Add checking of request header
+      
+//      mailbox_put( this._errQueue, e_ERR_none );
+//      mailbox_put( this._errQueue, -1 );
+//      mailbox_put( this._errQueue, reqHdr );
+      mailbox_put(this._errQueue, e_ERR_ue_pp);
+      cplHdr [PEC_PCI__EP] = 1;
+      mailbox_put(this._errQueue, cplHdr);
+      }
+  }
+  
+  else {
+    
+    this._env.expectILU(cplHdr, this._data);
+  }
+
+  
+  this._env.freePioTag(this._tag);
+}
+

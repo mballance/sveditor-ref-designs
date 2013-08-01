@@ -1,0 +1,129 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: pack_db_tasks.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "pcg_defines.vri"
+#include "pcg_types.vri"
+#include "pcg_classes.vrh"
+#include "pack_db.vrh"
+#include "mac_db.vrh"
+#include "ipp_db.vrh"
+#include "fflp_db.vrh"
+
+extern integer         pack_db_index;
+extern integer         pack_db_lock;
+extern pack_db_entry   pack_db[]; 
+
+
+task packet_db_init() {
+	integer n;
+
+	// Alocate Semaphores
+	pack_db_lock = alloc(SEMAPHORE,0,1,1);
+	if(pack_db_lock == 0) {
+		printf("PACKET DB: INIT: Could not allocate spaphore pack_db_lock.\n");
+	   } else	pack_db_index=0;
+
+   }
+
+//
+function integer pack_db_add_entry(integer org_port, flow_desc flow,frame_desc frame, node_desc src_node,
+		node_desc dst_node, tup_descr tup, rcv_param rx_param, tmt_param tx_param, tcp_state fl_state, integer data_length, integer ttl, bit[63:0] options, integer order_seq,
+		integer pckt_num, bit [15:0] ifedxc) {
+	integer n;
+
+	// Set LOCK
+	semaphore_get(WAIT,pack_db_lock,1);
+
+	pack_db[pack_db_index]              = new;
+	pack_db[pack_db_index].org_port     = org_port;
+	pack_db[pack_db_index].order_seq    = order_seq;
+	pack_db[pack_db_index].pckt_num     = pckt_num;
+
+	pack_db[pack_db_index].flow         = new flow;
+	pack_db[pack_db_index].frame        = new frame;
+	pack_db[pack_db_index].src_node     = new src_node;
+	pack_db[pack_db_index].dst_node     = new dst_node;
+	pack_db[pack_db_index].tup          = new tup;
+	pack_db[pack_db_index].rx_param     = new rx_param;
+	pack_db[pack_db_index].tx_param     = new tx_param;
+	pack_db[pack_db_index].fl_state     = new fl_state;
+	pack_db[pack_db_index].ttl          = ttl;
+	pack_db[pack_db_index].data_length  = data_length;
+	pack_db[pack_db_index].options      = options;
+	pack_db[pack_db_index].ifedx_control= ifedxc;
+	pack_db[pack_db_index].pg_done      = 0;
+	pack_db[pack_db_index].im_check     = 0;
+
+	for(n=0;n<20;n++)
+		pack_db[pack_db_index].pc_check[n]     = 0;
+
+	pack_db_add_entry                   = pack_db_index;
+
+	pack_db[pack_db_index].mac          = new;
+	pack_db[pack_db_index].ipp          = new;
+	pack_db[pack_db_index].fflp         = new;
+
+	pack_db[pack_db_index].use_hdr      = 0;
+	pack_db[pack_db_index].pass         = 0;
+	pack_db_index++;
+
+	// Reset LOCK
+	semaphore_put(pack_db_lock,1); 
+   }
+
+task pack_db_add_header(integer index, byte_array buf, integer start, integer len) {
+	integer n;
+
+	// Set LOCK
+        //printf("NVN Testing task Orig Len is %d\n",len);
+
+	semaphore_get(WAIT,pack_db_lock,1);
+
+	len = len-start;
+        //printf("NVN The length is %d \n",len);
+
+	pack_db[index].header[ pack_db[index].use_hdr ] = new;
+
+	len++;
+	for(n=0;n<len;n++)
+		pack_db[index].header[ pack_db[index].use_hdr ].val[n] = buf.val[start+n];
+
+	pack_db[index].header_len[ pack_db[index].use_hdr ] = len;
+
+	// Reset LOCK
+	semaphore_put(pack_db_lock,1); 
+   }
+
+

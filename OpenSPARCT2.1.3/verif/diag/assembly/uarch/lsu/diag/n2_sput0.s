@@ -1,0 +1,8895 @@
+/*
+* ========== Copyright Header Begin ==========================================
+* 
+* OpenSPARC T2 Processor File: n2_sput0.s
+* Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+* 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+*
+* DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License as published by
+* the Free Software Foundation; version 2 of the License.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software
+* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+*
+* For the avoidance of doubt, and except that if any non-GPL license 
+* choice is available it will apply instead, Sun elects to use only 
+* the General Public License version 2 (GPLv2) at this time for any 
+* software where a choice of GPL license versions is made 
+* available with the language indicating that GPLv2 or any later version 
+* may be used, or where a choice of which version of the GPL is applied is 
+* otherwise unspecified. 
+*
+* Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+* CA 95054 USA or visit www.sun.com if you need additional information or 
+* have any questions. 
+*
+* 
+* ========== Copyright Header End ============================================
+*/
+#define MAIN_PAGE_HV_ALSO
+#define MAX_SPU_TRAP_CNT 1
+#define NO_TRAPCHECK
+#define H_HT0_Control_Word_Queue_Interrupt_0x3c
+#define My_HT0_Control_Word_Queue_Interrupt_0x3c \
+  sub %i6, 1, %i6; \
+  retry;
+# 588 "diag.j"
+#include "hboot.s"
+
+#define MAX_TIMEOUT 0x002
+#define WAIT_LOOP 0x100
+# 597 "diag.j"
+.text
+.global main
+
+main:       
+
+	ta	%icc, T_RD_THID
+! fork: source strm = 0xffffffffffffffff; target strm = 0x1               
+	cmp	%o1, 0
+	setx	fork_lbl_0_1, %g2, %g3
+	be,a	.+8
+	jmp	%g3
+	nop
+! fork: source strm = 0xffffffffffffffff; target strm = 0x2               
+	cmp	%o1, 1
+	setx	fork_lbl_0_2, %g2, %g3
+	be,a	.+8
+	jmp	%g3
+	nop
+! fork: source strm = 0xffffffffffffffff; target strm = 0x4               
+	cmp	%o1, 2
+	setx	fork_lbl_0_3, %g2, %g3
+	be,a	.+8
+	jmp	%g3
+	nop
+! fork: source strm = 0xffffffffffffffff; target strm = 0x8               
+	cmp	%o1, 3
+	setx	fork_lbl_0_4, %g2, %g3
+	be,a	.+8
+	jmp	%g3
+	nop
+! fork: source strm = 0xffffffffffffffff; target strm = 0x10              
+	cmp	%o1, 4
+	setx	fork_lbl_0_5, %g2, %g3
+	be,a	.+8
+	jmp	%g3
+	nop
+! fork: source strm = 0xffffffffffffffff; target strm = 0x20              
+	cmp	%o1, 5
+	setx	fork_lbl_0_6, %g2, %g3
+	be,a	.+8
+	jmp	%g3
+	nop
+! fork: source strm = 0xffffffffffffffff; target strm = 0x40              
+	cmp	%o1, 6
+	setx	fork_lbl_0_7, %g2, %g3
+	be,a	.+8
+	jmp	%g3
+	nop
+! fork: source strm = 0xffffffffffffffff; target strm = 0x80              
+	cmp	%o1, 7
+	setx	fork_lbl_0_8, %g2, %g3
+	be,a	.+8
+	jmp	%g3
+	nop
+
+fail:
+    	EXIT_BAD
+
+.text
+	setx	join_lbl_0_0, %g1, %g2
+	jmp	%g2
+	nop
+.text
+	setx	join_lbl_0_0, %g1, %g2
+	jmp	%g2
+	nop
+fork_lbl_0_8:
+.text
+	setx	join_lbl_0_0, %g1, %g2
+	jmp	%g2
+	nop
+fork_lbl_0_7:
+.text
+	setx	join_lbl_0_0, %g1, %g2
+	jmp	%g2
+	nop
+fork_lbl_0_6:
+.text
+	setx	join_lbl_0_0, %g1, %g2
+	jmp	%g2
+	nop
+fork_lbl_0_5:
+.text
+	setx	join_lbl_0_0, %g1, %g2
+	jmp	%g2
+	nop
+fork_lbl_0_4:
+.text
+	setx	join_lbl_0_0, %g1, %g2
+	jmp	%g2
+	nop
+fork_lbl_0_3:
+.text
+	setx	join_lbl_0_0, %g1, %g2
+	jmp	%g2
+	nop
+fork_lbl_0_2:
+.text
+	setx	join_lbl_0_0, %g1, %g2
+	jmp	%g2
+	nop
+fork_lbl_0_1:
+    	setx 0x0000deadbeefbad0, %l5, %l4
+
+	!# Switch to hpriv mode
+    	ta T_CHANGE_HPRIV
+
+	or	%g0, 0x0, %g2		!# Operation Step
+	or	%g0, 0x0, %g4		!# Operand   Step
+
+	set	0x250e, %g3
+	stxa	%g3, [%g0] ASI_SPARC_PWR_MGMT
+	wr	%g3, 0x4, %fprs
+
+	mov 	%l7, 	%g1
+	wrpr 	%g0, 	0x0, 	%cwp
+
+	or 	%g0, 	0x8, 	%l0
+	sllx 	%l0, 	0x3c, 	%l0
+	wrhpr 	%l0, 	0x580, 	%hsys_tick_cmpr
+	wr 	%l0, 	0x580, 	%sys_tick_cmpr
+	wr 	%l0, 	0x580, 	%tick_cmpr
+# 633 "diag.j"
+	!# Execute Main Diag ..
+        !# Write address of data region to load from in MA_PA reg, and check
+	setx	MA_OPERANDS, %g6, %l7
+          add	%l7, 13, %l7			!# WARNING : Misaligned address
+          add	%l7, %g4, %l7
+        wr %g0, 0x40, %asi
+	stxa	%l7, [%g0 + 0x88] %asi 
+
+ma_load:
+	!# Write MAMEM address, start at 0
+	or	%g0, 0x0, %l2
+	stxa	%l2,	[%g0 + 0x90] %asi
+
+	!# write MA_CTL
+	setx    0x9e, %g7, %l1
+	stxa	%l1,	[%g0 + 0x80] %asi		!# LOAD
+
+	!# setup mask to check for INVOP
+	or	%g0, 0x1, %l2
+	sllx	%l2, 21, %l2
+
+	#! Try MA_SYNC operation...
+wait:
+	ldxa	[%g0 + 0xA0] %asi, %l1
+	ldxa	[%g0 + 0x80] %asi, %l1
+	andcc	%l1, %l2, %l1
+	bne,pn %xcc,	fail
+	nop
+
+
+loop_0:
+	!# write NPRIME
+	setx	 0x7ac252d9a36ba86b, %g7, %l2
+	stxa	%l2,	[%g0 + 0x98] %asi
+
+	setx	MA_OPERATIONS, %g6, %l7
+	or	%g0, 7, %i0			!# OPSELECT
+	umul	%i0, 16, %i0
+	add	%i0, %g2, %i0
+
+	!# write MA_ADDR
+	ldx [%l7 + %i0], %l1
+	stxa	%l1,	[%g0 + 0x90] %asi
+
+	!# write MA_CTL
+	add %i0, 8, %i0
+	ldx [%l7 + %i0], %l1
+	stxa	%l1,	[%g0 + 0x80] %asi		!# OPERATION
+
+	!# setup mask to check for INVOP
+	or	%g0, 0x1, %l2
+	sllx	%l2, 21, %l2
+
+	#! Try MA_SYNC operation...
+wait2_0:	
+	ldxa	[%g0 + 0xA0] %asi, %l1
+	ldxa	[%g0 + 0x98] %asi, %l1		!# MA PA
+	ldxa	[%g0 + 0x90] %asi, %l1		!# MA Addr
+	ldxa	[%g0 + 0x88] %asi, %l1		!# MA PA
+	ldxa	[%g0 + 0x80] %asi, %l1		!# MA CTL
+	andcc	%l1, %l2, %l1
+	bne,pn %xcc,	fail
+	nop
+# 703 "diag.j"
+	add	%g2, 288, %g2			!# Operation Step  (16 * # of operations in queue)
+	add	%g4, 164, %g4			!# Operand   Step  (always 164)
+# 707 "diag.j"
+
+loop_1:
+	!# write NPRIME
+	setx	 0x57ca661d33446551, %g7, %l2
+	stxa	%l2,	[%g0 + 0x98] %asi
+
+	setx	MA_OPERATIONS, %g6, %l7
+	or	%g0, 9, %i0			!# OPSELECT
+	umul	%i0, 16, %i0
+	add	%i0, %g2, %i0
+
+	!# write MA_ADDR
+	ldx [%l7 + %i0], %l1
+	stxa	%l1,	[%g0 + 0x90] %asi
+
+	!# write MA_CTL
+	add %i0, 8, %i0
+	ldx [%l7 + %i0], %l1
+	stxa	%l1,	[%g0 + 0x80] %asi		!# OPERATION
+
+	!# setup mask to check for INVOP
+	or	%g0, 0x1, %l2
+	sllx	%l2, 21, %l2
+
+	#! Try MA_SYNC operation...
+wait2_1:	
+	ldxa	[%g0 + 0xA0] %asi, %l1
+	ldxa	[%g0 + 0x98] %asi, %l1		!# MA PA
+	ldxa	[%g0 + 0x90] %asi, %l1		!# MA Addr
+	ldxa	[%g0 + 0x88] %asi, %l1		!# MA PA
+	ldxa	[%g0 + 0x80] %asi, %l1		!# MA CTL
+	andcc	%l1, %l2, %l1
+	bne,pn %xcc,	fail
+	nop
+# 703 "diag.j"
+	add	%g2, 288, %g2			!# Operation Step  (16 * # of operations in queue)
+	add	%g4, 164, %g4			!# Operand   Step  (always 164)
+# 707 "diag.j"
+
+loop_2:
+	!# write NPRIME
+	setx	 0x60c9bf37f5229971, %g7, %l2
+	stxa	%l2,	[%g0 + 0x98] %asi
+
+	setx	MA_OPERATIONS, %g6, %l7
+	or	%g0, 16, %i0			!# OPSELECT
+	umul	%i0, 16, %i0
+	add	%i0, %g2, %i0
+
+	!# write MA_ADDR
+	ldx [%l7 + %i0], %l1
+	stxa	%l1,	[%g0 + 0x90] %asi
+
+	!# write MA_CTL
+	add %i0, 8, %i0
+	ldx [%l7 + %i0], %l1
+	stxa	%l1,	[%g0 + 0x80] %asi		!# OPERATION
+
+	!# setup mask to check for INVOP
+	or	%g0, 0x1, %l2
+	sllx	%l2, 21, %l2
+
+	#! Try MA_SYNC operation...
+wait2_2:	
+	ldxa	[%g0 + 0xA0] %asi, %l1
+	ldxa	[%g0 + 0x98] %asi, %l1		!# MA PA
+	ldxa	[%g0 + 0x90] %asi, %l1		!# MA Addr
+	ldxa	[%g0 + 0x88] %asi, %l1		!# MA PA
+	ldxa	[%g0 + 0x80] %asi, %l1		!# MA CTL
+	andcc	%l1, %l2, %l1
+	bne,pn %xcc,	fail
+	nop
+# 703 "diag.j"
+	add	%g2, 288, %g2			!# Operation Step  (16 * # of operations in queue)
+	add	%g4, 164, %g4			!# Operand   Step  (always 164)
+# 707 "diag.j"
+
+loop_3:
+	!# write NPRIME
+	setx	 0xb992140810dfbcb4, %g7, %l2
+	stxa	%l2,	[%g0 + 0x98] %asi
+
+	setx	MA_OPERATIONS, %g6, %l7
+	or	%g0, 12, %i0			!# OPSELECT
+	umul	%i0, 16, %i0
+	add	%i0, %g2, %i0
+
+	!# write MA_ADDR
+	ldx [%l7 + %i0], %l1
+	stxa	%l1,	[%g0 + 0x90] %asi
+
+	!# write MA_CTL
+	add %i0, 8, %i0
+	ldx [%l7 + %i0], %l1
+	stxa	%l1,	[%g0 + 0x80] %asi		!# OPERATION
+
+	!# setup mask to check for INVOP
+	or	%g0, 0x1, %l2
+	sllx	%l2, 21, %l2
+
+	#! Try MA_SYNC operation...
+wait2_3:	
+	ldxa	[%g0 + 0xA0] %asi, %l1
+	ldxa	[%g0 + 0x98] %asi, %l1		!# MA PA
+	ldxa	[%g0 + 0x90] %asi, %l1		!# MA Addr
+	ldxa	[%g0 + 0x88] %asi, %l1		!# MA PA
+	ldxa	[%g0 + 0x80] %asi, %l1		!# MA CTL
+	andcc	%l1, %l2, %l1
+	bne,pn %xcc,	fail
+	nop
+# 703 "diag.j"
+	add	%g2, 288, %g2			!# Operation Step  (16 * # of operations in queue)
+	add	%g4, 164, %g4			!# Operand   Step  (always 164)
+# 707 "diag.j"
+
+loop_4:
+	!# write NPRIME
+	setx	 0x89452e7c44f26b32, %g7, %l2
+	stxa	%l2,	[%g0 + 0x98] %asi
+
+	setx	MA_OPERATIONS, %g6, %l7
+	or	%g0, 11, %i0			!# OPSELECT
+	umul	%i0, 16, %i0
+	add	%i0, %g2, %i0
+
+	!# write MA_ADDR
+	ldx [%l7 + %i0], %l1
+	stxa	%l1,	[%g0 + 0x90] %asi
+
+	!# write MA_CTL
+	add %i0, 8, %i0
+	ldx [%l7 + %i0], %l1
+	stxa	%l1,	[%g0 + 0x80] %asi		!# OPERATION
+
+	!# setup mask to check for INVOP
+	or	%g0, 0x1, %l2
+	sllx	%l2, 21, %l2
+
+	#! Try MA_SYNC operation...
+wait2_4:	
+	ldxa	[%g0 + 0xA0] %asi, %l1
+	ldxa	[%g0 + 0x98] %asi, %l1		!# MA PA
+	ldxa	[%g0 + 0x90] %asi, %l1		!# MA Addr
+	ldxa	[%g0 + 0x88] %asi, %l1		!# MA PA
+	ldxa	[%g0 + 0x80] %asi, %l1		!# MA CTL
+	andcc	%l1, %l2, %l1
+	bne,pn %xcc,	fail
+	nop
+# 703 "diag.j"
+	add	%g2, 288, %g2			!# Operation Step  (16 * # of operations in queue)
+	add	%g4, 164, %g4			!# Operand   Step  (always 164)
+# 707 "diag.j"
+
+ma_store:	
+
+        !# write MA_ADDR
+	or %g0, 0x00, %l2
+	stxa	%l2,	[%g0 + 0x90] %asi
+# 719 "diag.j"
+        !# Write result address into MA_PA reg
+
+        setx	MA_RESULTS, %g7, %l6
+          add %l6, 15, %l6			!# WARNING : Misaligned address
+	stxa	%l6, [%g0 + 0x88] %asi 
+
+	!# write MA_CTL
+	setx    0x19f, %g7, %l1
+	stxa	%l1,	[%g0 + 0x80] %asi		!# STORE
+
+	!# setup mask to check for INVOP
+	or	%g0, 0x1, %l2
+	sllx	%l2, 21, %l2
+
+	#! Try MA_SYNC operation...
+wait3:	
+	ldxa	[%g0 + 0xA0] %asi, %l1
+	ldxa	[%g0 + 0x80] %asi, %l1
+	andcc	%l1, %l2, %l1
+	bne,pn	%xcc,	fail
+	nop
+
+idle3:
+
+	!# do dummy loads into %g1
+
+	setx	MA_RESULTS, %g7, %l7
+	or	%g0, %g0, %l3
+	!# setup loop count
+	or	%g0, 164, %i0
+more:	
+  	ldx	[%l7+%l3], %l0	!# a[i]
+	addcc	%i0, -1, %i0
+	bgt	more
+	add	%l3, 0x8, %l3	!# i++
+
+! Code for Template instance: _spu_
+# 324 "./spu_random_complete_CW_rand5.t"
+.text
+.global _spu_main
+
+_spu_main:       
+	!# Switch to hpriv mode
+    	ta 	T_CHANGE_HPRIV
+
+        !# trap counter
+        mov 0, %i6
+
+        ! Set up for PMU 
+        set 0x3a4195f0, %g2
+        wr %g2, %g0, %pcr
+        setx 0xffffffbdffffffa3, %g2, %g7
+        wr %g7, %g0, %pic
+
+    	!# setup ASI register to point to SPU
+    	wr 	%g0, 0x40, %asi
+
+    	!# Make sure CWQ is currently disabled, not busy, not terminated, no protocol error; else fail
+    	ldxa 	[%g0 + ASI_SPU_CWQ_CSR] %asi, %l1
+    	and 	%l1, 0xf, %l2
+    	cmp 	%g0, %l2
+    	bne,pn 	%xcc, _spu_fail
+    	nop
+
+    	!# allocate control word queue (e.g., setup head/tail/first/last registers)
+    	setx 	_spu_cwq_base, %g1, %l6
+
+    	!# write base addr to first, head, and tail ptr
+    	!# first store to first
+    	stxa    %l6, [%g0 + ASI_SPU_CWQ_FIRST] %asi
+    	ldxa    [%g0 + ASI_SPU_CWQ_FIRST] %asi, %l1
+    	!# Mask off upper 16 bits
+    	setx 	0x0000ffffffffffff, %l5, %l0
+    	and 	%l0, %l6, %l2
+    	cmp 	%l1, %l2
+    	bne,pn 	%xcc,    _spu_fail
+    	nop
+
+    	!# then to head
+    	stxa    %l6, [%g0 + ASI_SPU_CWQ_HEAD] %asi
+    	ldxa    [%g0 + ASI_SPU_CWQ_HEAD] %asi, %l1
+    	cmp 	%l1, %l2
+    	bne,pn 	%xcc,    _spu_fail
+    	nop
+
+    	!# then to tail
+    	stxa    %l6, [%g0 + ASI_SPU_CWQ_TAIL] %asi
+    	ldxa    [%g0 + ASI_SPU_CWQ_TAIL] %asi, %l1
+    	cmp 	%l1, %l2
+    	bne,pn 	%xcc,    _spu_fail
+    	nop
+
+    	!# then end of CWQ region to LAST
+    	setx _spu_cwq_last, %g1, %l5
+    	stxa    %l5, [%g0 + ASI_SPU_CWQ_LAST] %asi
+    	ldxa    [%g0 + ASI_SPU_CWQ_LAST] %asi, %l1
+    	!# Mask off upper 16 bits
+    	and 	%l0, %l5, %l2
+    	cmp 	%l1, %l2
+    	bne,pn 	%xcc,    _spu_fail
+    	nop
+
+    	or      %g0, 0x0, %i4			!# _spu_counter : Increment _spu_by 1 _spu_to _spu_step _spu_over CWs
+    	or      %g0, 0x0, %i5			!# _spu_offset  : Increment _spu_by 8 _spu_to _spu_step _spu_over CWs
+
+_spu_main_loop:
+	setx 	_spu_spu_op_array, %l1, %l2
+	ldx 	[%l2 + %i5], %i1 
+	cmp	%i1, 7
+	bne	_spu_not_ssl
+	mov	%i5, %g5		!# Save _spu_real _spu_offset - _spu_if _spu_sslkey _spu_it _spu_has _spu_to _spu_be 0x10 _spu_aligned
+	btst	8, %i5
+	bz	_spu_not_ssl
+	nop	
+	add	%i5, 8, %i5
+
+_spu_not_ssl:
+	cmp	%i1, 8
+	bg	_spu_fail
+	mulx 	%i1, 8, %i1		!# Calc _spu_index _spu_into _spu_toc
+
+	setx 	_spu_table_of_context, %l1, %l2
+	ldx 	[%l2 + %i1], %l3	!# l3 = _spu_toc _spu_of _spu_current _spu_operation
+	ldx 	[%l3 + 0x40], %l4   	!# l4 = alignment array
+
+    	!# set  CWQ data
+	ldx	[%l3], %l2		
+	ldx 	[%l2 + %i5], %l2	!# Get Control Word _spu_from _spu_array
+	mov 	%l2, %i7		!# Save _spu_it _spu_for _spu_later
+        srlx 	%i7, 48,  %l1
+        and 	%l1, 1, %l1
+        cmp 	%l1, 1
+        bne,pn %xcc, _spu_write_cwq
+	nop
+	inc	%i6			!# increase _spu_interrupt _spu_counter
+
+_spu_write_cwq:
+    	!# write CWQ entry (%l6 points to CWQ)
+    	stx  	%l2, [%l6 + 0x0]
+
+    	!# source address
+	ldx 	[%l3 + 0x8], %l2
+	ldx	[%l4 + 0x8], %l1
+	add	%l2, %i5, %l2
+        add 	%l2, %l1, %l2		!# _spu_WARNING : Misaligned _spu_address
+    	stx 	%l2, [%l6 + 0x8]
+
+    	!# Authentication Key  Address (40-bit)
+	ldx	[%l3 + 0x10], %l2
+	ldx	[%l4 + 0x10], %l1
+	add	%l2, %i5, %l2
+        add 	%l2, %l1, %l2		!# _spu_WARNING : Misaligned _spu_address
+    	stx 	%l2, [%l6 + 0x10]
+
+    	!# Authentication IV   Address (40-bit)
+	ldx	[%l3 + 0x18], %l2
+	ldx	[%l4 + 0x18], %l1
+	add	%l2, %i5, %l2
+        add 	%l2, %l1, %l2		!# _spu_WARNING : Misaligned _spu_address
+    	stx 	%l2, [%l6 + 0x18]
+
+    	!# Authentication FSAS Address (40-bit)
+	ldx	[%l3 + 0x20], %l2
+	ldx	[%l4 + 0x20], %l1
+	add	%l2, %i5, %l2
+        add 	%l2, %l1, %l2		!# _spu_WARNING : Misaligned _spu_address
+    	stx 	%l2, [%l6 + 0x20]
+
+    	!# Encryption Key Address (40-bit)
+	ldx 	[%l3 + 0x28], %l2
+	ldx	[%l4 + 0x28], %l1
+	add	%l2, %i5, %l2
+        add 	%l2, %l1, %l2		!# _spu_WARNING : Misaligned _spu_address
+    	stx 	%l2, [%l6 + 0x28]
+
+    	!# Encryption Initialization Vector Address (40-bit)
+	ldx 	[%l3 + 0x30], %l2
+	ldx	[%l4 + 0x30], %l1
+	add	%l2, %i5, %l2
+        add 	%l2, %l1, %l2		!# _spu_WARNING : Misaligned _spu_address
+    	stx 	%l2, [%l6 + 0x30]
+
+    	!# Destination Address (40-bit)
+    	ldx 	[%l3 + 0x38], %l2
+	ldx	[%l4 + 0x38], %l1
+	add	%l2, %i5, %l2
+        add 	%l2, %l1, %l2		!# _spu_WARNING : Misaligned _spu_address
+    	stx 	%l2, [%l6 + 0x38]
+
+    	!# Make sure all these stores get to memory before we start
+    	membar 	#Sync
+
+    	!# Set the enabled bit and reset the other bits
+    	or      %g0, 0x1, %g1
+    	stxa    %g1,    [%g0 + ASI_SPU_CWQ_CSR] %asi
+
+    	!# Kick off the CWQ operation by writing to the CWQ_TAIL
+    	!# Now add 1 (actually 8*8B) to tail pointer
+    	ldxa    [%g0 + ASI_SPU_CWQ_TAIL] %asi, %l2
+    	add 	%l2, 0x40, %l2
+    	stxa    %l2, [%g0 + ASI_SPU_CWQ_TAIL] %asi
+    	ldxa    [%g0 + ASI_SPU_CWQ_TAIL] %asi, %l1
+    	cmp 	%l1, %l2
+    	bne,pn 	%xcc,    _spu_fail
+    	nop
+
+    	!# CWQ_SYNC operation...
+    	ldxa    [%g0 + 0x30] %asi, %l1
+# 496 "./spu_random_complete_CW_rand5.t"
+	addcc	%l1, -1, %i0
+	bne	_spu_fail			!# test for unexpected protocal error
+	nop
+# 501 "./spu_random_complete_CW_rand5.t"
+    	ldxa    [%g0 + ASI_SPU_CWQ_HEAD] %asi, %l1
+    	ldxa    [%g0 + ASI_SPU_CWQ_TAIL] %asi, %l1
+# 505 "./spu_random_complete_CW_rand5.t"
+    !# I want to check all the data
+	or %g0, 260, %i0    
+	or %g0, %g0, %g3   
+_spu_check_msg:
+	ldx 	[%l3 + 0x8], %l5	!# Needed _spu_for Inplace
+	add	%l5, %i5, %l5
+	ldx     [%l5 + %g3], %l1
+	add     %g3, 0x8, %g3   !# i++
+	addcc   %i0, -1, %i0
+	bgt     _spu_check_msg
+	nop
+# 518 "./spu_random_complete_CW_rand5.t"
+    !# I want to check all the data
+	or %g0, 260, %i0    
+	or %g0, %g0, %g3   
+_spu_check_results:
+	ldx	[%l3 + 0x38], %l5	!# Needed _spu_for Copy
+	add	%l5, %i5, %l5
+	ldx     [%l5 + %g3], %l1
+	add     %g3, 0x8, %g3   !# i++
+	addcc   %i0, -1, %i0
+	bgt     _spu_check_results
+	nop
+
+	or %g0, 0x8, %i0    
+	or %g0, %g0, %g3   
+_spu_check_sfas:
+	ldx	[%l3 + 0x20], %l5
+	ldx     [%l5 + %g3], %l1
+	add     %g3, 0x8, %g3   !# i++
+	addcc   %i0, -1, %i0
+	bgt     _spu_check_sfas 
+	nop
+
+    !# I want to check all the State 32 words + 2 bytes XY
+	or %g0, 0x23, %i0    
+	or %g0, %g0, %g3   
+_spu_check_state:
+	ldx	[%l3 + 0x28], %l5		!# Needed _spu_for Streamout
+	ldx     [%l5 + %g3], %l1
+	add     %g3, 0x8, %g3   !# i++
+	addcc   %i0, -1, %i0
+	bgt     _spu_check_state
+	nop
+
+	mov	%g5, %i5
+	add	%l6, 0x40, %l6  	!# next CWQ address
+	add	%i5, 8, %i5		!# next _spu_offset 
+	add	%i4, 1, %i4		!# loop _spu_counter
+	cmp 	%i4, 15
+	bl	_spu_main_loop
+	nop	
+
+	!call 	check_int_cnt		!# Check #ints (assuming all have happened at this time!)
+	nop
+
+    	EXIT_GOOD
+
+_spu_fail:
+    	EXIT_BAD
+
+_spu_check_int_cnt:
+ 	cmp %g0, %i6
+        bne,pn %xcc, _spu_fail
+	nop
+        retl
+	nop
+
+
+! diag source
+
+
+join_lbl_0_0:
+
+.text
+    nop
+    nop
+    nop 
+    ta T_GOOD_TRAP
+    nop 
+    nop 
+    nop 
+# 784 "diag.j"
+.data
+user_data_start:
+scratch_area:
+
+.align 8
+MA_OPERANDS:
+.xword 0x54f792f52507bd6c
+.xword 0x16731206e4c5ae71
+.xword 0x31c117ffa7f62125
+.xword 0x6b96ec44883b9cbc
+.xword 0x48a5ab328178fa33
+.xword 0x2f1d14ecbe359024
+.xword 0x2ab3772322bc29fd
+.xword 0x2f700f23ed843c33
+.xword 0xcb4593b8535dab9b
+.xword 0x538c81c60b3a077d
+.xword 0xcff4c8b1e7c0e887
+.xword 0xad80e38a10e3c695
+.xword 0xd3e3135e3645b3d2
+.xword 0xbfec2fef0e4fb347
+.xword 0x582691148876be4d
+.xword 0xd224d8274c488e2e
+.xword 0x8f0207788b5216a9
+.xword 0x3f51f7e40199c8a3
+.xword 0x7b633e132658bd1d
+.xword 0xe67012eb32f5b91a
+.xword 0x5c313ea42ffd3180
+.xword 0x51df60e8b77f317c
+.xword 0x5ee9ddab3b3dbfbf
+.xword 0xa3222b8164fdc725
+.xword 0xc83dd7f992dc12da
+.xword 0x613b143050424dc8
+.xword 0xb51d66e59adab937
+.xword 0xe2866c01a537bbbe
+.xword 0x6cb0d3289eb0e5c3
+.xword 0x98b4acd53aa9f465
+.xword 0xfdc4c8267d4cf7d0
+.xword 0x809bd5bb1210e6a7
+.xword 0x4c0dcfa2bed87dad
+.xword 0x79c45a40aa3ecf29
+.xword 0x1f24b18d15c76242
+.xword 0x4265de3a34205026
+.xword 0xa57eaba4e336543c
+.xword 0x3e7428993abcad7e
+.xword 0x649b4a66c6741d6f
+.xword 0xe136b8f2e5df868e
+.xword 0xeafc1cd9bebbb1db
+.xword 0xb2a94d4dcdd10bb0
+.xword 0xda93f4f56fbd8d62
+.xword 0x88a0f3fe67124565
+.xword 0xf089a81a59c9eb7a
+.xword 0x41231c29ea5bcbd2
+.xword 0x4e4da09c3b870158
+.xword 0x5245912080b96654
+.xword 0xa06d944908f2ac19
+.xword 0x33301816742fdbc4
+.xword 0xb3b380812d176046
+.xword 0xd791427e2c692f30
+.xword 0x348fb0173260a09f
+.xword 0x7a3476448fb33d66
+.xword 0x08b517fe7e90815b
+.xword 0xabb4bff7e28c11df
+.xword 0x9ac97a7956d6d281
+.xword 0x773a9ff85cb18743
+.xword 0x66b47275031e2430
+.xword 0xb395d373ce35cf52
+.xword 0x874d611db7f63d7e
+.xword 0x0c9a1eab31c53786
+.xword 0xb1e67043908ba299
+.xword 0x6c6dbe47151fac56
+.xword 0xa9ce5ce9f09fad7d
+.xword 0xd58e7ff84b7bb67e
+.xword 0xb8839bbbe5866e5f
+.xword 0xb034782ac8845080
+.xword 0x7fd89f0c80897e3b
+.xword 0x734ebd9bc163ba12
+.xword 0x99ba6f03274de193
+.xword 0xf56c0b20f14e7d99
+.xword 0x1c7e5bbdb4441abf
+.xword 0xc61cdb210b7d87d5
+.xword 0x89dfdb6d770bebba
+.xword 0x1dc7dbd15b1286c3
+.xword 0x126d0e896a65a8f4
+.xword 0x201a8909d162f5be
+.xword 0xe3664a5c30a04299
+.xword 0x6b83474ab8ce6682
+.xword 0x8228c1b0e00e08e9
+.xword 0x13f4d92102d256cf
+.xword 0x8f71a8e22ef75c10
+.xword 0xa2a725bb3473ccea
+.xword 0xf4c7ed14ae26201e
+.xword 0x82be4bc6b7bd15a8
+.xword 0x7c197a7b45956c9d
+.xword 0x685d3c9bb189f7c5
+.xword 0xbff3dba9c7486188
+.xword 0x5558240b75b78600
+.xword 0x950330300b25be3f
+.xword 0x327f85f4b55a13e8
+.xword 0x2d87ee63d0642a63
+.xword 0x52bd39b3d42b28be
+.xword 0x0af28ab021ecacd7
+.xword 0x872999a643e80247
+.xword 0xdc0eb6b7c1e7f4eb
+.xword 0xb77a24778faba94e
+.xword 0xa44af225805d23af
+.xword 0x3eb8e2043cf3c875
+.xword 0xbedcf8989fdb89ab
+.xword 0x82e571423366c4f3
+.xword 0x8560f94c3a1982e4
+.xword 0x1c178bb6cecb2ad2
+.xword 0x5e7542a127c9204a
+.xword 0x44e20eac3af2ffeb
+.xword 0xd5d8e4e2cfe43626
+.xword 0x8ac9b667b1cba0d6
+.xword 0x7f5658a902c1e552
+.xword 0xd4c5c7b7d8a93408
+.xword 0xb01677a56dfa5ff6
+.xword 0x1bdf7673c7d4fd5c
+.xword 0xcb8f75b8def4beed
+.xword 0xaf46bf59737d2cc1
+.xword 0xb08fd7428ded2c95
+.xword 0x7d29a5b0b0a078e2
+.xword 0xfd654b29365a7d13
+.xword 0xf080cc904491a9e2
+.xword 0x6ceca3aaf057e504
+.xword 0xe5835e3f31696412
+.xword 0x8dc7c312fdee2069
+.xword 0x74cfa2aeb6aa73ef
+.xword 0x87bdd14982777433
+.xword 0x2421f29b489f8c8e
+.xword 0xd171a52e20e996ea
+.xword 0xbac248b53a04b094
+.xword 0xb04a3d5f2f6f23b4
+.xword 0x32a44e9a2a202b35
+.xword 0xdc8c20972ffce34f
+.xword 0xf1eb14391deb9e20
+.xword 0x920ca126ea1e730f
+.xword 0x0ed872629838ddd5
+.xword 0xd03f2bb5058cb818
+.xword 0xd15ab6ca4220ff74
+.xword 0xfcaa7daf621e25c8
+.xword 0xb5ef62c3c35cb43e
+.xword 0x9fb00fca80e7971f
+.xword 0xfb9e247c9479fb7f
+.xword 0xc5dc21455519eac6
+.xword 0x5f3c72a413fbfbd4
+.xword 0x47dd2da92cb671a3
+.xword 0x3f46cd73a0fda5c8
+.xword 0x23fd4543785f7e20
+.xword 0x914a81905726748a
+.xword 0x1d06d4a837a3c793
+.xword 0xafba29a8bb694dec
+.xword 0x56bf24454dbfb4bd
+.xword 0x9040b81621bb1662
+.xword 0xb04003f793e88be7
+.xword 0x6d5f5f51afeaba0d
+.xword 0xf90874d4b26493ad
+.xword 0x751c7f00250ebc96
+.xword 0x7016a7369d1482af
+.xword 0x2e0b9e566a0bf022
+.xword 0x781ab2be0ab1811d
+.xword 0x6f6bd16cc1d177a3
+.xword 0x688500329a278fe6
+.xword 0x8447de48dad94082
+.xword 0x18f5db43ae6fed1d
+.xword 0xa08e6652f5ff2c34
+.xword 0xc679dd75a53490c2
+.xword 0x1610a2ab5cfe84d1
+.xword 0x17c194eb38ae5a24
+.xword 0xe493c9a2e625beb1
+
+.align 8
+MA_OPERATIONS:
+.xword 0
+.xword 6
+
+.xword 0
+.xword 0x120
+
+.xword 0x80604020
+.xword 0x214
+
+.xword 0x356a
+.xword 0x30a
+
+.xword 0x0000036000408020
+.xword 0x402
+
+.xword 0x6a35
+.xword 0x518
+
+.xword 0x78285050
+.xword 0x616
+
+.xword 0x80604020
+.xword 0x716
+
+.xword 0x00287850
+.xword 0x802
+
+.xword 0x00287850
+.xword 0x927
+
+.xword 0x78285050
+.xword 0xa1e
+
+.xword 0x64500000003c0000
+.xword 0xb08
+
+.xword 0x7766000000554422
+.xword 0xc06
+
+.xword 0x706200000054462a
+.xword 0xd0d
+
+.xword 0x784d095800423721
+.xword 0xe01
+
+.xword 0x804d016000504020
+.xword 0xf02
+
+.xword 0x0000036000408020
+.xword 0x1001
+
+.xword 0
+.xword 0x117e
+
+.xword 0
+.xword 0x9d
+
+.xword 0
+.xword 0x107
+
+.xword 0x80604020
+.xword 0x20a
+
+.xword 0x356a
+.xword 0x318
+
+.xword 0x0000066000408020
+.xword 0x403
+
+.xword 0x6a35
+.xword 0x515
+
+.xword 0x78285050
+.xword 0x616
+
+.xword 0x80604020
+.xword 0x700
+
+.xword 0x00287850
+.xword 0x811
+
+.xword 0x00287850
+.xword 0x927
+
+.xword 0x78285050
+.xword 0xa10
+
+.xword 0x64500000003c0000
+.xword 0xb0e
+
+.xword 0x7766000000554422
+.xword 0xc04
+
+.xword 0x706200000054462a
+.xword 0xd0a
+
+.xword 0x784d025800423721
+.xword 0xe03
+
+.xword 0x804d046000504020
+.xword 0xf03
+
+.xword 0x0000006000408020
+.xword 0x1000
+
+.xword 0
+.xword 0x1157
+
+.xword 0
+.xword 0x99
+
+.xword 0
+.xword 0x15c
+
+.xword 0x80604020
+.xword 0x218
+
+.xword 0x356a
+.xword 0x31a
+
+.xword 0x0000086000408020
+.xword 0x404
+
+.xword 0x6a35
+.xword 0x506
+
+.xword 0x78285050
+.xword 0x604
+
+.xword 0x80604020
+.xword 0x719
+
+.xword 0x00287850
+.xword 0x803
+
+.xword 0x00287850
+.xword 0x927
+
+.xword 0x78285050
+.xword 0xa10
+
+.xword 0x64500000003c0000
+.xword 0xb0f
+
+.xword 0x7766000000554422
+.xword 0xc0c
+
+.xword 0x706200000054462a
+.xword 0xd08
+
+.xword 0x784d085800423721
+.xword 0xe03
+
+.xword 0x804d0f6000504020
+.xword 0xf01
+
+.xword 0x0000006000408020
+.xword 0x1005
+
+.xword 0
+.xword 0x1174
+
+.xword 0
+.xword 0x96
+
+.xword 0
+.xword 0x159
+
+.xword 0x80604020
+.xword 0x207
+
+.xword 0x356a
+.xword 0x31c
+
+.xword 0x0000006000408020
+.xword 0x404
+
+.xword 0x6a35
+.xword 0x510
+
+.xword 0x78285050
+.xword 0x609
+
+.xword 0x80604020
+.xword 0x702
+
+.xword 0x00287850
+.xword 0x801
+
+.xword 0x00287850
+.xword 0x927
+
+.xword 0x78285050
+.xword 0xa12
+
+.xword 0x64500000003c0000
+.xword 0xb09
+
+.xword 0x7766000000554422
+.xword 0xc08
+
+.xword 0x706200000054462a
+.xword 0xd05
+
+.xword 0x784d085800423721
+.xword 0xe00
+
+.xword 0x804d026000504020
+.xword 0xf00
+
+.xword 0x0000006000408020
+.xword 0x1005
+
+.xword 0
+.xword 0x116a
+
+.xword 0
+.xword 0x56
+
+.xword 0
+.xword 0x16c
+
+.xword 0x80604020
+.xword 0x201
+
+.xword 0x356a
+.xword 0x314
+
+.xword 0x00000e6000408020
+.xword 0x404
+
+.xword 0x6a35
+.xword 0x50d
+
+.xword 0x78285050
+.xword 0x619
+
+.xword 0x80604020
+.xword 0x701
+
+.xword 0x00287850
+.xword 0x801
+
+.xword 0x00287850
+.xword 0x927
+
+.xword 0x78285050
+.xword 0xa24
+
+.xword 0x64500000003c0000
+.xword 0xb0d
+
+.xword 0x7766000000554422
+.xword 0xc0d
+
+.xword 0x706200000054462a
+.xword 0xd03
+
+.xword 0x784d045800423721
+.xword 0xe02
+
+.xword 0x804d0b6000504020
+.xword 0xf03
+
+.xword 0x0000066000408020
+.xword 0x1007
+
+.xword 0
+.xword 0x1118
+
+
+.align 8
+MA_RESULTS:
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+.xword 0xDEADBEEFDEADBEEF
+SECTION .T_CWQ_DATA DATA_VA=0x10000
+attr_data {
+    Name = .T_CWQ_DATA
+    hypervisor
+}
+	.data
+.global _spu_user_data_start
+_spu_user_data_start:
+.global _spu_scratch_area
+_spu_scratch_area:
+
+	.align 16
+.global _spu_spu_op_array
+_spu_spu_op_array:
+	.xword 2
+	.xword 2
+	.xword 2
+	.xword 2
+	.xword 2
+	.xword 2
+	.xword 2
+	.xword 2
+	.xword 2
+	.xword 2
+	.xword 2
+	.xword 2
+	.xword 2
+	.xword 2
+	.xword 2
+	.xword 2
+	.xword 2
+	.xword 2
+	.xword 2
+	.xword 2
+.global _spu_aes_cwd_array
+_spu_aes_cwd_array:
+	.xword 0x406000401300001f
+	.xword 0xc06100201800003f
+	.xword 0xc0e100401400001f
+	.xword 0x406000001100000f
+	.xword 0x406100601700000f
+	.xword 0xc0e100001700003f
+	.xword 0xc0e000201500002f
+	.xword 0xc06100401300000f
+	.xword 0x406000a01b00000f
+	.xword 0xc06000601100002f
+	.xword 0xc0e100401b00000f
+	.xword 0xc0e000801500000f
+	.xword 0xc06100201900003f
+	.xword 0xc0e100801700003f
+	.xword 0x40e000401b00001f
+	.xword 0xc06100e01100003f
+	.xword 0xc06000001700002f
+	.xword 0xc0e000e01800001f
+	.xword 0x40e100e01400001f
+	.xword 0x40e000e01100003f
+.global _spu_des_cwd_array
+_spu_des_cwd_array:
+	.xword 0xc0e100400d000007
+	.xword 0xc061006008000007
+	.xword 0x40e000a00d00001f
+	.xword 0xc0e100200d00000f
+	.xword 0xc0e000200e00000f
+	.xword 0x406000200d00000f
+	.xword 0x406000000a00001f
+	.xword 0x406000e00800000f
+	.xword 0xc0e100c009000017
+	.xword 0xc06100400e000017
+	.xword 0xc0e000c00c000007
+	.xword 0xc06100e008000007
+	.xword 0xc0e000000d000017
+	.xword 0x406100600800000f
+	.xword 0xc0e0006009000007
+	.xword 0xc06000200900001f
+	.xword 0xc0e100c00c000017
+	.xword 0x40e000800900000f
+	.xword 0xc0e000400900001f
+	.xword 0xc06000a00d000007
+.global _spu_copy_cwd_array
+_spu_copy_cwd_array:
+	.xword 0x206100800000000c
+	.xword 0xa060008000000006
+	.xword 0xa06000600000000d
+	.xword 0x206000c000000004
+	.xword 0xa06100200000000d
+	.xword 0xa060006000000005
+	.xword 0xa06000600000000d
+	.xword 0xa061008000000000
+	.xword 0x206000e00000000e
+	.xword 0x2061000000000001
+	.xword 0xa06100600000000d
+	.xword 0xa060004000000001
+	.xword 0x2060000000000009
+	.xword 0xa06100c000000004
+	.xword 0xa06000200000000b
+	.xword 0xa061008000000005
+	.xword 0xa06000600000000a
+	.xword 0xa061006000000006
+	.xword 0xa060008000000008
+	.xword 0xa060006000000003
+.global _spu_crc_cwd_array
+_spu_crc_cwd_array:
+	.xword 0xc162034400000005
+	.xword 0x416001e80000000f
+	.xword 0xc160036400000005
+	.xword 0xc16101e800000003
+	.xword 0x416103640000000b
+	.xword 0xc16201e80000000c
+	.xword 0x416103440000000a
+	.xword 0xc16001480000000d
+	.xword 0xc16003c400000004
+	.xword 0x416301c80000000d
+	.xword 0x416103a40000000f
+	.xword 0x416101680000000f
+	.xword 0xc162032400000004
+	.xword 0xc16301280000000b
+	.xword 0xc160034400000000
+	.xword 0xc162018800000004
+	.xword 0x416103a400000007
+	.xword 0x416101680000000b
+	.xword 0xc16103e40000000a
+	.xword 0xc16301e80000000a
+.global _spu_hash_cwd_array
+_spu_hash_cwd_array:
+    .xword 0x416302c200000026
+    .xword 0xc162024100000023
+    .xword 0xc16118230000003b
+    .xword 0x41620e8100000021
+    .xword 0xc160064100000040
+    .xword 0x416304010000002e
+    .xword 0x416107a300000003
+    .xword 0xc16009c100000009
+    .xword 0xc1610a810000002d
+    .xword 0xc1610c6200000024
+    .xword 0x416107a100000002
+    .xword 0x416104610000001e
+    .xword 0xc1630e8100000005
+    .xword 0xc16015a300000022
+    .xword 0x41610d4100000023
+    .xword 0x416201e10000002f
+    .xword 0x41600ce200000014
+    .xword 0x416103010000002d
+    .xword 0x416202a10000000b
+    .xword 0x416201a100000009
+.global _spu_hmac_cwd_array
+_spu_hmac_cwd_array:
+    .xword 0x41630fc5000f001b
+    .xword 0x41610545000f003a
+    .xword 0x416106a5000f001c
+    .xword 0xc16302c9000f0001
+    .xword 0xc16301e600130038
+    .xword 0x41600425000f0028
+    .xword 0xc1620109000f0040
+    .xword 0x41600a69000f0037
+    .xword 0xc16000a5000f001c
+    .xword 0x416009a5000f000c
+    .xword 0xc1610c85000f000c
+    .xword 0xc1631927001f003f
+    .xword 0x41620f85000f0011
+    .xword 0xc1610de9000f0006
+    .xword 0x41630fa5000f001e
+    .xword 0x41610f89000f0025
+    .xword 0xc1600c060013002e
+    .xword 0xc16002a60013000f
+    .xword 0x416202e9000f0014
+    .xword 0x41600fe5000f000d
+.global _spu_rc4_cwd_array
+_spu_rc4_cwd_array:
+	.xword 0x40e100a000000005
+	.xword 0x40e1004000000004
+	.xword 0xc0e100c000000004
+	.xword 0x40e000400000000a
+	.xword 0x40e0000000000007
+	.xword 0xc0e000e004000003
+	.xword 0xc0e000200400000c
+	.xword 0xc0e000200000000a
+	.xword 0x40e1004004000008
+	.xword 0xc0e0000004000005
+	.xword 0xc0e0008000000007
+	.xword 0xc0e000200400000b
+	.xword 0xc0e0002000000007
+	.xword 0x40e100a004000006
+	.xword 0x40e000e000000008
+	.xword 0xc0e000600000000f
+	.xword 0x40e000200400000e
+	.xword 0x40e000400000000a
+	.xword 0xc0e100800400000e
+	.xword 0xc0e000a000000003
+.global _spu_sslkey_cwd_array
+_spu_sslkey_cwd_array:
+	.xword 0x90601a8000000000, 0
+	.xword 0x1060196000000000, 0
+	.xword 0x90600ae000000000, 0
+	.xword 0x106010a000000000, 0
+	.xword 0x10600e2000000000, 0
+	.xword 0x1060354000000000, 0
+	.xword 0x10602d0000000000, 0
+	.xword 0x1060144000000000, 0
+	.xword 0x106038a000000000, 0
+	.xword 0x9060382000000000, 0
+	.xword 0x10603a0000000000, 0
+	.xword 0x9060188000000000, 0
+	.xword 0x1060338000000000, 0
+	.xword 0x906000a000000000, 0
+	.xword 0x906026c000000000, 0
+	.xword 0x906005a000000000, 0
+	.xword 0x90603bc000000000, 0
+	.xword 0x90600a6000000000, 0
+	.xword 0x106031e000000000, 0
+	.xword 0x90600c8000000000, 0
+_spu_aes_key_array:
+	.xword 0x18edcbe66866945f
+	.xword 0x3e9742906ddbf2fd
+	.xword 0x955e3cab88f974a4
+	.xword 0x90c1315cc71b2e46
+	.xword 0x1c34b366cd1e9876
+	.xword 0xba08569b5b3bba54
+	.xword 0x6bc00fedd9be44ea
+	.xword 0x053d24788881d9ec
+	.xword 0x17e2a50f7e21c5e6
+	.xword 0xd6f6c6a4b57c34e0
+	.xword 0xdc540c8b291dd49a
+	.xword 0xb2a964f62e1b9542
+	.xword 0xc881360b1cc9219e
+	.xword 0x2f22337641512584
+	.xword 0xc5713f1b35495104
+	.xword 0x15af8bac89dbf7a3
+	.xword 0xf54f940936759a2e
+	.xword 0xd5bc89dcaa686250
+	.xword 0x79fde4089d3a7159
+	.xword 0x7a6ef4987e882d15
+	.xword 0xdb21f99050e0977a
+	.xword 0x8d7df09fd34f8226
+	.xword 0x4928ff988c52a001
+	.xword 0xecf67c0ba74132f1
+	.xword 0xad79375ebec90e30
+	.xword 0xc2915bc06a000b59
+	.xword 0xac8bc8407729a987
+	.xword 0xfa61f3e96e413e64
+	.xword 0x2e04bfe3be520ffc
+	.xword 0xf0498f34f48fc64b
+	.xword 0xa4f9b6d095fbaafb
+	.xword 0xb18ea990e1f8e566
+	.xword 0xd0331fb86b7b53ca
+	.xword 0xc8f1a1ff74c158f7
+	.xword 0x1d4b2a80d2d67d99
+	.xword 0xa4f548478d81ee84
+	.xword 0xb8e255dc21602aa9
+	.xword 0x69c205610bf07ea8
+	.xword 0xae1a2219c9a550fd
+	.xword 0x691df79a756e26d9
+	.xword 0x94e556eb35679e89
+	.xword 0xad8521d56b58a939
+	.xword 0xa198d95b080406bf
+	.xword 0x605b6be70ea35449
+	.xword 0xc843deec345cdea8
+	.xword 0x0b2582a895b19069
+	.xword 0xf08e3b15cf268750
+	.xword 0xcab9a05e8cddd315
+	.xword 0x3d3f941805f0b158
+	.xword 0x9adda067236b31f5
+	.xword 0xc091848020b99673
+	.xword 0x2be653edb00b3f7e
+	.xword 0xc27e3208f3ee7144
+	.xword 0x0b372e58d3627cd8
+	.xword 0x0db085ef49de31d8
+	.xword 0x0043c77e41793960
+_spu_aes_iv_array:
+	.xword 0xdff3a9ec67163bfb
+	.xword 0xea2dd812809bbf95
+	.xword 0x47d5025e9164f790
+	.xword 0xabeb1efa3124687a
+	.xword 0x69511caaa17061e4
+	.xword 0x956a8d0fb28d68a3
+	.xword 0x7a5c17ed299375b5
+	.xword 0x79ae58e5cd37d8e9
+	.xword 0xd4e0183f1dc2a1b6
+	.xword 0x5ef5481fba4788bf
+	.xword 0x79e98e043ae12e8e
+	.xword 0x8e1d120c5f57cdb3
+	.xword 0x8098a6ecd2204274
+	.xword 0x10e41404c7c8ca5e
+	.xword 0xcccf56e162f66f74
+	.xword 0x0ca2b8c714e2d995
+	.xword 0xf8c0c4daf088fad1
+	.xword 0xbe8a82db71cb3c40
+	.xword 0x10279677102a6634
+	.xword 0xdb5e9e10670a2f96
+	.xword 0x13a2310c1d183afc
+	.xword 0x840701210d5e8f89
+	.xword 0x90118d436211cdc4
+	.xword 0x42046d90c83ef8f0
+	.xword 0x9dc3556d76efab3e
+	.xword 0xb328ff9153fd6fbd
+	.xword 0xd091d9c39eee3d00
+	.xword 0xab0d239f3ee1b824
+	.xword 0x38f3b6888a0b144f
+	.xword 0x8571dedd72d59c1b
+	.xword 0x570b1f1bf9037213
+	.xword 0x515398376f9af2b5
+	.xword 0x41abf0747f89d803
+	.xword 0xe620405a720d15bf
+	.xword 0xa8353f509999c7c3
+	.xword 0xacbc712b6cc0ad84
+	.xword 0xf7ac64b054ad2c8d
+	.xword 0x55f2cf550a24767a
+	.xword 0xb3f4e9d71db2f804
+	.xword 0xd52977438416dc3c
+	.xword 0xa9aed8bfce36683b
+	.xword 0x11f0e25cf8f65d37
+	.xword 0xd38a53ea5631b7d9
+	.xword 0xbbd113d994d8ee72
+	.xword 0x5c224caab705497f
+	.xword 0xc2729f853fba79ee
+	.xword 0x5a6859ae1c0d8c12
+	.xword 0x769e8c55e6a8bf0d
+	.xword 0xd785879b06dded01
+	.xword 0xf8ae165b68ca42d4
+	.xword 0x32383bc44a6e9fbe
+	.xword 0xb27f6ad3db76969d
+	.xword 0x09572a82429b9111
+	.xword 0xa6669f640c1ecd02
+	.xword 0xdf9f422315486bf7
+	.xword 0x372d24e8977fae9b
+	.xword 0xea3264eaba0c3438
+	.xword 0xf14a65fa4665b03e
+	.xword 0x9c4a5a4209d390f0
+	.xword 0x7db6e9bfd9b8ed11
+_spu_aes_alignment_array:
+	.xword 3
+	.xword 10
+	.xword 12
+	.xword 7
+	.xword 1
+	.xword 11
+	.xword 14
+	.xword 5
+	.xword 10
+	.xword 10
+	.xword 9
+	.xword 9
+	.xword 3
+	.xword 1
+	.xword 6
+	.xword 10
+	.xword 5
+	.xword 8
+	.xword 5
+	.xword 6
+	.xword 5
+	.xword 3
+	.xword 0
+	.xword 15
+	.xword 10
+	.xword 1
+	.xword 9
+	.xword 13
+	.xword 11
+	.xword 5
+	.xword 6
+	.xword 7
+	.xword 9
+	.xword 3
+	.xword 2
+	.xword 10
+	.xword 0
+	.xword 4
+	.xword 0
+	.xword 3
+	.xword 3
+	.xword 12
+	.xword 9
+	.xword 8
+	.xword 12
+	.xword 1
+	.xword 10
+	.xword 15
+	.xword 13
+	.xword 12
+	.xword 0
+	.xword 14
+	.xword 13
+	.xword 5
+	.xword 12
+	.xword 6
+	.xword 0
+	.xword 13
+	.xword 11
+	.xword 1
+	.xword 12
+	.xword 9
+	.xword 9
+	.xword 9
+	.xword 7
+	.xword 14
+	.xword 1
+	.xword 12
+	.xword 8
+	.xword 3
+	.xword 8
+	.xword 7
+	.xword 4
+	.xword 5
+	.xword 11
+	.xword 5
+	.xword 12
+	.xword 13
+	.xword 10
+	.xword 12
+	.xword 13
+	.xword 0
+	.xword 14
+	.xword 12
+	.xword 8
+	.xword 11
+	.xword 13
+	.xword 1
+	.xword 10
+	.xword 8
+	.xword 8
+	.xword 8
+	.xword 15
+	.xword 4
+	.xword 9
+	.xword 0
+	.xword 2
+	.xword 4
+	.xword 14
+	.xword 8
+	.xword 1
+	.xword 6
+	.xword 15
+	.xword 2
+	.xword 4
+	.xword 10
+	.xword 7
+	.xword 7
+	.xword 1
+	.xword 3
+	.xword 14
+	.xword 11
+	.xword 11
+	.xword 4
+	.xword 7
+	.xword 12
+	.xword 15
+	.xword 5
+	.xword 2
+	.xword 8
+	.xword 11
+	.xword 3
+	.xword 0
+	.xword 7
+	.xword 1
+	.xword 3
+	.xword 9
+	.xword 3
+	.xword 3
+	.xword 8
+	.xword 15
+	.xword 9
+	.xword 10
+	.xword 9
+	.xword 12
+	.xword 9
+	.xword 14
+	.xword 12
+	.xword 3
+	.xword 15
+_spu_aes_src:
+	.xword 0xc9e35932eceb4d88
+	.xword 0x950c5c25321e7cf3
+	.xword 0xdb4179e797759627
+	.xword 0x293f99a17acb33d7
+	.xword 0x5c9f1e5ced1bb4ab
+	.xword 0xccb2c8a2ede2dca4
+	.xword 0x12e6773445b5618f
+	.xword 0xc15be53cba3ae389
+	.xword 0xb085ff01c8ca722a
+	.xword 0xde549ce76957473c
+	.xword 0x014d3ef5d035bb97
+	.xword 0xf576900d42aafa8c
+	.xword 0xa4165cca0dca6a81
+	.xword 0x73b9668b5a4d4400
+	.xword 0x856c682fd7022ef8
+	.xword 0xead47f487aa91347
+	.xword 0x4aa08138c7437361
+	.xword 0x68605132c204d402
+	.xword 0x7047616a88b018f8
+	.xword 0xefdaa4000a99c7dd
+	.xword 0xb55ef2fbf62b2176
+	.xword 0x12b9ad5f90c88034
+	.xword 0x1aa11af148d4095c
+	.xword 0x712e02799c6cf6a1
+	.xword 0x82834db1c5187fa3
+	.xword 0xd5a5a759546982ea
+	.xword 0x2f00f091942a7b2e
+	.xword 0x950160a7ee185907
+	.xword 0xcc6e6198cfa0c459
+	.xword 0x3ade693ec15c201b
+	.xword 0x8815935344445262
+	.xword 0x039528cf784123df
+	.xword 0x0c13c474f173e110
+	.xword 0xd1f6ff330f131ed2
+	.xword 0x9dcfbb209cb5ecfe
+	.xword 0xabf6308718ff267a
+	.xword 0x2824c0848c2ef2f0
+	.xword 0x713aa65912b71815
+	.xword 0xdc993a40d4481625
+	.xword 0xe5339e145b9d9000
+	.xword 0xda36f04937259a50
+	.xword 0xa2a33d5e67747787
+	.xword 0xee76680380f182cb
+	.xword 0x6f07835242fbc884
+	.xword 0x99920d31f74c2ecb
+	.xword 0xf0a76b569a6af9ae
+	.xword 0x306cc655178687e8
+	.xword 0x71480f795d8774fc
+	.xword 0x59a2cdf4632f5daf
+	.xword 0x357324daa2c7bdf5
+	.xword 0xad2cac956fcc6044
+	.xword 0xead071d46d5a3667
+	.xword 0xf1b23c7b84fdf19e
+	.xword 0x631612c2e313ead4
+	.xword 0x633593feed6bc802
+	.xword 0x42116ae8e6db74ab
+	.xword 0xac4bb8dccc5297ea
+	.xword 0x6fbb9161516b029f
+	.xword 0xf826597d527709a2
+	.xword 0x41e17bbfae9d92cf
+	.xword 0xc01338d2656d0aa7
+	.xword 0x94dbf1866461a62a
+	.xword 0xe766cd07adaff400
+	.xword 0x9b5d4f42f3b80cc5
+	.xword 0x20e8e2ca8461ec25
+	.xword 0xd712166c11e58b2c
+	.xword 0x2f355d1e9006a7c2
+	.xword 0x7ee54224d9f397eb
+	.xword 0x73230810273ba46f
+	.xword 0xdb5fc85f1849466c
+	.xword 0xae4ca1eb6647ea35
+	.xword 0xd9827d6df0339260
+	.xword 0x73277790f2de1cde
+	.xword 0x25ec4414ec66f2e9
+	.xword 0xb10481155668908b
+	.xword 0x458dee3e5c13d4e1
+	.xword 0x463709942e13898d
+	.xword 0x63b09042e5697497
+	.xword 0x23d2f766bfbf1a06
+	.xword 0xef0f21864aaacb8f
+	.xword 0x65aaaff393ed0ea6
+	.xword 0x7ea769ceb3a0c3de
+	.xword 0xfe55f1f684aed4ff
+	.xword 0xe74f6092f332408a
+	.xword 0x67c42f0e3989c170
+	.xword 0x524984925957840c
+	.xword 0x16c822723b6d3c71
+	.xword 0x15d42fc4c3ebc9ef
+	.xword 0x33c455f3c187b43e
+	.xword 0x547459b9b348a2dd
+	.xword 0xa73f1fce6e16f149
+	.xword 0xa1236bbee3f6d130
+	.xword 0xc49453a5ea1bdd06
+	.xword 0xf66c6173c75521ff
+	.xword 0xc8c2ff8c4727388d
+	.xword 0x8c57c075e2faf897
+	.xword 0x474764a7575b609b
+	.xword 0xce854665cc485d53
+	.xword 0xe97767778522f81b
+	.xword 0x4efc818477337d70
+	.xword 0x9057058e125abd65
+	.xword 0xea36667532f7b3c9
+	.xword 0x2920a160b4c52022
+	.xword 0xd30d421e61335a43
+	.xword 0xb84296e859d999f6
+	.xword 0xb8818093ded0c0b2
+	.xword 0xa1d9df2605ffa107
+	.xword 0xbe214a7a94d8df8c
+	.xword 0xb1d226b624db74df
+	.xword 0xa6a796b559fbe978
+	.xword 0x7d32c6876c3bd019
+	.xword 0x03f1204fbb86eac7
+	.xword 0x7348152cffb1b2e8
+	.xword 0x3334b6d9534a4ec2
+	.xword 0x4e2715e01dbf78a1
+	.xword 0x4c16538b6a6fdf08
+	.xword 0xff20792feeb54a36
+	.xword 0xb1c9d294d71de2fc
+	.xword 0x390a86495edbabb7
+	.xword 0x040d0d8694dc425a
+	.xword 0x1c2051b37e4ec63d
+	.xword 0x5d9d7ee8b4681716
+	.xword 0x9a0d3c9ae6b61c40
+	.xword 0xb0fceac1baaba268
+	.xword 0x7a230124cf83ac8e
+	.xword 0xe5ab306008b24874
+	.xword 0x73abaf79c4048794
+	.xword 0x9cde707c77c8b824
+	.xword 0x06ebd5fc1ffc4fc5
+	.xword 0x4a6ae49948b199c0
+	.xword 0x14c949ea6ca4d702
+	.xword 0x6b6f13a335f6bd2e
+	.xword 0x41969f23592cb6e0
+	.xword 0x2843e95a25f1f580
+	.xword 0xc4016456112baeec
+	.xword 0x6c0588ce03a78ff6
+	.xword 0x5db7fdda6d3bbdfd
+	.xword 0xe4f1de637e52f404
+	.xword 0xf96b712ce7d407cb
+	.xword 0x76add2dcd9625bee
+	.xword 0x036299e8dc6a1a3f
+	.xword 0xfc20297e5be86066
+	.xword 0xac59068c499c6059
+	.xword 0x0fa6d1fa66793920
+	.xword 0x385f8129eb55d18f
+	.xword 0x93ba21c1e8300775
+	.xword 0x435705f4dcd7e5d6
+	.xword 0x3e18cb70cedb50eb
+	.xword 0x4ad2d3eddb72d4a7
+	.xword 0x01c80c3f6dcb4a87
+	.xword 0x12265ce9bf671a48
+	.xword 0x604f90d32e045bb6
+	.xword 0x8722c4aec00a244a
+	.xword 0xa32de4ad72d978e5
+	.xword 0x5496b3bb85b3fdbf
+	.xword 0xba5be9189547c9fa
+	.xword 0x6421cf047be89f61
+	.xword 0x65fd15b363e385d9
+	.xword 0xf03658441ffdf96e
+	.xword 0x9a81304e6121be5b
+	.xword 0xb8097bb03f050a93
+	.xword 0xdd7c40236a3d226f
+	.xword 0xa8f5e3c09b2eecc5
+	.xword 0xb72b32b5173f5bd2
+	.xword 0x418ad9ac70a8c2bc
+	.xword 0xee3e205861e34501
+	.xword 0xbac92a5150f002c2
+	.xword 0xd22cedafaf488f7f
+	.xword 0xfc7c55b1d851f333
+	.xword 0x0735316f951784c0
+	.xword 0x709c0f7a061d69ca
+	.xword 0x5182fa07e849bb67
+	.xword 0x6f3d1321566b0d4f
+	.xword 0x7826df7cffdd23ff
+	.xword 0x968f25b622fa2552
+	.xword 0xf3bfc2a1d8e954dc
+	.xword 0x9e7524cff32e4ae3
+	.xword 0x087010510120b2ab
+	.xword 0x31bfb1ff7037b8de
+	.xword 0xddcdcbb27b917040
+	.xword 0x860e6d3bf6558f1c
+	.xword 0x036a61087487d344
+	.xword 0xe436b23cc02aeb66
+	.xword 0xc72ca5ef1c5ece5a
+	.xword 0x57ac89095e154e7c
+	.xword 0x09ac2957da80e1a5
+	.xword 0x6d1c53a6d466ffcb
+	.xword 0xb50c8f1966aa23a6
+	.xword 0x18e238a875201cc1
+	.xword 0xcba3a3f89c2b126c
+	.xword 0x08f08b2ecb0cd4da
+	.xword 0xe53241a9f3ed073d
+	.xword 0x2765e59566ad4f98
+	.xword 0xfd69c76f3fef35b3
+	.xword 0xbca1be67c339e987
+	.xword 0xeb2d1f3c7fe2ead8
+	.xword 0x449a34fdeaf309bb
+	.xword 0x6c6b27b9460f4466
+	.xword 0x9d1989f2f0c809c4
+	.xword 0xcb936cdc59e93e6c
+	.xword 0x7a54b6beb6c34002
+	.xword 0x1deed567414587cb
+	.xword 0x5b04b955668e3054
+	.xword 0x90e67df17f55781a
+	.xword 0xb904994680569fde
+	.xword 0x2c8df2a079de7246
+	.xword 0x27b8b0420027b14d
+	.xword 0x5e1651277056b813
+	.xword 0xaaba81158a01545f
+	.xword 0xed6be29c583b8b7e
+	.xword 0xb8c521ea9cf5d161
+	.xword 0xf5ce88d700436b91
+	.xword 0x59a2fb249d1b93e4
+	.xword 0xff26d2b7d2cc2c57
+	.xword 0x3af96538640598e5
+	.xword 0xf39456104629538a
+	.xword 0xc304eca13fa4a1f4
+	.xword 0xf85e4b36b9c0c8a5
+	.xword 0x96d8f4c5c5b24138
+	.xword 0x64409074b335e355
+	.xword 0x1e4684f22198aa96
+	.xword 0xe8f57f8429fbc93b
+	.xword 0x6b4f5ce5572f8126
+	.xword 0xf13b55eccf5a618f
+	.xword 0x12f09e96d29abb4e
+	.xword 0x05912210fe50c6ca
+	.xword 0x2e0816790733cb92
+	.xword 0xeabb21ad9d275527
+	.xword 0xe3a09fdeaf10ba96
+	.xword 0xda4bd40b7d2ad5da
+	.xword 0x225c74f94d0c01d3
+	.xword 0xef35d33bc60fc02b
+	.xword 0xeec85152fc936c7b
+	.xword 0xa5c303a9e03cc75c
+	.xword 0x7cec12f1ce9415cb
+	.xword 0xdc15a01648a2a614
+	.xword 0x76c92f789d7ee49d
+	.xword 0x280dfe8ce4c85333
+	.xword 0xd448a265a8a93783
+	.xword 0x4974836789c3a2a4
+	.xword 0xe2a25998cfb39480
+	.xword 0xbd326c7715d96262
+	.xword 0xce63410660952284
+	.xword 0xf4a638e6042e9033
+	.xword 0x7292edbe33695422
+	.xword 0x4bfa11275c9eb45c
+	.xword 0xd264208f107b4900
+	.xword 0x5cce4cf5e3532b81
+	.xword 0x39f5992423b36317
+	.xword 0xcf390c6baa99ff83
+	.xword 0x185832084a25e0c6
+	.xword 0xf96abc2122949280
+	.xword 0xc41bdfeb78953f29
+	.xword 0x6daa8b13b5491cd8
+	.xword 0x81db30a855631944
+	.xword 0x3be794d37742635d
+	.xword 0xba5367af7efd4e40
+	.xword 0xe0d2b8ba2ac5f1ec
+	.xword 0xcfbb98998ffc55e1
+	.xword 0xebfa5c226316f576
+	.xword 0xf5ec51db7dd81d39
+	.xword 0xbfb515e012ccd0d2
+	.xword 0xbff89dc96d9a9636
+	.xword 0x8fdf0f7c72599dc3
+	.xword 0x96d44bc363712846
+	.xword 0xc2a84aa76af32bb4
+	.xword 0x6f7fcbd04a57744c
+	.xword 0xfd1e557c24afa6f7
+	.xword 0xb82e8cc6b7c725b2
+	.xword 0xb6b984ffd756fe7c
+	.xword 0xae0465bd85d6e2a7
+	.xword 0x37f11d40731069e2
+	.xword 0x3273610c43c65835
+	.xword 0xca5d00d1943bc903
+	.xword 0x010b249515230d6a
+	.xword 0xe5425104c0dd67ae
+	.xword 0xe6431ffb775e88f7
+	.xword 0x38abf146af9804a0
+	.xword 0xa824932cc531f8ea
+	.xword 0x3f70736c8c9d21c5
+_spu_aes_dest:
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+_spu_aes_auth_key:
+	.xword 0xada1bcd76382903f
+	.xword 0x0dfca2ffdf477c97
+	.xword 0x5f2f8047566bee8e
+	.xword 0x30ce10879bc012cf
+	.xword 0x26274b5b90698ab3
+	.xword 0x10bc6ef980e7ced9
+	.xword 0x318a388a9c46cda1
+	.xword 0x92b54afed6c1972f
+	.xword 0x7b65df5cdf05aa05
+	.xword 0x88f4d58bac1c654d
+	.xword 0x7b484595a2a34906
+	.xword 0x92fc9c558e215d09
+	.xword 0x6c81c37dccb19afc
+	.xword 0x09d719cc95735080
+	.xword 0x567cd41e37497e38
+	.xword 0x83f0a3e737db4c73
+	.xword 0x75399d18ce7dc64f
+	.xword 0x18b376e7aa86602e
+	.xword 0xa1aff8e0be9e4fbf
+	.xword 0x4f3a6431d73c8f57
+	.xword 0xf388f5835a6c26cc
+	.xword 0xb72d8149b202a917
+	.xword 0x7eb4c518018adb8a
+	.xword 0xa9fa104405a280cc
+	.xword 0xe53463f9dc35778c
+	.xword 0x629b001fd5eab02e
+	.xword 0xf27336650473d5cd
+	.xword 0x8aa49b16fb39729c
+_spu_aes_auth_iv:
+	.xword 0x9070777aa476d356
+	.xword 0x8fe85e1314a9a833
+	.xword 0xd8372763a1a0cf9f
+	.xword 0x976dc469c69b657e
+	.xword 0xa81f9b4cd70d97df
+	.xword 0xdf4eb29825be6108
+	.xword 0x866525453f1a1669
+	.xword 0x61761c1d9f73d9c4
+	.xword 0xab646b0134a28555
+	.xword 0x90dffd20100a5878
+	.xword 0x276fb331b53ad722
+	.xword 0x0e1cf92c4c1280d0
+	.xword 0x13050ef244fec3d8
+	.xword 0x36ad87d87ee7f64d
+	.xword 0xbf4facaa185cdca1
+	.xword 0xd927565c5c46fb8a
+	.xword 0xfc95a8d3fd54d3e5
+	.xword 0x4fec94cacdd986fd
+	.xword 0x4265c9dfc1d5488e
+	.xword 0x08fbd2ed3b783175
+	.xword 0x4aeee3a9a9067abd
+	.xword 0x77763051724e7854
+	.xword 0x1091438e8017a622
+	.xword 0xf1c5b41d86a2036b
+	.xword 0xcb4820535b6566bb
+	.xword 0x4a9d0d9fbfb392d0
+	.xword 0xb0fb042a2ea601c4
+	.xword 0xbca7e5f1112174db
+_spu_aes_fas_result:
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+_spu_des_key_array:
+	.xword 0xb570078e18ad627c
+	.xword 0xcc8f5bb4d5ae4525
+	.xword 0x88a2e1ada9249651
+	.xword 0xbd56c2e9b7c569fc
+	.xword 0x57a77de6b68d7c9a
+	.xword 0x9093031bfec62e3d
+	.xword 0x5f198dcc352c7b63
+	.xword 0x068b0c3196a9b865
+	.xword 0x9b9ef13dbb745b63
+	.xword 0x2d6604716b052606
+	.xword 0x2973db110c39d593
+	.xword 0x58d1ed0025b6115b
+	.xword 0x2af7e8e273cf2be8
+	.xword 0x62e2eafbbb3ec57d
+	.xword 0xa9b816d338ac77a6
+	.xword 0xf894d4633d6ccf59
+	.xword 0xa18a1c6fda4b05c4
+	.xword 0x399643dfae86c454
+	.xword 0x8c15ce5b6775e39d
+	.xword 0x0a7dc4939cfdfb8c
+	.xword 0x0fdfc6d547487b44
+	.xword 0x6b8071554805fcf0
+	.xword 0x1aebf66ff9c683c4
+	.xword 0x6118fcebe0a58091
+	.xword 0xb9ec9af6619615ac
+	.xword 0xfdcf577a07630cb1
+	.xword 0x6dd6de25302f55f1
+	.xword 0xc7b06de63ff8435b
+	.xword 0xfd2273c8a7934c90
+	.xword 0xd6c80861fbab7d67
+	.xword 0xf34ba6741ca2379e
+	.xword 0x8e527f95c0fa830e
+	.xword 0xb87751e48a8d9de7
+	.xword 0x725fcd3b4a707882
+	.xword 0x17bac7ca18228637
+	.xword 0x6bcbd139be289d50
+	.xword 0xb16693426cfcf545
+	.xword 0x0e6e4ea152503831
+	.xword 0x99937083bbd1f182
+	.xword 0xb70e1904967d4b54
+	.xword 0x5025af0d19ebea02
+	.xword 0xc5082557b0b4bab1
+	.xword 0x518f4aedc5fb5792
+	.xword 0xcbbb0eb0484369cc
+	.xword 0x7ca7c68265440770
+	.xword 0xbf0e2493f42e4e82
+	.xword 0xcf225da61b24a6b5
+	.xword 0x0324c468591d4d4d
+	.xword 0x4771d88378dac2f4
+	.xword 0x0071ecb4376b75f5
+	.xword 0x8e7f02c174c386f1
+	.xword 0x7070d6960df7371c
+	.xword 0xdcb0997d9f26b246
+	.xword 0xc15e864286329790
+	.xword 0x9b23de9801bcf54e
+	.xword 0x00603eafe580ead3
+_spu_des_iv_array:
+	.xword 0x4a09bf0a29175307
+	.xword 0x31fc8f8e901be35b
+	.xword 0xbb58501a88c03955
+	.xword 0x495b48cd54396c82
+	.xword 0x4b4680b2074a4151
+	.xword 0x963b0f4907cb738e
+	.xword 0xdf696f69361b45f3
+	.xword 0xff54ea64e17aa13d
+	.xword 0x21d9b6562c5dbc17
+	.xword 0x83a4184616f2ff63
+	.xword 0x586bf205bd6f36e7
+	.xword 0x56a6cddbb8277298
+	.xword 0x26a6a116a8f6d6ff
+	.xword 0x3af099c996a8c6ef
+	.xword 0xd806d75dc2fada2f
+	.xword 0x3319bf8ea6362106
+	.xword 0x47756eaf5c2770a5
+	.xword 0x7b4d0ca2bd65593b
+	.xword 0x1191927beb657fc6
+	.xword 0x20654fe4e9b5fcfe
+	.xword 0x3f4464a3f9f9aa8a
+	.xword 0x5d50a80bc2f7a9d8
+	.xword 0xce96061f111cf490
+	.xword 0xe890f8e337bc29ce
+	.xword 0x36f8f2282cfee0c6
+	.xword 0x05e2570505059a47
+	.xword 0xc1f47d3242b050c1
+	.xword 0x6b3a728108c56182
+	.xword 0x51be46491b27907b
+	.xword 0xb2c7f04d8be1ebe3
+	.xword 0x7bb5a4cb161aaecd
+	.xword 0xd4b28c1aca5e6bcf
+	.xword 0xe32a7d9fc876bdce
+	.xword 0x4b544a04a4ca58a8
+	.xword 0x4ee0471f0de31731
+	.xword 0x03f843302f62a4a9
+	.xword 0x220c83e448bfe6b3
+	.xword 0xd4d24a23f01a557e
+	.xword 0x566b3cec07d335ff
+	.xword 0xb0d4edea83d64b4a
+	.xword 0x929771c7f1d51b76
+	.xword 0x5752d20a4580153f
+	.xword 0xda37aeded9ec95d6
+	.xword 0xbaef36b4e823d4d5
+	.xword 0xde7a267eaeecb3d5
+	.xword 0xbc78633f428e607d
+	.xword 0xbf028e3b0e5a32ad
+	.xword 0x88e82b023e821741
+	.xword 0x1a806af2062005fb
+	.xword 0x3dd3479055ad32d8
+	.xword 0xb9a9146b5571e9a6
+	.xword 0x2f0eefed20b84b5e
+	.xword 0x3ff2a1d9dee1bb6e
+	.xword 0x8d898975edae81f6
+	.xword 0x40cb83d0d45067e1
+	.xword 0xb05c6ba7517127d6
+	.xword 0x2c8c6fefe8fdac6e
+	.xword 0xce363ceb2e5aa4cd
+	.xword 0x6d2e84645a0da4e2
+	.xword 0x70ce7664be211ac7
+_spu_des_alignment_array:
+	.xword 1
+	.xword 14
+	.xword 10
+	.xword 5
+	.xword 5
+	.xword 15
+	.xword 12
+	.xword 11
+	.xword 12
+	.xword 15
+	.xword 10
+	.xword 3
+	.xword 0
+	.xword 7
+	.xword 5
+	.xword 15
+	.xword 0
+	.xword 12
+	.xword 7
+	.xword 1
+	.xword 15
+	.xword 12
+	.xword 0
+	.xword 10
+	.xword 14
+	.xword 5
+	.xword 11
+	.xword 8
+	.xword 0
+	.xword 14
+	.xword 5
+	.xword 12
+	.xword 0
+	.xword 5
+	.xword 5
+	.xword 10
+	.xword 11
+	.xword 1
+	.xword 13
+	.xword 11
+	.xword 5
+	.xword 12
+	.xword 5
+	.xword 1
+	.xword 15
+	.xword 1
+	.xword 13
+	.xword 15
+	.xword 8
+	.xword 8
+	.xword 1
+	.xword 3
+	.xword 11
+	.xword 13
+	.xword 9
+	.xword 14
+	.xword 14
+	.xword 6
+	.xword 15
+	.xword 14
+	.xword 8
+	.xword 8
+	.xword 12
+	.xword 9
+	.xword 4
+	.xword 8
+	.xword 9
+	.xword 1
+	.xword 4
+	.xword 5
+	.xword 6
+	.xword 9
+	.xword 6
+	.xword 9
+	.xword 11
+	.xword 2
+	.xword 7
+	.xword 6
+	.xword 4
+	.xword 13
+	.xword 15
+	.xword 7
+	.xword 3
+	.xword 7
+	.xword 13
+	.xword 4
+	.xword 5
+	.xword 14
+	.xword 4
+	.xword 12
+	.xword 9
+	.xword 2
+	.xword 5
+	.xword 6
+	.xword 10
+	.xword 8
+	.xword 1
+	.xword 5
+	.xword 15
+	.xword 1
+	.xword 3
+	.xword 1
+	.xword 7
+	.xword 12
+	.xword 4
+	.xword 11
+	.xword 8
+	.xword 10
+	.xword 0
+	.xword 5
+	.xword 15
+	.xword 4
+	.xword 10
+	.xword 10
+	.xword 1
+	.xword 12
+	.xword 7
+	.xword 0
+	.xword 13
+	.xword 1
+	.xword 0
+	.xword 5
+	.xword 8
+	.xword 5
+	.xword 12
+	.xword 6
+	.xword 15
+	.xword 8
+	.xword 7
+	.xword 15
+	.xword 15
+	.xword 11
+	.xword 11
+	.xword 15
+	.xword 6
+	.xword 15
+	.xword 10
+	.xword 4
+	.xword 10
+	.xword 9
+_spu_des_src:
+	.xword 0x66e6b0f4bc66af3e
+	.xword 0x49458e6a9d300877
+	.xword 0xec11a2495bd6a881
+	.xword 0x6c51ba7ae527ec75
+	.xword 0xf1745ade7ca18492
+	.xword 0xd4fd6bf358856c55
+	.xword 0x5f7bc06c9a3dbe39
+	.xword 0x866ce06800000007
+	.xword 0xf6bc9a4f375e1f24
+	.xword 0x16714c0ecbb63805
+	.xword 0x569e24b82e4408c5
+	.xword 0x59e53b7973a3aab1
+	.xword 0x76d4142726fc1bf9
+	.xword 0x2ecf1a09c1c6081f
+	.xword 0x630c01b72e49b9af
+	.xword 0x8e951b62aa6030c2
+	.xword 0x4c62de76a0d75734
+	.xword 0x007ec93729669686
+	.xword 0x48153c55b3cfb98c
+	.xword 0xbd7bc46861fccabe
+	.xword 0x9bf45e8a76c615e4
+	.xword 0x7592ce6dfd4a678a
+	.xword 0x58de8e45abba9d80
+	.xword 0x8dc407fdc3a9f241
+	.xword 0x67f09925927eec19
+	.xword 0xc71201e4fe1bd0a9
+	.xword 0x1e2154ecc01678aa
+	.xword 0xc7d49e66acb42833
+	.xword 0x0205ca0a1e2adb66
+	.xword 0xaf3a2b5a3f5f2a0a
+	.xword 0x57b882bfe1ce7281
+	.xword 0x080a3a1d6f1ccbf0
+	.xword 0x48f6d508472c47ee
+	.xword 0x517c5538bafd248e
+	.xword 0xb916248f31f38b67
+	.xword 0xdd81379140f4a296
+	.xword 0x28521cac82e52c3f
+	.xword 0x588df227d3184503
+	.xword 0xec2819ef423e91d1
+	.xword 0x9d4a21818effb87d
+	.xword 0xcb2ce59a6ee54bfd
+	.xword 0x7da176d80902b73f
+	.xword 0xf237c1e35044bb40
+	.xword 0x337a833393be9b48
+	.xword 0x5397f96afb92ce3d
+	.xword 0x2ff396f97704419c
+	.xword 0x0672f0739c3641e5
+	.xword 0x09f4fe7be02bddd2
+	.xword 0x489310d559fc2fb0
+	.xword 0x499e7beecd5a849e
+	.xword 0xecae6f8c49b0e30e
+	.xword 0x2e622944d713695d
+	.xword 0x0e862f6c74b115c8
+	.xword 0x8c6f3f9734e8ff31
+	.xword 0x2ff293233757f04e
+	.xword 0x7b588be5a2e55b68
+	.xword 0xfaa9a1b2d23a265f
+	.xword 0x3cbff729400a4484
+	.xword 0x75876083833d69a8
+	.xword 0x435265ca5ac1771d
+	.xword 0x9c55a4b1b8cbd5a9
+	.xword 0x49744c27ee2c1997
+	.xword 0x8a508dc175387e7e
+	.xword 0xa154967fdfeb03e1
+	.xword 0x318c9107f8c4bac5
+	.xword 0xb0e04372d232044f
+	.xword 0xa3efe86e9eeca9fe
+	.xword 0xb0e95c045106c3d9
+	.xword 0xd8945ecdb411a538
+	.xword 0x02a8ba08cbc4a041
+	.xword 0xe299f894b8502dea
+	.xword 0x8d420ccd72055297
+	.xword 0x59628fe121e21e36
+	.xword 0xf58d12733ecbfd34
+	.xword 0xb0204dd64dd55eab
+	.xword 0x52dc8278e80eb878
+	.xword 0x42dff8afdbe7d545
+	.xword 0xb2bde028d047635d
+	.xword 0xd4780abcc3517516
+	.xword 0x7a4ba3bcbd83353c
+	.xword 0x779e3378f787a708
+	.xword 0xc357a4a59a374947
+	.xword 0x7adcec1c8054c51d
+	.xword 0x843093b88c559f3b
+	.xword 0x7938071ef9499e91
+	.xword 0xb7186ee507bcd9f1
+	.xword 0xf44ac4450a58a3cf
+	.xword 0xda870e3f206791b7
+	.xword 0xbb71627c645ae0cc
+	.xword 0xe4d07006fff0a279
+	.xword 0xa3d71e29dfe05d66
+	.xword 0x25bde8cb923f5215
+	.xword 0xe6552c8452dbe491
+	.xword 0x9a26fe701cab256f
+	.xword 0x9762bbbae938c411
+	.xword 0x6899d881dc1cfd78
+	.xword 0xe02ba0d36fa624f3
+	.xword 0x14243eb92dff62bc
+	.xword 0x50a8dd0eaf9312fe
+	.xword 0x2519f68cfdddf2bd
+	.xword 0x9d21fd55c0af2734
+	.xword 0xa50d70a8836eb2aa
+	.xword 0x4d739302a6fd1149
+	.xword 0x9bacfedac6c57425
+	.xword 0xac795e7ffadf03ee
+	.xword 0x030454edb0a5fb95
+	.xword 0xc3a72bf19bed135c
+	.xword 0xd5de45d937466332
+	.xword 0xb10589b51ae1afb2
+	.xword 0x7133c16d79ecebf6
+	.xword 0x93dd6332d09d448d
+	.xword 0xe52c5c2f10b138b6
+	.xword 0x4ddfba0131473988
+	.xword 0xe71bc4d5240b7fa5
+	.xword 0xa57b9efaf0251813
+	.xword 0x94499b7e99eefa0f
+	.xword 0xd641ec705851fa2b
+	.xword 0x48ee447dc73ad1e2
+	.xword 0xf0f62614dfe41795
+	.xword 0x24948d043a47239b
+	.xword 0x2902d16e91f4c189
+	.xword 0xccf8065a4bc59bda
+	.xword 0x3c7696d3cd64e7fc
+	.xword 0x870b670ea193de0a
+	.xword 0xa5e56015a0b0ec63
+	.xword 0xd7f64d378a77d799
+	.xword 0xc4c4d62d1bc04515
+	.xword 0x603dc6b8f2db15a2
+	.xword 0xd7ef38f89be352e1
+	.xword 0x4feec1637b103b45
+	.xword 0x8f24d865bcae1aa4
+	.xword 0x69cb687977b71107
+	.xword 0x2d13ddc7bf338eda
+	.xword 0xf385eac454d0c3bc
+	.xword 0x3aa97fe5f27b8644
+	.xword 0x575782a22d326e20
+	.xword 0xc2569b6980e9147f
+	.xword 0xd3592ab9d639223e
+	.xword 0x4c01ff32119b3fad
+	.xword 0x0719fce637fe4c57
+	.xword 0xe0645c8b6e0fbb98
+	.xword 0x66a9db5805b715a4
+	.xword 0xca88aa8886242f20
+	.xword 0x30e32349a5e28bfd
+	.xword 0x8622d13aa59c4d86
+	.xword 0x8e41c1d08e23dcf6
+	.xword 0x9df9ff99390bfea1
+	.xword 0x5c40553b3dc86383
+	.xword 0x17985b349ebe953a
+	.xword 0xde4232f6c97c1dc4
+	.xword 0xb6002865cfbb814e
+	.xword 0xf9c8014953fa316a
+	.xword 0x9099bc0d0502216c
+	.xword 0x2e92f7f398bb5c66
+	.xword 0x4ceaa633be5d9261
+	.xword 0x773eb6e2f136da0f
+	.xword 0x1c85d210b385f8f9
+	.xword 0x74c7a4d4bac530ff
+	.xword 0x771b73b4b44029be
+	.xword 0x1d319d3531749516
+	.xword 0x3b7e7bbe52f8abf4
+	.xword 0x3feb274bb48655e0
+	.xword 0x073ebfc27fcff49a
+	.xword 0xc8ab31b5f8c87616
+	.xword 0x4d93b1ec391326cb
+	.xword 0xff9b8609e4759735
+	.xword 0xcad9db68bbf89366
+	.xword 0x629a911cc6240504
+	.xword 0x85e79af27e9702ce
+	.xword 0xbb7f0e71fe88568c
+	.xword 0x0587278b8096f4d3
+	.xword 0x35095a9ac42fec19
+	.xword 0x1b14506532364334
+	.xword 0xe92a55355ad8121f
+	.xword 0xf7b93de99936c000
+	.xword 0xa56d276bc37f5287
+	.xword 0x66600836205779c9
+	.xword 0x521b2e2ce2eaeb01
+	.xword 0x7fee84db30ca4d86
+	.xword 0xf258364027bd3820
+	.xword 0x11ab93c92ce92833
+	.xword 0x04026c52abc64473
+	.xword 0x769e0ed13bacce1e
+	.xword 0xd9de14d51530b001
+	.xword 0x5b8c36269caaebe0
+	.xword 0x66912f7ddeab6692
+	.xword 0x7c18f4c9d9e41bc4
+	.xword 0x3dba20de8dd95915
+	.xword 0x99d5b1a49e74634e
+	.xword 0xf9221b92ee02f1c7
+	.xword 0xe465f28be8a5eed4
+	.xword 0xbb520e0d67f47488
+	.xword 0x3276bd4c49d2d0e3
+	.xword 0xab4ffacc680c49ad
+	.xword 0x76f95a1f6052a4fe
+	.xword 0x483c9f6a0e2a67eb
+	.xword 0x9e88bf83b61d7951
+	.xword 0x952a75a15486bb01
+	.xword 0xa5e7cfb67b232d74
+	.xword 0xf6d3dab4ae59ce3d
+	.xword 0xb7dec88ebe10d199
+	.xword 0x21a12b1342106b07
+	.xword 0x7e88f118fd102163
+	.xword 0x05ba860d0beef6a3
+	.xword 0x3755f5b6a44dd6a2
+	.xword 0xe45e8977e69e1a80
+	.xword 0x69c7b28cf82d253e
+	.xword 0x01037f09c01c6181
+	.xword 0x5fd64b2b11c37d93
+	.xword 0xf21e9152d7d0130c
+	.xword 0x8d37dbad2f30c51f
+	.xword 0xed1cf9b53ba4bf1b
+	.xword 0x8ce7b621ea629f3a
+	.xword 0xd6fb577d6deb5c6a
+	.xword 0x4cdac926b8e803db
+	.xword 0x0938b76c44ff4336
+	.xword 0x82db405d7f97b24e
+	.xword 0x7bd63748fc98092c
+	.xword 0x54949a6f5446db59
+	.xword 0xa318b066155eb8ec
+	.xword 0x5134bd4607c451af
+	.xword 0xbb0bd40b23a57a7a
+	.xword 0x771a197b38b2d146
+	.xword 0xf4b648710634af17
+	.xword 0x1ac8beae3cc56f81
+	.xword 0x1408713675e632ae
+	.xword 0xaea12e77ca3bc26d
+	.xword 0x8483a8dd6b90bf93
+	.xword 0x1e69c3958dae429e
+	.xword 0x822f97e658ce416f
+	.xword 0xcc698cdb5059905d
+	.xword 0x51ba1bb96c23d9b8
+	.xword 0x96ee6129790eb3b1
+	.xword 0xb923ae516699f1d6
+	.xword 0x2d2ff73bddd1f475
+	.xword 0xc56bec1edd3fbe38
+	.xword 0x536efce7ff452ab9
+	.xword 0x351367620494d779
+	.xword 0x2f592c0f50b0e9fc
+	.xword 0x24b4d19b93e18527
+	.xword 0x3313f350b6f09bbd
+	.xword 0xd582e759422c7b39
+	.xword 0xd0f52ee8b8cd1881
+	.xword 0x5481a5710844bbe8
+	.xword 0x45097ea3e33a106b
+	.xword 0xf3353c419df8189c
+	.xword 0x4d64d280f4445c7f
+	.xword 0x5515a07fb9e1df50
+	.xword 0xf4ca1ee0b19f2845
+	.xword 0x033bf651bbd196e9
+	.xword 0xf9b52e8146bce0fa
+	.xword 0x0ef4a2bfe6737a86
+	.xword 0x180a1bf240a397fc
+	.xword 0x406fd8ce9685a9c5
+	.xword 0xc2e6af30d4f04700
+	.xword 0x8cbb4144550a1f0e
+	.xword 0xe5745773e80f9321
+	.xword 0xacf36e5ad3e7a3f4
+	.xword 0x6b0cfa0743c7243b
+	.xword 0x4490db2c0256c002
+	.xword 0x79c16fc89043cc9f
+	.xword 0xc9bf3a9250a6948e
+	.xword 0x7b9189543379049b
+	.xword 0xd3007642213e03a8
+	.xword 0xedcd6288f13f0e57
+	.xword 0xf47929d3a9bd829d
+	.xword 0xd1703dd234afeb77
+	.xword 0x8f326266842586dc
+	.xword 0xaf69504095d51583
+	.xword 0x531f5367f2c3e18c
+	.xword 0x20dac944156f4f43
+	.xword 0xbe0bf52e06fef258
+	.xword 0x876a0a76fd0568d1
+	.xword 0x6f77bd5c19e80e7f
+	.xword 0x50f184abb17fb50e
+	.xword 0x18c9391ca2bb78cc
+	.xword 0xdea8d5e02772ab4e
+	.xword 0xa0e636e29ecade08
+	.xword 0x4845704954c77a14
+	.xword 0x5e2c9411969891a0
+_spu_des_dest:
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+_spu_des_auth_key:
+	.xword 0xd1ea0425ed4ea30b
+	.xword 0x2132f3a88aafaa08
+	.xword 0x5f3f0adcfa1e6e96
+	.xword 0x8070d92eed2cd81d
+	.xword 0xc0bdd51246536ea6
+	.xword 0xabf523ea6d794102
+	.xword 0x72f0000ee0e4e728
+	.xword 0xd77dc94a3d56f8f0
+	.xword 0x76bcb870ab3d4928
+	.xword 0x811aa033e046ea69
+	.xword 0xae6de1b787b1b930
+	.xword 0x5fbe9271f4352d1f
+	.xword 0xbfec97b843dadeb6
+	.xword 0x56ae9f6764f8b052
+	.xword 0xa45ec3b3bfb0c4bd
+	.xword 0x9a21eb2d2a75a990
+	.xword 0x39b08316392c00b2
+	.xword 0xff5e42c673cda45f
+	.xword 0xf3ba26026d8a51be
+	.xword 0x7f58fbc87c8face8
+	.xword 0xdf4986b1dfa8e64d
+	.xword 0xc7bd6b13d70e3a81
+	.xword 0xecc8813e648d9615
+	.xword 0x9af9db365e7b5b18
+	.xword 0xad24c4f81298d414
+	.xword 0xfccb8c4f4bba82e6
+	.xword 0x95c1ac7f8f6d43b7
+	.xword 0x1718845a201a5407
+_spu_des_auth_iv:
+	.xword 0x051b97b27ed8eab9
+	.xword 0x3e9292ac06337563
+	.xword 0x704faba0813b7617
+	.xword 0x09704ce1d46c6fbb
+	.xword 0xcb2b1807b4aa313a
+	.xword 0x8454a4de3cb4695a
+	.xword 0x08b0f9a61ac7685f
+	.xword 0x1ab088c2cb36f55e
+	.xword 0x47e233fc4ee72e86
+	.xword 0xfc5cba6a083dc4b4
+	.xword 0x64746a3390590e5b
+	.xword 0x9862252ca44a012a
+	.xword 0x61aa2b2a65a55728
+	.xword 0x41049d30d8702858
+	.xword 0x061af665f3a31305
+	.xword 0x39a18c7a21b56263
+	.xword 0x2f4f0167e3d2ef25
+	.xword 0x41fdd1746066b2a1
+	.xword 0xc1d01d5ec65875bc
+	.xword 0x029a95b97ccd0929
+	.xword 0x795c9679874cb3eb
+	.xword 0xba82dbd8941a7d71
+	.xword 0x1dccc314332f39a9
+	.xword 0x903accf561d25657
+	.xword 0x1fa12864aa31e245
+	.xword 0x07faf838a104b836
+	.xword 0xce81aa91ba074b03
+	.xword 0x86bc30b21a2e6653
+_spu_des_fas_result:
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+_spu_copy_key_array:
+	.xword 0x543e63ccb1c511c5
+	.xword 0x1506d76679b24af4
+	.xword 0x91cf7731317bc296
+	.xword 0xc11f8555926dbd56
+	.xword 0x0043a7033640b7ae
+	.xword 0x50d5f783bde7140b
+	.xword 0xb1dbf68ea83815af
+	.xword 0x6525d52a1f75865c
+	.xword 0xc1b0abf810d15474
+	.xword 0x137ceb72c114fe16
+	.xword 0x57d747815edb3e70
+	.xword 0x29a1b15b565d5d48
+	.xword 0x3861780c300e6401
+	.xword 0x459b83474a771cb1
+	.xword 0x1fd044f8a1fbc7ff
+	.xword 0x0654d4bc1bb035a7
+	.xword 0xb084a4836b2b4bf0
+	.xword 0x51b39aa0d4019de0
+	.xword 0x8a92ad301dff2dcc
+	.xword 0x5f4289eefabd3b74
+	.xword 0x799cda353b3ac244
+	.xword 0x477fca718eace8e4
+	.xword 0x79c46a799ef7183b
+	.xword 0xac6cbf8782b16f36
+	.xword 0x4f5375f0abc06b46
+	.xword 0x4f2931fb573fa685
+	.xword 0xa5028063ea58131a
+	.xword 0x14359109a17c2224
+	.xword 0xa2cba5594e1014ce
+	.xword 0x626f5444f445c603
+	.xword 0x9ae095b36292cb45
+	.xword 0x696ae364256faaac
+	.xword 0x5ec4d6d4872d2739
+	.xword 0x469e41a2c7a2ccd7
+	.xword 0x1b6ab536f418ca18
+	.xword 0xd70abbddc9b2743a
+	.xword 0x83d96ec18ee4d588
+	.xword 0xdedd500f2c6e1640
+	.xword 0xe0f79d649e9e7ad1
+	.xword 0x81bc88a2aa1f3fcc
+	.xword 0x4939359cf6ac7aba
+	.xword 0x6e8ebcbf5c2c4d3e
+	.xword 0x119c09e3d4a959db
+	.xword 0xb00d1fc5e7c572b4
+	.xword 0x50a27a4f7322d21d
+	.xword 0xd969790ff52c757e
+	.xword 0xe9c0cd33263cc996
+	.xword 0xbba6028da599fa06
+	.xword 0x5e5e2f76c79525d5
+	.xword 0xbc05abba804b5e02
+	.xword 0xebf3217f3e4c5ddf
+	.xword 0xf7dbae71d32479bb
+	.xword 0xd9c6dba557160831
+	.xword 0x0b22a637357dfde2
+	.xword 0x4c0c00d73720266a
+	.xword 0x1c003e3cf39beb8d
+_spu_copy_iv_array:
+	.xword 0x4a707946177ea867
+	.xword 0x56f4379a0764e7d9
+	.xword 0x958c54b0ffa65d23
+	.xword 0x5f736f5c848685c2
+	.xword 0x8b748f7c1344633f
+	.xword 0x329a46010c5be9ac
+	.xword 0xc9e4eaaab864cf13
+	.xword 0x0cdff78aafba79ed
+	.xword 0x6f717dcf2c1fddd0
+	.xword 0x489e2d8132fb8a9c
+	.xword 0x0834f59b6b69120b
+	.xword 0x51c7dd52c4d918b4
+	.xword 0xe9b0e2f649f8fa34
+	.xword 0x0a6cd0b525982ccc
+	.xword 0x0b9c16129cc4c0bf
+	.xword 0xf5311c3394f94425
+	.xword 0x6d1689c28e5551da
+	.xword 0x95e11d47f0d55e1d
+	.xword 0xc5d47224ba3f92ff
+	.xword 0x27fad24362648681
+	.xword 0x5bf598d119c20616
+	.xword 0x19b3ffee1125f439
+	.xword 0xe97a144c9f5f3272
+	.xword 0xed953ea222eac72a
+	.xword 0x8b5b7cd97a61f49f
+	.xword 0xd33320c24cbabdd3
+	.xword 0x4a618bd9ff0a4dd7
+	.xword 0x0b6c726af4c385ce
+	.xword 0xcf3059dd8ba6fc57
+	.xword 0x69e2e6ea305a7a88
+	.xword 0xe38d5f955f4765c5
+	.xword 0xf4a2fcb30118d8f6
+	.xword 0x4e9830f8c68c88eb
+	.xword 0xb97b3bf7998fb63e
+	.xword 0xc662a93dc6b945c0
+	.xword 0x3cd12e6265c161ba
+	.xword 0xda038f5c341501f9
+	.xword 0x4caf0642a40a15e3
+	.xword 0x87cbe93d061196eb
+	.xword 0xa2f95ea894c3b27d
+	.xword 0x38745ecf6bcf525d
+	.xword 0x52b89dca91657f73
+	.xword 0xbd32f07bfebc6b19
+	.xword 0xed938ecc627f6e32
+	.xword 0x8aaa0ea6a5914f75
+	.xword 0x6f5a037b4b88aa4c
+	.xword 0x5904cd28de4ad66d
+	.xword 0xa9763837ad343760
+	.xword 0x44493c21769e11da
+	.xword 0xeaa8fcc98736ea71
+	.xword 0x68524835c3e709ea
+	.xword 0x250713cd223619a8
+	.xword 0x7a181f892d0a8c06
+	.xword 0x99d5a564a77f3e6b
+	.xword 0x3946f3a759ab96e8
+	.xword 0x19901054aa364153
+	.xword 0xcbacbf9aabf852df
+	.xword 0xa71e6dc549bc1e78
+	.xword 0x4b8cf84c5108b240
+	.xword 0xcd3b26b9368a7a6f
+_spu_copy_alignment_array:
+	.xword 7
+	.xword 0
+	.xword 13
+	.xword 8
+	.xword 12
+	.xword 13
+	.xword 1
+	.xword 12
+	.xword 5
+	.xword 0
+	.xword 13
+	.xword 2
+	.xword 0
+	.xword 11
+	.xword 4
+	.xword 1
+	.xword 14
+	.xword 9
+	.xword 4
+	.xword 12
+	.xword 1
+	.xword 0
+	.xword 0
+	.xword 15
+	.xword 10
+	.xword 4
+	.xword 0
+	.xword 5
+	.xword 4
+	.xword 2
+	.xword 7
+	.xword 0
+	.xword 14
+	.xword 10
+	.xword 5
+	.xword 9
+	.xword 2
+	.xword 4
+	.xword 1
+	.xword 8
+	.xword 11
+	.xword 5
+	.xword 8
+	.xword 7
+	.xword 13
+	.xword 11
+	.xword 14
+	.xword 12
+	.xword 6
+	.xword 12
+	.xword 2
+	.xword 1
+	.xword 6
+	.xword 13
+	.xword 9
+	.xword 0
+	.xword 10
+	.xword 5
+	.xword 7
+	.xword 15
+	.xword 14
+	.xword 5
+	.xword 13
+	.xword 3
+	.xword 5
+	.xword 14
+	.xword 15
+	.xword 2
+	.xword 15
+	.xword 10
+	.xword 14
+	.xword 2
+	.xword 4
+	.xword 7
+	.xword 10
+	.xword 8
+	.xword 13
+	.xword 10
+	.xword 5
+	.xword 2
+	.xword 3
+	.xword 13
+	.xword 11
+	.xword 3
+	.xword 7
+	.xword 11
+	.xword 13
+	.xword 8
+	.xword 9
+	.xword 12
+	.xword 15
+	.xword 7
+	.xword 0
+	.xword 14
+	.xword 8
+	.xword 12
+	.xword 15
+	.xword 4
+	.xword 2
+	.xword 9
+	.xword 11
+	.xword 1
+	.xword 2
+	.xword 9
+	.xword 4
+	.xword 4
+	.xword 8
+	.xword 10
+	.xword 10
+	.xword 3
+	.xword 11
+	.xword 7
+	.xword 6
+	.xword 0
+	.xword 10
+	.xword 9
+	.xword 13
+	.xword 7
+	.xword 11
+	.xword 7
+	.xword 14
+	.xword 7
+	.xword 12
+	.xword 13
+	.xword 6
+	.xword 4
+	.xword 10
+	.xword 12
+	.xword 0
+	.xword 4
+	.xword 13
+	.xword 1
+	.xword 0
+	.xword 15
+	.xword 3
+	.xword 0
+	.xword 8
+	.xword 3
+	.xword 0
+	.xword 10
+_spu_copy_src:
+	.xword 0xe005b74b2f653d6d
+	.xword 0x3f83951668dbd45e
+	.xword 0x0db762a25fd88a1d
+	.xword 0x36511c2a6e476e17
+	.xword 0x2c4d509e48c2da3c
+	.xword 0x902252a00d3ac1c7
+	.xword 0x6719832e6c6007e6
+	.xword 0x60a5e4907c7b981f
+	.xword 0xeabfee7f5e4409f9
+	.xword 0xa1a8d8c9224a612f
+	.xword 0x38491708aabff3ed
+	.xword 0x537d97ee140a0ee6
+	.xword 0x6672e7b9e43e1d28
+	.xword 0x8eb1e1719206d300
+	.xword 0x6482a5732bfdfa55
+	.xword 0x5d00bc276372855c
+	.xword 0x6d78f9b3a8b33841
+	.xword 0x60ce1633a09b3f1c
+	.xword 0xe9d427db81d6487e
+	.xword 0xc72621b826697aac
+	.xword 0x75882df0a4bde813
+	.xword 0x37b95d8eca4e6a96
+	.xword 0x8d28673716f7c9bb
+	.xword 0x135ce464b9bcf553
+	.xword 0x203495c32c7947c9
+	.xword 0x8e436baa09cb5c45
+	.xword 0xa705523d8bf6c177
+	.xword 0x6f70542d75a8ca47
+	.xword 0x4f109fe0ba214159
+	.xword 0x3058cafc85b580b9
+	.xword 0x8789f317923cdd71
+	.xword 0x1390f75ae8fb8539
+	.xword 0x362ee69a16a9b38c
+	.xword 0x41aa293d67cbcd4b
+	.xword 0x48faf649978e710f
+	.xword 0x167a4331019b5cfd
+	.xword 0x93c43dd3dc3c5b98
+	.xword 0x0e033984a397983d
+	.xword 0x514046877bd48a4b
+	.xword 0x2639e166618abea6
+	.xword 0x39e93f93cfcb413b
+	.xword 0x828f82c9642a6943
+	.xword 0x629e9af68aeb2c8b
+	.xword 0x544d348c5ec79560
+	.xword 0x0426de27aa1c0951
+	.xword 0x286b798452502bbd
+	.xword 0xd9030c49f161242d
+	.xword 0x5c3e3986f5361b38
+	.xword 0x1d0eb4d36b5e0a13
+	.xword 0x9b8a6b49e8a84321
+	.xword 0xdff4a9e501803c8b
+	.xword 0x0872010d8296e4cd
+	.xword 0x325506cdfa25811d
+	.xword 0x344f56f57a5e3322
+	.xword 0x99883d48b7286018
+	.xword 0xfaa1f60698d938c0
+	.xword 0xb14e41f248778368
+	.xword 0xc67ba8169ccbbc19
+	.xword 0x1a0ae73ac356d245
+	.xword 0x10343bedf5f0b2a5
+	.xword 0xbc7efc61830da859
+	.xword 0xdd285c1dcf0840b1
+	.xword 0x8da37232568ac7a6
+	.xword 0xb69eb886aed87ebc
+	.xword 0xd807b1051839d6e7
+	.xword 0x11792abd4945c0da
+	.xword 0xd0c48c876779ca21
+	.xword 0x03262320e9839a0f
+	.xword 0xf52ab9bf66b351bd
+	.xword 0x21317e092cf2597d
+	.xword 0xa306560382fb7326
+	.xword 0x28ba9aebd2bb7609
+	.xword 0xe05dac306dce2b79
+	.xword 0x42eeb803edff2f46
+	.xword 0x189a6362c2dde9ed
+	.xword 0xf6888f9db15a47d5
+	.xword 0x66047ca7c19354fb
+	.xword 0x6c90ccbedde105e5
+	.xword 0x578954023736bb0f
+	.xword 0xc46b646a56ab26e2
+	.xword 0x23b0a22f03807725
+	.xword 0x310e91584bf8db26
+	.xword 0x392acd68a6a447ae
+	.xword 0x3ab42f40649303e5
+	.xword 0x370e83c4fc4d9309
+	.xword 0x483d4992b79d9e7b
+	.xword 0xf555f299e0db7eb5
+	.xword 0x2ef7679b1156ca78
+	.xword 0xb7de34faee3423f0
+	.xword 0x2994f317651505b2
+	.xword 0xd0d9c33f8835ead9
+	.xword 0xb5fabb9ff4d7d38f
+	.xword 0x4d7cdb4982043c34
+	.xword 0xc91e214d6802c830
+	.xword 0x0f98a5705c4fa6e3
+	.xword 0x3072b22b3db9fa5a
+	.xword 0x8106bc373a16e8a1
+	.xword 0xaab5a40b17aaf21e
+	.xword 0x02a38311179c897e
+	.xword 0x9e10551b340aa367
+	.xword 0x76e9d5baa502c59b
+	.xword 0x6402d31360fdb233
+	.xword 0xbfd5f4ac29319720
+	.xword 0x181abd026935bf75
+	.xword 0x34ad2bf350c4510f
+	.xword 0xae0594c5d559f010
+	.xword 0xf41d3d23c23d893f
+	.xword 0x9057e3bb872a19db
+	.xword 0x36c499c0fd4a6121
+	.xword 0x1e3744fd4f6d2d50
+	.xword 0x093220f379dcaaa2
+	.xword 0x9653b20d976ff712
+	.xword 0xe8a20fa71847679e
+	.xword 0x9709ddd7b8ad4cc1
+	.xword 0x860400e1169c4caf
+	.xword 0xbd699ea453ff8a21
+	.xword 0xaa91605b61d267ff
+	.xword 0x41602892ec8912ec
+	.xword 0xa0d3429333478632
+	.xword 0x5321c3f1bdb56e49
+	.xword 0x497e1117723165de
+	.xword 0xec81ca1f086d1b60
+	.xword 0x567291a89f80d8a9
+	.xword 0x9c4d12ef91ec02cb
+	.xword 0x24f5cada8426efa9
+	.xword 0x53513651813c042f
+	.xword 0x6fd0ac9832b899d4
+	.xword 0xe203954109935827
+	.xword 0xdc3869cb650d2db4
+	.xword 0x86c81d4fb55f0c71
+	.xword 0x6480db72b6a9f252
+	.xword 0x1e42f75dcf4e761f
+	.xword 0x95fa90068bae7444
+	.xword 0x9acaf9b603e6a362
+	.xword 0x46dce4fafe2b6bff
+	.xword 0x574adf1961ae89bb
+	.xword 0x91bfbc978a3ecd6c
+	.xword 0x569ecf3a7218e8fa
+	.xword 0xe0dacd8f3fef29ca
+	.xword 0x73e6bc54ac8bc60b
+	.xword 0x3d8fb448ce4987a5
+	.xword 0x0813cc668d7d59fe
+	.xword 0xdd912c6095602f06
+	.xword 0x00fda20b3f020e9f
+	.xword 0x977d0a531ccc5949
+	.xword 0x9dbbb7603756f3a6
+	.xword 0x37fd5b71c0b0a591
+	.xword 0x87137697966a86b6
+	.xword 0x5f2ae33cb5ea58fc
+	.xword 0x8e1218ad1016edb0
+	.xword 0x157e52bd844e988a
+	.xword 0x45fb7bad67f2d0d9
+	.xword 0xc0a3f8f1aaadf55f
+	.xword 0x7d2b99d9bbd8e1f1
+	.xword 0x0ce01032f9b2bbf9
+	.xword 0x4250f5eedd65b509
+	.xword 0xcd44438c9489efd7
+	.xword 0x0410f2240c5362db
+	.xword 0x22f3443a43c9d865
+	.xword 0xf2998fb9e347bc28
+	.xword 0x223d73ae1723907e
+	.xword 0x9462d4e8e6530f81
+	.xword 0xba62bd5d2fde9539
+	.xword 0xc6b6c34e64bc4ee9
+	.xword 0xc2c31b81b9c35ec4
+	.xword 0xcd1e9c926ca29056
+	.xword 0x3ac42db59a29871a
+	.xword 0x2e5610bb8f52c518
+	.xword 0xd7db4498f6afaf53
+	.xword 0x7a8666d1f6a9b02c
+	.xword 0xcd46d51d88e97078
+	.xword 0x3b0d13f33f657577
+	.xword 0x7bf31b96f7a77946
+	.xword 0x3939faec848c9559
+	.xword 0x794d03376dc437db
+	.xword 0xce7df9d010f79940
+	.xword 0xcbd070f21140f1c0
+	.xword 0x1070afcf18f02cf5
+	.xword 0x7b88908782fb83d7
+	.xword 0x355ab15ef7f43283
+	.xword 0x36d09a06c8d89e7d
+	.xword 0xeba7ef1755291c1f
+	.xword 0x9b882eb343a33547
+	.xword 0xfbe84c7970c6590a
+	.xword 0xb60c91e43f9fea34
+	.xword 0xc0b07e31abf039ce
+	.xword 0xcbe8acb899b0436e
+	.xword 0x4348c3b5f04bcb68
+	.xword 0x9da2c1d2cd824636
+	.xword 0x470a4fc403184406
+	.xword 0x3867b0c8af816d4f
+	.xword 0xfdbe182f9becf4e7
+	.xword 0xd82849d49206fd88
+	.xword 0xa9f3b4b83af457eb
+	.xword 0x8c0de23774cae6e1
+	.xword 0xe64aaeca31b02719
+	.xword 0x2f5601c3fd34e485
+	.xword 0xdcd292eae6312e0d
+	.xword 0xaf1d485aa1fd044d
+	.xword 0x3f5d337c519e9bfe
+	.xword 0x246babee15af74bd
+	.xword 0xa527916fabf11003
+	.xword 0xf6dc376434f84175
+	.xword 0xb6ff51ffe1af28c7
+	.xword 0x6baabd863680c1f1
+	.xword 0xdd41593936d519ba
+	.xword 0x2bcf73f7fca033d1
+	.xword 0x5dfb9ec6ab015aa9
+	.xword 0x500d44f07dffe9fc
+	.xword 0x3b3952616dff578e
+	.xword 0xfb8d7ca30a31671b
+	.xword 0x296c40c8c3066569
+	.xword 0xeae4b05c63464d02
+	.xword 0xb715b8bd9973cb56
+	.xword 0xb93feec890850cdd
+	.xword 0xa00666e8734dd586
+	.xword 0xbc698c1925563003
+	.xword 0x22e70b8686d262df
+	.xword 0x465a72a0fde546a6
+	.xword 0x48b46f803aa2d306
+	.xword 0x1d9db78781b3f03a
+	.xword 0x91c5e1823d29d74c
+	.xword 0x4f0e56ab4e4844d8
+	.xword 0xbede77122f9ebdec
+	.xword 0x52b504141d78407c
+	.xword 0x659f37cfca68bfa7
+	.xword 0xb3f854ebf983eb9e
+	.xword 0xa60cc1f4c749ea57
+	.xword 0x0ec671db19aa95ee
+	.xword 0xe4e32e344a61d9d0
+	.xword 0xf23a5e98f262becb
+	.xword 0xce1344035e62da6a
+	.xword 0x9fca5eacebef1c6d
+	.xword 0x73e62aa48f2a61bb
+	.xword 0x3af2d76ebbbe19a9
+	.xword 0x142d566d31c23b02
+	.xword 0x939287b3112fff84
+	.xword 0xad0b6df4370031d4
+	.xword 0x47878e50d195d0e8
+	.xword 0x17ad392767371d03
+	.xword 0x78f6bc1aa5624990
+	.xword 0x3444b53ace6155a5
+	.xword 0x61d87fd9a0420b40
+	.xword 0x73fe85f72290c414
+	.xword 0x2e597facd9fc85ba
+	.xword 0x4969a6f93ea53019
+	.xword 0x775e284a02d7b602
+	.xword 0x27a6c46c9a03e963
+	.xword 0x7b65261b83ec135f
+	.xword 0xdd8e5e34c1f49a5b
+	.xword 0x41b042d72adced81
+	.xword 0x8e8fbebf1561ebca
+	.xword 0x8ba4665bbb77a32b
+	.xword 0xf75db583253f5bbe
+	.xword 0xdfc3f0aae7a7f77d
+	.xword 0xb26dd8d6f4fc385f
+	.xword 0x34c69818a7e3f922
+	.xword 0x1937535d2aba87d2
+	.xword 0x699eec3462d95a70
+	.xword 0xef3d04c0ee539f9c
+	.xword 0xfa9261bdb87b988c
+	.xword 0xb87066b4b4e19f64
+	.xword 0xef4a0cb9f168106b
+	.xword 0x0bcf923b49129eff
+	.xword 0xd60cf52f15f4e758
+	.xword 0x41102498f8473970
+	.xword 0xd1ae278cb69c9d2b
+	.xword 0x4b12d374ad3d37be
+	.xword 0x46de287384761768
+	.xword 0x53a3dd8ebdca02d4
+	.xword 0xcb36a11ce44d9014
+	.xword 0xfd13ab7ddd8a0d7d
+	.xword 0xfe381472fd41dc66
+	.xword 0x2e5420d8fea5f0b3
+	.xword 0x11834924a70918ff
+	.xword 0x9c31942bb52b3964
+	.xword 0x7570ecc248c76b2a
+	.xword 0x37082e5d19a237f2
+	.xword 0x4621900f9f2e4197
+	.xword 0x080bba3dddd3ccc8
+_spu_copy_dest:
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+_spu_copy_auth_key:
+	.xword 0x22300911ad04a482
+	.xword 0x10b6b67e31a9158d
+	.xword 0x36b8b97a52eb05ed
+	.xword 0x4c5e167fcdc901d6
+	.xword 0xd6cb74beb8c34db8
+	.xword 0x34b5089bf11f0fbf
+	.xword 0x78edc504e11582ff
+	.xword 0xc9dbae7a18cddda1
+	.xword 0xc4b70e5c874709d5
+	.xword 0xfe16172ad11f8428
+	.xword 0x5b9c28d807aea6bd
+	.xword 0x2431883000a6079f
+	.xword 0xc21edb5c0ec606ca
+	.xword 0x59963c89d2e09656
+	.xword 0x25e7066e6fe55fa8
+	.xword 0x0f35457cdaa325cf
+	.xword 0xb9becf472f7601f0
+	.xword 0xef53a52075267a2a
+	.xword 0xc055b6355a27abd2
+	.xword 0xb6ac9534290ea95d
+	.xword 0x74ca8c4352c69dfd
+	.xword 0x68ddf21263d3c601
+	.xword 0x76306c8a7c1a0399
+	.xword 0xe5a855752c35bf7a
+	.xword 0x1f10ee52e54d03fe
+	.xword 0x9bae3e107e259440
+	.xword 0x563d0099f0d17f2f
+	.xword 0x81dc83f700a9cb71
+_spu_copy_auth_iv:
+	.xword 0x4527803b6588f7c2
+	.xword 0x60778e6a537418ef
+	.xword 0x399a7bdf6baf1c2d
+	.xword 0xad7c82b1b485c93b
+	.xword 0xe7877878ec871499
+	.xword 0x894a782c2628d857
+	.xword 0x489d467295e6b0ef
+	.xword 0x2f3c3749acf1195d
+	.xword 0x6896bc5d3b4fd7f3
+	.xword 0xe0bdc1974bcde78f
+	.xword 0x6136a17e8f0abe30
+	.xword 0x8b28c21745b24434
+	.xword 0x13b19367a932658e
+	.xword 0x9c04440d5d5e8ee5
+	.xword 0x0014077f7fb870b1
+	.xword 0x02b4e0e86fa97f0c
+	.xword 0x8df76fdc3c00eb1a
+	.xword 0x45cb5e334a637d80
+	.xword 0x39b534eab250d8cd
+	.xword 0xb8a2292841edb8dd
+	.xword 0xcda683ffce3c57eb
+	.xword 0xe2c84f778ea4bf1b
+	.xword 0xde45f6e14d33503f
+	.xword 0x333636f57edfc1f1
+	.xword 0xe372a756257dd1a5
+	.xword 0xaf2cac8724c59b5c
+	.xword 0x12e950414cb4e8a1
+	.xword 0x755024bd996913cd
+_spu_copy_fas_result:
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+_spu_crc_key_array:
+	.xword 0x9f9016cd7355b5b5
+	.xword 0x2918b440d9a0c176
+	.xword 0xc63a8e437ac8daee
+	.xword 0x5414ca5839eb57c1
+	.xword 0x56d2d5060d36911c
+	.xword 0x29e7cd5cea88f5bc
+	.xword 0x6f93e95b57199d73
+	.xword 0x9ce1d268b4fffd9f
+	.xword 0xdf2cfbc6fb609a4c
+	.xword 0x51fb5ee65ef37b00
+	.xword 0x24261f564e496a45
+	.xword 0xf765991203eeae6d
+	.xword 0x021014690372541c
+	.xword 0xe22942801bba86ba
+	.xword 0x73f63d6f5467c15b
+	.xword 0xbfe89bf2b6592d11
+	.xword 0x8bf7685b420dd4b4
+	.xword 0x3a70a9b68c406744
+	.xword 0x887343de6ef7fb34
+	.xword 0xd1d002172db7fd91
+	.xword 0x4b10c64427e7d011
+	.xword 0xafa2dedc32da6669
+	.xword 0xbf4a260991df407c
+	.xword 0xa30cc2fccd49f106
+	.xword 0x059af014c3f00ec0
+	.xword 0xb107ccb30cde9969
+	.xword 0x2b41b7e06da5edd1
+	.xword 0x93ccff00daaf1af6
+	.xword 0xf88b3b55e8b003af
+	.xword 0x185882173978675b
+	.xword 0x371d4b1a8ade346b
+	.xword 0x03160c06d53e667e
+	.xword 0x8d15542c9c432245
+	.xword 0xbd5c33f38520fb37
+	.xword 0x8f4ecc2cb5722bc9
+	.xword 0x7b03828d709bdc74
+	.xword 0x6932853bdab3ff31
+	.xword 0xd1079e5473beac15
+	.xword 0x51b8c8b485d8de0c
+	.xword 0x7f2efeb3778f79bc
+	.xword 0x8f9a8a9fc32f9521
+	.xword 0xebd44343d054c60d
+	.xword 0x8ea953dd6634fb76
+	.xword 0x907bd1f7430f7b6c
+	.xword 0xd86fa721b8431708
+	.xword 0xfc07f2753478c224
+	.xword 0xf7de95700f7e03ce
+	.xword 0x0dfaae92f215bf43
+	.xword 0xd12cc423899cf456
+	.xword 0x1f260edfc6233e63
+	.xword 0x5b62b9ea34bd447d
+	.xword 0x3238b2abaa63ec60
+	.xword 0xe406a515ad25237c
+	.xword 0xa5ab095d18a8d604
+	.xword 0xcbde7c7616767aa2
+	.xword 0xf0564029cc1b84c4
+_spu_crc_iv_array:
+	.xword 0xc1544f5c239dfd20
+	.xword 0x56e670957e1da9a3
+	.xword 0x7f82f013417e5ba7
+	.xword 0xa2f40f91be709576
+	.xword 0x3f2e2f22495b7539
+	.xword 0xac6d7580e8a2fa8c
+	.xword 0xef09fe0ad6e0b910
+	.xword 0x9efdfa1ed2d025e5
+	.xword 0x42a9f8747aaa8b35
+	.xword 0x7b4608e20197183a
+	.xword 0x7fe3c288d27ffdaa
+	.xword 0xbc2aef56488b90f3
+	.xword 0xdfac4e6b5c912d44
+	.xword 0x8f9c74d56f9eee4c
+	.xword 0xc383e90a19619ac7
+	.xword 0x9d092fc133e797a7
+	.xword 0xb2d0ec6c0351dc4f
+	.xword 0x37521f063ff970ae
+	.xword 0x221d30a7f1098f90
+	.xword 0x419851eee4b347fb
+	.xword 0x7333e7c4dc19fd05
+	.xword 0x109b58ffe75f1419
+	.xword 0x222103a1a367402d
+	.xword 0x47f41d7b6dd0941f
+	.xword 0xd08e88bae7c36991
+	.xword 0xc2c14596a2c1f74d
+	.xword 0xb87c51a135554b8a
+	.xword 0xcb4375edd917d842
+	.xword 0xc9a83d9ea40e7362
+	.xword 0x7eb8c5176844ae7a
+	.xword 0xd334e464096f7088
+	.xword 0xecf8d10b749f8e42
+	.xword 0x611605ae8a2a35cf
+	.xword 0x331bd5e75882cb6b
+	.xword 0xdfe20a9547e68032
+	.xword 0xcbc33520ed99bafc
+	.xword 0x1e293e16c5cc3432
+	.xword 0xfd3043d2e4d7c0cf
+	.xword 0x9a1c6862c1b7f7e2
+	.xword 0x0c175b758e5e0175
+	.xword 0x37946a55ca5b960c
+	.xword 0x5f4e839bcbd6daae
+	.xword 0xfc4c192e67a9d513
+	.xword 0x9bf6482b975af01a
+	.xword 0x0123c3fff5e8b99d
+	.xword 0x85d40e8fdb85a505
+	.xword 0x4a6891cb656cf0f6
+	.xword 0xf6cfdedebcd7237e
+	.xword 0x94baaa66506eedba
+	.xword 0xdefe968b151433cc
+	.xword 0xf6c8614d0cd8d3d6
+	.xword 0x4584d020067293aa
+	.xword 0x4b986eddc7176b93
+	.xword 0xe9382e72b3e0003b
+	.xword 0xd5a1c0fb71c97fc8
+	.xword 0xa16e8ea7ebcdf676
+	.xword 0x19aacf93be14fd04
+	.xword 0x998308c423f820aa
+	.xword 0x99e249e3ead9dd0f
+	.xword 0x63c136f762855ad1
+_spu_crc_alignment_array:
+	.xword 2
+	.xword 14
+	.xword 13
+	.xword 13
+	.xword 10
+	.xword 12
+	.xword 11
+	.xword 7
+	.xword 3
+	.xword 14
+	.xword 9
+	.xword 5
+	.xword 12
+	.xword 3
+	.xword 9
+	.xword 6
+	.xword 13
+	.xword 2
+	.xword 10
+	.xword 11
+	.xword 9
+	.xword 9
+	.xword 8
+	.xword 3
+	.xword 5
+	.xword 1
+	.xword 11
+	.xword 14
+	.xword 0
+	.xword 4
+	.xword 10
+	.xword 3
+	.xword 0
+	.xword 7
+	.xword 14
+	.xword 0
+	.xword 4
+	.xword 10
+	.xword 11
+	.xword 9
+	.xword 2
+	.xword 13
+	.xword 15
+	.xword 12
+	.xword 7
+	.xword 1
+	.xword 3
+	.xword 13
+	.xword 9
+	.xword 4
+	.xword 11
+	.xword 9
+	.xword 9
+	.xword 7
+	.xword 8
+	.xword 6
+	.xword 7
+	.xword 9
+	.xword 13
+	.xword 12
+	.xword 13
+	.xword 0
+	.xword 14
+	.xword 6
+	.xword 13
+	.xword 3
+	.xword 9
+	.xword 13
+	.xword 15
+	.xword 15
+	.xword 6
+	.xword 15
+	.xword 5
+	.xword 2
+	.xword 5
+	.xword 5
+	.xword 0
+	.xword 3
+	.xword 9
+	.xword 8
+	.xword 1
+	.xword 15
+	.xword 4
+	.xword 6
+	.xword 1
+	.xword 6
+	.xword 5
+	.xword 0
+	.xword 3
+	.xword 0
+	.xword 6
+	.xword 7
+	.xword 0
+	.xword 14
+	.xword 5
+	.xword 2
+	.xword 1
+	.xword 6
+	.xword 6
+	.xword 0
+	.xword 14
+	.xword 3
+	.xword 15
+	.xword 2
+	.xword 6
+	.xword 7
+	.xword 8
+	.xword 5
+	.xword 1
+	.xword 9
+	.xword 0
+	.xword 5
+	.xword 14
+	.xword 14
+	.xword 10
+	.xword 10
+	.xword 10
+	.xword 15
+	.xword 7
+	.xword 15
+	.xword 10
+	.xword 3
+	.xword 2
+	.xword 6
+	.xword 0
+	.xword 12
+	.xword 8
+	.xword 13
+	.xword 9
+	.xword 7
+	.xword 8
+	.xword 6
+	.xword 4
+	.xword 12
+	.xword 10
+	.xword 15
+	.xword 15
+	.xword 2
+	.xword 8
+	.xword 14
+_spu_crc_src:
+	.xword 0xf4474510ca910ee4
+	.xword 0xdf50de5b719d755f
+	.xword 0x4c63e64f72a3a914
+	.xword 0xc5593b397f181865
+	.xword 0xc96d9a93928e8003
+	.xword 0xfe4e3e9bff7bc380
+	.xword 0x7b99454b13136306
+	.xword 0x9789755e49527fb6
+	.xword 0xf299e810b2341a60
+	.xword 0xf1456f191e93b698
+	.xword 0x599c8a34a1a03209
+	.xword 0xf905617f71dc0e48
+	.xword 0xf16d41427ca2f856
+	.xword 0x61ecca870c6d13ea
+	.xword 0x2b72e0d2a70afacb
+	.xword 0x82336cd63a482272
+	.xword 0x9d39f5e380edbd1d
+	.xword 0x5dc50c00aba88c1b
+	.xword 0x31305b832ce03728
+	.xword 0xc7b91b8d98619152
+	.xword 0x0cfe3a408244442a
+	.xword 0x1aef9e0c8cea82b0
+	.xword 0xa14a0cd1cbe12395
+	.xword 0x547daaafdaef7a4a
+	.xword 0x6a83839fada5469c
+	.xword 0x6d459d94c1094653
+	.xword 0xc4d38f4c18bc5c8c
+	.xword 0x438f4f215482c0e0
+	.xword 0x274842fb3dc033ac
+	.xword 0xcedfc0b3b3e247d9
+	.xword 0x032b718cc8aa6f04
+	.xword 0x7e43a184c390b0e7
+	.xword 0xb5a7b89567a1ac33
+	.xword 0x82cdc769c00922a7
+	.xword 0x79118f4407989f2c
+	.xword 0x73dcbe7e866c089d
+	.xword 0xa5a5efafcdccf3fd
+	.xword 0x87fe317eb36c1b30
+	.xword 0x26c20c8880a36da3
+	.xword 0x3d60edb1ef1d1f36
+	.xword 0x3b08839681543e26
+	.xword 0xcee41d6d8d49a17f
+	.xword 0x247a05619ebbe70b
+	.xword 0x93e4a8d10580368d
+	.xword 0x8687d59a93e38954
+	.xword 0x6d33b4dfe947560d
+	.xword 0xacaf0fa2b3be76fd
+	.xword 0xf54242564d2f3793
+	.xword 0x278d3633079aed38
+	.xword 0xb72d5e2fc1845383
+	.xword 0x5c4ba6948bbb2611
+	.xword 0xd73ce1f7a4034fa7
+	.xword 0xf22c114a3bc4fa72
+	.xword 0x57b1e14fb4438dee
+	.xword 0x0edae5f63659ae50
+	.xword 0xc4ec73a22c4a0ffc
+	.xword 0xadf4868f728bbf3e
+	.xword 0xecf27b385bbc70d2
+	.xword 0x8efcc89cf52f0a91
+	.xword 0xcf60fb99505cc81d
+	.xword 0x56f8823a1a697b8e
+	.xword 0x59ec9e7ecc19e98d
+	.xword 0xac8c332b84dd481f
+	.xword 0x1ad25329801058b1
+	.xword 0xb6f2350d29bd5811
+	.xword 0x1159933493e53dc1
+	.xword 0xd31b2ee8afaaedd9
+	.xword 0x4784d453b52a80d0
+	.xword 0x8fec441d51acf9ba
+	.xword 0xf033999029f1e60c
+	.xword 0xb7b5db150a04620d
+	.xword 0x7407389b7313a639
+	.xword 0xac10a83ace6579c7
+	.xword 0x1321e199536aa625
+	.xword 0x62b1fa39b9b19d39
+	.xword 0xbce6edefc676b72a
+	.xword 0x1850ed8b00c972a6
+	.xword 0x398071e540320786
+	.xword 0x90a1638fb56f3421
+	.xword 0x4b683f4696628c93
+	.xword 0xa1b473ab69f479f5
+	.xword 0x6415d720138071b5
+	.xword 0x35279ac16bcd232e
+	.xword 0xefc00cfffd875543
+	.xword 0xbb1f3496e802996a
+	.xword 0x3be8973a3a4d9410
+	.xword 0x14b29b5f320f4915
+	.xword 0xd85a749bc2ba0065
+	.xword 0xf998aee527d02e21
+	.xword 0x6a295b2fcfed3d65
+	.xword 0x9b299b3014e9e590
+	.xword 0x8b6c5bb84db27350
+	.xword 0xd814519cad4bec46
+	.xword 0x9506e38401f53380
+	.xword 0x7b2bb698a5e3cacb
+	.xword 0x0c36af5ea4d061fb
+	.xword 0x506b06f3d0d70c72
+	.xword 0xc4d10efddb67235b
+	.xword 0x6d7662a2b191f74c
+	.xword 0x6db2709dfd7981a7
+	.xword 0x5a11486f1b5415ff
+	.xword 0xb036d0919559b6bc
+	.xword 0xe3c1cc8cec423e57
+	.xword 0x340226b0c39db441
+	.xword 0x2c24b80afcf06aba
+	.xword 0xb8dd4d22208cd28e
+	.xword 0x09e2f4db9749c1e6
+	.xword 0x2183cfce8d0fc2c8
+	.xword 0x5ac505fab9a088c1
+	.xword 0xa112fb0ef92dbcaf
+	.xword 0xedef8268fe56a13d
+	.xword 0x52238f360c515e61
+	.xword 0xce64863964b0675a
+	.xword 0x3490660f41ff6c9b
+	.xword 0xf239161c4902768e
+	.xword 0xa21e9803b298023a
+	.xword 0x62255732a00d934c
+	.xword 0x0b2dd48add8d7af5
+	.xword 0xcde6ce35e9557c0a
+	.xword 0x64136fb0d12f41e3
+	.xword 0x2e983387b0db21a8
+	.xword 0x54f311ad2577b0e6
+	.xword 0x0fd236836d6fb412
+	.xword 0xba2de787ef93a70c
+	.xword 0x1e8c19f7c8c21916
+	.xword 0x48d2fe93330a20a1
+	.xword 0xbc1d0da231b95222
+	.xword 0x3bc5ef403b249655
+	.xword 0x7be024a5e3cf3699
+	.xword 0xeba8e0ee16847cc8
+	.xword 0x778c0a70eb0074a6
+	.xword 0xc5c8558832e892a0
+	.xword 0x314722de95f943e6
+	.xword 0xec4ade53d7903148
+	.xword 0xdb0085ca45ec8ad1
+	.xword 0xf1a952df9a86466e
+	.xword 0x953cafb3bd3bce95
+	.xword 0xfd3a1c0b55fa8506
+	.xword 0xb6225f6f78b072d2
+	.xword 0xbfbabc2012f1ea23
+	.xword 0x4bbf25e0fadf0997
+	.xword 0x1f9c944e5391a453
+	.xword 0xe63a70d06d985013
+	.xword 0x9119b782c6a08acf
+	.xword 0xb427177abe93e329
+	.xword 0x0db54306f24cb182
+	.xword 0x1307da79c2d320de
+	.xword 0xea1bb593fe34e59c
+	.xword 0x51abd6c287e50852
+	.xword 0x890a5250d1a673c1
+	.xword 0xd3fc4f79466f86ba
+	.xword 0x256dbc53448f0b2c
+	.xword 0xe1b48f50ee4c7c0b
+	.xword 0x39b00b3b2829d5fc
+	.xword 0x80fe3e5b32ae5c1b
+	.xword 0x50e6033b93b602f8
+	.xword 0xfbd63303c5cafde4
+	.xword 0x4f548b753cbda980
+	.xword 0xfcbfb8a0674e9170
+	.xword 0xcb882bcd69c52f1f
+	.xword 0xfe2eff6be55e6460
+	.xword 0x307bdf94a992e3bd
+	.xword 0xee34dbb2cfa53b75
+	.xword 0xc9034f163c614650
+	.xword 0x3e0328372e8fca13
+	.xword 0x6bc1400b827087f7
+	.xword 0x0c02b777d8bed504
+	.xword 0xb13a9c5aaaa81eec
+	.xword 0x420f11fd223629e3
+	.xword 0xe2a722dcd7c6663d
+	.xword 0x00b67f7e38efe71d
+	.xword 0xd20efdc00dc23f5a
+	.xword 0xee984721e0e1b2ce
+	.xword 0x7b70807b633aa7e5
+	.xword 0x32594c922c54f21b
+	.xword 0xaddcc229aec46335
+	.xword 0x8d1be9eb11e788ce
+	.xword 0x5ca080454518b37a
+	.xword 0xa3c85f9deb9ba5a3
+	.xword 0x32ab97718151a17c
+	.xword 0x8bed2862492849e9
+	.xword 0x6ad3b2c7d3528d50
+	.xword 0x1951ff83a76d05b3
+	.xword 0xe2fac0a615e84d07
+	.xword 0xf7d4ed054e1c9d5a
+	.xword 0xbdaaad3c6daca604
+	.xword 0x237f2b5cafb48502
+	.xword 0x9370c0f615f75bab
+	.xword 0x600c6bb39cf54d7d
+	.xword 0x47d95d429249aa11
+	.xword 0x9fd9db0f26e10156
+	.xword 0xa38dd87b3f2909b0
+	.xword 0x376dfff9a98ba021
+	.xword 0x08fa37ee431c7ebf
+	.xword 0x815a4d6a6d85d405
+	.xword 0x23201fd7a2dac09c
+	.xword 0xc27c70a1a8108d7c
+	.xword 0x60154802696f4d0d
+	.xword 0x8674a04740aafccc
+	.xword 0xa9a2ecc64d3ca794
+	.xword 0x4352c82e483de4be
+	.xword 0xc2861550cea3b7ed
+	.xword 0xdcbdcec73ee8de15
+	.xword 0x5c08149f558877b2
+	.xword 0x9ffd841fc0154ca8
+	.xword 0x93f942e6a143f919
+	.xword 0x285f915b3df37a2d
+	.xword 0x516a0c3cc4ee5e3e
+	.xword 0x4cf55c5eea4e9103
+	.xword 0x2adf23ce91ee8c4b
+	.xword 0xbdb7d650db5eba3d
+	.xword 0xd5621e86917c0054
+	.xword 0x937b6a1cab49ae41
+	.xword 0x2cb070fbef4a353e
+	.xword 0x6f466107d3ae1870
+	.xword 0xff254a6e17ba7ca1
+	.xword 0x37ec38edbd16e9c6
+	.xword 0xb77d08f65d7d0f5e
+	.xword 0x305a7213f00ecd74
+	.xword 0x2a1b953eaf629fe7
+	.xword 0x753ffffd44e65067
+	.xword 0x07c9cd92abfba151
+	.xword 0x1e61cb7fb48328bc
+	.xword 0x5cb53605197c83ea
+	.xword 0xb1f082c4d4567bbe
+	.xword 0x927e2c0fa5135b99
+	.xword 0x8d19ae6f91efdb34
+	.xword 0x414854310b390177
+	.xword 0x098dae2fe669ffee
+	.xword 0xc18cdfd0355d1bce
+	.xword 0x2e47aad7dc585f02
+	.xword 0x647f85325062aef5
+	.xword 0x0db8f10b6a1db871
+	.xword 0x38a2e286b420f320
+	.xword 0x97fd5d848fb40783
+	.xword 0x939bde217c69fb35
+	.xword 0x0516a2558fb7e826
+	.xword 0x2576481db9a5ff09
+	.xword 0xa7bc932d36820ba2
+	.xword 0x634ee413140f0313
+	.xword 0x281b459bef20a28d
+	.xword 0x305d2b6e57da00bf
+	.xword 0xc320ac069cc33e3d
+	.xword 0x93d545b0e47b63e8
+	.xword 0xd691550dcbed9ded
+	.xword 0x568fd01382757adf
+	.xword 0xe6dbe3dcf3c31c25
+	.xword 0x6968a848de78ac16
+	.xword 0x84824d663d3ec31f
+	.xword 0xf0af6b56a72158ac
+	.xword 0xe79829fac2a0477b
+	.xword 0x9d252d7b922ae158
+	.xword 0xc81ad42ec721b701
+	.xword 0xb62c2c99d718915f
+	.xword 0x5a0d75063818204f
+	.xword 0x49ede0765894bb66
+	.xword 0x0a2a1ac61a59773c
+	.xword 0x6a6f3f279188021f
+	.xword 0xbd559c824666dfba
+	.xword 0xcd18c1a882a1498f
+	.xword 0xf6311c9980b0d741
+	.xword 0x32505c04af015ab2
+	.xword 0xd2c93a3e179ad8bd
+	.xword 0x8e2346a9695ae9ef
+	.xword 0xa2ba2369d49d372b
+	.xword 0x9f0d62579b87ce3e
+	.xword 0x941517cf49f92c1d
+	.xword 0x96754d62a8a05c47
+	.xword 0x4fa062217328e966
+	.xword 0xdfdd61439e17ece2
+	.xword 0x46f9224eef63c011
+	.xword 0xd37a38a779941caa
+	.xword 0x609b0be1f9128a77
+	.xword 0xd79ba22c9d47e3e7
+	.xword 0x3f0c79b57f2535e8
+	.xword 0x2f778d4b981f1eee
+	.xword 0x3a6a0fcae5eb424a
+	.xword 0x1f6569a49df6633e
+	.xword 0xc95c27f791e2c37c
+	.xword 0x401167a3b5894de1
+_spu_crc_dest:
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+_spu_crc_auth_key:
+	.xword 0xe878f61ca414558d
+	.xword 0xf3ac7c54222b5a76
+	.xword 0x7f811312e8a18872
+	.xword 0x1c87f3f604674c7c
+	.xword 0x340f3ad9c7c21a13
+	.xword 0x3898181ac91b8764
+	.xword 0x3c2f53dc2b4cd7d9
+	.xword 0x5c20d20f0d3d4073
+	.xword 0xa79bfcb1c7ae77a9
+	.xword 0xec18af495a5d2ef1
+	.xword 0x816fc56e758f8f77
+	.xword 0x0d3c12d8baddbd7e
+	.xword 0x6effd40996cb1e78
+	.xword 0xc411e484ffb1e903
+	.xword 0x7273ffe9736df008
+	.xword 0x9fd79b6fa21a4d06
+	.xword 0x0fbcd152cf6011ed
+	.xword 0xb7e5d1d0661c5a23
+	.xword 0xa3bff5a63b197ed7
+	.xword 0x2630b127d2efdf98
+	.xword 0xdcd10a5c26d2b96c
+	.xword 0xf95b5d7c2a664281
+	.xword 0xc155a74ae3ae8e31
+	.xword 0xc52a075448b319eb
+	.xword 0x2646b74f20890e21
+	.xword 0xbf16d31de32ee1bd
+	.xword 0x0a3d1a4610c7dc55
+	.xword 0xeed8426793761c38
+_spu_crc_auth_iv:
+	.xword 0x2d603df23616fe83
+	.xword 0x95d44a280cd322a2
+	.xword 0x054c565e7e863287
+	.xword 0x7661c72ddeee4a70
+	.xword 0xc7a6b16182ea221e
+	.xword 0xd06754264a93ce4e
+	.xword 0x49843e30b4766ef2
+	.xword 0xbc589903a802ff8a
+	.xword 0x68f0d86dad81be85
+	.xword 0x4cc22b4242ca3cdf
+	.xword 0xdce59c29e35934c1
+	.xword 0x73c340b52f3c630c
+	.xword 0x54754df97d146a17
+	.xword 0xcebe3bd6a26597a9
+	.xword 0xe83ccc74135756a0
+	.xword 0x1f0bae04f0f62ab1
+	.xword 0xcc43532720f24867
+	.xword 0xad88994d6e28ed22
+	.xword 0xb847cf2d7c473fff
+	.xword 0x2a82c8ef36be3699
+	.xword 0xc12c8084efa12142
+	.xword 0x2e653f1d97d26718
+	.xword 0xc78a6d06ae6074b9
+	.xword 0xf7c766c63d5db935
+	.xword 0x01f32dc5e7531761
+	.xword 0x0dd70bf99a30e44c
+	.xword 0xf83e9b43bf0a4bb0
+	.xword 0x8e2423e063f06b53
+_spu_crc_fas_result:
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+_spu_hash_key_array:
+	.xword 0x2c9563fd00cbf002
+	.xword 0x114931d4510980c8
+	.xword 0x43de26564959488b
+	.xword 0x6640a1a43ed76205
+	.xword 0x43458591ecb19ff3
+	.xword 0xdde121b8d560e1b9
+	.xword 0xf6c2f3cf470f5622
+	.xword 0x651a4e8efa76cb2a
+	.xword 0x8c69729b571f737d
+	.xword 0x93d16ee6d83bfe6d
+	.xword 0xd35cc4e19a96b567
+	.xword 0xeab3caec34be9109
+	.xword 0x816a92b0130ad6ab
+	.xword 0xeeca2a9ffd202c0a
+	.xword 0xb6ee5f60d077da21
+	.xword 0xde342b178502c402
+	.xword 0x44a6585637fdf289
+	.xword 0x6e79a85c362ed268
+	.xword 0x17d4a70d3c44226f
+	.xword 0x5ebd3e64b832c83d
+	.xword 0x4c84b3bc05dea59d
+	.xword 0x96c7e9d083969012
+	.xword 0x382e1f810e83b5b4
+	.xword 0x67f3f85ed8244bfb
+	.xword 0xc0c05c1f154f8335
+	.xword 0xb4400a49dc519de4
+	.xword 0xcd203f536b4644a0
+	.xword 0xf5e49d46a8707c7d
+	.xword 0x8a1bf246208f50f9
+	.xword 0x584af4e354c22c24
+	.xword 0x06e2df3d395cfdf5
+	.xword 0x44e1948ff6d87f72
+	.xword 0xfe34925521c30b9b
+	.xword 0xff790cd4626977a9
+	.xword 0x07884c7f0c45e005
+	.xword 0x9438b42a4370b3a6
+	.xword 0x41346be9d001150d
+	.xword 0x14546dc42ddf32fe
+	.xword 0x5131a841c743b0be
+	.xword 0x47f2f17c347b04a8
+	.xword 0xd508ccad152b0424
+	.xword 0xfb242e3763753a1f
+	.xword 0x972a2e03aac84acd
+	.xword 0x529809f4b6e1c660
+	.xword 0x2339237fcb78bd70
+	.xword 0x3c49e131315f877a
+	.xword 0xa99ecf04fdaf166e
+	.xword 0x2ea8e3447012d73b
+	.xword 0xfa220615f0bcdd90
+	.xword 0xa57a54d67c72c5e6
+	.xword 0x22f89b7a752d8b00
+	.xword 0x17f125ea5bdb99d0
+	.xword 0x7f9bad1af5c2110d
+	.xword 0x363639ec014345f4
+	.xword 0xb2cae16997903f7a
+	.xword 0xd2662d2498c13045
+_spu_hash_iv_array:
+	.xword 0xed1f29c5d8369200
+	.xword 0x176f0ec1b64e6042
+	.xword 0x9d5fb0bea320aff2
+	.xword 0x07bf268e693d9df0
+	.xword 0x7374ccaf9d3a30e8
+	.xword 0xa80352b15d84f78c
+	.xword 0xf4cb07f9896a2105
+	.xword 0xe026b1380727b5c9
+	.xword 0xbfc59a4b54546dc9
+	.xword 0xe2273054a6d4be77
+	.xword 0xca21799dd62b5e7d
+	.xword 0x6f215c6b034e88ce
+	.xword 0x5e8502b71f7e296c
+	.xword 0xb22f45054c7cc509
+	.xword 0x4ff6032f582d46e9
+	.xword 0xc98fcaac1a7e7d2d
+	.xword 0x0e51da39abb1af45
+	.xword 0x0b47e63a96c647ab
+	.xword 0x6db08b40b3445a38
+	.xword 0xb78f8e6d1c5e472c
+	.xword 0x9765b7b629e7e0ea
+	.xword 0xaa0826ecd2da7e83
+	.xword 0x332498fc5d355db8
+	.xword 0x0cb4ed164aa24e08
+	.xword 0x0b9742bbee29855d
+	.xword 0x47319d35749ac5d0
+	.xword 0x59e5fa2496bdc146
+	.xword 0x2c98cc54f63b68d8
+	.xword 0xbc685a60594c5b41
+	.xword 0x19b225302dbba0f8
+	.xword 0xd030600a8a842313
+	.xword 0x8ba0f3a9a83fc148
+	.xword 0x0c51b2fc2835c7b8
+	.xword 0x3913640f74fd9b34
+	.xword 0x630a26cc3b881316
+	.xword 0xc946a0cc24c51baa
+	.xword 0xc1cc6f637c52139f
+	.xword 0xc7106230c79fca8d
+	.xword 0x2b27153006943cf0
+	.xword 0x291636a735c334f9
+	.xword 0x7807957ef2ae3745
+	.xword 0xd0a228f1b3a16180
+	.xword 0x5d00fa7a21d52353
+	.xword 0x6a9caac9f975de1c
+	.xword 0x52d1b9a13f103df5
+	.xword 0xba4cde2675c65242
+	.xword 0x887d4d644bc760fe
+	.xword 0xc4ca2365b62208f9
+	.xword 0xfc4b5e7adc410d63
+	.xword 0x24778254212e94a9
+	.xword 0xf8cfc626f588bb05
+	.xword 0x8585b87240fbc3cf
+	.xword 0xf15d5fd0084331b5
+	.xword 0x0783de6398280c67
+	.xword 0xd3ccd46663f11caa
+	.xword 0x0cfb274cc03e8b60
+	.xword 0xc8aa2ec5b85e3d81
+	.xword 0xbfa26c857bf5a7f4
+	.xword 0x012eb9aa7db554a0
+	.xword 0xa13e644ba2bcabdb
+_spu_hash_alignment_array:
+	.xword 4
+	.xword 6
+	.xword 15
+	.xword 3
+	.xword 10
+	.xword 1
+	.xword 5
+	.xword 3
+	.xword 15
+	.xword 6
+	.xword 12
+	.xword 14
+	.xword 5
+	.xword 8
+	.xword 15
+	.xword 8
+	.xword 14
+	.xword 1
+	.xword 6
+	.xword 10
+	.xword 14
+	.xword 12
+	.xword 2
+	.xword 9
+	.xword 11
+	.xword 8
+	.xword 5
+	.xword 5
+	.xword 1
+	.xword 13
+	.xword 9
+	.xword 13
+	.xword 4
+	.xword 5
+	.xword 11
+	.xword 7
+	.xword 0
+	.xword 2
+	.xword 15
+	.xword 7
+	.xword 1
+	.xword 13
+	.xword 14
+	.xword 2
+	.xword 14
+	.xword 2
+	.xword 6
+	.xword 14
+	.xword 8
+	.xword 14
+	.xword 9
+	.xword 3
+	.xword 5
+	.xword 5
+	.xword 4
+	.xword 12
+	.xword 4
+	.xword 15
+	.xword 13
+	.xword 6
+	.xword 15
+	.xword 10
+	.xword 11
+	.xword 14
+	.xword 1
+	.xword 0
+	.xword 4
+	.xword 4
+	.xword 11
+	.xword 5
+	.xword 6
+	.xword 15
+	.xword 14
+	.xword 14
+	.xword 4
+	.xword 7
+	.xword 1
+	.xword 5
+	.xword 3
+	.xword 3
+	.xword 13
+	.xword 15
+	.xword 6
+	.xword 2
+	.xword 11
+	.xword 11
+	.xword 10
+	.xword 0
+	.xword 11
+	.xword 12
+	.xword 14
+	.xword 12
+	.xword 12
+	.xword 3
+	.xword 7
+	.xword 6
+	.xword 5
+	.xword 6
+	.xword 4
+	.xword 5
+	.xword 6
+	.xword 3
+	.xword 2
+	.xword 2
+	.xword 7
+	.xword 6
+	.xword 6
+	.xword 13
+	.xword 11
+	.xword 15
+	.xword 8
+	.xword 8
+	.xword 8
+	.xword 8
+	.xword 10
+	.xword 10
+	.xword 12
+	.xword 6
+	.xword 12
+	.xword 0
+	.xword 11
+	.xword 8
+	.xword 11
+	.xword 11
+	.xword 6
+	.xword 13
+	.xword 5
+	.xword 6
+	.xword 14
+	.xword 13
+	.xword 3
+	.xword 10
+	.xword 4
+	.xword 2
+	.xword 6
+	.xword 6
+	.xword 1
+	.xword 8
+	.xword 12
+	.xword 9
+_spu_hash_src:
+	.xword 0xccbaa04b95868de6
+	.xword 0xb37ec225bd3ddad6
+	.xword 0x078c3421827c5423
+	.xword 0xfa968c515260ebc5
+	.xword 0xf1e4816061f78d6f
+	.xword 0xc60f0a8d03f7302c
+	.xword 0x6b574a3c6b2f7c3a
+	.xword 0xc35ab1cb3f837bb4
+	.xword 0x58d3ab0a8ec95223
+	.xword 0xe66d7450e4535e96
+	.xword 0xfb480e57e5045425
+	.xword 0x09d7410038419f92
+	.xword 0x83c48e101e50e6bf
+	.xword 0xbab23c1f579b515f
+	.xword 0x6449a3cb4239bbcf
+	.xword 0xead61ca34f1794f8
+	.xword 0x44906bdb7f3a3f8d
+	.xword 0x67834b5d78bb1c5e
+	.xword 0xf305202f49b27bc5
+	.xword 0xde60854b5e9f1b9a
+	.xword 0xedaa42639a7e9b4b
+	.xword 0x3881d8aac98f2994
+	.xword 0x637d5a8371a3e0f0
+	.xword 0x7118debbfda49641
+	.xword 0x48ea48024d60773b
+	.xword 0xf2fe75389697a581
+	.xword 0x0a054155f4947e13
+	.xword 0x517a3c3727d134bb
+	.xword 0x2dcb0d5dcdc741ed
+	.xword 0xc434e2531e58c138
+	.xword 0x84dc8628cfff2fd2
+	.xword 0xf5fe9fd75d205652
+	.xword 0x7f0ea9f592cacb9b
+	.xword 0x1d22b25ca7aad28e
+	.xword 0x75f4d27cd550a412
+	.xword 0x728a32597a79ecb2
+	.xword 0x1d638ae99b5924ad
+	.xword 0x3efb7482bd1d03a6
+	.xword 0xd6f10208784d4c23
+	.xword 0xc355968865249bed
+	.xword 0xb05090412e9e456a
+	.xword 0x2fd92d42be1993be
+	.xword 0x49c2dcec1b9457b5
+	.xword 0x5668963a3741a372
+	.xword 0xd547134a3bbbf855
+	.xword 0x02bcf371e5545d7e
+	.xword 0x73474e7a33bffb07
+	.xword 0x46d34aba281b270f
+	.xword 0x32943ad5ea1f0b23
+	.xword 0xd160ec11ab742fee
+	.xword 0x8dc74c1aa2e34cff
+	.xword 0x4942ec012199278d
+	.xword 0x591bfb550d61f195
+	.xword 0xb4cdaeb929a18a16
+	.xword 0xdd829d58ad695e38
+	.xword 0x494474d04668f35e
+	.xword 0x840c5199a37f5b8f
+	.xword 0x14f1e9ea37f5d731
+	.xword 0x17ee7de000d7d89f
+	.xword 0x1ab113faa1eef593
+	.xword 0x45281148700b8a63
+	.xword 0x6f46369fe426233d
+	.xword 0x0699d83cb4d9ce58
+	.xword 0x6665e5c77ee3d125
+	.xword 0x6e41fa46a4c5bd7e
+	.xword 0x4880b3f9f7538337
+	.xword 0xcfa333d318995af0
+	.xword 0x3e7135c80783556b
+	.xword 0x51bcda250cd36dca
+	.xword 0x7e9626ddd3cc28ec
+	.xword 0xd3cb19f9cf1d1040
+	.xword 0x02a7e888e663fae2
+	.xword 0xe03ffc18764bc992
+	.xword 0x1251770e1989f27d
+	.xword 0x56f883eade507567
+	.xword 0xe3049b7b1e426a62
+	.xword 0x1f6cfa23d312c7b1
+	.xword 0xf139eb3b3072add9
+	.xword 0xba1f5677f068a56d
+	.xword 0x4b0c5b59e2471be6
+	.xword 0x89c2b6f0a00a4840
+	.xword 0xcf4657d2532b13ce
+	.xword 0x37334b15e7c12bf2
+	.xword 0x1d208c5a1de43319
+	.xword 0xb5b80cbf3cf01c3c
+	.xword 0x9213b378ecc61ff6
+	.xword 0x787493cfc6aaf331
+	.xword 0xb3e93d95df03a7e0
+	.xword 0xa6c547fafcb6cd90
+	.xword 0x43b65885e6013e5c
+	.xword 0x2be8ab2392440c4a
+	.xword 0x94af7d2e545202d1
+	.xword 0x2c2566bdbb227a29
+	.xword 0x6392d6d3a3475e51
+	.xword 0xdd32d568287674d7
+	.xword 0x23fa3c2158e575ce
+	.xword 0x3154f143ccfae6f1
+	.xword 0x9d480d92aaed3d63
+	.xword 0x51b71fccccdc075d
+	.xword 0x181f9d02e40cbfae
+	.xword 0x83f405008d73eb70
+	.xword 0xcf7fcf73de59d9d3
+	.xword 0xcaedb080abea4796
+	.xword 0xbd6154eaea14b0f7
+	.xword 0x911f68623ae18169
+	.xword 0x160162de3251f09a
+	.xword 0xaad753c936d7b2a7
+	.xword 0xa7afe5541c8698d9
+	.xword 0x4267d768ebfc4164
+	.xword 0x961468bc0ed99ee6
+	.xword 0xc173e57d40ec6523
+	.xword 0x2c6e39fdb19be9fa
+	.xword 0xceb1dac61791521f
+	.xword 0x731aff2c43862f10
+	.xword 0xceb9b4d9ef6989e8
+	.xword 0x4b2bac87e5b87567
+	.xword 0xf5154b66f94fc287
+	.xword 0xcd222ae65e5e0722
+	.xword 0x32706230f60c0d5c
+	.xword 0xc0b0df98bb6d21b3
+	.xword 0x603a8bbb3db4d328
+	.xword 0xf297a879bc9f2c98
+	.xword 0x546f280dbdf92240
+	.xword 0x0c239c12a5f9ac1b
+	.xword 0x312b663365f55095
+	.xword 0x3062bc847f2214a2
+	.xword 0x67e272ca2fb1d857
+	.xword 0xb4db14fab503d865
+	.xword 0xa151e5a09a0918e5
+	.xword 0x2c5e381dc65ec956
+	.xword 0xc6350041fe200d06
+	.xword 0x7c21d64f4bad8606
+	.xword 0xa610977d176597e2
+	.xword 0x14c57f0965eb6bed
+	.xword 0x889c7f6876acf046
+	.xword 0x66370fab7c103f6d
+	.xword 0xeaba3588143ddd93
+	.xword 0x26d67809e1a911da
+	.xword 0x47e37325fa216a76
+	.xword 0x6a41d2f877c06138
+	.xword 0xe0bc8a91c4c781dd
+	.xword 0xa6a72f350da2ed75
+	.xword 0xd6f9a60d63817664
+	.xword 0x2beab12558b907e9
+	.xword 0x7ff430b422f369c0
+	.xword 0xbb04545d84df144e
+	.xword 0x75b99eba59f2b6e1
+	.xword 0xbb84f3afa491fcfc
+	.xword 0x4efbfb55bbceeee8
+	.xword 0x38abc7c8e0eb0653
+	.xword 0xcf46118f0558962b
+	.xword 0x961d4476ef13571d
+	.xword 0xf1a66755ac19d0c3
+	.xword 0x4d3297c3fb5e31ec
+	.xword 0xaae4c986d83990f4
+	.xword 0x2823893c9ec6707f
+	.xword 0x4a24293b0a2fe768
+	.xword 0x1302c13a738836c3
+	.xword 0xbd0eb0fe44959288
+	.xword 0x1166e1c081bd862e
+	.xword 0x406bf1519de566aa
+	.xword 0x5eb5d6d14b241f2e
+	.xword 0x38da7bdccbb288b8
+	.xword 0x050b0c6ca8411abe
+	.xword 0xa107a616e3351e03
+	.xword 0x5a0514fa855cc1ef
+	.xword 0x42d408e1c7ca7e48
+	.xword 0xdd868ab2fdf02d51
+	.xword 0x4148b035d9c395a3
+	.xword 0x58317d016fa92726
+	.xword 0x9843f668728dccee
+	.xword 0x581e11ee62c91bcd
+	.xword 0xaa638f7d2a70e9c7
+	.xword 0xca0786047e762957
+	.xword 0xb00716ab3b6cc4e7
+	.xword 0x4d150122bf620728
+	.xword 0x1be9e2c5e73536e5
+	.xword 0x49dda96b45930ea1
+	.xword 0xb6bd6c37f2943f1b
+	.xword 0x8cee1222d5b7f8d4
+	.xword 0xa0744cf95146242f
+	.xword 0xe9f365a205d384d9
+	.xword 0xaa2b8a147a407e8d
+	.xword 0xf2cd97318ad28ace
+	.xword 0xe6524b19ee3fb8a3
+	.xword 0x9a97015dd5f00d62
+	.xword 0x03c3e9392d6bd079
+	.xword 0x58e451058108df61
+	.xword 0x19aa6405f6e483c5
+	.xword 0x4e3e022fdef8d3fc
+	.xword 0xc6d80b6bb7da3faa
+	.xword 0x392cd81bf03b517d
+	.xword 0x8582d91368615683
+	.xword 0x08bf04c295633819
+	.xword 0x5015552e3e6135ef
+	.xword 0x6b4495a81334667d
+	.xword 0xa001a098c81a26aa
+	.xword 0xefbe02b22e7498d5
+	.xword 0xd3c9fccdbe4e20e1
+	.xword 0x58dd04fe9ae61783
+	.xword 0x036c13b710188d39
+	.xword 0x7461c3488fb874cd
+	.xword 0xec3d5407a19106b7
+	.xword 0x26a3f5b2eb83ed61
+	.xword 0x0b4f10501e0cda65
+	.xword 0x8f09689a6e67c9a9
+	.xword 0x7743c4459df5c3ca
+	.xword 0x1d474c29ec4fdd38
+	.xword 0xa85a83785cb18eac
+	.xword 0x9561e943d5b67e56
+	.xword 0xafb7d15eb5fb22b3
+	.xword 0x0b98fd28afc9fcc0
+	.xword 0xafbda83315d655de
+	.xword 0x1f69770b1612d762
+	.xword 0x4c02e8c6f6715964
+	.xword 0x389cddc5da0e36fc
+	.xword 0x8300b9ed2958dfc2
+	.xword 0x47632c840e0ec5f0
+	.xword 0xd98fe21c2f3a5688
+	.xword 0x66c9a034261880c3
+	.xword 0xc6bb4887dadef7e3
+	.xword 0x28a6914cabb04dc2
+	.xword 0x9bd423886d6d9aa0
+	.xword 0x1d30a9039f0e7207
+	.xword 0x781c2bb47594931d
+	.xword 0x5232b7dd4322f180
+	.xword 0x71ac22cba6ac4376
+	.xword 0x83c3e777b9f83fcc
+	.xword 0x3d2e0a2d28434da3
+	.xword 0x5de91d33d468b36c
+	.xword 0xac6e57ad35f88f4f
+	.xword 0x35a1937b4e38b9b0
+	.xword 0xaedfc4a536430880
+	.xword 0xfb6adde931d954dc
+	.xword 0x8b8acd544484a8ed
+	.xword 0x9a91bacb9075f68a
+	.xword 0xa7a3f475f237a62b
+	.xword 0x95416260dd45867e
+	.xword 0x0549c919332448c3
+	.xword 0xb18d78c0485ee21e
+	.xword 0xbc65c34a7c7e0e5e
+	.xword 0x9fa536aa6f8d748b
+	.xword 0xad9ca8b78e42ad9f
+	.xword 0x756a2a28c885cdfd
+	.xword 0x4f330de28478d71a
+	.xword 0x5f927051bc6b1b8a
+	.xword 0xf5289d56ecb7c260
+	.xword 0x79dda013dfe8bf15
+	.xword 0xcc133330d04f7f71
+	.xword 0xd3c3056f8054b3b2
+	.xword 0x8bba947a3a2f4a16
+	.xword 0x550f172b72989319
+	.xword 0x733ce47a7591418d
+	.xword 0xf9713b4c262bfd4a
+	.xword 0xf35469d6be00de97
+	.xword 0xab2011b5b267394b
+	.xword 0x216f1cbe7a010bc7
+	.xword 0x253de2bba6c21658
+	.xword 0x6ff0f802ef5fe9f2
+	.xword 0xd0e3863e03044876
+	.xword 0x81099e017c204898
+	.xword 0x4c45f6b0978fcb25
+	.xword 0x2718e59d58cdbac1
+	.xword 0xb035934c0a9684f3
+	.xword 0x3a5088093ee1f8a4
+	.xword 0x6096f548e4b31761
+	.xword 0x9ce424f9227a1ab3
+	.xword 0x25d1a7ba8cf8e35f
+	.xword 0xa04342b29878d6ba
+	.xword 0x1b68cec858fbaaa6
+	.xword 0x7beb59f3679b00ed
+	.xword 0x7ed29f0afae1d6db
+	.xword 0x8401ce4bea17439a
+	.xword 0xd41f61fe0075a006
+	.xword 0xf965aac0a133cfcc
+	.xword 0x1ad79d0a689ad234
+	.xword 0x3c09d98b704f4df5
+	.xword 0x8b9e8b42c4d8e14a
+	.xword 0xf97ec08f6a5071c1
+	.xword 0x4bd1ad01f46bb254
+_spu_hash_dest:
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+_spu_hash_auth_key:
+	.xword 0x1b0ee46c96ac5d11
+	.xword 0xc351e8625c782d87
+	.xword 0xd03e38485e2f8aad
+	.xword 0xe817431e76b831ca
+	.xword 0x7d025773b1bf4879
+	.xword 0x57998a36a7bca3b1
+	.xword 0x8a27c9764bfad1ad
+	.xword 0x2b373184b881585c
+	.xword 0xd30344ca24edf403
+	.xword 0x1d0617256705f09d
+	.xword 0xe94602616b868a57
+	.xword 0xbb6bf9dc8582aa96
+	.xword 0xffbf76b200aaa667
+	.xword 0x0713115d6a8dea8d
+	.xword 0x09b33aa77edd5175
+	.xword 0x4d395a1b3877bfa2
+	.xword 0xae109ece40c57205
+	.xword 0x9d1263cd7c092980
+	.xword 0xa721a89eaa182ce8
+	.xword 0xe519e369e8bcdd1f
+	.xword 0xe0bd84679211f9f2
+	.xword 0x8d2159401c1f8761
+	.xword 0x1be2b689a78f94a8
+	.xword 0xde601f584fa0f5a4
+	.xword 0x4d70ba81214819f5
+	.xword 0xeb2a4350137424e8
+	.xword 0x7f414a1d1f1dfc49
+	.xword 0x6c37fb2567b147b1
+_spu_hash_auth_iv:
+	.xword 0x3649e5945cb279d1
+	.xword 0x67415251e7f9eb1c
+	.xword 0x31e2da02d2086329
+	.xword 0xd78e6b8423ac432f
+	.xword 0xc049391cfae5911c
+	.xword 0x4a1e5c2f1a5be84b
+	.xword 0xd4a9ea295f6d8a8d
+	.xword 0x3d83cc9599279aea
+	.xword 0xb2fe44f348164065
+	.xword 0x53c7e131757bb21b
+	.xword 0xfabf1b650bcd036c
+	.xword 0x8f5a8e8d63353d3c
+	.xword 0xe4cc380a6068f8d5
+	.xword 0x95918705dd3d3399
+	.xword 0xf9f8c7e36caed289
+	.xword 0x3b3e8064188d0928
+	.xword 0xc4f8647f8aa9bd0c
+	.xword 0xd44976e62b9e7689
+	.xword 0x13444de3f0b6a524
+	.xword 0x5624458222d47d93
+	.xword 0x35600ed3bcf02ac7
+	.xword 0x4a892a7d39974f64
+	.xword 0x92b31ea49c90a678
+	.xword 0x98a2880860765815
+	.xword 0xc94e2ea92d6fb05b
+	.xword 0x4d0ea4d725d0345e
+	.xword 0x5fd360ccb2211f6f
+	.xword 0x1fb309c03984d01e
+_spu_hash_fas_result:
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+_spu_hmac_key_array:
+	.xword 0xb67fdcfc3d4a62ed
+	.xword 0xa43aabe8f9ba729f
+	.xword 0xc23371f0e65477cc
+	.xword 0xf5496832c89612be
+	.xword 0xe72f2b0a824bf1b5
+	.xword 0x76245a06b53f6e4c
+	.xword 0x46a8f97809eda2bb
+	.xword 0x4b7f2f83801cf808
+	.xword 0x51612db23f3dc29d
+	.xword 0x13194086916fb40c
+	.xword 0x2b7951637c674612
+	.xword 0x6dbc28211b3db120
+	.xword 0xc8e5aa509456840e
+	.xword 0xd803c45565be9f08
+	.xword 0x1dd076b643e3e14b
+	.xword 0xbca73e18a97d508e
+	.xword 0x7e34769c133c4aa2
+	.xword 0xb6231b08110302ce
+	.xword 0xb7bbc6fcd3a7d362
+	.xword 0xb5b8e9852b732633
+	.xword 0x8fa71f9e216b8bb8
+	.xword 0xc40079a4810dc3d6
+	.xword 0x21b6a3b55810e774
+	.xword 0x7d1844475debc8c7
+	.xword 0xfc3722f0422baa61
+	.xword 0x975a119c5a4a8614
+	.xword 0x0e2dfa6c30cbedaa
+	.xword 0x8d030f5ba6407ca6
+	.xword 0x802a77033e8a2c4b
+	.xword 0xd3dbe0facb3ee9e2
+	.xword 0xffcd27d315d9276e
+	.xword 0xb8f393e3155b016a
+	.xword 0x8fb3a4c1396bbabc
+	.xword 0x0feb79ae14ded857
+	.xword 0x643ccaaeeb63e525
+	.xword 0xe5263921845cbf5a
+	.xword 0x5bb90374b21057de
+	.xword 0x60ab72f4ecbd127e
+	.xword 0x8584b91b54201a98
+	.xword 0x075dc6b1397f5a4e
+	.xword 0xa6a3a4be38063c92
+	.xword 0xbbf001fca12d5706
+	.xword 0x7c77ae79321f0935
+	.xword 0x05991b55624d3b05
+	.xword 0x9314300f24714535
+	.xword 0xaeb7207d43859235
+	.xword 0x019493f5d803db54
+	.xword 0x872182a425081039
+	.xword 0xb2b5588d709fbc19
+	.xword 0xc40ce80a5b223507
+	.xword 0x25a8e7d7e661062a
+	.xword 0x9276108ccc33a7af
+	.xword 0x3e1470d67c6f40c0
+	.xword 0x01a4b06b735103be
+	.xword 0x6d48934a7f7e1568
+	.xword 0xcca8c7342cd13b0d
+_spu_hmac_iv_array:
+	.xword 0x9fa0fd1e214d37b3
+	.xword 0xc3c4863baefc0bee
+	.xword 0x4005418609590af6
+	.xword 0xd8d30494eced8d30
+	.xword 0xc83d90fe9b5df00f
+	.xword 0x4eaea09575e3f321
+	.xword 0x525114515241e9e3
+	.xword 0x5356d1a7920ae337
+	.xword 0x2cef361057a1e62d
+	.xword 0xa42a7ecd4fc3073e
+	.xword 0x064eed285d656523
+	.xword 0x58f5ab0adb9903f0
+	.xword 0xf5d3ce902d2fa884
+	.xword 0x6e12966891f56e6b
+	.xword 0x3979d43bdf47d356
+	.xword 0xad5eea0b19340a28
+	.xword 0xc314a29ab8af5841
+	.xword 0xeed39086bb3b6fa9
+	.xword 0xcb1857c129054e81
+	.xword 0xeadd4f482914a9bc
+	.xword 0x98075ccd23ebb4c4
+	.xword 0x73a26048d3d86335
+	.xword 0x4b647652d8da6dc9
+	.xword 0xb259d7d82b286a45
+	.xword 0x9f015a2704e95b44
+	.xword 0x6e2a11d48e45628c
+	.xword 0xbdbb590811891ef5
+	.xword 0x4913b81be07de43f
+	.xword 0x1bb93e605f8e0ad6
+	.xword 0xec382ee33cbbd290
+	.xword 0x567bc2e9bb30185c
+	.xword 0x06785ec7b72c3b86
+	.xword 0xf6f7936cb91c28ec
+	.xword 0x03ca0c256202dafc
+	.xword 0xd33a6f17a9393645
+	.xword 0x954a6a615ce7aa28
+	.xword 0x2971a4d29a6c49b2
+	.xword 0xff8a437b6f431ddf
+	.xword 0x31caa28db51ed69a
+	.xword 0xb7ca8fb60e80333d
+	.xword 0x6810179379994416
+	.xword 0x9124e7785a984993
+	.xword 0xb0e6282e91e37c5a
+	.xword 0x6563a2bcdc1d351f
+	.xword 0x9c69a7a1f4e50caf
+	.xword 0xd08c2f570267775c
+	.xword 0x780b92c2763b4011
+	.xword 0x35acd58b22647854
+	.xword 0x29b83a46b917b929
+	.xword 0x7b279478f3764cfc
+	.xword 0xc4803edee41cffdf
+	.xword 0x76ab205432f9d001
+	.xword 0x94a3751def6449de
+	.xword 0xc6055db6cdfc741a
+	.xword 0xe6a9c4d29691855b
+	.xword 0x68dbdc3fda46791f
+	.xword 0x31b70fd7db761d11
+	.xword 0x10f61791bf0992d9
+	.xword 0xf96d82458180a835
+	.xword 0x383ad0f1c2bc6dab
+_spu_hmac_alignment_array:
+	.xword 2
+	.xword 14
+	.xword 12
+	.xword 9
+	.xword 13
+	.xword 3
+	.xword 6
+	.xword 13
+	.xword 13
+	.xword 4
+	.xword 9
+	.xword 12
+	.xword 15
+	.xword 0
+	.xword 14
+	.xword 3
+	.xword 2
+	.xword 4
+	.xword 1
+	.xword 8
+	.xword 1
+	.xword 9
+	.xword 15
+	.xword 0
+	.xword 1
+	.xword 14
+	.xword 12
+	.xword 14
+	.xword 6
+	.xword 9
+	.xword 1
+	.xword 5
+	.xword 5
+	.xword 13
+	.xword 11
+	.xword 7
+	.xword 7
+	.xword 2
+	.xword 14
+	.xword 8
+	.xword 11
+	.xword 8
+	.xword 15
+	.xword 5
+	.xword 5
+	.xword 0
+	.xword 8
+	.xword 4
+	.xword 11
+	.xword 12
+	.xword 3
+	.xword 1
+	.xword 13
+	.xword 13
+	.xword 12
+	.xword 0
+	.xword 10
+	.xword 5
+	.xword 12
+	.xword 3
+	.xword 11
+	.xword 5
+	.xword 6
+	.xword 1
+	.xword 12
+	.xword 9
+	.xword 0
+	.xword 2
+	.xword 2
+	.xword 13
+	.xword 2
+	.xword 8
+	.xword 6
+	.xword 4
+	.xword 10
+	.xword 3
+	.xword 3
+	.xword 8
+	.xword 10
+	.xword 11
+	.xword 6
+	.xword 13
+	.xword 8
+	.xword 12
+	.xword 8
+	.xword 7
+	.xword 5
+	.xword 6
+	.xword 14
+	.xword 15
+	.xword 15
+	.xword 1
+	.xword 0
+	.xword 11
+	.xword 1
+	.xword 10
+	.xword 11
+	.xword 13
+	.xword 13
+	.xword 9
+	.xword 14
+	.xword 10
+	.xword 11
+	.xword 12
+	.xword 14
+	.xword 15
+	.xword 5
+	.xword 0
+	.xword 4
+	.xword 15
+	.xword 9
+	.xword 2
+	.xword 11
+	.xword 14
+	.xword 4
+	.xword 14
+	.xword 0
+	.xword 15
+	.xword 13
+	.xword 5
+	.xword 8
+	.xword 3
+	.xword 11
+	.xword 8
+	.xword 10
+	.xword 9
+	.xword 13
+	.xword 6
+	.xword 8
+	.xword 1
+	.xword 10
+	.xword 14
+	.xword 3
+	.xword 13
+	.xword 8
+	.xword 10
+	.xword 14
+	.xword 15
+	.xword 9
+	.xword 10
+_spu_hmac_src:
+	.xword 0x8c94befd69153d82
+	.xword 0x70af63148467909d
+	.xword 0x11e784a24d3520a6
+	.xword 0xff963dd076aa4309
+	.xword 0x4ed98d6f9086d966
+	.xword 0x1919a2edc984341b
+	.xword 0xf4bb63b333a0646f
+	.xword 0x483f29db295beb3c
+	.xword 0x1325625ac1ea3f7f
+	.xword 0x67f30f067579215c
+	.xword 0x3339a7b21d7e81d9
+	.xword 0xabab4a8563deeeb0
+	.xword 0x75fe57b22af46a83
+	.xword 0x5cd69620bcb78ae1
+	.xword 0xcbff71c652c85e2d
+	.xword 0x4605b3ae54f6d4e5
+	.xword 0x990706b5c9bbd8cd
+	.xword 0x3defcad0e96e5240
+	.xword 0xf9b5515c5ac2b760
+	.xword 0x6d12b64eae608e55
+	.xword 0x47a73ae4490c9a1e
+	.xword 0x06c494837815f290
+	.xword 0x66a87ac9904e8158
+	.xword 0x39977c5c03403b04
+	.xword 0x1e877d1230804076
+	.xword 0xeb531c4826e51345
+	.xword 0x8a9dbbebc898fc96
+	.xword 0x885da9255a948eb6
+	.xword 0x31fe25a4c202a33c
+	.xword 0x8ceed23f74ef8e12
+	.xword 0x07c3fccc047c1c21
+	.xword 0xb10c9d9943c7ded7
+	.xword 0x3730e931f4da047f
+	.xword 0x2af8e146a1a33c0c
+	.xword 0xc870b968d5cb3802
+	.xword 0x6c5d39546272b498
+	.xword 0x13511f7532cc1d00
+	.xword 0xbdb578624eec2314
+	.xword 0xbb9c4ee79bf5ea60
+	.xword 0x82df9f4aadd9377c
+	.xword 0x8590c1f7ab454c47
+	.xword 0x8667b7dc2d3275b2
+	.xword 0x5d9851320ec05ff1
+	.xword 0xb192c4545e0c7315
+	.xword 0x207e9fab6452dac3
+	.xword 0x79313b5c14a47f5d
+	.xword 0x53a35fe0fe9f533f
+	.xword 0x817aeaf0e0d44566
+	.xword 0xc860f541e98d7f5c
+	.xword 0xbdb80b51eb66ef73
+	.xword 0x184a2c2af3e4d6ae
+	.xword 0x72ff8173dd30ded2
+	.xword 0xca6e66f0fe44f25e
+	.xword 0x33c19f5bca435c57
+	.xword 0x842ba8e11a30c733
+	.xword 0x2ff1755d7537e85d
+	.xword 0x4d8b77eb747d26d6
+	.xword 0x2234533031c12bb4
+	.xword 0x0d80a498b4ece143
+	.xword 0x2149e23dc776e771
+	.xword 0x45489966425d987a
+	.xword 0x3a7df94e5ea07cb9
+	.xword 0xd5cbba6b81e17048
+	.xword 0x1d01b263fa72799d
+	.xword 0x3e4e40f82fe3dced
+	.xword 0xe4df362fb5c9dc4a
+	.xword 0x56e15625aa263747
+	.xword 0x88f40a74bbeeae29
+	.xword 0x606eef2f9ec73174
+	.xword 0xbac0c5b2e58f0309
+	.xword 0x0a9119b3aaa87787
+	.xword 0x87425e5401e7b88f
+	.xword 0xe77ff10cbca901b2
+	.xword 0x6fc42ad5dcfa76a3
+	.xword 0x50528302fb72f321
+	.xword 0x4a5d108519d45a17
+	.xword 0x348ca83ac906fa2b
+	.xword 0x5e90d9bf4c9ffe9a
+	.xword 0xc95fa996fb53177f
+	.xword 0x23a477da2925f9f4
+	.xword 0x289def5415d79254
+	.xword 0x2db3361258b5407e
+	.xword 0x431af8aee1c25771
+	.xword 0xda6852047996af67
+	.xword 0xd1a2541766c032e2
+	.xword 0xfb5854964095a1ec
+	.xword 0x3d84de67fff6b703
+	.xword 0x96db870a33fcb81d
+	.xword 0x2d6ecabc79cbdfc8
+	.xword 0x15d24f14a5c84338
+	.xword 0x7b2da5bc15b4c585
+	.xword 0xdfb70eb4082e3e12
+	.xword 0xed0259559c1b50c9
+	.xword 0xad2cf140df664fcc
+	.xword 0x09e6af6de234966d
+	.xword 0x483418979b19ee48
+	.xword 0x9da3917de59dbabb
+	.xword 0x1751a2287a694534
+	.xword 0xdbf4cb3720e911f1
+	.xword 0x21ca73aa1dc6a569
+	.xword 0x0da930b3587c4ba8
+	.xword 0x2672439b5a895eab
+	.xword 0xef2a9e9f8361bceb
+	.xword 0xddef466badc04cff
+	.xword 0x22d32a58d6ff779b
+	.xword 0x03f55eecbb84bd93
+	.xword 0xcfc63ad005250a58
+	.xword 0x9851ac598dbbd597
+	.xword 0xca1ae0bf020ebd9f
+	.xword 0x72912bdccc82d739
+	.xword 0x6f2f6c98e62911b2
+	.xword 0xfa83e8394092af18
+	.xword 0xda564134389b5689
+	.xword 0x008cb07e2c3e3bbb
+	.xword 0x926fd7f01d80915a
+	.xword 0xc4d92c073db82397
+	.xword 0x6bc89c834fa81f3c
+	.xword 0xfa5ae9cec8399bd7
+	.xword 0x4447d4492212546a
+	.xword 0x7f5efd4b61d63ed5
+	.xword 0x5fdee6566b57334f
+	.xword 0x5f04e1d3bacd1cc0
+	.xword 0x0eec7973bf2012f9
+	.xword 0x2781937f1700f52e
+	.xword 0xd4d2dc2cbbbe9eaa
+	.xword 0xbb02c910c285fbe7
+	.xword 0xf2a1131953bb0796
+	.xword 0x513c5f6293582ca6
+	.xword 0x9c3a0a2efd1ea818
+	.xword 0xdfe4e4f9417c7b2d
+	.xword 0x570587c83d70a1cb
+	.xword 0x32ef6fd07b6befbf
+	.xword 0xa7d89c9a3447f1d8
+	.xword 0xc834d6e1b30d72f9
+	.xword 0xfceee0e8568a0fd1
+	.xword 0x3aca74fba6de6bf9
+	.xword 0x91a93297e563c1d9
+	.xword 0xfcd477aa0dfa6a3f
+	.xword 0xce058cf4d02c5e93
+	.xword 0x205005aa8c2d12ed
+	.xword 0x5c30557229bd43fe
+	.xword 0x0c316476fa96d40c
+	.xword 0x2907cf1ec8968507
+	.xword 0x7048bb0b45ed14f8
+	.xword 0x777a7aa0d7bc9766
+	.xword 0x526837242a6b48c5
+	.xword 0xd476edc3e6facbdc
+	.xword 0x227846082566ff8d
+	.xword 0xac7551f56d979368
+	.xword 0x872e7042f4c892f3
+	.xword 0x28f8db92a1525158
+	.xword 0x47e337e5c2a8cd74
+	.xword 0x82a40bbc4703a5fc
+	.xword 0xaad4971bc1c64273
+	.xword 0x0016b2754e955bbd
+	.xword 0x90d8a07e3f6415fa
+	.xword 0x221a5ce3acd7a249
+	.xword 0x0e056dc621458974
+	.xword 0x8d082c954fc4c356
+	.xword 0x5a477c1ced550a82
+	.xword 0x489d9e834bde4d92
+	.xword 0xbfc9a4d78e942c1d
+	.xword 0xca966ed05ecef1d9
+	.xword 0xb4a048e04ddf34b2
+	.xword 0xe82f39a865cb913b
+	.xword 0xb9ae58addc987588
+	.xword 0x08e9089574150028
+	.xword 0xca376a70f9a89dfe
+	.xword 0x1aefee6b59939fd7
+	.xword 0x0ff76a89887a190c
+	.xword 0x6a579386d0705bea
+	.xword 0xd2c7beae948f2f20
+	.xword 0x10165775e7182de7
+	.xword 0x3481b23673fbc7ac
+	.xword 0x773352655fc94b63
+	.xword 0x6161c6728db65b3b
+	.xword 0x27ec7fb0d297e5a5
+	.xword 0x4fc271099ece5c70
+	.xword 0x88d9e1dcc1e73bc8
+	.xword 0x4028fd44e1d96e99
+	.xword 0x9d5ebd230e7c8c08
+	.xword 0xdfb41fd0f45dd4a2
+	.xword 0x16fe877170f05310
+	.xword 0x3b75aabf5c2967c0
+	.xword 0xe0aa9b94941fe827
+	.xword 0x310dbcd1c783beaf
+	.xword 0x6483297477f29702
+	.xword 0xedcb33d839821410
+	.xword 0x8c6244601e46848b
+	.xword 0x1ffa7f43e2d3d5e8
+	.xword 0x3208845c68ac0731
+	.xword 0x52ae3d9c94732317
+	.xword 0xab34e6c017a87fcf
+	.xword 0x8eb53db8ec77602d
+	.xword 0x46cb2c9df67ddc4a
+	.xword 0xc6f35224f506b903
+	.xword 0xba476864a30dc25e
+	.xword 0xabe2d63aeb834304
+	.xword 0xde323c1af8596da8
+	.xword 0xcb68daef2348e650
+	.xword 0x51ca1104d51d0dee
+	.xword 0x13e36404dc3ff070
+	.xword 0x23c1307c6ad41746
+	.xword 0xc56f4354a110c6a6
+	.xword 0x4a4e680ae3341dac
+	.xword 0x3e917b42cc2b6065
+	.xword 0xfe0631faa404859a
+	.xword 0x28d338d0b16e493a
+	.xword 0x4106235a15ae7cde
+	.xword 0xdaa7d1513451293f
+	.xword 0x4478ca581d64b788
+	.xword 0xa0e698af6fdb5697
+	.xword 0x5bc3e1124966f5ad
+	.xword 0xa1745ea1c5bf7b14
+	.xword 0x7a1894d489e22ed0
+	.xword 0x87e76d63c352f65c
+	.xword 0x044cfb091f60e733
+	.xword 0x1960727030dc74c8
+	.xword 0x45f8c49fc166d158
+	.xword 0x31e34318b27d4637
+	.xword 0x3404475ee6fd06e2
+	.xword 0x3a3e3a7f16b5b56b
+	.xword 0x9be1f415b142110b
+	.xword 0xf599df5e809f3329
+	.xword 0x3a07ae54fdb51310
+	.xword 0xf726578cb70a997b
+	.xword 0xaaa7774d351fd40b
+	.xword 0x8a0609b0f04a3399
+	.xword 0xaebaeefcb65f6356
+	.xword 0x494446108b891de9
+	.xword 0x3042666db0f941b4
+	.xword 0xe5649ed9f6cb1535
+	.xword 0x11576bcbec1c27d1
+	.xword 0x879fc5f58dd05176
+	.xword 0xa886b1de040125de
+	.xword 0x04615806ea26ca7f
+	.xword 0x23dda605f8885aff
+	.xword 0x0253aef8e26a865e
+	.xword 0x6dbfbe1a7ea6c173
+	.xword 0x2ec7c2e7a1d7a776
+	.xword 0x11ab358eef85b463
+	.xword 0x40c8c1ae6c86bbc9
+	.xword 0x657edeca382133f7
+	.xword 0xd13ac0d8a9e0d6a5
+	.xword 0x5f0e0f2020092c22
+	.xword 0x1ff2f8304c90e294
+	.xword 0x0e9d8f5f44b2e3d0
+	.xword 0x1221800e9cd68b4e
+	.xword 0x2ddf899d6b309976
+	.xword 0xa785f04ce213ac4d
+	.xword 0xe934adf52f8816a3
+	.xword 0x954a9f86cf23ac36
+	.xword 0x64fc295d13ba7f78
+	.xword 0xfc14b1b5a9855bc2
+	.xword 0x330e953e037d1d16
+	.xword 0xcf6afa15974dcdb7
+	.xword 0xb268b91b4ca1dd4a
+	.xword 0x352ee6ab4f1a153f
+	.xword 0xb5faf7f024521450
+	.xword 0x98fe47baca7ce891
+	.xword 0x126efe9c5a634bd7
+	.xword 0xf359153a60addc42
+	.xword 0x1fbfa00e6f9994ad
+	.xword 0x3aa5aa51cb59c1b1
+	.xword 0x015a4ee82e3af1a0
+	.xword 0x9a0a293c73923039
+	.xword 0xf9e4595f12d33373
+	.xword 0xa7416d8deb384f12
+	.xword 0x7b85b9f206a0151d
+	.xword 0x7c2115f00d5e2b55
+	.xword 0x0e0e9307ba3ba9ee
+	.xword 0x6cb7dcafb78645ab
+	.xword 0xd05150437afaa787
+	.xword 0x66c401809c3b437a
+	.xword 0x96b90977f02351df
+	.xword 0x776b87b1fdcbb322
+	.xword 0x2f487c1070110b00
+	.xword 0xd3ada368871921a6
+	.xword 0x8d8b69473327a0e8
+	.xword 0x5da3cd38468c9357
+_spu_hmac_dest:
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+_spu_hmac_auth_key:
+	.xword 0x21569e78e0b52959
+	.xword 0x297ce9f712443705
+	.xword 0xe122af6d6a8e8211
+	.xword 0x35de5ea769b1f8f4
+	.xword 0x5440c5594ac44713
+	.xword 0x43165a394675bfc3
+	.xword 0x0a2f6e4ff3428e7f
+	.xword 0x9554dcaabd726c43
+	.xword 0x723558a91b85501b
+	.xword 0xce363356aa6dd26c
+	.xword 0x6e1e95a64e05fb20
+	.xword 0x5471cb95ac36f3e4
+	.xword 0x9b46871316ec1b22
+	.xword 0x229ef8fc5e4a2d37
+	.xword 0x8ddd6ec0e173e1e0
+	.xword 0xecdb336fb2b35aa2
+	.xword 0x6ddca87762090958
+	.xword 0x460b84e159623fc4
+	.xword 0x4f07a3a780c880eb
+	.xword 0x8b1e0b8515759cd1
+	.xword 0x5241d2cacc48b6a9
+	.xword 0xaaa95210694f31b1
+	.xword 0x5617a3b91de286f3
+	.xword 0xfb8df4af56b0789e
+	.xword 0x861b0ee0406634cc
+	.xword 0x3a412085f54104a7
+	.xword 0xcce78296d0c35af0
+	.xword 0xdc139fc6eae3c502
+_spu_hmac_auth_iv:
+	.xword 0xb45552d8e2aae2c4
+	.xword 0x3296fae3b3bf878c
+	.xword 0xa8583958be27ebf2
+	.xword 0x3b285972a41aeeac
+	.xword 0xecf922b88f2f9fef
+	.xword 0x10ccafcef29b2980
+	.xword 0x5e22289af747731c
+	.xword 0xe69e51989d3618ae
+	.xword 0x7fb25ea9cf0a836a
+	.xword 0xaffc0812f197c0ba
+	.xword 0x3bac7e418434edfb
+	.xword 0xdd990c6cb5cb7c44
+	.xword 0xc42065f62b6a14d2
+	.xword 0xfdad2ec865e5c606
+	.xword 0xcd168624e1efb76e
+	.xword 0xeebb48a05b233c0b
+	.xword 0xd5938535b1cdbaa9
+	.xword 0x0c9ec20beff27133
+	.xword 0x3262062e3eec9c28
+	.xword 0xf47899b0447634c8
+	.xword 0xb770734e9e4de08d
+	.xword 0x65b7cd379615d52b
+	.xword 0x77fb72ef7b544ba6
+	.xword 0x6713651ed06709f7
+	.xword 0x2e5079dd6ffc6cdb
+	.xword 0xe8bc5dbc9e44f07d
+	.xword 0x2403c1f800998da0
+	.xword 0x18dec401fe280693
+_spu_hmac_fas_result:
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+_spu_rc4_key_array:
+	.xword 0x3486bb488d73d1b4
+	.xword 0x2245a5c1737676a8
+	.xword 0x3a6ed35b53840511
+	.xword 0x544d678615259dec
+	.xword 0x238b1ce8f7152937
+	.xword 0xc1d56a7c8123aa65
+	.xword 0x70481a2c4bd07ffa
+	.xword 0x8c11b33678f10f5f
+	.xword 0xab83c255a9c7ce7c
+	.xword 0x56beac0498f6036a
+	.xword 0x9b03b0ec16b5820e
+	.xword 0xf87e626fd04e54c8
+	.xword 0xf085b0d91b24f4d9
+	.xword 0x5475d934fee68f47
+	.xword 0xfd8841a44889c6d1
+	.xword 0x86c2baa8aa87e5e5
+	.xword 0xc5cf7773ae594e90
+	.xword 0x5be98275c44a8643
+	.xword 0xb83536d44239f598
+	.xword 0xc5b2fdf2e218eb0f
+	.xword 0xd3c5c0c3cc866b8e
+	.xword 0xcf2207fcdf0149ce
+	.xword 0x14b4e019bbd24ae7
+	.xword 0xaea2c25fb3fa4c6f
+	.xword 0x62e09a0420bd1f00
+	.xword 0x13d94660f239ad2d
+	.xword 0xfd81f88a230b98be
+	.xword 0x8c0d90845bf48a81
+	.xword 0x7049d356af95d13a
+	.xword 0x0dfe525ab5fdfb7d
+	.xword 0x82217cf378f4daf8
+	.xword 0x8566e1d23ba2e3b7
+	.xword 0xe317a5e7e384209f
+	.xword 0x283e5b76ec1ab62c
+	.xword 0xf0735b5c3f346253
+	.xword 0xc96253bdd433d297
+	.xword 0x70c12cc7d2fcf172
+	.xword 0x4cd8e7349ce6389c
+	.xword 0x9bd961f97cf43101
+	.xword 0x6f2b63c54265e73e
+	.xword 0xefd8e31dc256e341
+	.xword 0xd2b446467f5ef181
+	.xword 0xfa2a2033bbdabab1
+	.xword 0xda2dfe78eb412434
+	.xword 0x8b6df117935d7071
+	.xword 0xe342b80e93bb03ad
+	.xword 0xac11efcc5a6ec56b
+	.xword 0x467812c687f6a75f
+	.xword 0xbc595df835b77353
+	.xword 0xcc22f54ad87c4360
+	.xword 0x3a72037fd8b4700d
+	.xword 0x7510bd103fb59306
+	.xword 0x6c5ea53811893e87
+	.xword 0x76aab116cad9a315
+	.xword 0xad240b1244645ec2
+	.xword 0x08d5607a037ddac5
+_spu_rc4_iv_array:
+	.xword 0x4b28d9bb4767ca40
+	.xword 0xbaa56411d9dd329c
+	.xword 0x89854321bf2146e8
+	.xword 0xdc13a24377297013
+	.xword 0xac32e540a1288a86
+	.xword 0x723b605ffe376ac8
+	.xword 0xcc60234939a1f50b
+	.xword 0x00ca893408d4c5e6
+	.xword 0xe512bbcc8fbe327d
+	.xword 0x3f5fa480aacde4d1
+	.xword 0xca58d1e6006f1ee2
+	.xword 0x731d6bb333a84ed4
+	.xword 0x7843fc493e7457d2
+	.xword 0x067f34c3ac2effb3
+	.xword 0xb21dbdab81adbc7e
+	.xword 0x6016a763be446814
+	.xword 0xa4cf1f4adee4cdbb
+	.xword 0xb421b1d2f6addc01
+	.xword 0x5d9dc0d8a9210b09
+	.xword 0x6de26d904dc6eef1
+	.xword 0x6566540834ae05e5
+	.xword 0xd03d5b4470732ca3
+	.xword 0x645f8f2385886028
+	.xword 0x2c12d9514a22d9bf
+	.xword 0x6feaabdb993ca057
+	.xword 0x405b20ee831aeb5b
+	.xword 0xbef1dbd314d00c69
+	.xword 0x1c091dd82f8b8867
+	.xword 0x38f9e4c9e4d05bc6
+	.xword 0x61e7a4d373ec9755
+	.xword 0xaa61562685a5aa1e
+	.xword 0x60673b86e3359257
+	.xword 0x3d5b40ba48c38cbf
+	.xword 0x33f79dbc62c7921a
+	.xword 0x8192e4576ccd0287
+	.xword 0x940ca25ade308694
+	.xword 0x90af7e8adfbec209
+	.xword 0x26d6824e2a22060a
+	.xword 0xd4d16f0643b96cb8
+	.xword 0x869e3a29ebc03c04
+	.xword 0xf34bcf03c9a46e26
+	.xword 0x19082e5006d95a36
+	.xword 0x26790562570aa3fd
+	.xword 0xe93d1ddb8525bae3
+	.xword 0xe1209847ba66d9cd
+	.xword 0xdbaf580da8d351a5
+	.xword 0x7b828d902d35f7f8
+	.xword 0xef723223739b8be3
+	.xword 0xc7e4f0cd17594faa
+	.xword 0x43d22a3eff9c8c71
+	.xword 0xd71e83a403f42bf1
+	.xword 0x73e36115ca54cf48
+	.xword 0x9af519edfc6029e6
+	.xword 0x22233e89f5a34c90
+	.xword 0x89a1141b2cceb6f8
+	.xword 0x0abd973c255e9501
+	.xword 0x956c47d77eea69c3
+	.xword 0x82aa8232967a3525
+	.xword 0xe81c024de0bacc95
+	.xword 0x42828c29fe1b2a5d
+_spu_rc4_alignment_array:
+	.xword 3
+	.xword 4
+	.xword 15
+	.xword 11
+	.xword 6
+	.xword 8
+	.xword 5
+	.xword 0
+	.xword 10
+	.xword 13
+	.xword 3
+	.xword 5
+	.xword 2
+	.xword 9
+	.xword 5
+	.xword 13
+	.xword 14
+	.xword 3
+	.xword 12
+	.xword 3
+	.xword 0
+	.xword 8
+	.xword 4
+	.xword 10
+	.xword 7
+	.xword 13
+	.xword 1
+	.xword 15
+	.xword 12
+	.xword 9
+	.xword 14
+	.xword 3
+	.xword 12
+	.xword 9
+	.xword 0
+	.xword 7
+	.xword 3
+	.xword 3
+	.xword 14
+	.xword 6
+	.xword 8
+	.xword 15
+	.xword 5
+	.xword 1
+	.xword 9
+	.xword 1
+	.xword 7
+	.xword 15
+	.xword 12
+	.xword 11
+	.xword 1
+	.xword 4
+	.xword 0
+	.xword 9
+	.xword 2
+	.xword 1
+	.xword 13
+	.xword 3
+	.xword 6
+	.xword 4
+	.xword 12
+	.xword 1
+	.xword 0
+	.xword 12
+	.xword 4
+	.xword 5
+	.xword 1
+	.xword 10
+	.xword 3
+	.xword 6
+	.xword 10
+	.xword 12
+	.xword 7
+	.xword 9
+	.xword 4
+	.xword 13
+	.xword 13
+	.xword 10
+	.xword 8
+	.xword 11
+	.xword 5
+	.xword 9
+	.xword 2
+	.xword 14
+	.xword 8
+	.xword 9
+	.xword 1
+	.xword 5
+	.xword 2
+	.xword 14
+	.xword 11
+	.xword 12
+	.xword 1
+	.xword 8
+	.xword 9
+	.xword 4
+	.xword 6
+	.xword 0
+	.xword 5
+	.xword 9
+	.xword 1
+	.xword 8
+	.xword 15
+	.xword 3
+	.xword 10
+	.xword 8
+	.xword 10
+	.xword 13
+	.xword 15
+	.xword 14
+	.xword 12
+	.xword 7
+	.xword 5
+	.xword 3
+	.xword 11
+	.xword 10
+	.xword 12
+	.xword 15
+	.xword 6
+	.xword 2
+	.xword 11
+	.xword 3
+	.xword 14
+	.xword 12
+	.xword 8
+	.xword 5
+	.xword 10
+	.xword 7
+	.xword 1
+	.xword 11
+	.xword 12
+	.xword 15
+	.xword 3
+	.xword 6
+	.xword 11
+	.xword 9
+	.xword 6
+	.xword 7
+	.xword 8
+	.xword 13
+_spu_rc4_src:
+	.xword 0x1a524f509c7bc4ea
+	.xword 0x15286ac7009395a7
+	.xword 0x8ec32b558249be2b
+	.xword 0xb5030268d06c7938
+	.xword 0x8068c266dcb03cb3
+	.xword 0x25f69f15ef51e716
+	.xword 0x51bcf8acd6b39da9
+	.xword 0x72b3872db84ec320
+	.xword 0x5b449c37bcfe5144
+	.xword 0x6f88cad7b25bab8d
+	.xword 0x843a99c1281369bc
+	.xword 0x43dfca1506ac62d8
+	.xword 0x315f0aac29bc3e95
+	.xword 0x3971b529a3670dee
+	.xword 0xa30721243114b6ef
+	.xword 0xcfafe4c5aa698406
+	.xword 0x14a9e83402bbd1bf
+	.xword 0xeafd152d4668fa18
+	.xword 0x09605231c2b92e49
+	.xword 0xc4e40a347e943f1d
+	.xword 0xf1ccd30b07062200
+	.xword 0xf36d3b810bcb1657
+	.xword 0xc9420cefaa2f9860
+	.xword 0xb5e1954b4ede185a
+	.xword 0xa235a4c1a5b02742
+	.xword 0xaca3cd0ff860ed7c
+	.xword 0x0be23d9f95f10b21
+	.xword 0xc535cc9baaef85fb
+	.xword 0xfa93aa617ab43b24
+	.xword 0x8db8a81c1d44eba1
+	.xword 0x803bcfd81361389b
+	.xword 0x9d3dd5863673dc8c
+	.xword 0x80c779668a85672b
+	.xword 0xf9e4abeaebd35bf4
+	.xword 0x0bccd602995ae582
+	.xword 0x42e1403a0ae7859a
+	.xword 0xe9d5757f7ae60133
+	.xword 0x23ccf006d48b2e2f
+	.xword 0xcbe949399ad4ed0a
+	.xword 0xd8c4a834e47a44d9
+	.xword 0xc34fcbe7de82bba7
+	.xword 0x861438fc8ff47f10
+	.xword 0xafd2d262b8441f32
+	.xword 0x7741d5d51e43747b
+	.xword 0xd23d3bc0ae755367
+	.xword 0x5e6e7011414b4de5
+	.xword 0xec38b270943cf128
+	.xword 0xfdb52a81f2aa6cd0
+	.xword 0x3b608a3195266ca7
+	.xword 0x425499029558586e
+	.xword 0xf6b9e681b00e852e
+	.xword 0x7d40208fecc48b2e
+	.xword 0x609e81cac33b45aa
+	.xword 0x3c0235db062f6398
+	.xword 0xd8a22d971e008516
+	.xword 0xb9f26923505e196d
+	.xword 0xb78fac09c7aad682
+	.xword 0x207c4fb9e7e4106d
+	.xword 0x632978558146b6d5
+	.xword 0xdf73934876510621
+	.xword 0xeec8a7936de1aff3
+	.xword 0x5f0551084758ff86
+	.xword 0x2b036d94957b06ab
+	.xword 0x85a3b31ceb281fbb
+	.xword 0x6b140db990a59e99
+	.xword 0x37f0f358d783eb8a
+	.xword 0x797045332ff100d3
+	.xword 0x937e3ad65b3eeaf3
+	.xword 0x8778169edfa1a768
+	.xword 0xbd5b8741796703e8
+	.xword 0x6ac697482b1c2a38
+	.xword 0x7530dff32368c573
+	.xword 0xadb874a79b09a998
+	.xword 0x4efe855b17bd1719
+	.xword 0x13fb2f39fdf5b667
+	.xword 0x8d7c138caa50dfe1
+	.xword 0xeed7859e7fb151a0
+	.xword 0x6f65dd0244b44362
+	.xword 0xd04d2b1faafb7b65
+	.xword 0x765a665c543cb6f7
+	.xword 0x302fbb6f0a8c1913
+	.xword 0xefcbb7c22d2aabb2
+	.xword 0xc2383743696da8ed
+	.xword 0x52eb3bce0c75cda2
+	.xword 0x53a0f754300bca62
+	.xword 0x5fede455a849756e
+	.xword 0x85316341f0b2d2f6
+	.xword 0x1188b14428ba0cd5
+	.xword 0x346b141039dccff8
+	.xword 0x9ed09a650f17287f
+	.xword 0x8b60ed9d172c85d6
+	.xword 0xcffe9a4eb0dfcd5a
+	.xword 0x26145871240a7708
+	.xword 0x8f2d48be3417b3b3
+	.xword 0xf85053521151eec1
+	.xword 0x8c4f5d9a85f08e47
+	.xword 0xfbab58010513d621
+	.xword 0x1c88b0190dee5970
+	.xword 0x8fe5ea4cb3b50679
+	.xword 0xa487d36897ae9b3d
+	.xword 0x659b97afac384a77
+	.xword 0x62d2d228e1d66b25
+	.xword 0x0d85a4606aa81749
+	.xword 0x9f35682d6667fec9
+	.xword 0x04d34a970febabd8
+	.xword 0x297145c3f5385a10
+	.xword 0x535d57f5887d8ff7
+	.xword 0x4857ff6db2da6bf5
+	.xword 0xfd0b7fcbfd3a6d5e
+	.xword 0xb65df89aa3f9a85b
+	.xword 0x8c9595d3e83869c5
+	.xword 0x7760620a43a9bb29
+	.xword 0xb675d4ad4823bf9c
+	.xword 0x2f0ed5a2a0055969
+	.xword 0x11f9d5267e2f9162
+	.xword 0x9f5ddb86360639fc
+	.xword 0xb0fd73425204a423
+	.xword 0xc90fc9d235ffbd52
+	.xword 0x7a02d54ed4f3cb53
+	.xword 0x10d0d1c08467e514
+	.xword 0xcd2c48c547cfd5ee
+	.xword 0xa7e9f3ecf539ac35
+	.xword 0x4b60019aa447b7c1
+	.xword 0xafbf68c6e1f344e4
+	.xword 0x251dc98a94a740c8
+	.xword 0xbc15226d93bc7ded
+	.xword 0x11970934d9af2629
+	.xword 0x32dd7f5fa72e9475
+	.xword 0x9749e95b87503008
+	.xword 0x8d0ca9ebb1b45bc4
+	.xword 0xddbe9665a4370bd7
+	.xword 0x2596428923b79d69
+	.xword 0x27ebefd4664a9999
+	.xword 0xff751df68ac716fd
+	.xword 0xe70517a5900e0560
+	.xword 0xdcebb71f83f614a7
+	.xword 0x754c4b7d81638a96
+	.xword 0x332292c139541a13
+	.xword 0xabd6103dc48bfac6
+	.xword 0xc616b56d6fd018bf
+	.xword 0x2219de714e6a30a6
+	.xword 0x222dae007690f84a
+	.xword 0xd0a4fac6304d77c5
+	.xword 0x3caa9d212631e7a1
+	.xword 0x2c95b826dde0aae9
+	.xword 0x3a11b7bb3fe4b06d
+	.xword 0x4220be84a461ca63
+	.xword 0x700dc41271439a2f
+	.xword 0x0057d6706ae09550
+	.xword 0xebe5d0dcd9273c25
+	.xword 0x607169aa512c4f8f
+	.xword 0xbcb86ce32ab32636
+	.xword 0x76f3b4463536ca26
+	.xword 0x79c0879774e0c28b
+	.xword 0xcfe50c2bdd4d62a1
+	.xword 0x2c2fda439944f8f2
+	.xword 0x789e8b9e20255c82
+	.xword 0xf9bd8ed1abb9213c
+	.xword 0x8b3b307d08c49f15
+	.xword 0xc3ae27b8d95801f7
+	.xword 0x3d5f527a91856b4d
+	.xword 0xa65cf64053d37d08
+	.xword 0x3888f39229f2bcfa
+	.xword 0x96f2fdff70484205
+	.xword 0xf6ceaddde83f9eed
+	.xword 0x654a4831ec0d21bb
+	.xword 0xde5ab0f8baa467c7
+	.xword 0xb1320ae0666d719f
+	.xword 0xba7b5fba6fdd3885
+	.xword 0x445fd492c171cf09
+	.xword 0x05c825992515810c
+	.xword 0x2cf3c9455e48a7de
+	.xword 0x1e3bbc4777ea2022
+	.xword 0xde7e959316201ff4
+	.xword 0x288a6239d60633a2
+	.xword 0x5dd99ddc8194d117
+	.xword 0x02a53fde5f6249c4
+	.xword 0x1802704b8c52fea4
+	.xword 0x77456059d5cb17ee
+	.xword 0x4f8f2ad14ec7ab9a
+	.xword 0x32486facd8ef5e5f
+	.xword 0x90c3532e96d42d70
+	.xword 0x50e565895497af1f
+	.xword 0x42bed0e13355972d
+	.xword 0x62d0391e48a03e3a
+	.xword 0x0f2c282a91fdb157
+	.xword 0xc2a9c399ec232d29
+	.xword 0x02f0999b2485ddef
+	.xword 0xc0f36588df89f2a8
+	.xword 0x54c34e35c0869fd5
+	.xword 0xec92e88c458b8c7e
+	.xword 0x4a8c9b6c3d43abc6
+	.xword 0x8e0e10b792e50be4
+	.xword 0x7eb517c06b893a86
+	.xword 0xa0090e20a4450fe1
+	.xword 0x8c49ecd78417cacf
+	.xword 0xc2b2d22893ab7908
+	.xword 0x2ff2293dfcf5dc25
+	.xword 0x3ce15fdbafb09d27
+	.xword 0xef9b9377697e5376
+	.xword 0x3069c0e2cb065938
+	.xword 0x771cc3e8144d3abc
+	.xword 0x92c2fceb3c25e16f
+	.xword 0xc0649e6faf8bc471
+	.xword 0x52e396019a292f81
+	.xword 0xf39e1fa410e046a5
+	.xword 0xa77e9b4f129a54f6
+	.xword 0xe347f5c2a2da68e0
+	.xword 0x622391f941361e40
+	.xword 0xbc46915cd1dc5b4e
+	.xword 0xd124d636d0f3f574
+	.xword 0xb1158307b101dfae
+	.xword 0xa3cb177a191aa926
+	.xword 0xeb292524a128978a
+	.xword 0x6261263e830963be
+	.xword 0xe786f5ba825d2dba
+	.xword 0xeb4ccf5bf74e83e6
+	.xword 0x9e496531663a8b01
+	.xword 0x777f6e9c06799845
+	.xword 0x68b46c300d5baf4d
+	.xword 0xa7dd47d25e94c9ab
+	.xword 0x5782552f51c66407
+	.xword 0xe5b9afc04c2dbfc0
+	.xword 0x52ffb5c720bdd90f
+	.xword 0xe78eef8ab82ec72a
+	.xword 0xffcef597f56b4db2
+	.xword 0x158c1d5d3a153de5
+	.xword 0x335ac959a45add63
+	.xword 0x471d970cd0287cdd
+	.xword 0xc933bba462beb535
+	.xword 0xda9aa2e11b48b48e
+	.xword 0x538896f78d3ef7f1
+	.xword 0x8e21acddfca70c0c
+	.xword 0x852fcf62fe02a88c
+	.xword 0xaabcc0acb44e3887
+	.xword 0x3e85bfa0a67f0068
+	.xword 0x94f738959386a125
+	.xword 0x77e8eb37389449bb
+	.xword 0xc987ff4f03f322d0
+	.xword 0xf5521a82a3f09f13
+	.xword 0x738aaf0c489987da
+	.xword 0x4feb2c8b23d49f2b
+	.xword 0xce8c6e275f13daa6
+	.xword 0xd4eef66ebaf39d0a
+	.xword 0x0fcb9a8c42114dbf
+	.xword 0x8faf3078e203eaa8
+	.xword 0x1920a61e4fa03f15
+	.xword 0x9d8ef80cf2633b18
+	.xword 0x5d504d4fecd8ebc3
+	.xword 0xcce91e708e743111
+	.xword 0xf3744aaf2a908977
+	.xword 0x45dad478a7f621ed
+	.xword 0x61a113c01a2f4629
+	.xword 0x590028eb9c41ef9c
+	.xword 0x3623b98ed3ab5cf1
+	.xword 0x6a4696070f4888d6
+	.xword 0xb9971b76a52f95ad
+	.xword 0x746e67428013122f
+	.xword 0x65239ea4309038d2
+	.xword 0xd942d067f150566c
+	.xword 0x1bacc94b9cb4ea02
+	.xword 0x31b9d9c69128cf08
+	.xword 0x0fe1a45b9d9cc263
+	.xword 0x736c922896898f5a
+	.xword 0x49e4fc87e853f34f
+	.xword 0x23d403823ee9b768
+	.xword 0x86b9d6f0ea1d5e49
+	.xword 0x214c6c5f74e3bc45
+	.xword 0xd5c215e1a45fe3ab
+	.xword 0x0d134008e1f505e9
+	.xword 0x72ca23b13e8ee47a
+	.xword 0x69084a398bd4d7a2
+	.xword 0x85e78dc3fa184df0
+	.xword 0xb551ecb0867e5116
+	.xword 0x748492f459b5683c
+	.xword 0xa3c1c78ee9271a07
+	.xword 0x885174e4847b913f
+	.xword 0x0e58fea18477d33d
+	.xword 0x7bcefd2aa2dc4769
+	.xword 0xca2df38cab8aae86
+_spu_rc4_dest:
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+_spu_rc4_auth_key:
+	.xword 0x45545e3acca100c3
+	.xword 0xfcd41c1a35eb941a
+	.xword 0x1f06d79c1c578124
+	.xword 0x11df43db3f293267
+	.xword 0x586a7b780ec0b03f
+	.xword 0xd358964162b9db17
+	.xword 0x44e5f915ae76e7cf
+	.xword 0x579c1ebc4be33462
+	.xword 0xac62e5a003dad712
+	.xword 0xdeb631584f81605e
+	.xword 0x3eeab81d65b5df34
+	.xword 0xd538d2fcf4957abf
+	.xword 0xf3fb79fba4dd77ef
+	.xword 0x1e0967b3bb361e86
+	.xword 0x7ceec50de2ca16db
+	.xword 0x06e2b21edf807a11
+	.xword 0x0ebc29ef643de0ce
+	.xword 0x6fbb92c5ee0fdab3
+	.xword 0xb919328a3a01a304
+	.xword 0x18735ecab0c7b145
+	.xword 0x086e01f6ce1f9f4c
+	.xword 0x75b79f5e1f9b7851
+	.xword 0xe9a2f9023c1162ca
+	.xword 0xe04322717ae2897e
+	.xword 0x90972b4921459a3d
+	.xword 0x5b1c63d1e0cef620
+	.xword 0x5ca5153ff650e7e5
+	.xword 0x903e9a5a444c96d6
+_spu_rc4_auth_iv:
+	.xword 0x2728a35a6e37c307
+	.xword 0xdde20895fd75ee55
+	.xword 0x06e79f551ebd6031
+	.xword 0x8c6f780d67800c8c
+	.xword 0x89997b337c45ef2d
+	.xword 0x33552d64ddfa8e6c
+	.xword 0x58484f83ee8b868b
+	.xword 0x1455e19bfea3ef73
+	.xword 0xe49081d0d0c9c050
+	.xword 0xccb6b8a817a3d85f
+	.xword 0x427fa4d8b1775b3f
+	.xword 0x92f2c762dac1ce85
+	.xword 0x9997c89481f43244
+	.xword 0xc2110218424270ce
+	.xword 0x57aa336a4fca9ef0
+	.xword 0x5562e0ef939eb775
+	.xword 0xa6155ce8695d0ad8
+	.xword 0x8e3ac054f062ef98
+	.xword 0x7a958ec8a3c2c7ea
+	.xword 0x216cc30d93f3d5f3
+	.xword 0x796d99b7fc8a2a90
+	.xword 0x753eb4f7f08864b4
+	.xword 0x77895bd8a17c246f
+	.xword 0xdd80f361c81da5a0
+	.xword 0x88c4746738335711
+	.xword 0xc708baa189c39f42
+	.xword 0x918f883463404070
+	.xword 0xdf186ea12d804870
+_spu_rc4_fas_result:
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+_spu_sslkey_key_array:
+	.xword 0xf6298d4baeb11abc
+	.xword 0x65ca81a48486706a
+	.xword 0xe7e4ac5970148091
+	.xword 0x0a54d6e666d8561b
+	.xword 0x88868bbf14f4e145
+	.xword 0x9794c358fa63e5ed
+	.xword 0xfd5de6a1a7151f81
+	.xword 0x1f4b7d4bd5ad11d8
+	.xword 0x5eaaecb8d7022936
+	.xword 0x5c81e45e09a5fea4
+	.xword 0x75406a7b12bc8bae
+	.xword 0x056c8569954d9efe
+	.xword 0xdc37cdac6b17b8ef
+	.xword 0xe0e0968fa3ed360d
+	.xword 0x0d6b602965923d44
+	.xword 0x201cf61fa7ee5acc
+	.xword 0x0b8db84a61dbf3b8
+	.xword 0xc9052fe20b005442
+	.xword 0xd188d6c1b32a4886
+	.xword 0x0ede792c0d50ee71
+	.xword 0x2d5cd201e5c1e78e
+	.xword 0xec64eb06a9cfa541
+	.xword 0x98eafce90127aa39
+	.xword 0xb486a2417921c811
+	.xword 0xd02449babf8eb4e7
+	.xword 0xeb97da453c294b86
+	.xword 0x79bc04447b6eae21
+	.xword 0xd71b74cd53f48b0f
+	.xword 0x91b8590ff5a66294
+	.xword 0xa32baa1dd4cc61af
+	.xword 0x15f4c4b62155fd74
+	.xword 0x8c8ee2609c1020a2
+	.xword 0x21936d6319b515e3
+	.xword 0xdcef1bc7f2fb30e5
+	.xword 0x7cea4b900c4243b1
+	.xword 0x1a7494ee87a06997
+	.xword 0xbb6de8a289fd31fa
+	.xword 0x893762213b9b3e8c
+	.xword 0xe6973c5f63d9addd
+	.xword 0x8de20b0e9e2792f3
+	.xword 0xf42289b31cbdfc6a
+	.xword 0xe09b1832219ff7b2
+	.xword 0x23a19142f3224902
+	.xword 0xfa783537b6620c2f
+	.xword 0x02912d6d519605f4
+	.xword 0x1b4e0db79b389bda
+	.xword 0xe4141dec2d55bff1
+	.xword 0x37f2ae00a7f78ded
+	.xword 0x0519f3c233b83ef4
+	.xword 0x324d0a0a0852ae52
+	.xword 0x7de5cca99e5c2087
+	.xword 0xa7861d1178d93f4b
+	.xword 0x14a95824f2080d39
+	.xword 0x9abb8a9ef595e1a1
+	.xword 0xb5b99493764cce43
+	.xword 0xf28088cef87f0b6b
+_spu_sslkey_iv_array:
+	.xword 0x814013f2e92cb3b5
+	.xword 0x13e28e929ce2aa5f
+	.xword 0x79691f21f88ea625
+	.xword 0x385df88c7e8e0d82
+	.xword 0xd148944e36b71fb6
+	.xword 0xd69e7f039c63ec99
+	.xword 0x3537de88fd6045cc
+	.xword 0x03ea64a3ad21da08
+	.xword 0x6da73c41a69d9706
+	.xword 0x85a77bdbc784c145
+	.xword 0x34dc4d55b1f2bea9
+	.xword 0x70326866069e4769
+	.xword 0x1abdc56c004afaf5
+	.xword 0x1a593ec57a252141
+	.xword 0xe5ec7eee13791eae
+	.xword 0xa7b727d7ad1dfe9b
+	.xword 0x8291c54cce3aa902
+	.xword 0xac8e4006b9e83953
+	.xword 0xd1b65737bad01560
+	.xword 0x6d0c3e1365a65810
+	.xword 0x05ffd42ad6d62aa0
+	.xword 0xe1549859e53fa184
+	.xword 0x67c5b94d497dcc1e
+	.xword 0x05ffae3020d64384
+	.xword 0xb5fcef413b8d05b3
+	.xword 0x871c7427b53ad809
+	.xword 0x9c4374b983b68186
+	.xword 0xd2fb4533adf22a96
+	.xword 0x40b2d6230f483ee0
+	.xword 0xe82be92777c4564f
+	.xword 0x2c2d78b46e1077db
+	.xword 0xdfe7b6cbdc1576ab
+	.xword 0xb690289da4a9510e
+	.xword 0x4131463d746cb270
+	.xword 0x88e09e35aa3b3ce5
+	.xword 0x0322547bbc8fb4e0
+	.xword 0x677d49df8ea0a886
+	.xword 0x9aa980da1060aa35
+	.xword 0xf8e1499873d87c73
+	.xword 0x6e365638105369d8
+	.xword 0x457cd371209bb809
+	.xword 0x00da0f70f1d3f913
+	.xword 0xf92555898de771d2
+	.xword 0xafa1bacbe326f83c
+	.xword 0xa47256fa6974f5b1
+	.xword 0xb0a05ae969bc2b85
+	.xword 0xdb701f41c8b71af7
+	.xword 0x6b3117a8e97b1958
+	.xword 0x5cf36d5a5457f0ad
+	.xword 0x8c647d03b5d80fcc
+	.xword 0x9ccfbdd891bbabe0
+	.xword 0x2dc8c5ef676d79cf
+	.xword 0x9378d1fb91326b0c
+	.xword 0x764b82cfb7ff8e3c
+	.xword 0x6ca516d741894b1f
+	.xword 0x898ebd625cf466a5
+	.xword 0x2e337abe7f82fe22
+	.xword 0x862c2f8e5b1fa7f3
+	.xword 0x493dcc1c0262d927
+	.xword 0x698b1b438200e4e6
+_spu_sslkey_alignment_array:
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+	.xword 0
+_spu_sslkey_src:
+	.xword 0x4ffb2ae6828c8bc4
+	.xword 0x01261e889b43fb6a
+	.xword 0xbe4a842f8141d23d
+	.xword 0x2bebc88d17d8a31e
+	.xword 0x0578b0bc53a0b1c9
+	.xword 0x9a3bb3dc1b183718
+	.xword 0xc259911b6aff5966
+	.xword 0xe68a9dbae163503b
+	.xword 0xc1d05ff69e88c0ad
+	.xword 0x2ceeb772dbe2d3af
+	.xword 0xab4fbd0e02af906b
+	.xword 0x485637ea5631f627
+	.xword 0x324cdadba4bbe8da
+	.xword 0xc6d389ec0dbd785c
+	.xword 0xc6ee10d90066bd09
+	.xword 0x8cc92f5a1d7b975c
+	.xword 0xd015b2ac311205fa
+	.xword 0x5d936a6b780e356f
+	.xword 0x8d7988dac9ba160e
+	.xword 0xa7dcd2aa17df45d1
+	.xword 0x56ef428482e35684
+	.xword 0xfedec996fc0457cf
+	.xword 0xf098101cd58cebf1
+	.xword 0xe6e565077445d5b0
+	.xword 0x5da2b4de5546e619
+	.xword 0x25ded750dfcc2902
+	.xword 0x71bc7a5f1bb97e6c
+	.xword 0xe2197123eed8efcc
+	.xword 0x0d139d981b788a2b
+	.xword 0x9f35f548ac45b57d
+	.xword 0xeba5abf1367695da
+	.xword 0x9947722a084c5638
+	.xword 0x52bf7e73169e3c05
+	.xword 0xccf4004da459f056
+	.xword 0xa44685e37d89f58a
+	.xword 0x38ca1479521a6871
+	.xword 0xc5eeef5b4efa7b98
+	.xword 0x40681c61bb9c24df
+	.xword 0x52e225a175638892
+	.xword 0x7ffe569162a75030
+	.xword 0xad3bed50b81560ca
+	.xword 0x63724007f5802255
+	.xword 0x1e7bd45cf1c003ff
+	.xword 0x43ffa6d8a832698e
+	.xword 0x742c32cb8e1231f6
+	.xword 0xc1fe7ad785a403d8
+	.xword 0x38796064c2402836
+	.xword 0xbaac7d0130c5d79b
+	.xword 0xd37602dc5d599143
+	.xword 0xd5b867a915bef812
+	.xword 0xb153c0020e8dc5bb
+	.xword 0x04e6350bc4ca9990
+	.xword 0x6233ea4b2717ec7b
+	.xword 0x18db14837ad6d503
+	.xword 0x97c3f2b7f0cb3bac
+	.xword 0xb29fd2d1fa44ab5e
+	.xword 0x6ac9b971dee23f5a
+	.xword 0x697ef86abc932ea6
+	.xword 0xf384a92d8df4e7d6
+	.xword 0xf08ec6b588a21248
+	.xword 0x1f68ed49fcfd2b95
+	.xword 0xa3a28f82318b734d
+	.xword 0xc6269d62ded4c90c
+	.xword 0x1ecbe35f83cd65e4
+	.xword 0x208e215e9de60eed
+	.xword 0x57c54a8679e9b9fc
+	.xword 0x8c17af8d7558cfed
+	.xword 0xbda41ccb42f0e773
+	.xword 0x9fba48f90565fd62
+	.xword 0x26e4b27377d4c373
+	.xword 0x9c7ecab6a3a942c7
+	.xword 0x2e7986ab08d6154e
+	.xword 0x6f09cdf82a6bfe95
+	.xword 0xc98ef505d1b89184
+	.xword 0xc196dfa264ecf65d
+	.xword 0x1ad0c6c16c2306b6
+	.xword 0xd462bb233b1dd96b
+	.xword 0xc7281c9619b57275
+	.xword 0x514ee03f036deca2
+	.xword 0x975c7b3f9e14911e
+	.xword 0x19f8ff91bf20d7c5
+	.xword 0xd1a90c7436281a90
+	.xword 0xd1e044ac40b444ac
+	.xword 0x4373e1f81437bd23
+	.xword 0x6aae4eb42c452c44
+	.xword 0x60c1f4ac72f01158
+	.xword 0xc01faadf8f4d1c2d
+	.xword 0x057e60e72317e4d8
+	.xword 0x88252a33b8488fd5
+	.xword 0x32bae5843697752c
+	.xword 0x1a736a951caaaebe
+	.xword 0x7da7eae3502a55aa
+	.xword 0xce46e6a712ac3822
+	.xword 0x7a12b8c4e67444ed
+	.xword 0xe5af7641e51d096e
+	.xword 0x90800a9051fa560d
+	.xword 0xb63ae0c7c7e072f6
+	.xword 0xd40d187e297688e5
+	.xword 0x010754f19cf6634d
+	.xword 0x85f77745f9d61732
+	.xword 0x6130d8ff273a6097
+	.xword 0x26922d3ad78ff59e
+	.xword 0x34dd52759e8f6917
+	.xword 0x4b75523173d2fde3
+	.xword 0x601b4d6670f0d9a4
+	.xword 0xcf53ca0a9cf848d4
+	.xword 0x0a3780da4db56211
+	.xword 0xf6763ded64ce9f96
+	.xword 0xea2f520721c0ce3a
+	.xword 0x192601812a8e8cd7
+	.xword 0x338dc52d7ab59a90
+	.xword 0x850e972fbfce8f1f
+	.xword 0xd8c259a0ecb62e25
+	.xword 0xdd95b6444c872df0
+	.xword 0x0bc18b4b842c1f97
+	.xword 0x39844cdd60e47cd4
+	.xword 0xb9e6b97d178e6313
+	.xword 0x56225cb235db1c86
+	.xword 0xc8ab69585d3f9390
+	.xword 0x5109b1f0c16e501a
+	.xword 0xe1e98dff06c3321f
+	.xword 0xbde702867f0a3fb8
+	.xword 0x7bca948455101c2f
+	.xword 0xf223583862a0911e
+	.xword 0x5d65ac42b14c1abe
+	.xword 0x0e8a997b3bf58f9c
+	.xword 0x208b3363e932422b
+	.xword 0x9b5d978a4d3f69f9
+	.xword 0x3857f660db9f04ef
+	.xword 0x60d35337403fdd90
+	.xword 0xfa578b5ead0ef4b9
+	.xword 0x17b3161e14014183
+	.xword 0x249f8d27523ab06d
+	.xword 0xb45c5376492feb75
+	.xword 0xed1260c36f7c3942
+	.xword 0xc5e1894af25ea30e
+	.xword 0x219a5044e2c2285f
+	.xword 0x6da7aa858490919f
+	.xword 0xc5673cb29f1293ee
+	.xword 0xb50d6b1523866a33
+	.xword 0x0f7637c4d1d7f970
+	.xword 0xec2bdb2fcef4b899
+	.xword 0xf1ed7c017e838795
+	.xword 0xcd892953e7e4cdf7
+	.xword 0x85058967608e9614
+	.xword 0x43151121fd8e6cf1
+	.xword 0x27837e251ba4e8fb
+	.xword 0x3ff30a7430347455
+	.xword 0xe1aaf51ac2a83bda
+	.xword 0xdead787b0d727907
+	.xword 0xa2d75f19f2b14100
+	.xword 0xaa63c33f5cd13941
+	.xword 0xde0598a9fdf6edb9
+	.xword 0xe616e81d84e730c3
+	.xword 0x1e6d26e1205bb3d6
+	.xword 0xfeb421964d4a7934
+	.xword 0x08fbf86ad77023b5
+	.xword 0xa674ba9cee79939b
+	.xword 0xaa57f7775b5a9456
+	.xword 0xa30e57433e8fc264
+	.xword 0x3fb34c0a54a9fb17
+	.xword 0x78d0fc342b3386a4
+	.xword 0x5fffb939fd246856
+	.xword 0xe5039ffa6e012712
+	.xword 0x0fc6ce70134fdf69
+	.xword 0x997b3d034a7d1c2f
+	.xword 0xda6222afc1959590
+	.xword 0x64e2d12d9a2c4c01
+	.xword 0xf7c7befbe6f316a7
+	.xword 0xb7b6597169698a33
+	.xword 0xb71617c52d324ed8
+	.xword 0xb12f07a08f26948a
+	.xword 0xc8bf75c00cae415d
+	.xword 0x7d9543f76a68c2b2
+	.xword 0x414aa91e37dd3534
+	.xword 0x44d740071469b2aa
+	.xword 0x5dd02c3447c4092d
+	.xword 0x679d448cecb60850
+	.xword 0x7bc853a95e32ee1f
+	.xword 0x4126ed40577fb761
+	.xword 0x0328a50943ed9d5b
+	.xword 0xad23be9e56abcd0b
+	.xword 0x69ef0dbb4bdf9786
+	.xword 0x7cdcd1fa3a5ff04f
+	.xword 0xfa6c218fc1855202
+	.xword 0x861a0ced48a915de
+	.xword 0xe3ff5889f65b5667
+	.xword 0xbdd39d375d2fa735
+	.xword 0x0d9532f313903a06
+	.xword 0xda8f93011933bdf7
+	.xword 0xacb0616c6ee96d3a
+	.xword 0x98ea3fed58de25f2
+	.xword 0xeea086e77fe4a458
+	.xword 0xcde297b4eb3816d9
+	.xword 0xea9a1e9433b4828b
+	.xword 0x3585686a2c781062
+	.xword 0x5064b96a8ec806f9
+	.xword 0x6e92060314d311ee
+	.xword 0xaf1e84eb2e5b7bb1
+	.xword 0xa69cc0524fe7ac3f
+	.xword 0x3ad89ab2f7ed9c02
+	.xword 0xb95dfb5e0cc49281
+	.xword 0x35f1a5e58e801c67
+	.xword 0x5b6930a0a3836d38
+	.xword 0x3a01e9a01d1ad7a2
+	.xword 0xc41569007688c8cd
+	.xword 0x5ee0e95d1e82cb23
+	.xword 0xcf780cee0e2a505f
+	.xword 0x3707855103c56400
+	.xword 0x08d7ac1f1a11ac14
+	.xword 0xaefdc9545dd20e50
+	.xword 0xb8a2dac5bcccdfab
+	.xword 0x5bbde999e28b00d3
+	.xword 0x00fe08a2f0165596
+	.xword 0x6c4e8fdc74fb1374
+	.xword 0x2a6a31f0eee7c467
+	.xword 0xdb6d3cd068fe9126
+	.xword 0x85e0ad37f1b19de5
+	.xword 0xd8d38328d7c5fd92
+	.xword 0x23a445f2ade3c4a6
+	.xword 0xa6c9ef3673d4e06d
+	.xword 0xc71eb30c76dddf48
+	.xword 0x2731fd56e1258ed1
+	.xword 0x14f660ad4b4e6248
+	.xword 0xaed6499ae005c4a0
+	.xword 0xee61d83cad04a2e3
+	.xword 0x92e45325971a842f
+	.xword 0x6c7849b1a62085e8
+	.xword 0x4985a3f2bbc8ccfe
+	.xword 0x7f860bfc07210b73
+	.xword 0xc8dbc23f28b2c36a
+	.xword 0x617a9e28383de700
+	.xword 0xa5f4c3f91effbb3b
+	.xword 0xc9b18951fa4dce0a
+	.xword 0x9fec39badd594ba8
+	.xword 0xba0040b3cfc41524
+	.xword 0x921a91816bcb4617
+	.xword 0x243a5350bb395a6e
+	.xword 0xc673ce2914469c76
+	.xword 0xec67055e89033dc6
+	.xword 0x22f2a757613f43a5
+	.xword 0x3163be48ce07ebf3
+	.xword 0xbf53475530180640
+	.xword 0x48498e6a001add2f
+	.xword 0x4c55019d2bc0255b
+	.xword 0x093e4e735600b779
+	.xword 0x3c53f0e568f7b12f
+	.xword 0x475cd3d166dc9aef
+	.xword 0xa7400848b2623184
+	.xword 0x77bfa71d18d4e98e
+	.xword 0x615e7e932929c8cd
+	.xword 0x1e0724397a1fb47e
+	.xword 0x0e090ee78a2f0588
+	.xword 0xf74013b5ceb4dbc2
+	.xword 0x84f6283454e0b4dc
+	.xword 0xc4c8c390d6e571b8
+	.xword 0x3d7464b78c121a12
+	.xword 0xedd3e02bf80388da
+	.xword 0x58a574549d6dde8b
+	.xword 0x2f7f5c9fbe669761
+	.xword 0x405438601406e1a3
+	.xword 0x3b9ad4004da689dd
+	.xword 0x2bc3874e3f53e220
+	.xword 0x70d36224911205a2
+	.xword 0xcd84e43be27b81f7
+	.xword 0x0d158df625467130
+	.xword 0x44dcd86b76819609
+	.xword 0xd80705f4baae6190
+	.xword 0x87ea388e69125972
+	.xword 0x093ef80f8ee0ba4f
+	.xword 0x03c0fd8a58984b68
+	.xword 0x88d3fe03f530e06d
+	.xword 0x541394ccae2b08ae
+	.xword 0x427eb6067f2869e3
+	.xword 0xbb3cee3c52a6f195
+	.xword 0x6759597e86d9db91
+	.xword 0x80ae86466e3784b5
+	.xword 0x1bfa0cc463a037ed
+	.xword 0xc7579244962ef9bc
+	.xword 0x993c14ea74bfdc2e
+_spu_sslkey_dest:
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+_spu_sslkey_auth_key:
+	.xword 0x01c60b5212b322c3
+	.xword 0x51933e3710e69cc3
+	.xword 0x4c87f1915a2bebc6
+	.xword 0x8ecc933916f3778d
+	.xword 0x42d523db2aca2190
+	.xword 0x8adf362b654f1190
+	.xword 0xa1d52e644afb9a6c
+	.xword 0xef8294f51f3d5972
+	.xword 0xe3385df9daa2331f
+	.xword 0xcc4e158d3cc83d06
+	.xword 0x939900ac903dd28c
+	.xword 0x5388ebe215f6d19f
+	.xword 0x09c96f813e9446ee
+	.xword 0x9d652c6b03398773
+	.xword 0xcf83ccb5ff068e34
+	.xword 0xe7c705615b9bb3b1
+	.xword 0x332e24392c67bd4c
+	.xword 0x9cb38c9e42cf4e43
+	.xword 0xd6efb2e97a50cd65
+	.xword 0x796cf359be815b89
+	.xword 0x4ae62555a72998cb
+	.xword 0xbc28c4108b1e7003
+	.xword 0x551bd1b2896f2989
+	.xword 0x0411b09d5b0905c4
+	.xword 0x47fe46bdc82e591c
+	.xword 0xd70e5224dd1deded
+	.xword 0x91c20647060d5777
+	.xword 0x8e927a8191486d6f
+_spu_sslkey_auth_iv:
+	.xword 0x79e4e2115e08ae15
+	.xword 0xf5b0c5c2aba2abe0
+	.xword 0x90b1d288c029232b
+	.xword 0x1cc034ae49bba0ad
+	.xword 0xe0b762041f22990c
+	.xword 0xbbb0c0701b7ee7ac
+	.xword 0xc0894cfb1b674601
+	.xword 0xc47ab1c3047a79f1
+	.xword 0x0638fc88685309ac
+	.xword 0x94e5a3711c81bed6
+	.xword 0x73e82cab4e12d35e
+	.xword 0xdf6c83840d6aa14c
+	.xword 0x7b137beb9166a7e2
+	.xword 0x9e7adb064ae20965
+	.xword 0x75d68c29ad8a79b5
+	.xword 0xfe0042a73afd1bb1
+	.xword 0x809ee70a3676e68a
+	.xword 0xae8d30e089addc8d
+	.xword 0xdf7322f49ca4e8d4
+	.xword 0xdd289dd3bb930adc
+	.xword 0x9a3004d14cfef988
+	.xword 0xb2f5c86f0de7e594
+	.xword 0x5432c89d5386c37c
+	.xword 0x92e249e2ccab156c
+	.xword 0x2802e46930d8de72
+	.xword 0x1ac908988600a26a
+	.xword 0xf837c22e3fd472cd
+	.xword 0xd01e1c241385fc02
+_spu_sslkey_fas_result:
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+	.xword 0xDEADBEEFDEADBEEF
+_spu_aes_toc:
+	.xword _spu_aes_cwd_array
+	.xword _spu_aes_src
+	.xword _spu_aes_auth_key
+	.xword _spu_aes_auth_iv
+	.xword _spu_aes_fas_result
+	.xword _spu_aes_key_array
+	.xword _spu_aes_iv_array
+	.xword _spu_aes_dest
+	.xword _spu_aes_alignment_array
+_spu_des_toc:
+	.xword _spu_des_cwd_array
+	.xword _spu_des_src
+	.xword _spu_des_auth_key
+	.xword _spu_des_auth_iv
+	.xword _spu_des_fas_result
+	.xword _spu_des_key_array
+	.xword _spu_des_iv_array
+	.xword _spu_des_dest
+	.xword _spu_des_alignment_array
+_spu_copy_toc:
+	.xword _spu_copy_cwd_array
+	.xword _spu_copy_src
+	.xword _spu_copy_auth_key
+	.xword _spu_copy_auth_iv
+	.xword _spu_copy_fas_result
+	.xword _spu_copy_key_array
+	.xword _spu_copy_iv_array
+	.xword _spu_copy_dest
+	.xword _spu_copy_alignment_array
+_spu_crc_toc:
+	.xword _spu_crc_cwd_array
+	.xword _spu_crc_src
+	.xword _spu_crc_auth_key
+	.xword _spu_crc_auth_iv
+	.xword _spu_crc_fas_result
+	.xword _spu_crc_key_array
+	.xword _spu_crc_iv_array
+	.xword _spu_crc_dest
+	.xword _spu_crc_alignment_array
+_spu_hash_toc:
+	.xword _spu_hash_cwd_array
+	.xword _spu_hash_src
+	.xword _spu_hash_auth_key
+	.xword _spu_hash_auth_iv
+	.xword _spu_hash_fas_result
+	.xword _spu_hash_key_array
+	.xword _spu_hash_iv_array
+	.xword _spu_hash_dest
+	.xword _spu_hash_alignment_array
+_spu_hmac_toc:
+	.xword _spu_hmac_cwd_array
+	.xword _spu_hmac_src
+	.xword _spu_hmac_auth_key
+	.xword _spu_hmac_auth_iv
+	.xword _spu_hmac_fas_result
+	.xword _spu_hmac_key_array
+	.xword _spu_hmac_iv_array
+	.xword _spu_hmac_dest
+	.xword _spu_hmac_alignment_array
+_spu_rc4_toc:
+	.xword _spu_rc4_cwd_array
+	.xword _spu_rc4_src
+	.xword _spu_rc4_auth_key
+	.xword _spu_rc4_auth_iv
+	.xword _spu_rc4_fas_result
+	.xword _spu_rc4_key_array
+	.xword _spu_rc4_iv_array
+	.xword _spu_rc4_dest
+	.xword _spu_rc4_alignment_array
+_spu_sslkey_toc:
+	.xword _spu_sslkey_cwd_array
+	.xword _spu_sslkey_src
+	.xword _spu_sslkey_auth_key
+	.xword _spu_sslkey_auth_iv
+	.xword _spu_sslkey_fas_result
+	.xword _spu_sslkey_key_array
+	.xword _spu_sslkey_iv_array
+	.xword _spu_sslkey_dest
+	.xword _spu_sslkey_alignment_array
+.global _spu_table_of_context
+_spu_table_of_context:
+	.xword _spu_aes_toc
+	.xword _spu_des_toc
+	.xword _spu_copy_toc
+	.xword _spu_crc_toc
+	.xword _spu_hash_toc
+	.xword _spu_hmac_toc
+	.xword _spu_rc4_toc
+	.xword _spu_sslkey_toc
+
+!# CWQ data area, set aside 512 CW's worth
+!# 512*8*8 = 32KB
+.align 32*1024
+.global _spu_cwq_base
+_spu_cwq_base:
+	.xword 0xAAAAAAAAAAAAAAA
+	.xword 0xAAAAAAAAAAAAAAA
+	.xword 0xAAAAAAAAAAAAAAA
+	.xword 0xAAAAAAAAAAAAAAA
+	.xword 0xAAAAAAAAAAAAAAA
+	.xword 0xAAAAAAAAAAAAAAA
+	.xword 0xAAAAAAAAAAAAAAA
+	.xword 0xAAAAAAAAAAAAAAA
+.align 32*1024
+.global _spu_cwq_last
+_spu_cwq_last:
+
+.end
+
+
+#if 0
+#endif

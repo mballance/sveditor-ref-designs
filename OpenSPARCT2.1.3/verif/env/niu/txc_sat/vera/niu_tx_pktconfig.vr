@@ -1,0 +1,198 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_tx_pktconfig.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "pcg_token.vrh"
+#include "niu_txtoken.vrh"
+#include "niu_errclass.vrh"
+
+class TxPacketGenConfig {
+
+ // This is to be used by the tests to communicate with the packet generator
+
+   flow_desc flow;
+   integer data_length;
+   integer token;
+   integer mac_id;
+   integer g_mode = 0;
+   integer mark_bit = 0;
+   integer pad = 0;
+   integer err_code = 0;
+   integer h_err_code = 0;
+   integer err_pkt = 0;
+// To be used only for Loopback modes
+   integer loop_back_rx_lastpacket = 0;
+   integer loop_back_rxdma_num = 0;
+   integer set_wrong_ctlwd = 0;
+   integer ecc_2biterr_line1 = 0;
+
+   integer gConfig_length[15];
+   integer gConfig_alignment[15];
+   integer gConfig_mode; // if mode is -1 , then random lengths/alignment would be chosen
+   integer gConfig_noOfDesc;
+   integer gConfig_specific_alignment;
+   integer gConfig_specific_line;
+   CNiuErrors error_info;
+
+   
+
+   task new() {
+	flow = new();
+	gConfig_mode = 0;
+	gConfig_noOfDesc = 1;
+        g_mode = 0;
+        mark_bit = 0;
+        pad = 0;
+        err_code = 0;
+        h_err_code = 0;
+        err_pkt = 0;
+        set_wrong_ctlwd = 0;
+        ecc_2biterr_line1 = 0;
+	error_info = new();
+        gConfig_specific_alignment = 0;
+        gConfig_specific_line = 0;
+   }
+
+   function bit[4:0] get_frame_type() {
+
+     bit [4:0] ftype;
+
+     ftype = flow.frame.frame_type;
+     printf("VAL_OF_FRM_TYPE %0h\n",ftype);
+
+     get_frame_type = ftype;
+  }
+
+  function integer get_frame_class() {
+
+     integer fclass;
+
+     fclass = flow.frame.frame_class;
+     printf("VAL_OF_FRM_CLASS %0d\n",fclass);
+
+    get_frame_class = fclass;
+
+  }
+
+  function integer get_ip_hdr_len() {
+
+     integer fip_hdr_len;
+     fip_hdr_len = flow.frame.header_length;
+
+     get_ip_hdr_len = fip_hdr_len;
+
+  }
+  task SetGatherFields();
+  task printGatherFields() {
+   integer i;
+   printf(" TxPacketGenConfig::printGatherFields NoOfGather - %d \n", gConfig_noOfDesc);
+   for(i=0;i<gConfig_noOfDesc;i++) {
+    printf(" TxPacketGenConfig::printGatherFields  i - %d, length - gConfig_length - %d alignment - %d \n",i,this.gConfig_length[i],this.gConfig_alignment[i]);
+   }
+  }
+
+
+}
+
+
+task TxPacketGenConfig::SetGatherFields() {
+
+ integer i;
+ integer rem_length;
+ integer length;
+ integer alignment;
+ integer j;
+ integer done;
+ done = 0;
+
+ j=0;
+
+ while((done==0) & ( j <10)) {
+
+ i=0;
+ rem_length = this.data_length + this.flow.frame.l2_pad_length - 4;
+  while((i<15) & (rem_length>0) ) {
+   if(i==0) {
+	// special case, due to control word.
+     alignment = 16;
+     length = random() % rem_length + 1;
+
+
+     if(length > 4096) {
+	length = random() % 4095 + 1;
+     }
+     if(length<16) {
+	// force this to 16
+     length = 16;
+     }
+     this.gConfig_length[i] = length;
+     this.gConfig_alignment[i] = alignment;
+     rem_length = rem_length - length;
+     // printf("SetGatherFields i = %d length - %d alignment - %d \n",i,length,alignment);
+
+   } else {
+     alignment = random() % 16 + 1;
+	// if the last descriptor, make sure the last descriptor gets everything
+     if(i==15) {
+	length = rem_length;
+     } else
+	length = random() % rem_length + 1;
+
+	if(length > 4096) {
+	length = random() % 4095 + 1;
+      }
+     // printf("SetGatherFields i = %d length - %d alignment - %d \n",i,length,alignment);
+     this.gConfig_length[i] = length;
+     this.gConfig_alignment[i] = alignment;
+     rem_length = rem_length - length;
+   }
+   i++;
+ }
+ if(rem_length!=0) {
+	// Need to restart the random generation
+  j++;
+ } else {
+   done = 1;
+  this.gConfig_noOfDesc = i ;
+ }
+}
+
+if(j>=10) {
+ printf("TX TB FATAL ERROR -!!! in task TxPacketGenConfig::SetGatherFields FIX THIS \n");
+}
+
+}
+
+

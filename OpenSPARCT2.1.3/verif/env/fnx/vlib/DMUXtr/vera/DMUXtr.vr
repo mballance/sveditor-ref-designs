@@ -1,0 +1,1717 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: DMUXtr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "DMUXtr.vri"
+#include "report_info.vrh"
+#include "cReport.vrh"
+
+class DMUXtr
+  {
+  local  po_DMUingress ingressPort;
+  local  po_DMUegress  egressPort;
+         po_DMUmisc    miscPort;
+  ReportClass          Report;
+
+  local integer mutex;			// A general-purpose mutex
+  local integer egressHdrQueue;		// Mailbox: TLPs to send to the ILU  
+  local integer egressQueue;   		// Mailbox: Parms for the hdr above  
+  local integer egressEventQueue;	// Mailbox: "send" completion events
+  local integer egressRelQueue;		// External mailbox: release records
+  local integer ingressHdrQueue;	// Mailbox: Expected TLPs from the ILU
+  local integer ingressQueue;   	// Mailbox: Parms for the hdr above  
+  local integer ingressEventQueue;	// Mailbox: "recv" completion events
+  local integer ingressDataQueue;	// Mailbox: Data to be pulled from ILU
+  local integer ingressDataEventQueue;	// Mailbox: Data to be pulled from ILU
+  local bit [7:0] ingressDataAddr;      // Next IDB row to pull
+  local bit [127:0] dataOutMemory[256]; // Representing the DOU memory
+  local bit [1023:0] dataOutMemoryErr;  // Should a parity error be injected?
+  local integer avgIngressCredits;      // The target # of "ingressCredits"
+  local integer ingressCredits;		// # of available ingress enq credits
+  local integer egressCredits;		// # of available egress enq credits
+  local integer dequeuePending;		// # of pending ingress credits to deq
+  local bit     dequeueEnable;		// Should we return ingress credits?
+  local integer dequeueMinDelay;	// Min # of cycles between dequeues
+  local integer dequeueMaxDelay;	// Max # of cycles between dequeues
+
+  local integer cplQueue;		// A mailbox for unexpected bad cpl'ns
+
+  local bit ingressHdrLookAhead;        // Has 'ingressHdr' pulled a header?
+
+  local bit disableUnusedParityCheck;   // Should unused parity bits be ignored?
+
+  local bit debugOK;			// Should debug messages be printed?
+
+  local bit reset_pending;
+
+
+  // User interface...
+  task new( po_DMUingress a_ingressPort, po_DMUegress a_egressPort, po_DMUmisc a_miscPort , ReportClass _Report );
+  task enableXtr();
+  task setRelMailbox( integer RelMailbox );
+  task setCplMailbox( integer CplMailbox );
+  task send( bit[PEC_PCI__HDR] tlpHdr,
+	     bit[31:0] payload, 
+             bit[7:0] douAddr );
+  task recv( bit[PEC_PCI__HDR] tlpHdr, 
+             bit[31:0] payload,
+             (bit optional=0) );
+  task setIngressDequeueDelay( integer MinDelay, integer MaxDelay );
+  task disableIngressDequeue();
+  task enableIngressDequeue();
+  task clear( bit TriggerExpectEvents );
+  task reset();
+  task ignoreUnusedParity();
+
+  task setAvgIngressCreditsAvailable( integer Credits );
+  function integer ingressCreditsAvailable();
+  function integer egressCreditsAvailable();
+
+
+  // Threads manning the ILU interfaces...
+  local task ingressHdr();
+  local task ingressData();		// includes submitting release recds
+  local task ingressDeq();
+  local task egressHdr();
+  local task egressData();
+  local task egressRel();
+
+  // Some service routines...
+  local function
+         bit checkPecRecd( bit[PEC__RECD] pecRecd, bit[PEC_PCI__HDR] tlpHdr );
+  local task reportPecErr( bit[PEC__RECD] pecRecd, bit[PEC_PCI__HDR] tlpHdr );
+  local task putCplQueue( bit[PEC__RECD] pecRecd );
+
+  local task sendPecRecd( bit[PEC_PCI__HDR] tlpHdr, bit[7:0] douAddr );
+  local task fillDataOut( bit[7:0] douAddr,
+                          integer dwCount,          
+                          bit[7:0] payload,
+                          integer gasDWs,
+                          bit cplData );
+  local task injectParityErr( bit[7:0] douAddr, 
+                              integer gasDWs,
+                              bit[7:0] errMask );
+  local task fillCplData( bit[7:0] douAddr );
+  local task enqueueIngressData( bit[8:0] payload, 
+                                 integer dwCount, 
+				 bit posted );
+  local task dequeueIngressData( var bit[7:0] payload, 
+				 var bit payloadErr,
+                                 var integer dwCount,
+				 var bit posted );
+
+  }
+
+#define _WAIT_A_CYCLE      @1 egressPort.$enq = void
+#define _REPORT_ERROR(msg) Report.report(RTYP_TEST_ERROR,"DMUXtr (cycle %d) %s\n", get_cycle(), msg)
+//#define _REPORT_ERROR(msg) error("DMUXtr (cycle %d) %s\n", get_cycle(), msg)
+#define _ERROR_INFO(msg)   printf("DMUXtr (cycle %d) %s\n", get_cycle(), msg)
+#define _INFO_MSG(msg)     printf("DMUXtr (cycle %d) %s\n", get_cycle(), msg)
+#define _DEBUG_MSG(msg)    if ( debugOK ) _INFO_MSG(msg)
+#define _ACQUIRE_MUTEX     void = semaphore_get(WAIT,mutex,1)
+#define _RELEASE_MUTEX     semaphore_put(mutex,1)
+
+/*
+* new - Allocate a DMU transactor
+*/
+task DMUXtr::new( po_DMUingress a_ingressPort, po_DMUegress a_egressPort, po_DMUmisc a_miscPort, ReportClass _Report )
+  {
+  bit [7:0] i = 0;
+  ingressPort = a_ingressPort;
+  egressPort = a_egressPort;
+  miscPort = a_miscPort;
+  Report = _Report;
+
+  //Come up in reset
+#ifndef	N2_FC
+  miscPort.$pwrOnRstN <= 1'b0;
+  miscPort.$resetN <= 1'b0;
+
+  egressPort.$douvalid <= 1'b0;
+  egressPort.$douerr <= 1'b0;
+#endif
+
+  // Everything is allocated by "enableXtr"
+  egressRelQueue = 0;
+
+  dequeueMinDelay = 0;
+  dequeueMaxDelay = 5;
+  dequeueEnable = 1;
+
+  avgIngressCredits = 1;
+
+  // "setCplQueue" tells us about a mailbox to put unexpected unsuccessful cplns
+  cplQueue = 0;
+
+  dataOutMemoryErr = 1024'b0;
+
+  disableUnusedParityCheck = 0;
+
+  reset_pending = 0;
+
+// review 
+//  for( i=0; i<256; i++ ){
+//      dataOutMemory[i] = {96'hdeadbeefdeadbeefdeadbeefdead00,i};
+//  }
+//  debugOK = get_plus_arg(CHECK,"DMUDUMP");
+
+  debugOK = 0;
+  if (Report.get_global_print_threshold() < RPRT_DEBUG_1) {
+    debugOK = 1;
+  }
+  } /* end new */
+
+/*
+* setRelMailbox - Establish a mailbox for sending ILU release records
+*
+* Parameters:
+*   RelMailbox - The mailbox to receive ILU release records (egress)
+*
+* This task is called by the test environment to allow it to receive
+* information on PIO tags and DOU blocks released by the ILU.  Each mailbox
+* entry is nine-bits, with the high-order bit indicating a released DOU block
+* (followed by the starting DOU address of the released block). 
+*/
+task DMUXtr::setRelMailbox( integer RelMailbox )
+  {
+  egressRelQueue = RelMailbox;
+  } /* end setRelMailbox */
+
+/*
+* setCplMailbox - Establish a mailbox for sending unexpected unsuccessful cplns
+*
+* Parameters:
+*   CplMailbox - The mailbox to receive those bad-boy headers
+*
+* This task is called by the test environment to allow it to receive
+* the headers for completion-TLPs which are unexpected (i.e. not specified 
+* by a "recv" call) and unsuccessful (i.e. PEC_PCI__CPL_STATUS is non-zero).
+* If this mailbox is not set, then these unexpected headers (like any other
+* unexpected TLP) will be recorded as an error.
+*/
+task DMUXtr::setCplMailbox( integer CplMailbox )
+  {
+  cplQueue = CplMailbox;
+  } /* end setCplMailbox */
+
+/*
+* enableXtr - Initialize all local variables and start manning the ports!
+*
+* Parameters: None
+*/
+task DMUXtr::enableXtr()
+  {
+  if ( reset_pending )
+    {
+    reset_pending = 0;
+    return;
+    }
+					// The ingress and egress pipelines
+					// both start with credits.
+  ingressCredits = PEC_ILU_INGRESS_CREDITS; //6 credits 
+  egressCredits = PEC_ILU_EGRESS_CREDITS;   //4 credits
+  dequeuePending = 0;
+
+					// A mutex for local critical sections
+  mutex = alloc(SEMAPHORE,0,1,1);
+
+					// The ingress and egress pipelines 
+					// each have three queues, one holding
+					// the TLP header which is expected or
+					// is to be sent, and another holding
+					// "other" data given to send/recv, and
+					// a final queue holding events which
+					// signal completion.
+  ingressQueue = alloc(MAILBOX,0,1);
+  ingressHdrQueue = alloc(MAILBOX,0,1);
+  ingressEventQueue = alloc(MAILBOX,0,1);
+  egressQueue = alloc(MAILBOX,0,1);
+  egressHdrQueue = alloc(MAILBOX,0,1);
+  egressEventQueue = alloc(MAILBOX,0,1);
+
+  ingressHdrLookAhead = 1'b0;
+
+					// A separate queue holds expected
+					// data to be pulled by an "ingressData"
+					// thread, and events to trigger.
+  ingressDataQueue = alloc(MAILBOX,0,1);
+  ingressDataEventQueue = alloc(MAILBOX,0,1);
+
+					// Start threads for ingress/egress
+					// TLP headers and payload.
+					// The "egressHdr" thread takes care of
+					// monitoring the egress "deq" signal,
+					// while a separate thread has the job
+					// of asserting it on the ingress side.
+
+  fork
+    ingressHdr();
+    ingressData();
+    ingressDeq();
+    egressHdr();
+    egressData();
+    egressRel();
+  join none
+  } /* end enableXtr */
+
+/*
+* send - Add a TLP to the egress pipeline
+*
+* Parameters:
+*   tlpHdr - The TLP header (PCI-Express format) to be sent
+*   payload - The payload specification
+*   douAddr - The starting data-out address for payload
+*/
+task DMUXtr::send( bit[PEC_PCI__HDR] tlpHdr, 
+		   bit[31:0] payload,
+                   bit[7:0] douAddr )
+  {
+  event allDone;
+  bit[7:0] payloadByte;
+  bit[7:0] poisonedPayload;
+  bit      fillPayload;
+  bit      errPayload;
+  bit[7:0] errMask;
+
+  payloadByte = payload[7:0];
+  poisonedPayload = payload[15:8];
+  fillPayload = payload[16];
+  errPayload = payload[17];
+  errMask = payload[25:18];
+
+					// Add a cleared event to the egress
+					// event queue.
+  trigger( OFF, allDone );
+  mailbox_put( egressEventQueue, allDone );
+
+					// Add the header to the ingress
+					// header queue, and put the data
+					// specification in the control queue.
+				        // The data-out memory is initialized
+					// just before the header is sent.
+  _DEBUG_MSG( psprintf( "\nTLPHDR (DMUXtr:send):\tFMT=%x TYPE=%x TC=%x ATTR=%x LEN=%x  REQID=%x TAG=%x ADDR=%x LAST_DWBE=%x FIRST_DWBE=%x\n",
+	 tlpHdr[PEC__FMT], 
+	 tlpHdr[PEC__TYPE], 
+	 tlpHdr[PEC__TC], 
+	 tlpHdr[PEC__ATTR],
+	 tlpHdr[PEC__LEN],
+	 tlpHdr[PEC__REQ_ID],
+	 tlpHdr[PEC__TLP_TAG],
+	 tlpHdr[PEC__ADDR32],
+	 tlpHdr[PEC__LAST_DWBE],
+	 tlpHdr[PEC__FIRST_DWBE] )
+	 );
+  
+  mailbox_put( egressHdrQueue, tlpHdr );
+  mailbox_put( egressQueue, {errMask,errPayload,poisonedPayload,payloadByte,douAddr} );
+
+					// Wait for the TLP to be sent.
+  sync( ANY, allDone );
+  } /* end send */
+
+/*
+* recv - Add a TLP to the ingress pipeline expect-queue
+*
+* Parameters:
+*   tlpHdr - The expected TLP header
+*   payload - The payload specification
+*/
+task DMUXtr::recv( bit[PEC_PCI__HDR] tlpHdr,
+                   bit[31:0] payload,
+                   (bit optional=0)  )
+  {
+  event allDone;
+  bit[7:0] payloadByte;
+  bit      payloadErr;
+  
+  _DEBUG_MSG( psprintf("DMUXtr::recv time = %d, DMUXtr.recv(tlpHdr=128'h%0h, payload=32'h%0h\n",get_time(LO), tlpHdr,payload));
+ 
+  payloadByte = payload[7:0];
+  payloadErr = payload[14];		// The "erroneous" bit from the env't
+
+					// Add a cleared event to the ingress
+					// event queue.
+  trigger( OFF, allDone );
+  mailbox_put( ingressEventQueue, allDone );
+
+					// Add the header and payload-spec
+                                        // to the appropriate ingress queues.
+  mailbox_put( ingressHdrQueue, tlpHdr );
+  mailbox_put( ingressQueue, {optional,payloadErr,payloadByte} );
+
+					// Wait for the TLP to arrive.
+  sync( ANY, allDone );
+  } /* end recv */
+
+/*
+* setAvgIngressCreditsAvailable - Set the number of "enqueue" credits that 
+*                                 the ILU has available (on average)
+*
+* Parameters:
+*   Credits - The target average value of "ingressCreditsAvailable" (below)
+*
+* NOTE: If "Credits" is out of range (i.e. negative), then the transactor
+*       picks an average (target) value, and changes it periodically.
+*/
+task DMUXtr::setAvgIngressCreditsAvailable( integer Credits )
+  {
+  if ( Credits < 0 || Credits > PEC_ILU_INGRESS_CREDITS )
+    avgIngressCredits = 1;
+  else
+    avgIngressCredits = Credits;
+  } /* end setAvgIngressCreditsAvailable */
+    
+/*
+* ingressCreditsAvailable - How many enqueue credits does the ILU have?
+*/
+function integer DMUXtr::ingressCreditsAvailable()
+  {
+  ingressCreditsAvailable = ingressCredits;
+  }
+
+/*
+* egressCreditsAvailable - How many enqueue credits does the DMU have?
+*/
+function integer DMUXtr::egressCreditsAvailable()
+  {
+  egressCreditsAvailable = egressCredits;
+  }
+
+/*
+* setIngressDequeueDelay - Set the minimum and maximum number of cycles before
+*                          returning an ingress header credit to the ILU.
+*
+* Parameters:
+*   MinDelay - The minimum delay from one "dequeue" to the next
+*   MaxDelay - The maximum such delay
+*/
+task DMUXtr::setIngressDequeueDelay( integer MinDelay, integer MaxDelay )
+  {
+  if ( MinDelay >= 0 && MaxDelay >= MinDelay )
+    {
+    dequeueMinDelay = MinDelay;
+    dequeueMaxDelay = MaxDelay;
+    }
+  }
+
+/*
+* disableIngressDequeue - Stop returning ingress header credits to the ILU.
+*/
+task DMUXtr::disableIngressDequeue()
+  {
+  dequeueEnable = 0;
+  } /* end disableIngressDequeue */
+
+/*
+* enableIngressDequeue - Resume returning ingress header credits to the ILU
+*/
+task DMUXtr::enableIngressDequeue()
+  {
+  dequeueEnable = 1;
+  } /* end enableIngressDequeue */
+
+/*
+* clear - Clear ingress expected TLPs
+*/
+task DMUXtr::clear( bit TriggerExpectEvents )
+  {
+  bit [7:0] payload;
+  bit [PEC_PCI__HDR] tlpHdr;
+  bit [24:0] tlpSpec;
+  event allDone = null;
+
+  while( mailbox_get(NO_WAIT,ingressHdrQueue) > 0 )
+    {
+    void = mailbox_get( NO_WAIT, ingressHdrQueue, tlpHdr );
+    void = mailbox_get( NO_WAIT, ingressQueue, payload );
+    void = mailbox_get( NO_WAIT, ingressEventQueue, allDone );
+    if ( allDone != null && TriggerExpectEvents ) trigger( ONE_SHOT, allDone );
+    }
+  while( mailbox_get(NO_WAIT, ingressDataQueue) > 0 )
+    void = mailbox_get( NO_WAIT, ingressDataQueue, tlpHdr );
+  ingressHdrLookAhead = 0;
+
+  }
+
+/*
+* reset - Put everything(?) back to where it was when we started
+*/
+task DMUXtr::reset()
+  {
+  bit [7:0] payload;
+  bit [PEC_PCI__HDR] tlpHdr;
+  bit [24:0] tlpSpec;
+  event allDone = null;
+
+#ifndef	N2_FC
+  ingressPort.$addr <= 8'b0;
+#endif
+  dataOutMemoryErr = 1024'b0;
+  ingressCredits = PEC_ILU_INGRESS_CREDITS;
+  egressCredits = PEC_ILU_EGRESS_CREDITS;
+  dequeuePending = 0;
+  ingressDataAddr = 8'b0;
+  while( mailbox_get(NO_WAIT,ingressHdrQueue) > 0 )
+    {  
+    void = mailbox_get( NO_WAIT, ingressHdrQueue, tlpHdr );
+    void = mailbox_get( NO_WAIT, ingressQueue, payload );
+    void = mailbox_get( NO_WAIT, ingressEventQueue, allDone );
+    }
+  while( mailbox_get(NO_WAIT, ingressDataQueue) > 0 )
+    void = mailbox_get( NO_WAIT, ingressDataQueue, tlpHdr );
+  ingressHdrLookAhead = 0;
+  while( mailbox_get( NO_WAIT, egressHdrQueue ) > 0 )
+    {
+    void = mailbox_get( NO_WAIT, egressHdrQueue, tlpHdr );
+    void = mailbox_get( NO_WAIT, egressQueue, tlpSpec );
+    void = mailbox_get( NO_WAIT, egressEventQueue, allDone );
+    }
+
+  reset_pending = 1;
+  } /* end reset */
+
+/*
+* ignoreUnusedParity - Don't report an error if parity from the IDB is not
+*                      correct for DWs which are not part of the original TLP.
+*
+* Parameters: None
+*/
+task DMUXtr::ignoreUnusedParity()
+  {
+  disableUnusedParityCheck = 1;
+  } /* end ignoreUnusedParity */
+
+/*
+* ingressHdr - Monitor the ILU's ingress PEC port and make sure that 
+*              everything that comes out is expected
+*/
+task DMUXtr::ingressHdr()
+  {
+  bit [9:0] stuff;
+  bit optional;
+  bit [8:0] payload;
+  bit [PEC_PCI__HDR] tlpHdr;
+  event allDone = null;
+  string tmp;
+
+#ifndef	N2_FC
+  ingressHdrLookAhead = 0;
+  while( 1 )
+    {
+    _WAIT_A_CYCLE;
+    while( reset_pending ) _WAIT_A_CYCLE;
+
+					// If the ILU is presenting a PEC recd,
+    if ( ingressPort.$enq )
+      {
+					// ...make sure that it has a credit
+					// to do so...
+      if ( ingressCredits == 0 )
+        {
+        _REPORT_ERROR( "Ingress PEC record enqueued with no credits available");
+        }
+
+					// ...and that a record is expected...
+      else if ( !ingressHdrLookAhead && mailbox_get(NO_WAIT,ingressQueue) == 0 )
+        {
+        if ( ingressPort.$recd[PEC__TYPE] == PEC_PCI__TYPE_CPL
+          && ingressPort.$recd[PEC__CPL_STATUS] != 0
+          && cplQueue != 0 )
+          {
+          putCplQueue( ingressPort.$recd );
+          }
+        else
+          {
+	    tmp = { "Ingress PEC record enqueued when none expected: ",
+		    psprintf("PEC__TYPE='d%0d, CPL_STATUS='d%0d, cplQueue=%0d",
+			     ingressPort.$recd[PEC__TYPE],
+			     ingressPort.$recd[PEC__CPL_STATUS],
+			     cplQueue) };
+	    _REPORT_ERROR( tmp ); 
+          }
+        }
+      
+					// ...and then check the presented PEC
+					// record against the expected TLP
+					// header.  Any payload is checked by
+					// the "ingressData" thread. 
+      else
+        {
+        if ( !ingressHdrLookAhead )
+          {
+          void = mailbox_get( NO_WAIT, ingressHdrQueue, tlpHdr );
+          void = mailbox_get( NO_WAIT, ingressQueue, stuff );
+          void = mailbox_get( NO_WAIT, ingressEventQueue, allDone );
+          optional = stuff[9];
+          payload = stuff[8:0];
+          }
+        ingressHdrLookAhead = 0;
+
+					// Skip past optional TLPs which
+					// don't match what we've got.
+        while( optional 
+            && mailbox_get(NO_WAIT,ingressQueue) > 0
+            && checkPecRecd( ingressPort.$recd, tlpHdr ) )
+          {
+          trigger( ON, allDone );
+          void = mailbox_get( NO_WAIT, ingressHdrQueue, tlpHdr );
+          void = mailbox_get( NO_WAIT, ingressQueue, stuff );
+          void = mailbox_get( NO_WAIT, ingressEventQueue, allDone );
+          optional = stuff[9];
+          payload = stuff[8:0];
+          }
+
+					// If the PEC record doesn't match...
+        if ( checkPecRecd( ingressPort.$recd, tlpHdr ) )
+          {
+					// ...then either put an unsuccessful
+					// completion into the "cplQueue"...
+          ingressHdrLookAhead = 1;
+          if ( ingressPort.$recd[PEC__TYPE] == PEC_PCI__TYPE_CPL
+            && ingressPort.$recd[PEC__CPL_STATUS] != 0
+            && cplQueue != 0 )
+            {
+            putCplQueue( ingressPort.$recd );
+            }
+
+					// ...or complain mightily.
+          else
+            {
+            reportPecErr( ingressPort.$recd, tlpHdr );
+            }
+          }
+
+					// And if the (matching) TLP has data
+					// then tell the "ingressData" thread
+					// to check the payload's validity.
+        else if ( ingressPort.$recd[PEC__FMT_DATA] )
+          {
+          mailbox_put( ingressDataEventQueue, allDone );
+          enqueueIngressData( payload,
+                              ingressPort.$recd[PEC__LEN],
+                              ingressPort.$recd[PEC__TYPE]!=PEC_PCI__TYPE_CPL );
+          }
+
+					// Otherwise, just signal whoever
+					// expected the TLP that we got it!
+        else
+          {
+          trigger( ON, allDone );
+          }
+        }
+
+					// The ILU has consumed a credit.
+					// The "ingressDeq" thread will take
+					// care of returning the credit.
+      _ACQUIRE_MUTEX;
+      ingressCredits = ingressCredits - 1;
+      dequeuePending = dequeuePending + 1;
+      if ( ingressCredits == 0 ) _DEBUG_MSG( "Ingress credits exhausted" );
+      _RELEASE_MUTEX;
+      } /* end "if ingressPort.$enq is asserted..." */
+    }
+#endif
+  } /* end ingressHdr */
+
+/*
+* putCplQueue - Add a TLP (a CPL header) to the "cplQueue"
+*
+* Parameters:
+*   pecRecd - The PEC record denoting the TLP to be added to the "cplQueue"
+*/
+task DMUXtr::putCplQueue( bit[PEC__RECD] pecRecd )
+  {
+  bit [127:0] pciHdr;
+
+  pciHdr = 128'b0;
+  pciHdr[PEC_PCI__FMT] = pecRecd[PEC__FMT];
+  pciHdr[PEC_PCI__TYPE] = pecRecd[PEC__TYPE];
+  pciHdr[PEC_PCI__LEN] = pecRecd[PEC__LEN];
+  pciHdr[PEC_PCI__TC] = pecRecd[PEC__TC];
+  pciHdr[PEC_PCI__ATTR] = pecRecd[PEC__ATTR];
+  pciHdr[PEC_PCI__CPL_ID] = pecRecd[PEC__CPL_ID];
+  pciHdr[PEC_PCI__CPL_STATUS] = pecRecd[PEC__CPL_STATUS];
+  pciHdr[PEC_PCI__CPL_REQ_ID] = pecRecd[PEC__CPL_REQ_ID];
+  pciHdr[PEC_PCI__CPL_TAG] = pecRecd[PEC__CPL_TAG];
+  pciHdr[PEC_PCI__BCM] = pecRecd[PEC__BCM];
+  pciHdr[PEC_PCI__LOWADDR] = pecRecd[PEC__LOWADDR];
+
+  mailbox_put( cplQueue, pciHdr );
+
+  } /* end putCplQueue */
+
+/*
+* ingressData - Pull data from the IDB and make sure that it matches the
+*               expected result.
+*
+* NOTE: The current implementation assumes a one-cycle IDB delay
+*/
+task DMUXtr::ingressData()
+  {
+  event allDone = null;
+  integer dwCount;
+  bit [7:0] payload;
+  bit payloadErr;
+  bit posted;
+  bit [7:0] nextAddr;
+  integer byteCount;
+  integer rowCount;
+  integer i;
+  bit [127:0] dataRow;
+  string errMsg;
+  bit payloadErrFound;
+  bit [3:0] goodParity;
+
+#ifndef	N2_FC
+  ingressDataAddr = 8'b0;
+  ingressPort.$addr = 8'b0;
+  ingressPort.$relrcdenq = 1'b0;
+  _WAIT_A_CYCLE;
+
+  nextAddr = 8'b1;
+  while( 1 )
+    {
+    while( reset_pending ) { printf( "Waiting for reset...\n" ); _WAIT_A_CYCLE;}
+
+					// Wait for some data to pull...   
+    dequeueIngressData( payload, payloadErr, dwCount, posted );
+   
+					// Make sure that the payload is
+					// what we expect.
+    rowCount = (dwCount+3) / 4;
+    byteCount = dwCount * 4;
+    // - put a randomized delay here since data doesn't have to come back right away
+    //FIRE MAS pg. 227 
+
+					// We've got the IDB row of interest
+					// (or more correctly its address)
+					// already in the pipeline.  Go ahead
+					// and get the next row.
+    nextAddr = ingressDataAddr + 1;
+    ingressPort.$addr = nextAddr;
+    nextAddr = nextAddr + 1;
+    rowCount = rowCount - 1;
+    _WAIT_A_CYCLE;
+
+    payloadErrFound = 0;
+    while( byteCount > 0 && !reset_pending)
+      {
+      dataRow = ingressPort.$data;
+     
+      goodParity = ~{ ^dataRow[127:96], ^dataRow[95:64],
+		      ^dataRow[63:32], ^dataRow[31:0] };
+      if ( ingressPort.$par != goodParity && disableUnusedParityCheck )
+        {
+        if ( byteCount <= 12 ) goodParity[3] = ingressPort.$par[3];
+        if ( byteCount <=  8 ) goodParity[2] = ingressPort.$par[2];
+        if ( byteCount <=  4 ) goodParity[1] = ingressPort.$par[1];
+        }
+      if ( ingressPort.$par != goodParity )
+        {
+        payloadErrFound = 1;
+        if ( !payloadErr )
+          _REPORT_ERROR( "Incorrect data parity from IDB" );
+        }
+
+      for ( i=0; i<16 && byteCount>0; i++ )
+        {
+        if ( dataRow[127:120] != payload )
+          {
+          _REPORT_ERROR( "Incorrect payload from IDB" );
+          sprintf( errMsg, "Expect: %x  Actual: %x", payload, dataRow[127:120]);
+          _ERROR_INFO( errMsg );
+          return;
+          }
+        dataRow = {dataRow[119:0],8'b0};
+        byteCount = byteCount - 1;
+        payload = payload + 1;
+        }
+     
+					// Tell the ILU that we're all done
+					// with this IDB row.  
+      if ( !reset_pending )
+      {
+      ingressPort.$relrcdenq = 1'b1;
+      ingressPort.$relrcd = {posted,ingressDataAddr};
+      ingressDataAddr = ingressDataAddr + 1;
+      }
+
+					// We're done with this row... get the
+					// next one.
+      if ( rowCount > 0 )
+        {
+        ingressPort.$addr = nextAddr;
+        nextAddr = nextAddr + 1;
+        rowCount = rowCount - 1;
+        }
+      _WAIT_A_CYCLE;
+      } /* end "while there's payload to check..." */
+
+    if ( payloadErr && !payloadErrFound )
+      {
+      _REPORT_ERROR( "No data parity error detected when one is expected" );
+      }
+
+					// Tell whoever that we've finished
+					// looking at the payload.
+    void = mailbox_get( NO_WAIT, ingressDataEventQueue, allDone );
+    if ( !reset_pending ) trigger( ON, allDone );
+
+					// Stop sending release records.
+    ingressPort.$relrcdenq = 1'b0;
+    }
+#endif  
+  } /* end ingressData */
+
+/*
+* ingressDeq - Return PEC record credits to the ILU
+*/
+task DMUXtr::ingressDeq()
+  {
+  integer  deqDelay;
+
+#ifndef	N2_FC
+  deqDelay = -1;
+  
+  //Initialize rcd_deq signal
+  ingressPort.$deq = 1'b0;
+
+  while( 1 )
+    {
+    _WAIT_A_CYCLE;
+					// If there's a dequeue to process and
+					// if we don't have a "delay" value,
+					// then now's a good time to get one.
+					// Use the max delay if the ILU has 
+					// far too many credits, and the min
+					// if it's underfed.
+    if ( dequeuePending > 0 && deqDelay < 0 )
+      {
+      if ( ingressCredits > avgIngressCredits + 2 )
+        deqDelay = -1;
+      else if ( ingressCredits > avgIngressCredits )
+        deqDelay = dequeueMaxDelay;
+      else if ( ingressCredits < avgIngressCredits - 1 )
+        deqDelay = dequeueMinDelay;
+      else if ( dequeueMinDelay < dequeueMaxDelay )
+        deqDelay = dequeueMinDelay 
+                 + (urandom() % (dequeueMaxDelay-dequeueMinDelay+1) );// set to range min,max
+      else
+        deqDelay = dequeueMinDelay;
+      }
+
+					// If there are credits to be returned
+					// and if we've waited long enough...
+    if ( dequeuePending > 0 && deqDelay == 0 && dequeueEnable )
+      {
+					// ...assert the "dequeue" signal.
+      _ACQUIRE_MUTEX;
+      dequeuePending = dequeuePending - 1;
+      if ( dequeuePending == 0 ) deqDelay = -1;
+      ingressCredits = ingressCredits + 1;
+      _RELEASE_MUTEX;
+      ingressPort.$deq = 1'b1;
+      }
+					// Otherwise, no credit!
+    else
+      {
+      ingressPort.$deq = 1'b0;
+      if ( deqDelay > 0 ) deqDelay = deqDelay - 1;
+      }
+    }
+#endif  
+  } /* end ingressDeq */
+
+/*
+* egressHdr - Supply PEC records from the "egressQueue" to the ILU
+*
+* Parameters: None
+*/
+task DMUXtr::egressHdr()
+  {
+  integer  enqDelay;
+  integer  validDelay;
+  bit [PEC_PCI__HDR] tlpHdr;
+  bit [63:0] tlpAddr;
+  bit [32:0] tlpSpec;
+  bit [7:0] douAddr;
+  bit [7:0] payload;
+  bit [8:0] poison;
+  integer  gasDWs;
+  bit sendCplD;
+  integer  douBlkCount;
+  bit [31:0] pendingDouBlks;
+  bit [31:0] pendingErrBlks;
+  event  allDone = null;
+  integer i;
+  bit ptyErr;				// Inject a parity error in the firstDW?
+  bit [7:0] ptyErrMask;
+
+#ifndef	N2_FC
+  enqDelay = 0;								/*???*/
+  validDelay = 0;							/*???*/
+  pendingDouBlks = 32'b0;
+  pendingErrBlks = 32'b0;
+  while( 1 )
+    {
+    _WAIT_A_CYCLE;
+    while( reset_pending ) _WAIT_A_CYCLE;
+
+					// If the ILU has raised the "deq"
+					// signal, then we have a credit!
+    if ( egressPort.$deq )
+      {
+      if ( egressCredits == PEC_ILU_EGRESS_CREDITS )
+        _REPORT_ERROR( "ILU raises 'deq' when no credit is expected" );
+      else
+        egressCredits = egressCredits + 1;
+      }
+
+					// If we've got a TLP to send and if
+					// we've got a credit and if we've
+					// waited long enough, then just do it!
+    sendCplD = 0;
+    if ( mailbox_get( NO_WAIT, egressQueue ) > 0 
+      && egressCredits > 0
+      && enqDelay == 0 )
+      {
+      egressCredits = egressCredits - 1;
+      void = mailbox_get( NO_WAIT, egressHdrQueue, tlpHdr );
+      void = mailbox_get( NO_WAIT, egressQueue, tlpSpec );
+      void = mailbox_get( NO_WAIT, egressEventQueue, allDone );
+      ptyErr = tlpSpec[24];
+      ptyErrMask = tlpSpec[32:25];
+      poison = { 1'b0, tlpSpec[23:16] };
+      payload = tlpSpec[15:8];
+      douAddr = tlpSpec[7:0];
+      if ( tlpHdr[PEC_PCI__FMT_DATA] )
+        {
+        if ( tlpHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_CPL )
+          {
+          tlpAddr = tlpHdr[PEC_PCI__LOWADDR];
+          gasDWs = tlpAddr[5:2];
+          egressPort.$douaddr <= douAddr[6:2];
+          sendCplD = 1;
+          }
+        else
+          {
+          tlpAddr = tlpHdr[PEC_PCI__FMT_4DW] ? tlpHdr[PEC_PCI__ADDR]
+                                             : tlpHdr[PEC_PCI__ADDR32];
+          gasDWs = tlpAddr[3:2];
+          poison = 0;
+          }
+        fillDataOut( douAddr, tlpHdr[PEC_PCI__LEN], payload, gasDWs, sendCplD );
+        if ( ptyErr ){
+           _DEBUG_MSG( psprintf("DMUXtr.egressHdr ptyErr is set calling injectParityErr tag=%0h douAddr=%0h payload=%0h gasDWs=%0h ",
+tlpHdr[PEC__TLP_TAG],douAddr,payload,gasDWs) );
+     
+            injectParityErr( douAddr, gasDWs, ptyErrMask );
+        }
+        }
+      sendPecRecd( tlpHdr, douAddr );
+      egressPort.$enq <= 1'b1;
+      trigger( ON, allDone );
+      }
+
+    else
+      {
+      egressPort.$enq <= 1'b0;
+      if ( enqDelay > 0 ) enqDelay = enqDelay - 1;
+      }
+
+					// If we sent a DMA completion with data
+					// then tell the ILU that the block is 
+					// valid and record the other blocks 
+					// which must be made valid before the
+					// ILU can present the TLP to the TLU.
+    if ( sendCplD )
+      {
+      egressPort.$douvalid <= 1'b1;
+      egressPort.$douerr <= poison[0];
+      douBlkCount = (gasDWs + tlpHdr[PEC_PCI__LEN] + 15) / 16;
+      for ( i=1; i<douBlkCount; i++ )
+        {
+        pendingDouBlks[ (douAddr[6:2]+i) % 32 ] = 1'b1;
+        pendingErrBlks[ (douAddr[6:2]+i) % 32 ] = poison[i];
+        }
+      }
+
+					// Otherwise, if there are DOU blocks 
+					// to be made valid, then pick one.
+    else if ( validDelay==0 && pendingDouBlks != 32'b0 && (urandom() % 4)==0 )
+      {
+      i = urandom() % 32;
+      while( pendingDouBlks[i] == 1'b0 ) i = (i+11)%32;
+      pendingDouBlks[i] = 1'b0;
+      egressPort.$douaddr <= i;
+      egressPort.$douvalid <= 1'b1;
+      egressPort.$douerr <= pendingErrBlks[i];
+      pendingErrBlks[i] = 1'b0;
+      fillCplData( i*4 );
+      validDelay = urandom() % 5;
+      }
+
+					// Otherwise, there's nothing to do
+					// regarding the DOU.
+    else
+      {
+      egressPort.$douvalid <= 1'b0;
+      if ( validDelay > 0 ) validDelay = validDelay - 1;
+      }
+    }
+#endif  
+  } /* end egressHdr */	/* Crude scheduling of DOU 'valid' */		/*???*/
+
+/*
+* egressData - Send data-out memory rows to the ILU
+*
+* Parameters: None
+*/
+task DMUXtr::egressData()
+  {
+  bit [127:0] dataRow;
+  bit [3:0] ptyErr;
+  integer   ptyErrOffs;
+  bit [7:0] thisAddr;
+  bit [7:0] priorAddr;
+  
+#ifndef	N2_FC
+
+
+  priorAddr = 0;
+  ptyErr = 0;
+  while( 1 )
+    {
+    _WAIT_A_CYCLE;
+    if ( egressPort.$addr >= 0 && egressPort.$addr <= 255 )
+      {
+      thisAddr = egressPort.$addr;
+      dataRow = dataOutMemory[ egressPort.$addr ];
+      if ( ptyErr == 0 || thisAddr != priorAddr )
+        {
+        ptyErrOffs = egressPort.$addr * 4;
+        ptyErr = dataOutMemoryErr >> ptyErrOffs;
+        dataOutMemoryErr = dataOutMemoryErr ^ (ptyErr << ptyErrOffs);
+        }
+      }
+    else
+      {
+      dataRow = 128'b0;
+      ptyErr = 4'b0;
+      }
+    if ( ptyErr != 0 && thisAddr != priorAddr ) 
+      _INFO_MSG( "Injecting a DOU parity error! " );
+// Shouldn't there be a cycle between the $addr and $data being valid?
+    egressPort.$data = dataRow;
+    egressPort.$par = ~{ ^dataRow[127:96], ^dataRow[95:64],
+                         ^dataRow[63:32], ^dataRow[31:0] }
+                    ^ { ptyErr[0], ptyErr[1], ptyErr[2], ptyErr[3] };
+    priorAddr = thisAddr;
+    }
+#endif  
+  } /* end egressData */
+
+/*
+* egressRel - Place release records from the ILU into the "egressRelQueue"
+*
+* Parameters: None
+*
+* NOTE: The entries in the "egressRelQueue" represent PIO read/write tags
+*       or DOU addresses.  The high-order bit distinguishes the two (0=>tag).
+*/
+task DMUXtr::egressRel()
+  {
+  bit [8:0] relRecd;
+
+#ifndef	N2_FC
+  while( 1 )
+    {
+    _WAIT_A_CYCLE;
+    if ( egressPort.$relrcdenq )
+      {
+      relRecd = egressPort.$relrcd;
+
+      if ( egressRelQueue == 0 )
+        {
+        _REPORT_ERROR( "ILU enqueues a release record before we're ready" );
+        }
+
+					// If this release record releases
+					// a DOU block, add it to the queue.
+      else if ( relRecd[8] )
+	{
+        mailbox_put( egressRelQueue, {1'b1, 1'b0, relRecd[4:0], 2'b00} );
+        }
+
+					// If this release record releases
+					// a PIO write tag, then put
+					// separate entries in the queue for
+					// the tag and for the DOU block
+					// associated with that tag.
+      else
+        {
+        mailbox_put( egressRelQueue, {1'b1, 2'b10, relRecd[3:0], 2'b00} );
+        mailbox_put( egressRelQueue, {1'b0, 4'b0001, relRecd[3:0]} );
+        }
+      }
+    }
+#endif    
+  } /* end egressRel */
+
+/*
+* checkPecRecd - Compare a PEC record (from the ILU) against an expected
+*                TLP header (in PCI-Express format)
+*
+* Parameters:
+*   pecRecd - A PEC record taken from the ILU ingress pipeline
+*   tlpHdr - The expected TLP header
+*
+* Returned value: Non-zero if the record is unexpected (i.e. if the "pecRecd"
+*                 and the "tlpHdr" disagree).
+*
+* NOTE: This procedure puts the offending header into the "cplQueue" if
+*       that mailbox exists (is non-zero) and if the "pecRecd" represents
+*       an unexpected unsuccessful completion.
+*/
+function bit DMUXtr::checkPecRecd( bit[PEC__RECD] pecRecd, 
+                                   bit[PEC_PCI__HDR] tlpHdr )
+  {
+  bit [6:0] expType;				// Expected PEC format and type
+  bit [6:0] lowaddrMask;			// Significant bits in PEC recd
+  bit [6:0] lowaddrZero;			// Bits forced to zero by ILU
+  bit [31:0] lowAddr;				// Low-order 32-bits of addr
+  string errMsg;
+
+  expType = {tlpHdr[PEC_PCI__FMT], tlpHdr[PEC_PCI__TYPE]}; 
+  if ( tlpHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_CFG0
+    || tlpHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_CFG1
+    || tlpHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_IO )
+    {
+    expType = PEC__TYPE_UR;
+    }
+  if ( { pecRecd[PEC__FMT], pecRecd[PEC__TYPE] } != expType
+    || pecRecd[PEC__LEN] != tlpHdr[PEC_PCI__LEN]
+    || pecRecd[PEC__TC] != tlpHdr[PEC_PCI__TC]
+    || pecRecd[PEC__ATTR] != tlpHdr[PEC_PCI__ATTR] )
+    {
+    checkPecRecd = 1;
+    }
+  else if ( tlpHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_CPL )
+    {
+					// Sorry, but there are different bits
+					// of the "lowaddr" retained for CPL
+					// records with and without data.
+    if ( tlpHdr[PEC_PCI__FMT_DATA] )
+      {
+      lowaddrMask = PEC__LOWADDR_CPLD_MASK;
+      lowaddrZero = PEC__LOWADDR_CPLD_ZERO;
+      }
+    else
+      {
+      lowaddrMask = PEC__LOWADDR_CPL_MASK;
+      lowaddrZero = 0;
+      }
+
+    if ( pecRecd[PEC__CPL_ID] != tlpHdr[PEC_PCI__CPL_ID]
+      || pecRecd[PEC__CPL_STATUS] != tlpHdr[PEC_PCI__CPL_STATUS]
+      || pecRecd[PEC__CPL_REQ_ID] != tlpHdr[PEC_PCI__CPL_REQ_ID]
+      || pecRecd[PEC__CPL_TAG] != tlpHdr[PEC_PCI__CPL_TAG]
+      || pecRecd[PEC__BCM] != tlpHdr[PEC_PCI__BCM]
+      || pecRecd[PEC__BYTECOUNT] != tlpHdr[PEC_PCI__BYTECOUNT] )
+      {
+      checkPecRecd = 1;
+      }
+//  else if ( ( pecRecd[PEC__LOWADDR] & lowaddrMask )
+//            != ( tlpHdr[PEC_PCI__LOWADDR] & lowaddrMask & ~lowaddrZero ) )
+//    {
+//    checkPecRecd = 1;
+//    }
+    else
+      {
+      checkPecRecd = 0;
+      }
+    } /* end of CPL check */
+  else if ( tlpHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_MEM
+         || tlpHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_MEM_LK )
+    {
+    if ( pecRecd[PEC__REQ_ID] != tlpHdr[PEC_PCI__REQ_ID]
+      || pecRecd[PEC__TLP_TAG] != tlpHdr[PEC_PCI__TLP_TAG]
+      || pecRecd[PEC__FIRST_DWBE] != tlpHdr[PEC_PCI__FIRST_DWBE]
+      || pecRecd[PEC__LAST_DWBE] != tlpHdr[PEC_PCI__LAST_DWBE]
+      || ( pecRecd[PEC__FMT_4DW] &&
+           pecRecd[PEC__ADDR] != tlpHdr[PEC_PCI__ADDR] )
+      || ( !pecRecd[PEC__FMT_4DW] &&
+           pecRecd[PEC__ADDR32] != tlpHdr[PEC_PCI__ADDR32] ) )
+      {
+      checkPecRecd = 1;
+      }
+    else
+      {
+      checkPecRecd = 0;
+      }
+    } /* end of MEM check */
+  else if ( (tlpHdr[PEC_PCI__TYPE] & ~PEC_PCI__TYPE_MSG_RC_MASK)
+         == PEC_PCI__TYPE_MSG )
+    {
+    if ( pecRecd[PEC__REQ_ID] != tlpHdr[PEC_PCI__REQ_ID]
+      || pecRecd[PEC__TLP_TAG] != tlpHdr[PEC_PCI__TLP_TAG]
+      || pecRecd[PEC__MSG_CODE] != tlpHdr[PEC_PCI__MSG_CODE] )
+      {
+      checkPecRecd = 1;
+      }
+    else
+      {
+      checkPecRecd = 0;
+      }
+    } /* end of MSG check */
+  else if ( expType == PEC__TYPE_UR )
+    {
+    if ( tlpHdr[PEC_PCI__FMT_4DW] )
+      lowAddr = tlpHdr[PEC_PCI__ADDR];
+    else
+      lowAddr = tlpHdr[PEC_PCI__ADDR32];
+    if ( pecRecd[PEC__REQ_ID] != tlpHdr[PEC_PCI__REQ_ID]
+      || pecRecd[PEC__TLP_TAG] != tlpHdr[PEC_PCI__TLP_TAG]
+      || pecRecd[PEC__FIRST_DWBE] != tlpHdr[PEC_PCI__FIRST_DWBE]
+      || pecRecd[PEC__LAST_DWBE] != tlpHdr[PEC_PCI__LAST_DWBE]
+      || pecRecd[PEC__ADDR32] != lowAddr )
+      {
+      checkPecRecd = 1;
+      }
+    else
+      {
+      checkPecRecd = 0;
+      }
+    } /* end of unsupported request check */
+  else
+    {
+    _REPORT_ERROR( "Internal error in 'chkPecRecd'... unexpected type" );
+    checkPecRecd = 1;
+    }
+    
+  if( !checkPecRecd ){ 
+     _DEBUG_MSG( psprintf("DMUXtr.checkPecRecd pecRecd Header matches expect tlpHdr=%h",tlpHdr) );
+  }
+  } /* end checkPecRecd */
+
+/*
+* reportPecErr - Print an error describing a PEC record (from the ILU) and
+*                the expected TLP header (in PCI-Express format)
+*
+* Parameters:
+*   pecRecd - A PEC record taken from the ILU ingress pipeline
+*   tlpHdr - The expected TLP header
+*/
+task DMUXtr::reportPecErr( bit[PEC__RECD] pecRecd, bit[PEC_PCI__HDR] tlpHdr )
+  {
+  bit [6:0] expType;				// Expected PEC format and type
+  bit [6:0] lowaddrMask;			// Significant bits in PEC recd
+  bit [6:0] lowaddrZero;			// Bits forced to zero by ILU
+  string errMsg;
+  bit [31:0] lowAddr;
+
+  expType = {tlpHdr[PEC_PCI__FMT], tlpHdr[PEC_PCI__TYPE]}; 
+  if ( tlpHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_CFG0
+    || tlpHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_CFG1
+    || tlpHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_IO )
+    {
+    expType = PEC__TYPE_UR;
+    }
+  if ( { pecRecd[PEC__FMT], pecRecd[PEC__TYPE] } != expType
+    || pecRecd[PEC__LEN] != tlpHdr[PEC_PCI__LEN]
+    || pecRecd[PEC__TC] != tlpHdr[PEC_PCI__TC]
+    || pecRecd[PEC__ATTR] != tlpHdr[PEC_PCI__ATTR] )
+    {
+    _REPORT_ERROR( "Incorrect TLP hdr from ILU" );
+    sprintf( errMsg, "Actual: FMT=%x TYPE=%x LEN=%x TC=%x ATTR=%x MSG_CODE=%x pecRecd=%h",
+             pecRecd[PEC__FMT], 
+             pecRecd[PEC__TYPE], 
+             pecRecd[PEC__LEN],
+             pecRecd[PEC__TC], 
+             pecRecd[PEC__ATTR],
+	     pecRecd[PEC__MSG_CODE],
+	     pecRecd
+	     );
+    _ERROR_INFO( errMsg );
+    sprintf( errMsg, "Expect: FMT=%x TYPE=%x LEN=%x TC=%x ATTR=%x MSG_CODE=%x tlpHdr=%h",
+             expType[6:5],
+             expType[4:0],
+             tlpHdr[PEC_PCI__LEN],
+             tlpHdr[PEC_PCI__TC], 
+             tlpHdr[PEC_PCI__ATTR],
+	     tlpHdr[PEC_PCI__MSG_CODE],
+             tlpHdr
+	     );
+    
+    _ERROR_INFO( errMsg );
+    }
+  else if ( tlpHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_CPL )
+    {
+      // Sorry, but there are different bits
+					// of the "lowaddr" retained for CPL
+      // records with and without data.
+    if ( tlpHdr[PEC_PCI__FMT_DATA] )
+      {
+      lowaddrMask = PEC__LOWADDR_CPLD_MASK;
+      lowaddrZero = PEC__LOWADDR_CPLD_ZERO;
+      }
+    else
+      {
+      lowaddrMask = PEC__LOWADDR_CPL_MASK;
+      lowaddrZero = 0;
+      }
+
+    if ( pecRecd[PEC__CPL_ID] != tlpHdr[PEC_PCI__CPL_ID]
+      || pecRecd[PEC__CPL_STATUS] != tlpHdr[PEC_PCI__CPL_STATUS]
+      || pecRecd[PEC__CPL_REQ_ID] != tlpHdr[PEC_PCI__CPL_REQ_ID]
+      || pecRecd[PEC__CPL_TAG] != tlpHdr[PEC_PCI__CPL_TAG]
+      || pecRecd[PEC__BCM] != tlpHdr[PEC_PCI__BCM]
+      || pecRecd[PEC__BYTECOUNT] != tlpHdr[PEC_PCI__BYTECOUNT]
+      || ( pecRecd[PEC__LOWADDR] & lowaddrMask )
+              != ( tlpHdr[PEC_PCI__LOWADDR] & lowaddrMask & ~lowaddrZero ) )
+      {
+      _REPORT_ERROR( "Incorrect completion from ILU" );
+      sprintf( errMsg, 
+               "Actual: ID=%x STATUS=%x REQ=%x TAG=%x BCM=%x BCNT=%x LADDR=%x pecRecd=%h",
+               pecRecd[PEC__CPL_ID],
+               pecRecd[PEC__CPL_STATUS],
+               pecRecd[PEC__CPL_REQ_ID],
+               pecRecd[PEC__CPL_TAG],
+               pecRecd[PEC__BCM],
+               pecRecd[PEC__BYTECOUNT],
+               pecRecd[PEC__LOWADDR] & lowaddrMask,
+               pecRecd );
+      _ERROR_INFO( errMsg );
+      sprintf( errMsg, 
+               "Expect: ID=%x STATUS=%x REQ=%x TAG=%x BCM=%x BCNT=%x LADDR=%x tlpHdr=%h",
+               tlpHdr[PEC_PCI__CPL_ID],
+               tlpHdr[PEC_PCI__CPL_STATUS],
+               tlpHdr[PEC_PCI__CPL_REQ_ID],
+               tlpHdr[PEC_PCI__CPL_TAG],
+               tlpHdr[PEC_PCI__BCM],
+               tlpHdr[PEC_PCI__BYTECOUNT],
+               tlpHdr[PEC_PCI__LOWADDR] & lowaddrMask & ~lowaddrZero,
+               tlpHdr );
+      _ERROR_INFO( errMsg );
+      }
+    } /* end of CPL check */
+  else if ( tlpHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_MEM
+         || tlpHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_MEM_LK )
+    {
+    if ( pecRecd[PEC__REQ_ID] != tlpHdr[PEC_PCI__REQ_ID]
+      || pecRecd[PEC__TLP_TAG] != tlpHdr[PEC_PCI__TLP_TAG]
+      || pecRecd[PEC__FIRST_DWBE] != tlpHdr[PEC_PCI__FIRST_DWBE]
+      || pecRecd[PEC__LAST_DWBE] != tlpHdr[PEC_PCI__LAST_DWBE]
+      || ( pecRecd[PEC__FMT_4DW] &&
+           pecRecd[PEC__ADDR] != tlpHdr[PEC_PCI__ADDR] )
+      || ( !pecRecd[PEC__FMT_4DW] &&
+           pecRecd[PEC__ADDR32] != tlpHdr[PEC_PCI__ADDR32] ) )
+      {
+// Moved to end of if to allow error info to print
+//      _REPORT_ERROR( "Incorrect DMA memory request from ILU" );
+      if ( pecRecd[PEC__FMT_4DW] )
+        {
+        sprintf( errMsg, "Actual:  pecRecd=%x \n\t ID=%x TAG=%x DWBE=%x%x ADDR=%x",
+                 pecRecd,
+                 pecRecd[PEC__REQ_ID],
+                 pecRecd[PEC__TLP_TAG],
+                 pecRecd[PEC__LAST_DWBE],
+                 pecRecd[PEC__FIRST_DWBE],
+                 pecRecd[PEC__ADDR] );
+        _ERROR_INFO( errMsg );
+        sprintf( errMsg, "Expect: tlpHdr=%x \n\t ID=%x TAG=%x DWBE=%x%x ADDR=%x",
+                 tlpHdr,
+                 tlpHdr[PEC_PCI__REQ_ID],
+                 tlpHdr[PEC_PCI__TLP_TAG],
+                 tlpHdr[PEC_PCI__LAST_DWBE],
+                 tlpHdr[PEC_PCI__FIRST_DWBE],
+                 tlpHdr[PEC_PCI__ADDR] );
+        _ERROR_INFO( errMsg );
+        }
+      else
+        {
+        sprintf( errMsg, "Actual: pecRecd=%x \n\t ID=%x TAG=%x DWBE=%x%x ADDR=%x",
+                 pecRecd,
+                 pecRecd[PEC__REQ_ID],
+                 pecRecd[PEC__TLP_TAG],
+                 pecRecd[PEC__LAST_DWBE],
+                 pecRecd[PEC__FIRST_DWBE],
+                 pecRecd[PEC__ADDR32] );
+        _ERROR_INFO( errMsg );
+        sprintf( errMsg, "Expect: tlpHdr=%x \n\t ID=%x TAG=%x DWBE=%x%x ADDR=%x",
+                 tlpHdr,
+                 tlpHdr[PEC_PCI__REQ_ID],
+                 tlpHdr[PEC_PCI__TLP_TAG],
+                 tlpHdr[PEC_PCI__LAST_DWBE],
+                 tlpHdr[PEC_PCI__FIRST_DWBE],
+                 tlpHdr[PEC_PCI__ADDR32] );
+        _ERROR_INFO( errMsg );
+        }
+      _REPORT_ERROR( "Incorrect DMA memory request from ILU" );
+      }
+    } /* end of MEM check */
+  else if ( (tlpHdr[PEC_PCI__TYPE] & ~PEC_PCI__TYPE_MSG_RC_MASK)
+         == PEC_PCI__TYPE_MSG )
+    {
+    if ( pecRecd[PEC__REQ_ID] != tlpHdr[PEC_PCI__REQ_ID]
+      || pecRecd[PEC__TLP_TAG] != tlpHdr[PEC_PCI__TLP_TAG]
+      || pecRecd[PEC__MSG_CODE] != tlpHdr[PEC_PCI__MSG_CODE] )
+      {
+      sprintf( errMsg, "Actual: ID=%x TAG=%x CODE=%x pecRecd=%h",
+               pecRecd[PEC__REQ_ID],
+               pecRecd[PEC__TLP_TAG],
+               pecRecd[PEC__MSG_CODE],
+               pecRecd );
+      _ERROR_INFO( errMsg );
+      sprintf( errMsg, "Actual: PEC__FMT=%x PEC__TYPE=%x PEC__MSG_CODE=%x",
+               pecRecd[PEC__FMT],
+               pecRecd[PEC__TYPE],
+               pecRecd[PEC__MSG_CODE]
+               );
+      _ERROR_INFO( errMsg );
+      sprintf( errMsg, "Expect: ID=%x TAG=%x CODE=%x tlpHdr=%h",
+               tlpHdr[PEC_PCI__REQ_ID],
+               tlpHdr[PEC_PCI__TLP_TAG],
+               tlpHdr[PEC_PCI__MSG_CODE],
+               tlpHdr );
+      _ERROR_INFO( errMsg );
+      sprintf( errMsg, "Expect: PEC_PCI__FMT=%x PEC_PCI__TYPE=%x PEC_PCI__MSG_CODE=%x",
+               tlpHdr[PEC_PCI__FMT],
+               tlpHdr[PEC_PCI__TYPE],
+               tlpHdr[PEC_PCI__MSG_CODE]
+               );
+      _ERROR_INFO( errMsg );
+      _REPORT_ERROR( "Incorrect message from ILU" );
+      }
+    } /* end of MSG check */
+  else if ( expType == PEC__TYPE_UR )
+    {
+    _REPORT_ERROR( "Incorrect 'unsupported request' from ILU" );
+    if ( tlpHdr[PEC_PCI__FMT_4DW] )
+      lowAddr = tlpHdr[PEC_PCI__ADDR];
+    else
+      lowAddr = tlpHdr[PEC_PCI__ADDR32];
+    sprintf( errMsg, "Actual: ID=%x TAG=%x DWBE=%x%x ADDR=%x pecRecd=%h",
+             pecRecd[PEC__REQ_ID],
+             pecRecd[PEC__TLP_TAG],
+             pecRecd[PEC__LAST_DWBE],
+             pecRecd[PEC__FIRST_DWBE],
+             lowAddr,
+             pecRecd );
+    _ERROR_INFO( errMsg );
+    sprintf( errMsg, "Expect: ID=%x TAG=%x DWBE=%x%x ADDR=%x tlpHdr=%h",
+             tlpHdr[PEC_PCI__REQ_ID],
+             tlpHdr[PEC_PCI__TLP_TAG],
+             tlpHdr[PEC_PCI__LAST_DWBE],
+             tlpHdr[PEC_PCI__FIRST_DWBE],
+             tlpHdr[PEC_PCI__ADDR32],
+             tlpHdr );
+    _ERROR_INFO( errMsg );
+    } /* end of unsupported request check */
+  else
+    {
+    _REPORT_ERROR( "Internal error in 'chkPecRecd'... unexpected type" );
+    }
+  } /* end reportPecErr */
+
+/*
+* sendPecRecd - Present a PEC record to the ILU
+*
+* Parameters:
+*   tlpHdr - The TLP header (in PCI-Express format) to be represented
+*   douAddr - The starting DOU address for payload
+*/
+task DMUXtr::sendPecRecd( bit[PEC_PCI__HDR] tlpHdr, bit[7:0] douAddr )
+  {
+  bit[PEC__RECD] pecRecd;
+#ifndef	N2_FC
+
+  pecRecd = { urandom(), urandom(), urandom(), urandom() };
+
+  pecRecd[PEC__FMT] = tlpHdr[PEC_PCI__FMT];
+  pecRecd[PEC__TYPE] = tlpHdr[PEC_PCI__TYPE];
+  pecRecd[PEC__TC] = tlpHdr[PEC_PCI__TC];
+  pecRecd[PEC__ATTR] = tlpHdr[PEC_PCI__ATTR];
+  pecRecd[PEC__LEN] = tlpHdr[PEC_PCI__LEN];
+
+  if ( tlpHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_CPL
+    || tlpHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_CPL_LK )
+    {
+    pecRecd[PEC__ADDR32] = 32'b0;		// To clear bit above lowaddr
+    pecRecd[PEC__CPL_ID] = tlpHdr[PEC_PCI__CPL_ID];
+    pecRecd[PEC__CPL_STATUS] = tlpHdr[PEC_PCI__CPL_STATUS];
+    pecRecd[PEC__CPL_REQ_ID] = tlpHdr[PEC_PCI__CPL_REQ_ID];
+    pecRecd[PEC__CPL_TAG] = tlpHdr[PEC_PCI__CPL_TAG];
+    pecRecd[PEC__BCM] = tlpHdr[PEC_PCI__BCM];
+    pecRecd[PEC__BYTECOUNT] = tlpHdr[PEC_PCI__BYTECOUNT];
+    pecRecd[PEC__LOWADDR] = tlpHdr[PEC_PCI__LOWADDR];
+    pecRecd[PEC__D_PTR] = douAddr[7:2];
+    }
+
+  else if ( tlpHdr[PEC_PCI__TYPE] == PEC_PCI__TYPE_MEM ){
+    pecRecd[PEC__REQ_ID] = tlpHdr[PEC_PCI__REQ_ID];
+    pecRecd[PEC__TLP_TAG] = tlpHdr[PEC_PCI__TLP_TAG];
+    pecRecd[PEC__FIRST_DWBE] = tlpHdr[PEC_PCI__FIRST_DWBE];
+    pecRecd[PEC__LAST_DWBE] = tlpHdr[PEC_PCI__LAST_DWBE];
+    if ( tlpHdr[PEC_PCI__FMT_4DW] ){
+      pecRecd[PEC__ADDR] = tlpHdr[PEC_PCI__ADDR];
+    }
+    else{
+      pecRecd[PEC__ADDR32] = tlpHdr[PEC_PCI__ADDR32];
+    }
+    if ( tlpHdr[PEC_PCI__FMT_DATA] ){
+      //pecRecd[PEC__D_PTR] = douAddr[7:2];
+      pecRecd[PEC__D_PTR] = {douAddr[7:6],douAddr[3:0]}; 
+    }
+  }
+
+  else /* if it's a config or I/O request... */
+    {
+    pecRecd[PEC__REQ_ID] = tlpHdr[PEC_PCI__REQ_ID];
+    pecRecd[PEC__TLP_TAG] = tlpHdr[PEC_PCI__TLP_TAG];
+    pecRecd[PEC__FIRST_DWBE] = tlpHdr[PEC_PCI__FIRST_DWBE];
+    pecRecd[PEC__LAST_DWBE] = 4'b0000;
+    pecRecd[PEC__ADDR32] = tlpHdr[PEC_PCI__ADDR32];
+    if ( tlpHdr[PEC_PCI__FMT_DATA] )
+      //pecRecd[PEC__D_PTR] = douAddr[7:2];
+      pecRecd[PEC__D_PTR] = {douAddr[7:6],douAddr[3:0]}; 
+    }
+
+  // - Shift data right by 2 bits since pecRecd is 126 bits and $recd is 124
+  egressPort.$recd <= pecRecd >> 2;
+
+  _DEBUG_MSG( psprintf( "\nPEC RECORD (DMUXtr:sendpecrcd): \tFMT=%x TYPE=%x TC=%x ATTR=%x LEN=%x  REQID=%x TAG=%x ADDR=%x LAST_DWBE=%x FIRST_DWBE=%x\n",
+	 pecRecd[PEC__FMT], 
+	 pecRecd[PEC__TYPE], 
+	 pecRecd[PEC__TC], 
+	 pecRecd[PEC__ATTR],
+	 pecRecd[PEC__LEN],
+	 pecRecd[PEC__REQ_ID],
+	 pecRecd[PEC__TLP_TAG],
+	 pecRecd[PEC__ADDR],
+	 pecRecd[PEC__LAST_DWBE],
+	 pecRecd[PEC__FIRST_DWBE] )
+	 );
+#endif  
+  } /* end sendPecRecd */
+
+/*
+* fillDataOut - Put significant data into the DataOut memory
+*
+* Parameters:
+*   douAddr - The starting address of the DataOut memory
+*   dwCount - The number of DWs of data to initialize
+*   payload - The byte to fill the memory with
+*   gasDWs  - The number of DWs of garbage before the first "payload" DW
+*   cplData - Is this data for a DMA-read completion?
+*/
+task DMUXtr::fillDataOut( bit[7:0] douAddr,
+                          integer dwCount,           
+                          bit[7:0] payload,
+                          integer gasDWs,
+                          bit cplData )
+  {
+  bit [127:0] dataRow;
+  bit [7:0] dataByte;
+  bit [7:0] dataAddr;
+  integer dwOffs;
+  integer i;
+  integer j;
+
+  dataRow = 128'b0;
+  dataByte = payload;
+  dataAddr = douAddr;
+  dwOffs = 0;
+
+ _DEBUG_MSG( psprintf("DMUXtr::DMUXtr::fillDataOut douAddr=%h dwCount=%0d payload=%0h gasDWs=%0d \n",douAddr,dwCount,payload,gasDWs) );
+					// Put as many DWs of "payload" into
+					// the "dataOut" memory as required.
+  for ( i=0; i<dwCount+gasDWs; i++ )
+    {
+    if ( i<gasDWs )
+      dataRow = { dataRow[95:0], 32'hBabeF00D };
+    else
+      {
+					// Add another DW of incrementing bytes.
+					// OR a DW of stuff followed by zeros
+					// if we're filling in the second and
+					// subsequent blocks of a DMA completion
+      for ( j=0; j<4; j++ )
+        {
+        if ( cplData && i >= 16 && j > 0 )
+          dataRow = { dataRow[119:0], 8'b00 };
+        else
+          dataRow = { dataRow[119:0], dataByte };
+        dataByte = dataByte + 1;
+        }
+      }
+    dwOffs = dwOffs + 1;
+
+					// If this row is full, then add it to
+					// the dataOut memory and increment
+					// the address.
+    if ( dwOffs == 4 )
+      {
+      dataOutMemory[dataAddr] = dataRow;
+      if ( dataAddr == 8'h7f )
+        dataAddr = 8'b0;
+//      else if ( dataAddr == 8'hbf )
+      else if ( dataAddr == 8'h8f )   
+        dataAddr = 8'h80;
+      else
+        dataAddr = dataAddr + 1;
+      dwOffs = 0;
+      dataRow = 128'b0;
+      }
+    }
+
+					// If there is a partial row, then fill
+					// it with junk DWs and add it to the
+					// dataOut memory.
+  if ( dwOffs != 0 )
+    {
+    while ( dwOffs < 4 )
+      {
+      dataRow = { dataRow[95:0], 32'hBabeF00D };
+      dwOffs = dwOffs + 1;
+      }
+    dataOutMemory[dataAddr] = dataRow;
+    }
+			
+  } /* end fillDataOut */
+
+/*
+* injectParityError - Inject a parity error into the "dataOutMemory"
+*
+* Parameters:
+*   douAddr - The starting address of the DataOut memory
+*   gasDWs  - The number of DWs of garbage before the first "payload" DW
+*   errMask - Which bits should get clobbered?
+*/
+task DMUXtr::injectParityErr(bit[7:0] douAddr, integer gasDWs, bit[7:0] errMask)
+  {
+  integer i;
+
+  if ( errMask == 8'b0 )
+    dataOutMemoryErr[ douAddr*4 + gasDWs ] = 1'b1;
+  else
+    {
+    for ( i=0; i<8; i++ )
+      if ( errMask[i] ) dataOutMemoryErr[ douAddr*4 + gasDWs + i ] = 1'b1;
+    }
+  } /* end injectParityErr */
+
+/*
+* fillCplData - Put correct data into a now-valid dataOut memory block
+*
+* Parameters:
+*   douAddr - The starting address of the DataOut memory block (16 DWs)
+*
+* Each "incorrect" DW in the block has a correct high-order byte followed
+* by either zeros (for "count") or ones (for "fill")
+*/
+task DMUXtr::fillCplData( bit[7:0] douAddr )
+  {
+  bit [127:0] dataRow;
+  bit [7:0] dataAddr;
+  integer i;
+  integer j;
+
+  dataAddr = douAddr;
+  for ( i=0; i<4; i++ )
+    {
+    dataRow = dataOutMemory[dataAddr];
+    for ( j=0; j<4; j++ )
+      {
+      if ( dataRow[23:0] == 24'h000000 )
+        {
+        dataRow[23:16] = dataRow[31:24] + 1;
+        dataRow[15:8] = dataRow[31:24] + 2;
+        dataRow[7:0] = dataRow[31:24] + 3;
+        }
+      else if ( dataRow[23:0] == 24'hffffff )
+        {
+        dataRow[23:16] = dataRow[31:24];
+        dataRow[15:8] = dataRow[31:24];
+        dataRow[7:0] = dataRow[31:24];
+        }
+      dataRow = { dataRow[95:0], dataRow[127:96] };
+      }
+    dataOutMemory[dataAddr] = dataRow;
+    dataAddr = dataAddr + 1;
+    }
+  } /* end fillCplData */
+
+/*
+* enqueueIngressData - Add an entry to the "ingressDataQueue"
+*
+* Parameters:
+*   payload - The starting byte of the payload (with a high-order error bit)
+*   dwCount - The number of 4-byte DWs in the payload
+*   posted - Is the data associated with a posted DMA request?
+*/
+task DMUXtr::enqueueIngressData( bit[8:0] payload, 
+                                 integer dwCount,
+                                 bit posted )
+  {
+  bit[15:0] count;
+
+  count = dwCount;
+  mailbox_put( ingressDataQueue, {posted,count,payload} );
+
+  } /* end enqueueIngressData */
+
+/*
+* dequeueIngressData - Get an entry from the "ingressDataQueue"
+*
+* Parameters:
+*   payload - The starting byte of the payload
+*   payloadErr - Is a parity error expected?
+*   dwCount - The number of 4-byte DWs in the payload
+*   posted - Is the data associated with a posted DMA request?
+*/
+task DMUXtr::dequeueIngressData( var bit[7:0] payload, 
+                                 var bit payloadErr,
+                                 var integer dwCount,
+                                 var bit posted )
+  {
+  bit [25:0] dataSpec;
+
+  void = mailbox_get( WAIT, ingressDataQueue, dataSpec );
+  payload = dataSpec[7:0];
+  payloadErr = dataSpec[8];
+  dwCount = dataSpec[24:9];
+  posted = dataSpec[25];
+
+  } /* end dequeueIngressData */
+

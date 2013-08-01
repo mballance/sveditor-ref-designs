@@ -1,0 +1,190 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: sioniu_err_mon.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <VeraListProgram.vrh>
+#include <ListMacros.vrh>
+#include "ios_err_packet.vrh"
+#include "ios_rasmon.if.vrh"
+#include "ios_rasmon_ports_binds.vrh"
+#include "std_display_class.vrh"
+#include "siu_common.vrh"
+
+ExternVeraList(ios_err_packet);
+
+class sioniu_err_mon {
+  sioniu_errmon_port	sioniu;
+
+  local VeraList_ios_err_packet err_list; 
+
+  StandardDisplay dbg;
+  local string            myname;
+
+  task new(sioniu_errmon_port sioniu, StandardDisplay dbg);
+
+  task input_mon();
+  task report_mon();
+
+  function integer errlist_size() { errlist_size = err_list.size(); }
+}
+
+task sioniu_err_mon::new(sioniu_errmon_port sioniu, StandardDisplay dbg) 
+{
+  integer i;
+
+  this.sioniu = sioniu;
+  this.dbg = dbg;
+  this.myname = "sio-niu rasmon";
+
+  err_list = new();
+
+  fork { input_mon(); } join none
+  fork { report_mon(); } join none
+}
+
+task sioniu_err_mon::report_mon()
+{
+  ios_err_packet err_pkt;
+  SocErr_Type err_type[3];
+  string    err_msg[3];
+  bit [2:0] niuncu_rpt;
+  integer i, found;
+  integer monitor_on = 1;
+  VeraListIterator_ios_err_packet list_ptr;
+
+  err_type[0] = SIONIU_DP;  err_msg[0] = "data pe";
+  err_type[1] = SIONIU_CCE; err_msg[1] = "ctag ce";
+  err_type[2] = SIONIU_CUE; err_msg[2] = "ctag ue";
+
+  if (get_plus_arg(CHECK, "sio_niu_ras_chk_off")){
+      monitor_on = 0;
+  }
+
+	while (monitor_on)
+	{
+		@(posedge sioniu.$clk);
+		niuncu_rpt = {sioniu.$ctag_ue, sioniu.$ctag_ce, sioniu.$d_pe};
+		if (niuncu_rpt !== 3'b000 && niuncu_rpt !== 3'bxxx)
+		{
+		   if (err_list.empty())
+			dbg.dispmon(myname, MON_ERR, psprintf("niu report unexpected errors!"));
+		   else
+		   	for (i=0; i<3; i++)
+			   if (niuncu_rpt[i] !== 0)
+			   {
+				list_ptr = err_list.start();
+				err_pkt = list_ptr.data();	
+				found = 0;
+				while (err_pkt != null && !found)
+				{
+					if (err_pkt.type == err_type[i])
+					{
+						list_ptr = err_list.erase(list_ptr);
+						dbg.dispmon(myname, MON_NORMAL, psprintf("matched! niu report %s!", err_msg[i]));
+						found = 1;
+					}
+					else
+						list_ptr.next();
+					if (list_ptr != null)
+						err_pkt = list_ptr.data();
+				}
+				if (!found)
+					dbg.dispmon(myname, MON_NORMAL, psprintf("niu report unexpected %s!", err_msg[i]));
+			   }
+		}
+	}
+}
+
+task sioniu_err_mon::input_mon()
+{
+  bit [15:0] cur_ctag;
+  bit [5:0] cur_cecc;
+  bit [5:0] my_cecc;
+  bit [127:0] cur_data;
+  bit [127:0] tmp_data;
+  bit [7:0] tmp_parity;
+  integer i, j, cce, cue, dpe;
+  ios_err_packet err_pkt;
+
+	while (1)
+	{
+		@(posedge sioniu.$clk);
+		if (sioniu.$req === 1'b1)
+		{
+			cce = 0;
+			cue = 0;
+			dpe = 0;
+			dbg.dispmon(myname, MON_INFO, psprintf("capture sio-niu valid"));
+			// verify the ecc
+			cur_ctag = sioniu.$data[79:64];
+			my_cecc = gen_ctag_ecc(cur_ctag);
+			cur_cecc = sioniu.$data[61:56];
+			for (i=0; i<6 && cce<2; i++)
+				cce += (cur_cecc[i] !== my_cecc[i]) ? 1 : 0;	
+			if (cce == 1)
+			{
+				dbg.dispmon(myname, MON_NORMAL, psprintf("capture sio-niu ctag ce get %x, exp %x", cur_cecc, my_cecc));
+				err_pkt = new(SIONIU_CCE, cur_ctag, 40'h8000000000);
+				err_list.push_back(err_pkt);
+			}
+			if (cce > 1)
+			{
+				dbg.dispmon(myname, MON_NORMAL, psprintf("capture sio-niu ctag ue get %x, exp %x", cur_cecc, my_cecc));
+				err_pkt = new(SIONIU_CUE, cur_ctag, 40'h8000000000);
+				err_list.push_back(err_pkt);
+			}
+
+			// for read, verify the data parity
+			if (sioniu.$data[125] === 1'b1)
+			{
+			   for (i=0; i<4 && !dpe; i++)
+			   {
+				@(posedge sioniu.$clk);
+				cur_data = sioniu.$data;
+			    	tmp_parity[7:6] = interleave_parity(cur_data[127:96], 32);
+			    	tmp_parity[5:4] = interleave_parity(cur_data[95:64], 32);
+			    	tmp_parity[3:2] = interleave_parity(cur_data[63:32], 32);
+			    	tmp_parity[1:0] = interleave_parity(cur_data[31:0], 32);
+				if (tmp_parity !== sioniu.$parity)
+				{
+					dpe = 1;
+					dbg.dispmon(myname, MON_NORMAL, psprintf("capture sio-niu data parity error get %x exp %x", sioniu.$parity, tmp_parity));
+					err_pkt = new(SIONIU_DP, cur_ctag, 40'h8000000000);
+					err_list.push_back(err_pkt);
+				}
+			   }
+			}
+		}
+	}
+}

@@ -1,0 +1,67 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ucb___packet.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+class UCB___packet {
+  string name;
+  bit  [127:0] pkt; // the whole 128-bit ucb packet
+  //---each field----
+  bit [63:0] payload;   // [127:64] of ucb pkt
+  bit  [8:0] bytemask;  //  [63:55] of ucb pkt
+  bit [39:0] addr;      //  [54:15] of ucb pkt
+  bit  [2:0] req_size;  //  [14:12] of ucb pkt
+  bit  [1:0] buffer_id; //  [11:10] of ucb pkt
+  bit  [2:0] cpu_id;    //    [9:7] of ucb pkt
+  bit  [2:0] thread_id; //    [6:4] of ucb pkt
+  bit  [3:0] pkt_type;  //    [3:0] of ucb pkt
+
+  task new(string name="UCB_pkt", bit [127:0] pkt=0) {
+    this.name = name;
+    this.pkt = pkt;
+    break_into_fields();
+  }
+
+  //---break 128-bit value of ucb pkt into each field---
+  task break_into_fields() {
+    this.payload   = this.pkt[127:64];
+    this.bytemask  = this.pkt[63:55];
+    this.addr      = this.pkt[54:15];
+    this.req_size  = this.pkt[14:12];
+    this.buffer_id = this.pkt[11:10];
+    this.cpu_id    = this.pkt[9:7];
+    this.thread_id = this.pkt[6:4];
+    this.pkt_type  = this.pkt[3:0];
+  }
+}

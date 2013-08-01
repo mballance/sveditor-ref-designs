@@ -1,0 +1,381 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_rx_descp_cr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "niu_mem.vrh"
+#include "pcg_defines.vri"
+#include "pcg_types.vri"
+
+#include "pg_top_pp.vrh"
+#include "pc_top_pp.vrh"
+#include "pcg_token.vrh"
+#include "niu_rxtoken.vrh"
+#include "niu_mem.vrh"
+#include "cMesg.vrh"
+#include "niu_cbclass.vrh"
+#include "hostRdCbMgr.vrh"
+#include "niu_rx_crentry.vrh"
+#include "mac_pio_class.vrh"
+
+extern CSparseMem     SparseMem;
+extern mac_pio_cl mac_pio_class;
+
+extern Mesg     be_msg;
+
+#define NO_OF_ENTRIES_UPDATED 8
+#define CR_WRITE_THRESHOLD 8
+#define MAX_CR_CACHE_SIZE 32
+
+extern CHostRdCbMgr     hostRdCbMgr;
+
+class CCompletionRing {
+
+ VeraList_Ccr_entry completion_ring;
+ VeraList_Ccr_entry local_cr_cache;
+ integer no_of_entries;
+ bit [63:0] ring_start_address;
+ bit[63:0] last_read_address;
+ integer last_ring_index;
+ bit [18:0] ring_length; // check exact bits needed
+ integer ring_index;
+ integer rewind_last_ring_index;
+ integer page_id;
+ integer dma_num;
+ integer set_cr_cb;
+ integer cr_ack_pending;
+ integer startSemId;
+ // Added head/tail pointers . start address  etc etc
+ 
+  task new () {
+    completion_ring = new();
+    local_cr_cache = new();
+    no_of_entries = 0;
+    cr_ack_pending = 0;
+    set_cr_cb = 0;
+    startSemId = alloc(SEMAPHORE,0,1,0);
+    fork {
+     spCacheWriteAckCb();
+    } join none
+  }
+
+  task UpdateCompletionRing(CRxToken RxToken);
+  task UpdateCRLastAddress(integer n) ;
+  local task UpdateAddress() ;
+  local function Ccr_entry format_entry(CRxToken RxToken, integer chain, integer index);
+  local task add_entry(Ccr_entry entry);
+
+  task config_ring( bit[63:0] start_address, bit [15:0] length, (integer ring_page_id = 0) ) {
+    // ring_start_address = start_address;
+    page_id = ring_page_id;
+    printf("config_ring page_id - %d dma_no - %d  \n",page_id,dma_num);
+    ring_start_address = SparseMem.xlate_addr( start_address[39:0], ring_page_id );
+    ring_length = length <<3;
+    ring_index = 0;
+    last_read_address = ring_start_address;
+    last_ring_index = ring_index;
+    rewind_last_ring_index = ring_index;
+  }
+  local function bit[1:0] cr_encode_pkttype(integer pkt_class) ;
+  local task SetCRhostCb(Ccr_entry entry);
+  local task spCacheWriteAckCb();
+  local task setHostCb(bit[63:0] address);
+  local function integer free_local_cache(integer no_of_entries);
+
+  function integer ReadCrEntry( integer no_of_entries, var Ccr_entry cr[*]) ;
+
+  task CheckSysMem(integer no_of_entries);
+  function integer CheckPendingAckStatus();
+}
+
+function bit[1:0] CCompletionRing::cr_encode_pkttype(integer pkt_class){
+
+ printf(" DEBUG- pktclass - %d \n",pkt_class);
+ if((pkt_class== CL_TCP) | ( pkt_class== CL_TCP_OPT) | ( pkt_class== CL_TCP_IP_V6)) {
+   cr_encode_pkttype = 2'b01;
+ } else if( (pkt_class== CL_UDP) | ( pkt_class== CL_UDP_OPT) | (pkt_class== CL_UDP_IP_V6) ) {
+   cr_encode_pkttype = 2'b10;
+ } else if( (pkt_class== CL_SCTP) | ( pkt_class== CL_SCTP_OPT) | (pkt_class== CL_SCTP_IP_V6) ) {
+   cr_encode_pkttype = 2'b11;
+ } else {
+   cr_encode_pkttype = 2'b00;
+ }
+}
+
+function Ccr_entry CCompletionRing::format_entry(CRxToken RxToken, integer chain, integer index) {
+// various fields in the entry
+bit multi;
+bit [1:0] pkt_type;
+bit zcp;
+bit frag;
+bit promis;
+bit dcf_error;
+bit [2:0] errors;
+bit[13:0] length;
+bit [1:0] pktbufsz;
+bit[63:0] address;
+Ccr_entry cr;
+
+cr = new();
+
+multi = chain;
+//pkt_type= (index==0) ?  cr_encode_pkttype(RxToken.getPktClass()):0   ;
+pkt_type= cr_encode_pkttype(RxToken.getPktClass()); // this field will be the same for all block buffers of this jumbo
+zcp = 0;// review;
+frag = (RxToken.pgToken.pack_db.flow.frame.frame_class == CL_TCP_FRAG) |  
+       (RxToken.pgToken.pack_db.flow.frame.frame_class == CL_UDP_FRAG) | 
+       (RxToken.pgToken.pack_db.flow.frame.frame_class == CL_SCTP_FRAG) ; 
+errors = cr.setCRErrorCode(RxToken.getErrorCode()); 
+length = RxToken.pkt_length ;
+address = RxToken.packet_virtaddress[index];
+pktbufsz = RxToken.bufsz;
+dcf_error = 0;
+
+promis = 1'b0; // REMOVE THIS AND UNCOMMENT THE NEXT LINE
+// promis = mac_pio_class.isMACPromisBitSet(RxToken.port_num);
+
+cr.entry = {multi,pkt_type,zcp,frag,promis,errors,dcf_error,length,pktbufsz,address[43:6]};
+printf("  Ccr_entry CCompletionRing::format_entry index - %d multi - %d entry - %x\n",index,multi,cr.entry);
+format_entry = new cr;
+
+}
+
+task CCompletionRing::UpdateAddress() {
+ printf("CCompletionRing::UpdateAddress Before Update ast_ring_index - %d ring_length - %d \n",last_ring_index,ring_length);
+ last_ring_index++;
+ if(  (8*last_ring_index) >= ring_length) {
+  last_ring_index = 0; // wrap around case
+ }
+ last_read_address = ring_start_address + 8*last_ring_index;
+ printf("CCompletionRing::UpdateAddress After Update ast_ring_index - %d Address - %x \n",last_ring_index,last_read_address);
+}
+
+task CCompletionRing::UpdateCRLastAddress(integer n) {
+
+ if(  (8*rewind_last_ring_index) > ring_length)
+  rewind_last_ring_index = 0; // wrap around case
+ else { 
+  rewind_last_ring_index = (rewind_last_ring_index + n )% (ring_length/8);
+ }
+ printf("CCompletionRing::UpdateCRLastAddress n - %d, rewind_last_index - %d ring_length - %d \n",n,rewind_last_ring_index,ring_length);
+ last_read_address = ring_start_address + 8*rewind_last_ring_index;
+ last_ring_index = rewind_last_ring_index;
+ printf("CCompletionRing::UpdateCRLastAddress n - %d, last_index - %d ring_length - %d \n",n,last_ring_index,ring_length);
+}
+
+task CCompletionRing::add_entry(Ccr_entry entry) {
+
+ bit [63:0] address;
+ address = ring_start_address + 8*ring_index;
+ // pointer manipulations ignored for now
+ entry.address = address;
+ entry.print();
+ completion_ring.push_back(entry);
+ if(set_cr_cb) {
+   SetCRhostCb(entry);
+ }
+ if(  (8*ring_index) > ring_length)
+  ring_index = 0; // wrap around case
+ else ring_index++;
+}
+
+task CCompletionRing::SetCRhostCb(Ccr_entry entry) {
+  if(local_cr_cache.size() <= MAX_CR_CACHE_SIZE) {
+    local_cr_cache.push_back(entry);
+  } else {
+     printf(" ERROR local_cr_cache is FULL - Size - %d\n",local_cr_cache.size()); 
+  }
+}
+
+function integer CCompletionRing::CheckPendingAckStatus() {
+ integer size;
+  size = local_cr_cache.size();
+  if(size==MAX_CR_CACHE_SIZE) {
+    CheckPendingAckStatus = 0;
+  } else {
+    CheckPendingAckStatus = 1;
+  }
+ // Disable this for now
+    CheckPendingAckStatus = 1;
+ printf("CCompletionRing::CheckPendingAckStatus Status - %d Size = %d \n",CheckPendingAckStatus,size); 
+}
+
+task CCompletionRing::spCacheWriteAckCb() {
+
+ bit [63:0] address;
+ Ccr_entry cr;
+ while(1) {
+   while(local_cr_cache.size() < CR_WRITE_THRESHOLD) {
+    // just wait for cache to be filled up
+    repeat(10) @(posedge CLOCK);
+   }
+   // if there is a pending callback wait for that to be done before setting the next one
+   while(cr_ack_pending) {
+     repeat(10) @(posedge CLOCK);
+   }
+   // else - not set the call back on the address 
+   cr = local_cr_cache.front(); 
+   address = cr.address;
+   setHostCb(address);
+ }
+}
+
+task CCompletionRing::setHostCb( bit[63:0] address) {
+
+  CcbMem cb;
+  shadow bit[63:0] cr_address;
+  integer status; 
+  integer semId;
+
+  cr_ack_pending = 1;
+  
+  semId = startSemId;
+  cr_address = address;
+  cb = new(semId);
+  cb.set(address,CR_WAIT_FOR_ACK);
+  hostRdCbMgr.setCallBack(cb);
+  
+ fork {
+   while(semaphore_get(WAIT,semId,1) == 0 ) {
+    repeat(10) @(posedge CLOCK);
+   }
+   printf(" CCompletionRing::setHostCb:: ACK RECEIVED FOR ADDRESS - %x \n",cr_address);
+   status = free_local_cache(NO_OF_ENTRIES_UPDATED);
+   cr_ack_pending = 0;
+ } join none
+ printf(" Done with CCompletionRing::setHostCb!! \n");
+}
+
+function integer CCompletionRing::free_local_cache(integer no_of_entries) {
+   integer i;
+   Ccr_entry cr;
+   if(no_of_entries > local_cr_cache.size()) {
+   printf(" TESTBENCH ERROR CCompletionRing::free_local_cache:: \n");
+    free_local_cache = -1;
+   } else {
+     for( i=0;i< no_of_entries; i++) {
+      cr = local_cr_cache.front();
+      printf(" FREEING UP Entry at address - %x \n",cr.address);
+      local_cr_cache.pop_front();
+     }
+     free_local_cache = 1;
+   } 
+}
+
+task CCompletionRing::UpdateCompletionRing(CRxToken RxToken) {
+
+  // Format the content of the entry
+  Ccr_entry entry;
+  integer chain, index;
+
+  printf("  CCompletionRing::UpdateCompletionRing :: %d \n",RxToken.NoOfScatter);
+  for(index = 0 ; index < RxToken.NoOfScatter; index++ ) {
+
+   if( index == (RxToken.NoOfScatter -1) ) {
+    chain = 0;
+   } else chain =1;
+    printf("  CCompletionRing::UpdateCompletionRing ::index -  %d chain - %d \n",index,chain);
+    entry = format_entry(RxToken, chain, index);
+    // if the ring is full.. do appropriate things here
+    // else add it -- for now
+    add_entry(entry);
+    if(index == (RxToken.NoOfScatter -1)) {
+        RxToken.cr_address = SparseMem.xlate_addr(  entry.address[39:0], page_id );
+    }	
+  }
+
+}
+
+function integer CCompletionRing::ReadCrEntry( integer no_of_entries, var Ccr_entry cr[*]) {
+
+  integer size;
+  integer i;
+  bit [63:0] rd_data;
+  bit [63:0] address;
+  Ccr_entry cr_mem;
+
+  cr = new[no_of_entries];
+
+  for(i=0;i< (no_of_entries) ;i ++ ) {
+  printf("CCompletionRing::ReadCrEntry DEBUG last_Address - %x last index - %d page_id - %d  \n",last_read_address,last_ring_index,page_id);
+   address = SparseMem.xlate_addr(  last_read_address[39:0], page_id );
+   SparseMem.ReadMem(address,rd_data,8'hff);
+   printf("CCompletionRing::ReadCrEntry Address - %x data - %x \n",last_read_address,rd_data);
+   cr[i] = new();
+   cr[i].set_fields(rd_data);
+   cr[i].address = address;
+   UpdateAddress();
+  }
+ ReadCrEntry = 1;
+}
+
+task CCompletionRing::CheckSysMem(integer no_of_entries) {
+
+integer size;
+integer i;
+bit [63:0] rd_data;
+bit [63:0] address;
+Ccr_entry cr;
+integer jumbo_pkt_num=0;
+
+// get the current size of the ring and make sure the no_of_entries
+// to check is not more than the size
+if(completion_ring.size() < (no_of_entries) ) {
+ printf(" ERROR -- USER ERROR, Current ring shadow size - %d , check requested for size - %d \n",completion_ring.size(), no_of_entries);
+} else {
+
+ for(i=0;i< (no_of_entries) ;i ++ ) {
+   cr = completion_ring.front();
+   completion_ring.pop_front();
+
+   address = cr.address;
+   SparseMem.ReadMem(address,rd_data,8'hff); 
+   // TMP DISABLE CHECK OF PROMS BIT
+   rd_data[58] = 1'b0; // REMOVE THIS
+   if(rd_data!=cr.entry) {
+    be_msg.print(e_mesg_error,"CCompletionRing::CheckSysMem","", "CR: Mismatch. Model %x RTL %x  @ Addr %x dma_num %0d, pkt_id %0d\n",cr.entry,rd_data,address,dma_num,jumbo_pkt_num);
+    printf(" EXPECTED DATA - multi - %b, pkt_type = %b error - %b length - %d pktbufsz - %b address - %x \n",cr.entry[63],cr.entry[62:61], cr.entry[57:55], cr.entry[53:40], cr.entry[39:38], cr.entry[37:0]);
+    printf(" DATA IN MEMORY - multi - %b, pkt_type = %b error - %b length - %d pktbufsz - %b address - %x \n",rd_data[63],rd_data[62:61], rd_data[57:55], rd_data[53:40], rd_data[39:38], rd_data[37:0]);
+   }
+   else {
+   be_msg.print(e_mesg_info,"CCompletionRing::CheckSysMem","", "CR: Data Matched! Model %x RTL %x  @ Addr %x dma_num %0d, pkt_id %0d\n",cr.entry,rd_data,address,dma_num,jumbo_pkt_num);
+   }
+   if (!cr.entry[63]) jumbo_pkt_num++;
+ }
+}
+
+}
+
+
+

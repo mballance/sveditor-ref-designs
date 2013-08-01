@@ -1,0 +1,221 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: dmu_cov.if.vrhpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#inc "dmu_cov_inc.pal";
+#ifndef __DMU_IF_VRH__
+#define __DMU_IF_VRH__
+
+#include <vera_defines.vrh>
+
+#define INPUT_EDGE   PSAMPLE
+#define INPUT_SKEW   #-3
+`define TOP tb_top
+`define DMU tb_top.cpu.dmu
+
+interface dmu_coverage_ifc {
+  // Common & Clock Signals
+  input dmu_gclk               CLOCK ;
+  input dmu_rst_l              PSAMPLE ;
+  
+  // dmu interface
+  input           dmureq          INPUT_EDGE      INPUT_SKEW      verilog_node "`DMU.dmu_sii_hdr_vld";
+  input           dmubypass       INPUT_EDGE      INPUT_SKEW      verilog_node "`DMU.dmu_sii_reqbypass";
+  input           dmudatareq      INPUT_EDGE      INPUT_SKEW      verilog_node "`DMU.dmu_sii_datareq";
+  input           dmudatareq16    INPUT_EDGE      INPUT_SKEW      verilog_node "`DMU.dmu_sii_datareq16";
+  input [127:0]   dmudata         INPUT_EDGE      INPUT_SKEW      verilog_node "`DMU.dmu_sii_data";
+  input [1:0]     dmuparity       INPUT_EDGE      INPUT_SKEW      verilog_node "`DMU.dmu_sii_parity";
+  input [15:0]    dmube           INPUT_EDGE      INPUT_SKEW      verilog_node "`DMU.dmu_sii_be";
+  input           dmuwrack_vld    INPUT_EDGE      INPUT_SKEW      verilog_node "`DMU.sii_dmu_wrack_vld";
+  input [3:0]     dmuwrack_tag    INPUT_EDGE      INPUT_SKEW      verilog_node "`DMU.sii_dmu_wrack_tag";
+  input           dmuwrack_par    INPUT_EDGE      INPUT_SKEW      verilog_node "`DMU.sii_dmu_wrack_par";
+
+  //sio-dmu
+  input           sio_dmu_req     INPUT_EDGE      INPUT_SKEW      verilog_node "`DMU.sio_dmu_hdr_vld";
+  input [127:0]   sio_dmu_data    INPUT_EDGE      INPUT_SKEW      verilog_node "`DMU.sio_dmu_data";
+}
+
+interface dmu_ncu_error_if {
+  input         clk                CLOCK                 verilog_node "`DMU.iol2clk";
+  input         ncu_dmu_ctag_uei   INPUT_EDGE INPUT_SKEW verilog_node "`DMU.ncu_dmu_ctag_uei";
+  input         ncu_dmu_ctag_cei   INPUT_EDGE INPUT_SKEW verilog_node "`DMU.ncu_dmu_ctag_cei";
+  input         ncu_dmu_d_pei      INPUT_EDGE INPUT_SKEW verilog_node "`DMU.ncu_dmu_d_pei";
+  input         ncu_dmu_siicr_pei  INPUT_EDGE INPUT_SKEW verilog_node "`DMU.ncu_dmu_siicr_pei";
+  input         ncu_dmu_ncucr_pei  INPUT_EDGE INPUT_SKEW verilog_node "`DMU.ncu_dmu_ncucr_pei";
+  input         ncu_dmu_iei        INPUT_EDGE INPUT_SKEW verilog_node "`DMU.ncu_dmu_iei";
+
+  input         dmu_ncu_d_pe       INPUT_EDGE INPUT_SKEW verilog_node "`DMU.dmu_ncu_d_pe";
+  input         dmu_ncu_siicr_pe   INPUT_EDGE INPUT_SKEW verilog_node "`DMU.dmu_ncu_siicr_pe";
+  input         dmu_ncu_ctag_ue    INPUT_EDGE INPUT_SKEW verilog_node "`DMU.dmu_ncu_ctag_ue";
+  input         dmu_ncu_ctag_ce    INPUT_EDGE INPUT_SKEW verilog_node "`DMU.dmu_ncu_ctag_ce";
+  input         dmu_ncu_ncucr_pe   INPUT_EDGE INPUT_SKEW verilog_node "`DMU.dmu_ncu_ncucr_pe";
+  input         dmu_ncu_ie         INPUT_EDGE INPUT_SKEW verilog_node "`DMU.dmu_ncu_ie";
+}
+
+// #ifndef FC_COVERAGE
+interface dmu_cov_dmupio {
+        input           clk                     CLOCK                   verilog_node "`DMU.iol2clk";
+        input           dmu_ncu_wrack_vld       INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.dmu_ncu_wrack_vld";
+        input [3:0]     dmu_ncu_wrack_tag       INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.dmu_ncu_wrack_tag";
+        input           dmu_ncu_wrack_par       INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.dmu_ncu_wrack_par";
+        input           ncu_dmu_pio_hdr_vld     INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.ncu_dmu_pio_hdr_vld";
+        input           ncu_dmu_mmu_addr_vld    INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.ncu_dmu_mmu_addr_vld";
+        input   [63:0]  ncu_dmu_pio_data        INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.ncu_dmu_pio_data";
+}
+// #endif
+
+interface dmu_ncu_mondo_if {
+        input           clk                     CLOCK                   verilog_node "`DMU.iol2clk";
+        input           ncu_dmu_mondo_ack       INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.ncu_dmu_mondo_ack";
+        input           ncu_dmu_mondo_nack      INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.ncu_dmu_mondo_nack";
+        input	[5:0]	ncu_dmu_mondo_id        INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.ncu_dmu_mondo_id";
+        input	        ncu_dmu_mondo_id_par    INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.ncu_dmu_mondo_id_par";
+}
+
+interface ilu_dmu_coverage {
+        input                clk                CLOCK                   verilog_node "`DMU.iol2clk";
+        input [125:0]        y2k_rcd            INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.y2k_rcd";
+        input                y2k_rcd_enq        INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.y2k_rcd_enq";
+
+        input  [7:0]         k2y_buf_addr       INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.k2y_buf_addr";
+        input                k2y_buf_addr_vld   INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.k2y_buf_addr_vld_monitor";
+        input [127:0]        y2k_buf_data       INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.y2k_buf_data";
+        input [3:0]          y2k_buf_dpar       INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.y2k_buf_dpar";
+
+        // egress release 
+        input                k2y_rcd_deq        INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.k2y_rcd_deq";
+        input                k2y_rel_enq        INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.k2y_rel_enq";
+        input  [8:0]         k2y_rel_rcd        INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.k2y_rel_rcd";
+        input  [2:0]         mps                INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.y2k_mps";
+
+}
+
+interface dmu_ilu_coverage {
+        input                clk                CLOCK                   verilog_node "`DMU.iol2clk";
+        input  [7:0]         y2k_buf_addr       INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.y2k_buf_addr";
+        input                y2k_buf_addr_vld   INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.y2k_buf_addr_vld_monitor";
+        input  [127:0]       k2y_buf_data       INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.k2y_buf_data";
+        input  [3:0]         k2y_buf_dpar       INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.k2y_buf_dpar";
+        input  [125:0]       k2y_rcd            INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.k2y_rcd";
+
+        input                k2y_rcd_enq        INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.k2y_rcd_enq";
+        input                y2k_rcd_deq        INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.y2k_rcd_deq";
+        input                y2k_rel_enq        INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.y2k_rel_enq";
+        input  [8:0]         y2k_rel_rcd        INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.y2k_rel_rcd";
+}
+
+interface dmu_clu_coverage {
+        input                l2clk              CLOCK                   verilog_node "`DMU.dmc.l2clk";
+        input                cl2pm_rcd_full     INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.dmc.cl2pm_rcd_full";
+        input                cm2cl_rcd_full     INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.dmc.cm2cl_rcd_full";
+        input                cl2ps_e_req        INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.dmc.cl2ps_e_req";
+        input  [4:0]         cl2ps_e_trn        INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.dmc.cl2ps_e_trn";
+}
+
+interface dmu_pmu_coverage {
+        input                l2clk              CLOCK                   verilog_node "`DMU.dmc.l2clk";
+        input                pm2cm_rcd_full     INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.dmc.pm2cm_rcd_full";
+        input                cl2pm_rcd_full     INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.dmc.cl2pm_rcd_full";
+}
+
+interface dmu_psb_coverage {
+        input                l2clk              CLOCK                   verilog_node "`DMU.dmc.l2clk";
+        input                ps2pm_i_full       INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.dmc.ps2pm_i_full";
+        input                ps2pm_i_gnt        INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.dmc.ps2pm_i_gnt";
+        input  [4:0]         ps2pm_i_n_trn      INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.dmc.ps2pm_i_n_trn";
+}
+
+
+interface dmu_dmc_coverage {
+        input                l2clk              CLOCK                   verilog_node "`DMU.dmc.l2clk";
+        input  [3:0]         im2di_addr       INPUT_EDGE INPUT_SKEW     verilog_node "`DMU.dmc.im2di_addr";
+        input  [15:0]        im2di_bmask      INPUT_EDGE INPUT_SKEW     verilog_node "`DMU.dmc.im2di_bmask";
+        input                im2di_wr         INPUT_EDGE INPUT_SKEW     verilog_node "`DMU.dmc.im2di_wr";
+        input  [8:0]         cl2di_addr       INPUT_EDGE INPUT_SKEW     verilog_node "`DMU.dmc.cl2di_addr";
+        input                cl2di_rd         INPUT_EDGE INPUT_SKEW     verilog_node "`DMU.dmc.cl2di_rd_en";
+        input                d2j_cmd_vld      INPUT_EDGE INPUT_SKEW     verilog_node "`DMU.dmc.d2j_cmd_vld";
+        input                d2j_data_vld     INPUT_EDGE INPUT_SKEW     verilog_node "`DMU.dmc.d2j_data_vld";
+        input  [3:0]         d2j_cmd         INPUT_EDGE INPUT_SKEW      verilog_node "`DMU.dmc.d2j_cmd";
+}
+
+interface dmu_cmu_coverage {
+        input                l2clk              CLOCK                   verilog_node "`DMU.dmc.l2clk";
+        input [92:0]         cm2pm_rcd          INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.dmc.cm2pm_rcd";
+        input                cm2pm_rcd_enq      INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.dmc.cm2pm_rcd_enq";
+        input [10:0]         maxpyld            INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.dmc.cmu.rcm.maxpyld";
+}
+
+interface dmu_ncu_csr_if {
+  input              clk                CLOCK                   verilog_node "`DMU.iol2clk";
+  input              dmu_ncu_stall      INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.dmu_ncu_stall";
+  input              ncu_dmu_stall      INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.ncu_dmu_stall";
+}
+
+interface dmu_debug {
+  input              clk                CLOCK                   verilog_node "`DMU.iol2clk";
+  input  [7:0]       jdi_dbg_a          INPUT_EDGE  INPUT_SKEW  verilog_node "`DMU.dmu_mio_debug_bus_a";
+  input  [7:0]       jdi_dbg_b          INPUT_EDGE  INPUT_SKEW  verilog_node "`DMU.dmu_mio_debug_bus_b";
+  input              dmu_dbg1_stall_ack INPUT_EDGE  INPUT_SKEW  verilog_node "`DMU.dmu_dbg1_stall_ack";
+  input              dmu_dbg_err_event  INPUT_EDGE  INPUT_SKEW  verilog_node "`DMU.dmu_dbg_err_event";
+  input              dbg1_dmu_stall     INPUT_EDGE  INPUT_SKEW  verilog_node "`DMU.dbg1_dmu_stall";
+  input              dbg1_dmu_resume    INPUT_EDGE  INPUT_SKEW  verilog_node "`DMU.dbg1_dmu_resume";
+
+  input  [63:0]      dbg_sel_a          INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.dmc.cru.csr.dmu_cru_default_grp.dmc_dbg_sel_a_reg_csrbus_read_data";
+  input  [63:0]      dbg_sel_b          INPUT_EDGE INPUT_SKEW   verilog_node "`DMU.dmc.cru.csr.dmu_cru_default_grp.dmc_dbg_sel_b_reg_csrbus_read_data";
+}
+
+interface dmu_int_controller_if {
+  input              clk                CLOCK                   verilog_node "`DMU.dmc.imu.gcs.clk";
+  input  [1:0]       intctl0            INPUT_EDGE  INPUT_SKEW  verilog_node "`DMU.dmc.imu.gcs.gc_0.fsm.state";
+  input  [1:0]       intctl1            INPUT_EDGE  INPUT_SKEW  verilog_node "`DMU.dmc.imu.gcs.gc_1.fsm.state";
+  input  [1:0]       intctl2            INPUT_EDGE  INPUT_SKEW  verilog_node "`DMU.dmc.imu.gcs.gc_2.fsm.state";
+  input  [1:0]       intctl3            INPUT_EDGE  INPUT_SKEW  verilog_node "`DMU.dmc.imu.gcs.gc_3.fsm.state";
+}
+
+#ifdef FC_COVERAGE
+interface dmu_int_relocation_if {
+ input              clk                 CLOCK                   verilog_node "`DMU.dmc.imu.gcs.clk";
+ input    [41:0]    reloc_cov_seq       INPUT_EDGE  INPUT_SKEW  verilog_node "dmu_int_relocation_cov_mon.seq_covered_status";
+}
+#endif
+
+interface dmu_cov_ios {
+ input              clk                 CLOCK                   verilog_node "`DMU.iol2clk";
+ input      rcd_is_msi       INPUT_EDGE  INPUT_SKEW  verilog_node "`DMU.dmc.tmu.dim.rcd_is_msi";
+
+        
+}
+
+
+#endif
+

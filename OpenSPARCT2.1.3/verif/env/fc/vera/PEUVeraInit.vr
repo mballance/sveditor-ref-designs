@@ -1,0 +1,169 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: PEUVeraInit.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "Testbench.vrh"
+
+virtual class ilupeuTest extends PEUTestBase {
+
+
+  task new ();
+  task execute ();
+  task init_scenario ();
+  
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// execute the original new (super.new). It just start the Denali threads
+////////////////////////////////////////////////////////////////////////////////
+task ilupeuTest::new () {
+
+  super.new ();
+  printf("PEU After super \n");
+    
+  init_scenario ();
+}
+
+
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// do not use the execute method in the original class since it starts up a
+// lot of methods not used in FC
+// just overload the original method
+//
+////////////////////////////////////////////////////////////////////////////////
+task ilupeuTest::execute () {
+
+  printf("**ilupeuTest::PEUTestBase Begin Execution**\n");
+
+
+  printf("**ilupeuTest::PEUTestBase Set Up Boot Strategy**\n");
+  boot = new( Report,
+              Scenario );                         // Let's get ready to rumble ....
+  this.setBoot();
+  printf("**ilupeuTest::PEUTestBase Boot Strategy Set Up Complete**\n");
+
+
+  printf("**ilupeuTest::PEUTestBase Execute Boot Strategy**\n");
+  boot.Execute();
+  printf("**ilupeuTest::PEUTestBase Boot Strategy Complete**\n");
+
+
+  printf("**ilupeuTest::PEUTestBase Set Up Environment**\n");
+  env = boot.getEnv();
+  this.setEnv();
+  printf("**ilupeuTest::PEUTestBase Environment Set Up Complete**\n");
+
+
+
+  printf("**ilupeuTest::PEUTestBase Expect Idle State**\n");
+  env.expectIdleState();
+  printf("**ilupeuTest::PEUTestBase Expect Idle State Complete**\n");
+
+
+  printf("**ilupeuTest::PEUTestBase Execution Complete**\n");
+  
+  
+}
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+task ilupeuTest::init_scenario () {
+
+
+    //Set a seed value - urand_seed = 32'hdeadbeef; in ilupeuTestBase
+    
+    //Default is fast link training bit set
+    //Scenario.FastLinkTraining = 1;
+
+    //Set the ILU-PEU Max link width
+    //  Scenario.ilupeuLinkCapMaxLinkWdth = 8;
+
+    //Set the Denali Max link width
+    Scenario.denaliLinkCapMaxLinkWdth = 8;
+
+    //Don't send any TLPs or DLLPs in this test
+    Scenario.EgrTlpWt = 100;
+    Scenario.EgrDllpFCWt = 0;
+    Scenario.EgrDllpPMWt = 0;
+    //  Scenario.EgrTlpMinStrats = 0;
+    //  Scenario.EgrTlpMaxStrats = 0;
+    Scenario.IngrTlpWt = 100;
+    Scenario.IngrDllpFCWt = 0;
+    Scenario.IngrDllpPMWt = 0;
+    //  Scenario.IngrTlpMinStrats = 0;
+    //  Scenario.IngrTlpMaxStrats = 0;
+
+    if ( get_plus_arg(CHECK, "PEU_INGRESS") ) {
+      Scenario.IngrTlpMinStrats = 1;
+      Scenario.IngrTlpMaxStrats = 1;
+      Scenario.IngrMinTlpPayloadLngth4Byt = 4;
+      Scenario.IngrMaxTlpPayloadLngth4Byt = 4;     //Max 512 bytes
+      Scenario.IngrTlpMRd32Wt = 0;
+      Scenario.IngrTlpMRd64Wt = 0;
+      Scenario.IngrTlpMWr32Wt = 0;
+      Scenario.IngrTlpMWr64Wt = 10;
+    } else {
+      Scenario.IngrTlpMinStrats = 0;
+      Scenario.IngrTlpMaxStrats = 0;
+    }
+
+
+    if ( get_plus_arg(CHECK, "PEU_EGRESS") ) {
+      //Don't send any TLPs or DLLPs in this test
+      Scenario.EgrTlpMinStrats = 1;
+      Scenario.EgrTlpMaxStrats = 1;
+      Scenario.EgrMinTlpPayloadLngth4Byt = 4;
+      Scenario.EgrMaxTlpPayloadLngth4Byt = 4;     //Max 512 bytes
+      Scenario.EgrTlpMRd32Wt = 0;
+      Scenario.EgrTlpMRd64Wt = 0;
+      Scenario.EgrTlpMWr32Wt = 0;
+      Scenario.EgrTlpMWr64Wt = 10000;
+
+      //Disable to make debugging easier
+      Scenario.denaliLtssmDisableScrambling = 1;
+
+    } else {
+      Scenario.EgrTlpMinStrats = 0;
+      Scenario.EgrTlpMaxStrats = 0;
+    }
+
+    printf("PEU After Scenario initialization \n");
+}
+

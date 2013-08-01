@@ -1,0 +1,206 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: xpcs_util.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "mac_defines.vri"
+#include "xpcs_memory_map.vri"
+#include "pio_driver.vrh"
+#include "mac_pio_class.vrh"
+#include "pcs_memory_map.vri"
+#include "pcs_util.vrh"
+
+extern   mac_pio_cl mac_pio_class;
+
+class xpcs_util_class {
+
+  pcs_util_class pcs_util_cl;
+  
+  task new();
+  task xpcs_init ( integer iport);
+  function bit[39:0] get_xpcs_reg_base(integer iport);
+  task link_up_rdy (integer iport);
+
+}
+
+task xpcs_util_class :: new(){ 
+
+  pcs_util_cl   = new();
+}
+
+
+task xpcs_util_class :: xpcs_init ( integer iport ) {
+
+  bit [39:0] base_addr;
+  bit [31:0] rd_data;
+  integer count = 0;
+
+  base_addr = get_xpcs_reg_base(iport);
+
+
+  mac_pio_class.mac_pio_wr(base_addr + XPCS_CONTROL1, 32'h0000_8000);
+  printf("The address is %0h\n",base_addr + XPCS_CONTROL1);
+
+  while (rd_data[15] != 1'b0) {
+    mac_pio_class.mac_pio_rd(base_addr + XPCS_CONTROL1, rd_data);
+    count++;
+    if(count > 100) {
+      printf("ERROR : XPCS SW_RESET FAILED\n");
+    }
+    repeat(20) @(CLOCK);
+  }
+  repeat(4) @(CLOCK);
+
+  printf("XPCS Reseted successfully\n");
+
+}
+
+task xpcs_util_class :: link_up_rdy(integer iport){
+  integer count = 0;
+  integer link_up = 0;
+  bit [31:0] r_data;
+  bit [39:0] base_addr;
+  integer mac_speed0,mac_speed1;
+
+  if ( get_plus_arg(CHECK, "MAC_SPEED0=") )
+  {
+    mac_speed0 = get_plus_arg(NUM, "MAC_SPEED0") ;
+  }
+  if ( get_plus_arg(CHECK, "MAC_SPEED1=") )
+  {
+    mac_speed1 = get_plus_arg(NUM, "MAC_SPEED1") ;
+  }
+
+  if(iport == 0){
+    if(mac_speed0 == 10000){
+      base_addr = get_xpcs_reg_base(0);
+      while (!link_up) {
+        if(count != 0) 
+          repeat (100) @(posedge CLOCK);
+        mac_pio_class.mac_pio_rd(base_addr + XPCS_STATUS1, r_data);
+        if(r_data[2]) {
+          count = 0;
+          link_up = 1;
+          printf("INFO : link is up\n");
+        } else {
+          count++;
+          if(count > 500) {
+            printf("ERROR : link_up didn't go high after 50000 clocks\n");
+            link_up = 1;
+          } else link_up = 0;
+        }
+      }
+    }
+    else if(mac_speed0 == 1000){
+      base_addr = pcs_util_cl.get_pcs_reg_base(0);
+      mac_pio_class.mac_pio_rd(base_addr + PCS_DATAPATH_MODE, r_data);
+      if(r_data[1] == 0) {
+      while (!link_up) {
+        if(count != 0) 
+          repeat (100) @(posedge CLOCK);
+	mac_pio_class.mac_pio_rd(base_addr + PCS_MII_STATUS, r_data);
+	if(r_data[2] == 1'b1) {
+          count = 0;
+          link_up = 1;
+          printf("INFO : link is up\n");
+        } else {
+          count++;
+          if(count > 500) {
+            printf("ERROR : link_up didn't go high after 50000 clocks\n");
+            link_up = 1;
+          } else link_up = 0;
+        }
+      }
+      }
+      else
+        printf("not checking for link since in RGMII mode");
+    }
+  }
+  if(iport == 1){
+    if(mac_speed1 == 10000){
+      base_addr = get_xpcs_reg_base(1);
+      while (!link_up) {
+        if(count != 0) 
+          repeat (100) @(posedge CLOCK);
+        mac_pio_class.mac_pio_rd(base_addr + XPCS_STATUS1, r_data);
+        if(r_data[2]) {
+          count = 0;
+          link_up = 1;
+          printf("INFO : link is up\n");
+        } else {
+          count++;
+          if(count > 500) {
+            printf("ERROR : link_up didn't go high after 50000 clocks\n");
+            link_up = 1;
+          } else link_up = 0;
+        }
+      }
+    }
+    else if(mac_speed1 == 1000){
+      base_addr = pcs_util_cl.get_pcs_reg_base(1);
+      mac_pio_class.mac_pio_rd(base_addr + PCS_DATAPATH_MODE, r_data);
+      if(r_data[1] == 0) {
+      while (!link_up) {
+        if(count != 0) 
+          repeat (100) @(posedge CLOCK);
+	mac_pio_class.mac_pio_rd(base_addr + PCS_MII_STATUS, r_data);
+	if(r_data[2] == 1'b1) {
+          count = 0;
+          link_up = 1;
+          printf("INFO : link is up\n");
+        } else {
+          count++;
+          if(count > 500) {
+            printf("ERROR : link_up didn't go high after 50000 clocks\n");
+            link_up = 1;
+          } else link_up = 0;
+        }
+      }
+      }
+      else
+        printf("not checking for link since in RGMII mode");
+    }
+  }
+
+}
+   
+function bit[39:0] xpcs_util_class :: get_xpcs_reg_base(integer iport){
+
+  case(iport) {
+    0: get_xpcs_reg_base = XPCS0_BASE;
+    1: get_xpcs_reg_base = XPCS1_BASE;
+    default: error("Error: Invalid PORT (%0d) for get_xpcs_reg_base task\n",iport);
+  }
+
+}
+

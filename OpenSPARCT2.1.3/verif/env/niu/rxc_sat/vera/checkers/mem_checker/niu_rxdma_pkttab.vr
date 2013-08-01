@@ -1,0 +1,352 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_rxdma_pkttab.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "niu_rxtoken.vrh"
+#include "mbox_class.vrh"
+#include "get_mbox_id.vrh"
+extern mbox_class      mbox_id;
+
+#define  TIME {get_time(HI), get_time(LO)}
+
+class CRxPacketScoreBoard {
+
+
+   integer port_id;
+   integer no_of_packets_qued, no_of_bytes_qued;
+   integer no_of_packets_dqued, no_of_bytes_dqued;
+   integer no_of_packets_checked, no_of_bytes_checked;
+   integer no_of_packets_dropped, no_of_bytes_dropped;
+
+   integer no_of_packets_l2_errors, no_of_bytes_l2_errors;
+   integer no_of_packets_ext_l2_errors, no_of_bytes_ext_l2_errors;
+   integer no_of_packets_ext_cksum_errors, no_of_bytes_ext_cksum_errors;
+
+   integer no_of_packets_ext_runts,no_of_bytes_ext_runts;
+
+   integer hist1_count;
+   integer hist2_count;
+   integer hist3_count;
+   integer hist4_count;
+   integer hist5_count;
+   integer hist6_count;
+   integer hist7_count;
+   integer max_pkt_err_count;
+   integer min_pkt_err_count;
+   integer mcast_pkt_count;
+   integer bcast_pkt_count;
+   integer code_viol_err_count;
+   integer bmac_align_err_count;
+   integer xmac_byte_cnt;
+
+   bit     last_pkt_rcvd; // Token with (last_packet == 1 )receivced
+    // queu of packets
+    CRxToken RxTokenQue[];
+    CRxToken DeletedRxTokenQue[];
+
+    task print_stats( ( integer interval = 10000), (bit one_time = 0) );
+    task new(integer p) {
+      port_id = p;
+      last_pkt_rcvd = 1'b0;
+
+      if(mbox_id.niu_rxpath_sb[p] == -1) {
+        mbox_id.niu_rxpath_sb[p] = alloc(MAILBOX,0,1);
+        // Check if we were succesfull allocating the mailbox
+        if(mbox_id.niu_rxpath_sb[p] == 0) {
+          printf("ERROR  Could not allocate the scoreboard mailbox port %d \n",p);
+          mbox_id.niu_rxpath_sb[p] = -1;
+         return;
+        }
+      }
+
+      no_of_packets_qued = 0;
+      no_of_packets_dqued = 0;
+      no_of_packets_checked = 0;
+      no_of_packets_dropped = 0;
+      no_of_packets_l2_errors = 0;
+      no_of_packets_ext_l2_errors =0;
+      no_of_packets_ext_cksum_errors=0;
+      no_of_bytes_ext_l2_errors=0;
+      no_of_bytes_ext_cksum_errors =0;
+      no_of_packets_ext_runts =0;
+      no_of_bytes_ext_runts =0;
+
+      hist1_count = 0;
+      hist2_count = 0;
+      hist3_count = 0;
+      hist4_count = 0;
+      hist5_count = 0;
+      hist6_count = 0;
+      hist7_count = 0;
+      xmac_byte_cnt = 0;
+      max_pkt_err_count = 0;
+      min_pkt_err_count = 0;
+      mcast_pkt_count = 0;
+      bcast_pkt_count = 0;
+      code_viol_err_count = 0;
+      bmac_align_err_count = 0;
+
+      no_of_bytes_qued = 0;
+      no_of_bytes_dqued = 0;
+      no_of_bytes_checked = 0;
+      no_of_bytes_dropped = 0;
+      no_of_bytes_l2_errors = 0;
+     fork 
+      wait_for_packets(); 
+     join none
+     fork 
+      print_stats(100000); 
+     join none
+    }
+
+   function integer addPackets(CRxToken RxToken); 
+   function integer getPacket(integer id, var CRxToken RxToken,integer dma_no,integer dma_no_from_pkt) ;
+   local function integer CheckDeletedQueue(integer id, var CRxToken RxToken);
+   function integer getNoOfEntries() ;
+   task incPacketStats(CRxToken RxToken);
+   task wait_for_packets();
+
+}
+task CRxPacketScoreBoard::incPacketStats(CRxToken RxToken ) {
+        integer pg_error_code;
+	integer rxtoken_error_code;
+	no_of_packets_qued ++;
+ 	no_of_bytes_qued = no_of_bytes_qued + RxToken.pkt_length;
+
+        // xmac byte counter ceils to the multiple of 8 bytes
+ 	if (RxToken.pkt_length%8)
+	   xmac_byte_cnt = RxToken.pkt_length/8 + 1;
+	else
+	   xmac_byte_cnt = RxToken.pkt_length/8;
+
+	// ext errors
+	pg_error_code = RxToken.pgToken.pack_db.frame.error_code;
+
+       // if ext l2 errors
+	if((pg_error_code&PG_CRC_ERR) /*What about PG_TYPE_LEN_ERR?*/) {
+	  no_of_packets_ext_l2_errors++;
+          no_of_bytes_ext_l2_errors  = no_of_bytes_ext_l2_errors + RxToken.pkt_length; 
+	}
+	
+       // if ext cksum errors
+	if((pg_error_code&PG_CHKSUM_ERR) /**/) {
+	  no_of_packets_ext_cksum_errors++;
+          no_of_bytes_ext_cksum_errors  = no_of_bytes_ext_cksum_errors + RxToken.pkt_length; 
+	}
+
+       if( RxToken.pkt_length<64) {
+        no_of_packets_ext_runts++;
+        no_of_bytes_ext_runts = no_of_bytes_ext_runts + RxToken.pkt_length; 
+       }
+
+
+        if (RxToken.pkt_length==64) hist1_count ++ ;
+        if (RxToken.pkt_length>=65   && RxToken.pkt_length<128)  hist2_count ++ ;
+        if (RxToken.pkt_length>=128  && RxToken.pkt_length<256)  hist3_count ++ ;
+        if (RxToken.pkt_length>=256  && RxToken.pkt_length<512)  hist4_count ++ ;
+        if (RxToken.pkt_length>=512  && RxToken.pkt_length<1024) hist5_count ++ ;
+        if (RxToken.pkt_length>=1024 && RxToken.pkt_length<1523) hist6_count ++ ;
+       
+        hist7_count ++ ; // total packet counter
+
+        
+        
+        
+        if (RxToken.pgToken.pack_db.flow.dst_node.l2_addr == 48'hffff_ffff_ffff) bcast_pkt_count ++ ;
+        
+        
+
+
+} 
+
+function integer CRxPacketScoreBoard::addPackets(CRxToken RxToken) {
+
+   integer id;
+
+    id = RxToken.id;
+    if(RxToken.port_num!=port_id) {
+      printf("ERROR Incorrect Packet port num received !! \n");
+      addPackets = -1;
+    } else if(assoc_index(CHECK,RxTokenQue,id)) {
+     // check if this entry already exists
+       printf(" packet id - %d exists in the queue - TB ERROR \n");
+      addPackets = -1;
+    } else {
+	// Now add the packet
+	RxTokenQue[id] = RxToken;
+
+ 	incPacketStats(RxToken);
+
+       printf("CRxPacketScoreBoard::addPackets packet id - %d added in the queue - Port id - %d No Sofar - %d\n",id,port_id,no_of_packets_qued);
+    }
+
+   if(RxToken.last_packet) {
+      last_pkt_rcvd = 1'b1;
+      printf("%d CRxPacketScoreBoard::addPackets packet id - %d Received Last packet for Port id - %d \n",TIME, id,port_id);
+   }
+}
+
+function integer CRxPacketScoreBoard::CheckDeletedQueue(integer id, var CRxToken RxToken){
+  integer status;
+  if(assoc_index(CHECK,DeletedRxTokenQue,id)) {
+     CheckDeletedQueue = 0;
+     RxToken = DeletedRxTokenQue[id].object_copy();
+     status = assoc_index(DELETE,DeletedRxTokenQue,id);
+     printf("CRxPacketScoreBoard::CheckDeletedQueue: id - %d port_id - %d found in deleted entry !!\n",id,port_id);
+
+  }  else {
+     CheckDeletedQueue = 1;
+  }
+}
+function integer CRxPacketScoreBoard::getPacket(integer id, var CRxToken RxToken,integer dma_no,integer dma_no_from_pkt) {
+
+  integer status;
+  integer first_id;
+  integer iid,j;
+  integer dma_no_to_compare;
+
+// find out how many entries are there before this one.
+// Among these are any of the entries expected to be dropped due to intentional errors
+// such as CRC, FIFO Errors etc
+// If not - mark them as potentially dropped due to backpressure and check if the testcase
+// was intending to do back-pressure. 
+
+// Check if this id is for a packet already deleted. If so the only time this can come would be 
+// when default dma is different from what was intended
+
+ status = CheckDeletedQueue(id, RxToken);
+ if(status==0) {
+  // entry found - decrement counter
+   no_of_packets_dropped--;
+   no_of_packets_dqued++;
+   getPacket = 1;
+   printf("CRxPacketScoreBoard::getPacket: CheckDeletedQueue PacketId - %d Port - %d dma_no - %d Dropped - So far - %d \n",id,port_id,dma_no_from_pkt,no_of_packets_dropped);
+   
+   // no_of_bytes_dropped = no_of_bytes_dropped +RxTokenQue[iid].pkt_length;
+   // no_of_bytes_dqued = no_of_bytes_dqued + RxToken.pkt_length;
+ } else {
+// check if the id exists
+  status = assoc_index(FIRST,RxTokenQue,first_id);
+  if(status==0) {
+    printf("PacketQue Empty !!! Illegal packet received Port No -%d \n",port_id);  
+    getPacket = -1;
+  } else if(assoc_index(CHECK,RxTokenQue,id)) {
+      
+        if(id== first_id) {
+        printf(" Packet Received Matches with the first one- No Packets dropped until now PortNo- %d PacketId - %d \n",port_id,id);
+        } else {
+        // scan through the que until we find the packet
+
+	 dma_no_to_compare = dma_no; 
+
+         status = assoc_index(FIRST,RxTokenQue,first_id);
+         iid = first_id;
+         while(id!=iid) {
+          // find out if next exists
+	  if(RxTokenQue[iid].dma_num== dma_no_to_compare) {
+            no_of_packets_dropped++;
+            no_of_bytes_dropped = no_of_bytes_dropped +RxTokenQue[iid].pkt_length;
+	    printf("CRxPacketScoreBoard::getPacket: PacketId - %d Port - %d dma_no - %d Dropped - So far - %d \n",iid,port_id,dma_no_to_compare,no_of_packets_dropped);
+	    j=iid;
+            status = assoc_index(NEXT,RxTokenQue,j);
+	    if(status) { /*printf("delete found next\n");*/}
+            else { if (id!=j) printf("ERROR IN FINDING NEXT\n"); }
+	    DeletedRxTokenQue[iid] = RxTokenQue[iid].object_copy();
+            status = assoc_index(DELETE,RxTokenQue,iid);
+	    iid = j;
+          } else {
+	    j=iid;
+            status = assoc_index(NEXT,RxTokenQue,j);
+	    if(status) { /*printf("found next\n");*/}
+            else { if (id!=j) printf("ERROR IN FINDING NEXT\n"); }
+	    iid = j;
+          }  
+         }
+	 printf(" RxTokenQue[%d] Expected DMa No - %d Matched with id - %d \n",port_id,dma_no,iid);
+       }// end else
+
+
+      RxToken = new();
+      RxToken = RxTokenQue[id].object_copy();
+      status = assoc_index(DELETE,RxTokenQue,id);
+      no_of_packets_dqued++;
+      no_of_bytes_dqued = no_of_bytes_dqued + RxToken.pkt_length;
+      getPacket = 1;
+   } else {
+     printf(" Packet Id doesnt exist!!! Illegal packet received \n");  
+     getPacket = -1;
+  } 
+ }
+}
+function integer CRxPacketScoreBoard::getNoOfEntries() {
+  getNoOfEntries = no_of_packets_qued -  no_of_packets_dqued;
+}
+
+task CRxPacketScoreBoard::wait_for_packets() {
+ CRxToken RxToken;
+ integer no_of_tkns,status;
+
+ while(1) {
+ no_of_tkns = mailbox_get(WAIT,mbox_id.niu_rxpath_sb[port_id], RxToken);
+ status = addPackets(RxToken);
+ if(status==-1){
+  printf(" ERROR in adding packets to scoreboard \n"); 
+  return;
+ }
+ }
+
+}
+task CRxPacketScoreBoard::print_stats( ( integer interval = 10000), (bit one_time = 0) ) {
+ integer count;
+ integer packets_remaining,packets_checked,total_packets_sent,packets_dropped,packets_l2_errors;
+
+ count = 0;
+ while(1) {
+   
+  printf("###START CURRENT STATS####!! TIME - %d  Port - %d \n",TIME,port_id);
+  packets_remaining = getNoOfEntries();
+  packets_checked = no_of_packets_dqued;
+  total_packets_sent =  no_of_packets_qued;
+  packets_dropped = no_of_packets_dropped;
+  packets_l2_errors = no_of_packets_l2_errors;
+  printf("###STATS SOFAR#### Port=%0d packets_remaining=%0d packets_checked=%0d total_packets_sent=%0d\n", port_id, packets_remaining, packets_checked, total_packets_sent);
+  printf("###STATS SOFAR#### Port=%0d bytes_checked=%0d total_bytes_sent=%0d\n", port_id, no_of_bytes_dqued, no_of_bytes_qued);
+  printf("###STATS SOFAR#### Port=%0d packets dropped due to L2Error=%0d bytes=%0d\n", port_id, no_of_packets_l2_errors, no_of_bytes_l2_errors);
+  printf("###END CURRENT STATS####!! TIME - %d  Port - %d \n",TIME,port_id);
+  if(one_time) 
+     return;
+  repeat(interval + 10*port_id ) @(posedge CLOCK);
+ }
+}

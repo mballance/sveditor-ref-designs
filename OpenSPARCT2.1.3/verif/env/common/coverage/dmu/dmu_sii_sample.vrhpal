@@ -1,0 +1,163 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: dmu_sii_sample.vrhpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#inc "dmu_cov_inc.pal";
+
+sample dmu_sii_cmd_sample_this (this_dmu_cmd)
+{
+           state RDD_ord          ( 7'b0010_100 );
+           state WRI_pstd_ord     ( 7'b0100_100 );
+           state WRM_pstd_ord     ( 7'b0101_100 );
+           state PIO_RD_RET       ( 7'b1010_011 );
+           state INT              ( 7'b0000_010 );
+           cov_weight = 0;
+}
+
+. $j = 5;
+. $k = 2;
+. for ($i=1; $i<11; $i++)
+. {
+    sample dmu_sii_cmd_sample_${i}_clk_last (last_dmu_cmd) 
+    {
+      state RDD_ord          ( 7'b0010_100 ) if (dmu_back_to_back == ${i});
+      state WRI_pstd_ord     ( 7'b0100_100 ) if (dmu_back_to_back == ${j});
+      state WRM_pstd_ord     ( 7'b0101_100 ) if (dmu_back_to_back == ${j});
+      state PIO_RD_RET       ( 7'b1010_011 ) if (dmu_back_to_back == ${k});
+      state INT              ( 7'b0000_010 ) if (dmu_back_to_back == ${k});
+.     $j++;
+.     $k++;
+      cov_weight = 0;
+    }
+.}
+
+
+// bins for back to back dmu commands
+. for ($i=1; $i<11; $i++)
+. {
+    cross dmu_sii_cmd_${i}_clk_cross (dmu_sii_cmd_sample_${i}_clk_last, dmu_sii_cmd_sample_this)
+    {
+     cov_weight = 2;
+    }
+.}
+
+sample dmu_sii_byte_en_sample ( dmu_sii_byte_en ) 
+{
+. &toggle( 16 );
+
+  cov_weight = 1;
+}
+
+sample dmu_siu_intf_iHdr_AddrPar_cov (dmu_sii_parity)
+{
+. &toggle( 2 );
+  cov_weight = 1;
+}
+
+sample dmu_siu_intf_iHdr_PioTimeoutErr_cov (dmu_sii_pio_cpl_to_err)
+{
+  m_state (0:1) if (this_dmu_cmd == 7'b1010_011);
+  cov_weight = 1;
+}
+
+sample dmu_siu_intf_iHdr_PioUnmapAddrErr_cov (dmu_sii_pio_cpl_bus_err)
+{
+  m_state (0:1) if (this_dmu_cmd == 7'b1010_011);
+  cov_weight = 1;
+}
+
+sample dmu_siu_intf_iHdr_PioDmcTag_CreditId_cov (dmc_tag[11:8])
+{
+  m_state (0:15) if (this_dmu_cmd == 7'b1010_011);
+  cov_weight = 1;
+}
+
+sample dmu_siu_intf_iHdr_PioDmcTag_ThreadId_cov (dmc_tag[6:0])
+{
+  m_state (0:127) if (this_dmu_cmd == 7'b1010_011);
+  cov_weight = 1;
+}
+
+// make sure all bits of the dmc tag field are toggled.
+sample dmu_siu_intf_iHdr_DmaDmcTag_cov (dmc_tag)
+{
+  wildcard state s_bit_15_0 ( 16'b0xxxxxxxxxxxxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_15_1 ( 16'b1xxxxxxxxxxxxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_14_0 ( 16'bx0xxxxxxxxxxxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_14_1 ( 16'bx1xxxxxxxxxxxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_13_0 ( 16'bxx0xxxxxxxxxxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_13_1 ( 16'bxx1xxxxxxxxxxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_12_0 ( 16'bxxx0xxxxxxxxxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_12_1 ( 16'bxxx1xxxxxxxxxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_11_0 ( 16'bxxxx0xxxxxxxxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_11_1 ( 16'bxxxx1xxxxxxxxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_10_0 ( 16'bxxxxx0xxxxxxxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_10_1 ( 16'bxxxxx1xxxxxxxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_09_0 ( 16'bxxxxxx0xxxxxxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_09_1 ( 16'bxxxxxx1xxxxxxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_08_0 ( 16'bxxxxxxx0xxxxxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_08_1 ( 16'bxxxxxxx1xxxxxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_07_0 ( 16'bxxxxxxxx0xxxxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_07_1 ( 16'bxxxxxxxx1xxxxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_06_0 ( 16'bxxxxxxxxx0xxxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_06_1 ( 16'bxxxxxxxxx1xxxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_05_0 ( 16'bxxxxxxxxxx0xxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_05_1 ( 16'bxxxxxxxxxx1xxxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_04_0 ( 16'bxxxxxxxxxxx0xxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_04_1 ( 16'bxxxxxxxxxxx1xxxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_03_0 ( 16'bxxxxxxxxxxxx0xxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_03_1 ( 16'bxxxxxxxxxxxx1xxx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_02_0 ( 16'bxxxxxxxxxxxxx0xx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_02_1 ( 16'bxxxxxxxxxxxxx1xx ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_01_0 ( 16'bxxxxxxxxxxxxxx0x ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_01_1 ( 16'bxxxxxxxxxxxxxx1x ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_00_0 ( 16'bxxxxxxxxxxxxxxx0 ) if (this_dmu_cmd != 7'b1010_011);
+  wildcard state s_bit_00_1 ( 16'bxxxxxxxxxxxxxxx1 ) if (this_dmu_cmd != 7'b1010_011);
+  cov_weight = 1;
+}
+
+sample dmu_siu_intf_iHdr_CtagECC_cov (dmudata[61:56])
+{
+  cov_weight = 1;
+}
+
+sample dmu_siu_intf_iHdr_Type_cov ({dmu_sii_datareq,dmu_sii_datareq16,dmubypass})
+{
+  state NO_DATA       (3'b000);
+  state FOUR_DB       (3'b100);
+  state ONE_DB        (3'b110);
+  state INTPIO_ONE_DB (3'b111);
+  cov_weight = 1;
+}
+
+

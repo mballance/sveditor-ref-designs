@@ -1,0 +1,222 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: l2jbi.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+// #include "defines.vri"
+#include<ccxDevicesDefines.vri>
+#include<defines.vri>
+#include<l2jbi_ports_binds.vrh>
+//#include<iop_rtl.h>
+//#include<ccm_top.if.vrh>
+#include<std_display_class.vrh>
+#include<std_display_defines.vri>
+#include "globals.vri"
+
+#define JBI         38
+//#define JBI_REQTYPE 17:15
+#define RDD         21
+#define CTAG_UPPER  19:18
+//#define CTAG_LOWER  12:3
+#define JBI_RDD     2'b00
+#define JBI_WRI     2'b01
+#define JBI_WR8     2'b10
+
+
+#define myname      "CheckJbiInvBeforeAck"
+
+
+
+class JbiClass {
+    bit isWRI;
+    bit [39:0] address;
+    bit [15:0] ctag;
+    bit [31:0] ack;
+    bit inv_before_ack;
+    bit [7:0] sctag_cpx_req;
+    bit [CPX_WIDTH-1:0] sctag_cpx_data;
+
+    task new() {
+        inv_before_ack = 1'b0;
+        isWRI = 1'b0;
+    }
+}
+
+
+task CheckJbiInvBeforeAck() {
+
+//local    StandardDisplay dbg;
+//    string myname;
+    shadow integer i;
+    l2jbi_port l2jbi_bind[8];
+    shadow l2jbi_port lp;
+
+    integer monitor_on = 1;
+    if (get_plus_arg(CHECK, "l2jbi_chk_off"))
+    {
+	monitor_on = 0;
+    }
+
+//    dbg = new;   
+
+    // assign l2jbi_bind_N (defined in l2jbi_ports_binds.vrh) to the array of l2jbi_ports
+    l2jbi_bind[0] = l2jbi_bind_0;
+    l2jbi_bind[1] = l2jbi_bind_1;
+    l2jbi_bind[2] = l2jbi_bind_2;
+    l2jbi_bind[3] = l2jbi_bind_3;
+    l2jbi_bind[4] = l2jbi_bind_4;
+    l2jbi_bind[5] = l2jbi_bind_5;
+    l2jbi_bind[6] = l2jbi_bind_6;
+    l2jbi_bind[7] = l2jbi_bind_7;
+
+//    dbg.dispmon(myname, MON_NORMAL, psprintf("%0d: L2JBI (inv before ack) Monitor started\n", get_time(LO)));
+    PR_NORMAL(myname, MON_NORMAL, psprintf("%0d: L2JBI (inv before ack) Monitor started\n", get_time(LO)));
+    //printf("%0d: L2JBI (inv before ack) Monitor started\n", get_time(LO));
+
+    for(i=0; i<8; i++) {
+        fork
+        /// Ensure that the L2 sends requests to the CPX for WR8/WRI invalidations before sending the WR8/WRI ack
+        {
+            integer l2_semph_id = alloc(SEMAPHORE, 0, 1,1);
+            lp = l2jbi_bind[i];
+            
+            while(monitor_on) {
+                // Wait for WR8/WRI hit or dependent (i.e. not miss) to hit the cache.
+                if(lp.$arb_inst_vld_c2 && !lp.$arbdec_arbdp_inst_fb_c2 &&
+                   lp.$arbdp_inst_c2[JBI] && !lp.$arbdp_inst_c2[RDD] &&
+                   lp.$tag_hit_l2orfb_c2 && (lp.$arbdec_arbdp_inst_dep_c2 || !lp.$arbdec_arbdp_inst_mb_c2)) {
+                    fork
+                    {
+                        WaitForInvAndAck(lp, l2_semph_id);
+                    }
+                    join none
+                }
+                
+                @(posedge l2jbi.ccx_rclk);
+            } // while(1)
+        }
+        join none
+    } // for(i=0; i<8; i++)
+
+}
+
+
+task WaitForInvAndAck(l2jbi_port lp, integer l2_semph_id) {
+  integer maxWait = 2500; // was 500
+    integer j;
+    bit [7:0] sctag_cpx_req_cq, sctag_cpx_req_cq_d1;
+    JbiClass jbi;
+
+    jbi = new();
+
+    // C2 at this point
+    //jbi.reqtype = lp.$arbdp_inst_c2[JBI_REQTYPE];
+    if(lp.$arbdp_inst_c2[22]){
+       jbi.isWRI = 1'b0;
+    }
+    else if(lp.$arbdp_inst_c2[23]){
+       jbi.isWRI = 1'b1;
+    }
+    else{
+       error("%0d: L2JBI: Unexpected JBI request type\n\n", get_time(LO));
+    }
+
+    jbi.address = lp.$arbdp_addr_c2;
+    //jbi.ctag = {lp.$arbdp_inst_c2[CTAG_UPPER], lp.$arbdp_inst_c2[CTAG_LOWER]};
+    jbi.ctag = lp.$arbdp_inst_c2[15:0];
+    jbi.ack = {8'bXXXXXXXX, 8'bXXXXXXXX, jbi.ctag};
+    //jbi.ack = {17'b0, jbi.address[1:0], jbi.reqtype[0], jbi.ctag};
+
+    PR_NORMAL(myname, MON_NORMAL, psprintf("%0d: WaitForInvAndAck started for %s (ctag = %x, addr = %x)\n", get_time(LO), jbi.isWRI ? "WRI" : "WR8", jbi.ctag, jbi.address));
+
+    fork
+    {
+        // wait till C6 (req_out_c6 is asserted 4 cycles after tagctl_hit_l2orfb_c2 for WR8s/WRIs)
+        repeat(4 + 1) @(posedge l2jbi.ccx_rclk);
+        jbi.sctag_cpx_req = lp.$req_out_c6;
+        
+        // WR8/WRI causes L1 invalidations
+        if(jbi.sctag_cpx_req != 8'b0) {
+            // wait till C7
+            @(posedge l2jbi.ccx_rclk);
+            jbi.sctag_cpx_data = {1'b1, CPX_EVICT, 3'b0, 9'bx, 1'b0, lp.$ext_inval_data_c7}; //<MOD>
+
+            j = 0;
+            while(j++ < maxWait) {
+                sctag_cpx_req_cq_d1 = sctag_cpx_req_cq;
+                sctag_cpx_req_cq = lp.$sctag_cpx_req_cq;
+                
+                // match both sctag_cpx_req_cq and sctag_cpx_data_ca
+                if(sctag_cpx_req_cq_d1 == jbi.sctag_cpx_req && lp.$sctag_cpx_data_ca =?= jbi.sctag_cpx_data) {
+                    jbi.inv_before_ack = 1'b1;
+                    break;
+                }
+                @(posedge l2jbi.ccx_rclk);
+            }
+            if(j > maxWait)
+                error("%0d: L2JBI: Timeout waiting for CPX requests for WR8/WRI invalidations\n\n", get_time(LO));
+        }
+        // no L1 invalidations
+        else
+            jbi.inv_before_ack = 1'b1;
+    }
+    {
+        // only one monitor can be waiting for lp.$oqu_st_complete_c6 == 1'b1
+        semaphore_get (WAIT, l2_semph_id, 1);
+    
+        // Wait for oqctl_st_complete_c6 to be asserted, because scbuf_jbi_ctag_vld is always asserted
+        // exactly 7 cycles after oqctl_st_complete_c6.
+        // Only 1 WR8/WRI will be issued out of the MB and waiting for store completion at any time.
+        @1,maxWait lp.$oqu_st_complete_c6 == 1'b1;
+
+        semaphore_put (l2_semph_id, 1); // let other monitors get started
+    
+        // ack arrives exactly 7 cycles after oqctl_st_complete_c6
+        // Expecting the ack in the exact cycle is necessary because the diags issue different WR8s/WRIs with
+        // the same ctag, which results in non-unique acks.
+        @7 lp.$l2b_sio_ctag_vld == 1'b1, lp.$l2b_sio_data == jbi.ack;
+        
+        // check that CPX request for INV was sent before JBI ack
+        if(!jbi.inv_before_ack) {
+          error("%0d: L2JBI: %s ack sent to JBI before invalidations were sent to cores (ctag = %x, addr = %x)\n\n",
+                get_time(LO), jbi.isWRI ? "WRI" : "WR8", jbi.ctag, jbi.address);
+        }
+        
+        // optional: print out message when inv-before-ack condition is satisfied
+        if(jbi.sctag_cpx_req != 8'b0) {
+          PR_NORMAL(myname, MON_NORMAL, psprintf("%0d: L2JBI: inv-before-ack condition satisfied for %s (ctag = %x, addr = %x)\n", get_time(LO), jbi.isWRI ? "WRI" : "WR8", jbi.ctag, jbi.address));
+        }
+    }
+    join all
+
+}

@@ -1,0 +1,1737 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_rx_descp.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "niu_mem.vrh"
+#include "pcg_defines.vri"
+#include "pcg_types.vri"
+#include "pg_top_pp.vrh"
+#include "pc_top_pp.vrh"
+#include "pcg_token.vrh"
+#include "niu_rxtoken.vrh"
+#include "niu_dma.vrh"
+#include "niu_rx_descp_sch.vrh"
+#include "niu_rx_descp_cr.vrh"
+#include "niu_rx_crentry.vrh"
+#include "dmc_memory_map.vri"
+#include "zcp_memory_map.vri"
+
+#define  RBR_MAX_RING_LEN 65535
+#define  RCR_MAX_RING_LEN 65535
+#define  RBR_PAGE_ALIGNMENT 65536
+#define  RCR_PAGE_ALIGNMENT 65536
+
+#ifdef N2_FC
+#include "fc_niu_ev2a.vrh"
+#endif
+
+extern CSparseMem SparseMem;
+extern niu_gen_pio gen_pio_drv;
+extern mbox_class      mbox_id;
+extern pg pack_gen[16];
+extern integer RX_TEST_REACHED_END;
+extern CNiuDMABind NiuDMABind;
+
+class CRxBufferPool {
+   bit [63:0] address;
+   integer page_id;
+   integer bufsz;
+   integer status;
+   integer no_of_expected_packets;
+   integer no_of_packets_received;
+   task new() { }
+   function integer self_destroy() {
+    if(no_of_packets_received>=no_of_expected_packets) {
+      printf("debug: Pkt address to be deleted - %x \n",address);
+      status = SparseMem.free_addr(address,1,page_id);
+      printf("debug: xlate address to be deleted - %x %d \n",address,status);
+      self_destroy = 1;
+    } else self_destroy =  0;
+   }
+}
+
+class rxdma_ctl_stat_reg {
+
+   bit MEX_bit;			
+
+   bit status_DC_FIFO_ERR;	
+   bit status_RCRTHRES;		
+   bit status_RCRTO;		
+   bit status_PORT_DROP_PKT;	
+   bit status_WRED_DROP;	
+   bit status_RBR_PRE_EMPTY;	
+   bit status_RCR_SHADOW_FULL;	
+   bit status_RBR_EMPTY;	
+
+   bit [15:0] update_PTRREAD;
+   bit [15:0] update_PKTREAD;
+
+   task new() {
+    status_DC_FIFO_ERR = 0;
+    MEX_bit = 0;
+    status_RCRTHRES = 0;
+    status_RCRTO = 0;
+    status_PORT_DROP_PKT = 0;
+    status_WRED_DROP = 0;
+    status_RBR_PRE_EMPTY = 0;
+    status_RCR_SHADOW_FULL = 0;
+    status_RBR_EMPTY = 0;
+    update_PTRREAD = 0;
+    update_PKTREAD = 0;
+   }
+
+}
+
+class RxDMAChannel extends CDMA { 
+
+	integer id; // dmaid
+	string type; // Tx or Rx
+	integer active;
+        integer total_packet_checked=0;
+        integer total_packets_to_defaultdma=0;
+        integer total_packets_to_nondefaultdma=0;
+
+	integer desc_ring_head_ptr;
+	bit [63:0] ring_start_addr;
+	bit [63:0] ring_current_addr;
+	integer ring_size;
+        integer page0_id;
+        integer page1_id;
+	integer xlate_on;
+	bit RBR_page;
+	bit RCR_page;
+	bit MailBox_page;
+	bit PktBuffers_page;
+	bit page0_valid;
+	bit page1_valid;
+	integer RBR_page_id;
+	integer RCR_page_id;
+	integer MailBox_page_id;
+	integer PktBuffers_page_id;
+	bit random_page_alloc;
+	bit pkts_in_alternate_pages;
+	integer ctrl_hdr_len;
+	integer buffer_offset;
+        bit [31:0] page_mask0, page_value0, page_reloc0;   
+        bit [31:0] page_mask1, page_value1, page_reloc1;  
+        bit [15:0] dma_block_size;
+        bit [15:0] rcr_ring_len, rbr_ring_len;
+        integer dis_pio_virt=0;
+
+        bit[63:0] CR_rcr_start_addr, CR_rcr_tail_l, CR_rcr_tail_h;
+        bit[63:0] CR_last_rcr_tail_l, CR_last_rcr_tail_h;
+	integer CR_ring_length;
+ 	integer poll_cr_active=0;
+ 	integer poll_cr_done=0;
+
+        bit dring_addr_error=0;
+        bit cring_addr_error=0;
+        integer descr_addr_error_pkt_num=0;
+	integer curr_rbr_desc_kicked_cnt = 0;
+	bit fun_no_has_been_set = 0;
+	bit [1:0] function_no;
+
+	integer rxdma_ctl_stat_update_done = -1;
+
+	CRxdescpScheduler descpScheduler;
+        CCompletionRing   completionring;
+        CRxBufferPool buf_pool[];
+
+
+	// descriptor_ring -- -
+         CRxDescrRing desc_ring;
+
+	task new(integer i,string t,(integer dev_id = 0) ){
+
+          super.new(i,1,dev_id);
+	  id = i;
+          xlate_on =0;
+          page_mask0=0; page_value0=0; page_reloc0=0;
+          page_mask1=0; page_value1=0; page_reloc1=0;
+          // if(xlate_on) {
+ 	     page0_id = 2*i + 64;
+ 	     page1_id = page0_id + 1;
+          // } else {
+	     // page0_id = 0;
+	     // page1_id = 0;
+          // }
+
+	  total_packet_checked=0;
+          total_packets_to_defaultdma=0;
+          total_packets_to_nondefaultdma=0;
+
+          address_incr = 4;
+	  type = t;
+          active = 0;
+	  desc_ring = new();
+          dis_pio_virt=1;
+	  descpScheduler = new(i);
+          completionring = new();
+          completionring.dma_num = id;
+	  printf(" DMA Channel %d -newed\n",i);
+	  RBR_page = 0;
+	  RCR_page = 0;
+	  MailBox_page = 0;
+	  PktBuffers_page = 0;
+	  page0_valid = 1;
+	  page1_valid = 1;
+	  RBR_page_id = page0_id;
+	  RCR_page_id = page0_id;
+	  MailBox_page_id = page0_id;
+	  PktBuffers_page_id = page0_id;
+	  random_page_alloc = 0;
+	  pkts_in_alternate_pages = 0;
+	  ctrl_hdr_len = 2;
+	  buffer_offset = 0;
+	  dma_block_size = 4096;
+ 	  rcr_ring_len = 0;
+	  rbr_ring_len = 0;
+
+	  auto_periodic_kick();
+	  rxdma_ctl_stat_update_done = alloc(SEMAPHORE, 0, 1, 1);
+  	  if(get_plus_arg( CHECK, "RXTX_PIO_STRESS_BINDING=")) {
+           function_no = get_plus_arg( NUM, "RXTX_PIO_STRESS_BINDING=");
+           function_no = function_no % 4;
+         } else function_no = id/4;
+
+        }
+
+
+	// local task add_descriptor(CRxdescriptor desc);
+	local function integer incr_ptr( integer ptr){
+	  incr_ptr = (ptr++)%ring_size;
+	}
+
+	local task create_descriptor(var CRxdescriptor desc, bit [31:0] blk_addr, (integer pkt_page_id = 0)  );
+	local task set_descriptor(integer no_of_desc);
+
+	function integer CheckDMAStatus( CRxToken RxToken) ;
+	function integer getPacketAddress( CRxToken RxToken) ;
+        function integer getPageId(bit [43:0] virt_address);
+
+        function CRxdescriptor getNextDesc() {
+          getNextDesc = desc_ring.front();
+          desc_ring.pop_front();
+        }
+        function integer get_curr_ring_size() {
+	  get_curr_ring_size=descpScheduler.desc_ring.desc_ring.size();
+	}
+
+        local task UpdateCompletionRing(CRxToken RxToken);
+	// functions to update RxDMA Rx Kick Registers
+	
+        task SetCurrentPtrs() ;
+	task CheckCR_Entries();
+
+        task pollCRPtr( (integer poll_interval=1000) );
+	task reclaim_buffers( (integer reclaim=1) );
+	task setRxDmaCfig_1(bit [63:0] data,(bit read_back = 1'b0),(bit read_only = 1'b0));
+	task setRxLogPgVld(bit [63:0] data,(bit read_back = 1'b0));
+	task setRbrConfig_A(bit [63:0] data,(bit read_back = 1'b0),(integer ring_page_id =0));
+	task setRbrConfig_B(bit [63:0] data,(bit read_back = 1'b0));
+	task setRxRingKick(bit [63:0] data);
+	task readRxRingHead(var bit [63:0] data);
+	task setZcpRdc(bit [63:0] data,(bit read_back = 1'b0));
+	task setRcrConfig_A(bit [63:0] data,(bit read_back = 1'b0),(integer ring_page_id =0));
+        local task updateHeaderLength(CRxToken RxToken);
+        task SetPage0Registers(bit [31:0] mask,bit [31:0] value, bit [31:0] reloc);
+	task SetPage1Registers(bit [31:0] mask,bit [31:0] value, bit [31:0] reloc);
+	task InitDMAChan(integer dma_chnl, integer desc_ring_length, integer compl_ring_len, bit [63:0] rbr_config_B_data, bit [15:0] initial_kick, integer xlation);
+        task CheckMailboxData(bit [63:0] ctl_data_mask);
+ 	task UpdateRCRStat();
+
+	// functions to check data
+ 	task CheckCRData (integer no_of_entries , (integer update_ptrs = 0) );
+        task free_memory(CRxToken RxToken);
+	task flush_rcr((integer wait_for_done=0) );
+	task reset_bind_to_group( (integer dummy_g=0));
+	task bind_to_group( integer g);
+	task enableWRED(bit [15:0] red_ran_init,
+			bit [11:0] TCP_SYN_THR,
+			bit [3:0]  TCP_SYN_WIN,
+			bit [11:0] THR,
+			bit [3:0]  WIN);
+
+	task resetRxDma();
+
+	task incDefPktCnt () {
+	 total_packet_checked++;
+         total_packets_to_defaultdma++;
+	}
+
+	task incPktCnt () {
+	 total_packet_checked++;
+         total_packets_to_nondefaultdma++;
+	}
+        //task RXDMA_CFIG1_pio_wr(bit [63:0] address, bit [63:0] data);
+        //task RXDMA_CFIG1_pio_rd(bit [63:0] address, var bit [63:0] data);
+        //task RXDMA_CFIG2_pio_wr(bit [63:0] address, bit [63:0] data);
+        //task RXDMA_CFIG2_pio_rd(bit [63:0] address, var bit [63:0] data);
+
+	task init_descr_cache();
+	task init_compl_cache();
+
+	task periodic_kick((integer interval = 3000), (integer num_desc = 256), (integer threshold = 256));
+	task auto_periodic_kick();
+
+	task pio_wr_RXDMA_CFIG1(bit [63:0] rd_data);
+	task pio_rd_RXDMA_CFIG1(var bit [63:0] rd_data);
+	task pio_wr_RXDMA_CFIG2(bit [63:0] rd_data);
+	task pio_rd_RXDMA_CFIG2(var bit [63:0] rd_data);
+	task pio_rd_RCR_CFIG_A(var bit [63:0] rd_data);
+	task pio_rd_RX_MISC_DROP(var bit [63:0] rd_data);
+	task pio_rd_RED_DISC(var bit [63:0] rd_data);
+	task pio_wr_RDC_RED_PARA(bit [63:0] rd_data);
+	task pio_rd_RDC_RED_PARA(var bit [63:0] rd_data);
+
+	task pio_wr_RX_DMA_CTL_STAT_START(bit [63:0] rd_data);
+	task pio_rd_RX_DMA_CTL_STAT_START(var bit [63:0] rd_data);
+	task pio_wr_RX_DMA_ENT_MSK_START(bit [63:0] rd_data);
+	task pio_rd_RX_DMA_ENT_MSK_START(var bit [63:0] rd_data);
+	task pio_wr_RCR_CFIG_B_START(bit [63:0] rd_data);
+	task pio_rd_RCR_CFIG_B_START(var bit [63:0] rd_data);
+	task pio_wr_RX_DMA_INTR_DEBUG_START(bit [63:0] rd_data);
+	task pio_rd_RX_DMA_INTR_DEBUG_START(var bit [63:0] rd_data);
+  	task rxdma_ctl_stat_update(integer field, rxdma_ctl_stat_reg ctl_stat_reg);
+}
+
+task RxDMAChannel :: rxdma_ctl_stat_update(integer field, rxdma_ctl_stat_reg ctl_stat_reg) {
+bit [63:0] rd_data;
+	
+    // first wait for the SEMAPHORE for mutual exclusiveness of multiple calls to this function
+    printf ("RxDMAChannel::rxdma_ctl_stat_update dma=%0d field %0d\n", id, field);
+    semaphore_get(WAIT, rxdma_ctl_stat_update_done, 1);
+    case(field) {
+     0: { // updating the MEX bit with given value. Write Status_bits=0, RCR_Update=0.
+	  pio_rd_RX_DMA_CTL_STAT_START(rd_data); 
+	  rd_data[RX_DMA_CTL_STAT_MEX] = ctl_stat_reg.MEX_bit;  		// bit 47
+	  rd_data[RX_DMA_CTL_STAT_RBR_TMOUT:RX_DMA_CTL_STAT_DC_FIFO_ERR] = 0;	// bits 53:48
+	  rd_data[RX_DMA_CTL_STAT_RCRTHRES:RX_DMA_CTL_STAT_CFIGLOGPAGE] = 0;	// bits 46:32
+	  rd_data[RX_DMA_CTL_STAT_PTRREAD] = 0;					// bits 31:16
+	  rd_data[RX_DMA_CTL_STAT_PKTREAD] = 0;					// bits 15:0
+	  printf ("RxDMAChannel::rxdma_ctl_stat_update field=0 dma=%0d, updating MEX<=%0d\n", id, ctl_stat_reg.MEX_bit);
+	  pio_wr_RX_DMA_CTL_STAT_START(rd_data);
+	}
+     1: { // clearing the non-fatal status bits, Write MEX=MEX-read, RCR_Update=0.
+	  pio_rd_RX_DMA_CTL_STAT_START(rd_data);
+	  rd_data[RX_DMA_CTL_STAT_DC_FIFO_ERR] = 
+				ctl_stat_reg.status_DC_FIFO_ERR;     // bit 48
+	  rd_data[RX_DMA_CTL_STAT_RCRTHRES] = 
+				ctl_stat_reg.status_RCRTHRES;  	     // bit 46
+	  rd_data[RX_DMA_CTL_STAT_RCRTO] = 
+				ctl_stat_reg.status_RCRTO;  	     // bit 45
+	  rd_data[RX_DMA_CTL_STAT_PORT_DROP_PKT] = 
+				ctl_stat_reg.status_PORT_DROP_PKT;   // bit 42
+	  rd_data[RX_DMA_CTL_STAT_WRED_DROP] = 
+				ctl_stat_reg.status_WRED_DROP;       // bit 41
+	  rd_data[RX_DMA_CTL_STAT_RBR_PRE_EMTY] = 
+				ctl_stat_reg.status_RBR_PRE_EMPTY;    // bit 40
+	  rd_data[RX_DMA_CTL_STAT_RCR_SHADOW_FULL] = 
+				ctl_stat_reg.status_RCR_SHADOW_FULL; // bit 39
+	  rd_data[RX_DMA_CTL_STAT_RBR_EMPTY] = 
+				ctl_stat_reg.status_RBR_EMPTY;       // bit 35
+	  rd_data[RX_DMA_CTL_STAT_PTRREAD] = 0;
+	  rd_data[RX_DMA_CTL_STAT_PKTREAD] = 0;
+	  printf ("RxDMAChannel::rxdma_ctl_stat_update field=1 dma=%0d, clear Status bits wr_data = 0x%h\n", rd_data);
+	  pio_wr_RX_DMA_CTL_STAT_START(rd_data);
+	}
+     2: { // updating the RCR status from software, Write MEX=MEX-read, Status_bits=0.
+	  pio_rd_RX_DMA_CTL_STAT_START(rd_data); 
+	  rd_data[RX_DMA_CTL_STAT_RBR_TMOUT:RX_DMA_CTL_STAT_DC_FIFO_ERR] = 0;	// bits 53:48
+	  rd_data[RX_DMA_CTL_STAT_RCRTHRES:RX_DMA_CTL_STAT_CFIGLOGPAGE] = 0;	// bits 46:32
+	  rd_data[RX_DMA_CTL_STAT_PTRREAD] = ctl_stat_reg.update_PTRREAD;	// bits 31:16
+	  rd_data[RX_DMA_CTL_STAT_PKTREAD] = ctl_stat_reg.update_PKTREAD;	// bits 15:0
+	  printf ("RxDMAChannel::rxdma_ctl_stat_update field=2 dma=%0d, RCR Update. wr_data = 0x%h\n",id, rd_data);
+	  pio_wr_RX_DMA_CTL_STAT_START(rd_data);
+	}
+     default: {
+	      }
+    }
+
+    // Now, to allow any other pending call to this function, put key back into the SEMAPHORE bucket
+    semaphore_put(rxdma_ctl_stat_update_done, 1);
+
+}
+
+task RxDMAChannel :: init_descr_cache() {
+    bit [63:0] rd_data;
+    integer ii;
+
+    printf("RxDMAChannel::init_descr_cache() Initializing the descriptor prefetch cache to 0 for DMA - %0d\n",id);
+
+    // Enable the RAM debug read/write mode
+    gen_pio_drv.pio_rd(getPIOAddress(RX_ADDR_MD, dis_pio_virt),rd_data);
+    rd_data[RX_ADDR_MD_RAM_ACC]=1;
+    gen_pio_drv.pio_wr(getPIOAddress(RX_ADDR_MD, dis_pio_virt),rd_data);
+
+  //WRITE all entries to 0 (for Neptune, this is a must. Otherwise, PCIE link layer will hang due to pio_rd_data=X)
+  for(ii=0; ii<8; ii++) {  //dma0:0-7 dma1:8-15 (descr)
+    gen_pio_drv.pio_rd(getPIOAddress(RDMC_MEM_ADDR, dis_pio_virt), rd_data);
+    rd_data[RDMC_MEM_ADDR_PRE_SHAD]=0;   //0=prefetch(descr) 1=shadow(cring)
+    rd_data[RDMC_MEM_ADDR_PRE_ADDR]=(id*8)+ii;
+    gen_pio_drv.pio_wr(getPIOAddress(RDMC_MEM_ADDR, dis_pio_virt), rd_data);
+
+    gen_pio_drv.pio_wr(RDMC_MEM_DAT3, 0);
+    gen_pio_drv.pio_wr(RDMC_MEM_DAT2, 0);
+    gen_pio_drv.pio_wr(RDMC_MEM_DAT1, 0);
+    gen_pio_drv.pio_wr(RDMC_MEM_DAT0, 0);
+    gen_pio_drv.pio_wr(RDMC_MEM_DAT4, 0);
+  }
+    
+   // Turn back off the RAM debug read/write mode
+    gen_pio_drv.pio_rd(getPIOAddress(RX_ADDR_MD, dis_pio_virt),rd_data);
+    rd_data[RX_ADDR_MD_RAM_ACC]=0;
+    gen_pio_drv.pio_wr(getPIOAddress(RX_ADDR_MD, dis_pio_virt),rd_data);
+
+}
+
+task RxDMAChannel :: init_compl_cache() {
+    bit [63:0] rd_data;
+    integer ii;
+
+    printf("RxDMAChannel::init_compl_cache() Initializing the compl shadow cache to 0 for DMA - %0d\n",id);
+
+    // Enable the RAM debug read/write mode
+    gen_pio_drv.pio_rd(getPIOAddress(RX_ADDR_MD, dis_pio_virt),rd_data);
+    rd_data[RX_ADDR_MD_RAM_ACC]=1;
+    gen_pio_drv.pio_wr(getPIOAddress(RX_ADDR_MD, dis_pio_virt),rd_data);
+
+  //WRITE all entries to 0 (for Neptune, this is a must. Otherwise, PCIE link layer will hang due to pio_rd_data=X)
+  for(ii=0; ii<8; ii++) {  //dma0:0-7 dma1:8-15 (descr)
+    gen_pio_drv.pio_rd(getPIOAddress(RDMC_MEM_ADDR, dis_pio_virt), rd_data);
+    rd_data[RDMC_MEM_ADDR_PRE_SHAD]=1;   //0=prefetch(descr) 1=shadow(cring)
+    rd_data[RDMC_MEM_ADDR_PRE_ADDR]=(id*8)+ii;
+    gen_pio_drv.pio_wr(getPIOAddress(RDMC_MEM_ADDR, dis_pio_virt), rd_data);
+
+    gen_pio_drv.pio_wr(RDMC_MEM_DAT3, 0);
+    gen_pio_drv.pio_wr(RDMC_MEM_DAT2, 0);
+    gen_pio_drv.pio_wr(RDMC_MEM_DAT1, 0);
+    gen_pio_drv.pio_wr(RDMC_MEM_DAT0, 0);
+    gen_pio_drv.pio_wr(RDMC_MEM_DAT4, 0);
+  }
+    
+   // Turn back off the RAM debug read/write mode
+    gen_pio_drv.pio_rd(getPIOAddress(RX_ADDR_MD, dis_pio_virt),rd_data);
+    rd_data[RX_ADDR_MD_RAM_ACC]=0;
+    gen_pio_drv.pio_wr(getPIOAddress(RX_ADDR_MD, dis_pio_virt),rd_data);
+
+}
+
+task RxDMAChannel :: enableWRED(bit [15:0] red_ran_init,
+			        bit [11:0] TCP_SYN_THR,
+				bit [3:0]  TCP_SYN_WIN,
+				bit [11:0] THR,
+				bit [3:0]  WIN) {
+     
+     // Enable WRED and set the parameters red_ran_init,TCP_SYN_THR,TCP_SYN_WIN,THR, and WIN
+     gen_pio_drv.pio_wr(getPIOAddress(RED_RAN_INIT, dis_pio_virt), {45'h0, 1, red_ran_init});
+     gen_pio_drv.pio_wr(getPIOAddress(RDC_RED_PARA_START + id*RDC_RED_PARA_STEP, dis_pio_virt), {32'h0,TCP_SYN_THR,TCP_SYN_WIN,THR,WIN});
+     printf ("RxDMAChannel.enableWRED red_ran_init 0x%h TCP_SYN_THR 0x%h TCP_SYN_WIN 0x%h THR 0x%h WIN 0x%h\n",
+			red_ran_init,TCP_SYN_THR,TCP_SYN_WIN,THR,WIN);
+}
+
+task RxDMAChannel :: CheckCR_Entries( ) {
+
+     integer no_of_entries;
+     Ccr_update cr_update;
+     bit [63:0] rd_data;
+
+     gen_pio_drv.pio_rd(getPIOAddress(RCR_STAT_C_START + RXDMA_STEP*id, dis_pio_virt), CR_rcr_tail_l);
+     printf("RxDMAChannel :: CheckCR_Entries rcr_tail_l - %x last_rcr_tail_l - %x \n",CR_rcr_tail_l,CR_last_rcr_tail_l);
+         if(CR_last_rcr_tail_l>CR_rcr_tail_l) {   //wrap around case
+           no_of_entries=((CR_rcr_tail_l-CR_rcr_start_addr[31:0])+((CR_rcr_start_addr[31:0]+CR_ring_length)-CR_last_rcr_tail_l))/8;
+           printf("pollCR dma=%0d l>c last_rcr_tail_l=%x rcr_tail_l=%x no_of_entries=%0d\n", id, CR_last_rcr_tail_l, CR_rcr_tail_l, no_of_entries);
+          CR_last_rcr_tail_l = CR_rcr_tail_l;
+         } else if(CR_last_rcr_tail_l<CR_rcr_tail_l) {
+          no_of_entries=(CR_rcr_tail_l - CR_last_rcr_tail_l)/8;
+          printf("pollCR dma=%0d l<c last_rcr_tail_l=%x rcr_tail_l=%x no_of_entries=%0d\n", id, CR_last_rcr_tail_l, CR_rcr_tail_l, no_of_entries);
+         CR_last_rcr_tail_l = CR_rcr_tail_l;
+         } else {
+         no_of_entries=0;
+         }
+
+       if(no_of_entries>0) {
+        cr_update = new();
+        cr_update.dma_no = this.id;
+        cr_update.no_of_entries = no_of_entries;
+        if(get_plus_arg (CHECK, "RX_DROP_PKT_CHECK"))
+          mailbox_put(mbox_id.niu_rxpath_cr, cr_update);
+
+     // ######## updating PTRREAD/PKTREAD fields to RX_DMA_CTL_STAT has to be done in 1 place: checker #######
+        //gen_pio_drv.pio_rd(getPIOAddress(RX_DMA_CTL_STAT_START + RXDMA_STEP*id, dis_pio_virt), rd_data, 1'b0);
+        //rd_data[31:16] = no_of_entries;
+        //gen_pio_drv.pio_wr(getPIOAddress(RX_DMA_CTL_STAT_START + RXDMA_STEP*id, dis_pio_virt), rd_data);
+       }
+
+}
+
+task RxDMAChannel :: SetCurrentPtrs( ) {
+
+  CR_ring_length = completionring.ring_length;
+  gen_pio_drv.pio_rd(getPIOAddress(RCR_STAT_B_START + RXDMA_STEP*id, dis_pio_virt), CR_last_rcr_tail_h);
+  gen_pio_drv.pio_rd(getPIOAddress(RCR_STAT_C_START + RXDMA_STEP*id, dis_pio_virt), CR_last_rcr_tail_l);
+  gen_pio_drv.pio_rd(getPIOAddress(RCR_CFIG_A_START + RXDMA_STEP*id, dis_pio_virt), CR_rcr_start_addr);
+  printf("SetCurrentPtrs:dma=%0d cring_len=0x%0h start_addr=0x%0h starting at time=%d ptr - %x \n", id, CR_ring_length, CR_rcr_start_addr, {get_time(HI), get_time(LO)},CR_last_rcr_tail_l);
+}
+
+task RxDMAChannel :: reset_bind_to_group( (integer dummy_g=0)) {
+     if(NiuDMABind.rx_dma_func_bind[id] != -1) {
+        ResetDMAGroupBind(NiuDMABind.rx_dma_func_bind[id]);
+     }
+}
+
+task RxDMAChannel :: bind_to_group( integer g) {
+  bit [63:0] address;
+  bit [63:0] rdata;
+  dis_pio_virt = 0;
+  address = RX_LOG_PAGE_VLD + id*40'h40;
+  gen_pio_drv.pio_rd(getPIOAddress(address, dis_pio_virt),rdata);
+  rdata[3:2] = g/16;
+  fun_no_has_been_set = 1;
+  gen_pio_drv.pio_wr(getPIOAddress(address, dis_pio_virt),rdata);
+  printf("<%0d> RxDMAChannel :: bind_to_group : RX_LOG_PAGE_VLD : addr:%h data:%h, g:%0d, id:%0d\n",
+  	get_time(LO), address, rdata, g, id);
+  SetDMAGroupBind(g);
+}
+
+task RxDMAChannel::flush_rcr((integer wait_for_done=0) ) {
+  bit[63:0] rdata;
+  integer count;
+  count = 0;
+  gen_pio_drv.pio_wr(getPIOAddress(RCR_FLUSH_START + 12'h200*id, dis_pio_virt), 64'h1);
+  if(wait_for_done) {
+    rdata=  1;
+    while(rdata!=0) {
+      gen_pio_drv.pio_rd(getPIOAddress(RCR_FLUSH_START + 12'h200*id, dis_pio_virt), rdata);
+      repeat(50)@(posedge CLOCK);
+      count++;
+      if(count>1000){
+	printf("RxDMAChannel::flush_rcr DMA- %d ERROR, RCR FLUSH NOT DONE after %d Clocks\n",id,50*count);
+        return;
+      }
+    }
+    printf("RxDMAChannel::flush_rcr DMA - %d Done with flush\n",id);
+  }
+}
+
+task RxDMAChannel::free_memory(CRxToken RxToken) {
+  integer bufsz;
+  bit[63:0] packet_address[3];
+  bit[63:0] norm_address[3];
+  integer blk_size;
+  integer status;
+  integer no_of_expected_packets;
+  integer i,bit_to_ignore;
+   
+  CRxBufferPool buf_poollocal;
+
+  bufsz = RxToken.bufsz;
+  blk_size = descpScheduler.blk_size;
+  if(bufsz==3) {
+   no_of_expected_packets = 1;
+  } else if(bufsz==2) {
+   no_of_expected_packets = blk_size/descpScheduler.bufsz2;
+  } else if(bufsz==1) {
+   no_of_expected_packets = blk_size/descpScheduler.bufsz1;
+  } else if(bufsz==0) {
+   no_of_expected_packets = blk_size/descpScheduler.bufsz0;
+  }
+  bit_to_ignore = 0;
+  while(blk_size !=0) {
+    bit_to_ignore++;
+    blk_size = blk_size>>1;
+  }
+  bit_to_ignore--;
+  printf("blk_size - %d bit_to_ignore - %d no_of_expected_packets - %d  \n",blk_size,bit_to_ignore,no_of_expected_packets);
+  
+  for(i=0;i<RxToken.NoOfScatter;i++) {
+    packet_address[i] = RxToken.packet_start_address[i];
+     // ignore lower bits
+    norm_address[i] = packet_address[i] >> bit_to_ignore;
+ } 
+
+ for(i=0;i<RxToken.NoOfScatter;i++) {
+   if(assoc_index(CHECK,buf_pool, norm_address[i])) {
+    // if this exists
+     buf_pool[norm_address[i]].no_of_packets_received++;
+     printf(" destroyed address - %x no_of_packet_sofar - %d \n",norm_address[i], buf_pool[norm_address[i]].no_of_packets_received);
+     buf_pool[norm_address[i]].page_id = getPageId(RxToken.packet_virtaddress[i]);
+     if(buf_pool[norm_address[i]].self_destroy() ) {
+       status = assoc_index(DELETE,buf_pool,norm_address[i]);
+     }
+   } else {
+    buf_poollocal = new();
+    buf_poollocal.address = packet_address[i];
+    buf_poollocal.no_of_expected_packets = no_of_expected_packets;
+    buf_poollocal.no_of_packets_received = 1;
+    buf_poollocal.page_id = getPageId(RxToken.packet_virtaddress[i]);
+    buf_pool[norm_address[i]] = new buf_poollocal;
+    if(buf_pool[norm_address[i]].self_destroy() ) {
+       status = assoc_index(DELETE,buf_pool,norm_address[i]);
+       printf("destroyed address - %x \n",norm_address[i]);
+    }
+   }
+ }
+}
+
+task RxDMAChannel::reclaim_buffers(( integer reclaim =1) ) {
+      integer n;
+      integer max_number_to_claim = 65535; // Make this under test control
+      // gen_pio_drv.pio_rd(getPIOAddress(RBR_HDH_START + RXDMA_STEP*id, dis_pio_virt), get_rbr_head_ptr);
+      if(reclaim) {
+	    n = 1;//CHOOSE A VALUE calculate the delta from previous reclaim
+	    n = descpScheduler.get_reclaim_index() - descpScheduler.last_reclaim_index;
+            printf(" DMA - %d n - %d last- %d index - %d  \n",id,n, descpScheduler.last_reclaim_index, descpScheduler.reclaim_index);
+	    if(n>max_number_to_claim) {
+	      n= max_number_to_claim;
+            }
+	    descpScheduler.last_reclaim_index = descpScheduler.last_reclaim_index +  n;
+            desc_ring.reclaim_buffers(n);
+      }
+     
+
+}
+
+task RxDMAChannel::updateHeaderLength(CRxToken RxToken) {
+
+   // Add code here to update the header length and buffer_offset
+   RxToken.header_length = ctrl_hdr_len + buffer_offset;
+
+}
+
+task RxDMAChannel::CheckCRData( integer no_of_entries , (integer update_ptrs = 0) ) {
+// if update_ptrs == 1 
+// set RX_DMA_CTL_STAT accordingly
+bit [63:0] rcr_start_addr, rcr_tail_l, rcr_tail_h;
+integer time_cntr = 0;
+
+  
+  gen_pio_drv.pio_rd(getPIOAddress(RCR_STAT_B_START +	RXDMA_STEP*id, dis_pio_virt), rcr_tail_h);
+  gen_pio_drv.pio_rd(getPIOAddress(RCR_STAT_C_START +	RXDMA_STEP*id, dis_pio_virt), rcr_tail_l);
+  gen_pio_drv.pio_rd(getPIOAddress(RCR_CFIG_A_START +	RXDMA_STEP*id, dis_pio_virt), rcr_start_addr);
+ 
+        printf ("RCR_Tail = %h, RCR_Start_Addr = %h, Expected_Tail_Update = %h\n",
+                {rcr_tail_h[11:0],rcr_tail_l[31:3],3'b000},
+                {rcr_start_addr[43:19], rcr_start_addr[18:6], 6'b0}, 8*no_of_entries);
+
+  while (({rcr_tail_h[11:0],rcr_tail_l[31:3],3'b000}-{rcr_start_addr[43:6],6'b0}) < (8*no_of_entries)) {
+	repeat (100) @(posedge CLOCK);
+        printf ("RCR_Tail = %h, RCR_Start_Addr = %h, Expected_Tail_Update = %h\n",
+		{rcr_tail_h[11:0],rcr_tail_l[31:3],3'b000},
+		{rcr_start_addr[43:19], rcr_start_addr[18:6], 6'b0}, 8*no_of_entries);
+        if (time_cntr++ > 2000) {
+	   printf ("ERROR: completion entries not written, timing out\n");
+	   exit(0);
+        }
+  gen_pio_drv.pio_rd(getPIOAddress(RCR_STAT_B_START +	RXDMA_STEP*id, dis_pio_virt), rcr_tail_h);
+  gen_pio_drv.pio_rd(getPIOAddress(RCR_STAT_C_START +	RXDMA_STEP*id, dis_pio_virt), rcr_tail_l);
+  gen_pio_drv.pio_rd(getPIOAddress(RCR_CFIG_A_START +	RXDMA_STEP*id, dis_pio_virt), rcr_start_addr);
+  }
+
+  repeat (50) @(posedge CLOCK);
+
+  completionring.CheckSysMem(no_of_entries);
+
+}
+
+function integer RxDMAChannel::getPageId(bit [43:0] virt_address) { 
+   if( (( virt_address[43:12]&page_mask0) == page_value0) & page0_valid) 
+    getPageId = page0_id;
+   else if( ((virt_address[43:12]&page_mask1) == page_value1) & page1_valid)
+    getPageId = page1_id;
+   else
+    getPageId = -1; 
+   printf(" virt_address - %x page_mask0 = %x page_value0 - %x valid - %d getPageId - %d \n",virt_address,page_mask0,page_value0,page0_valid,getPageId);
+}
+///////////////////////////////////////////////////////////
+
+task RxDMAChannel::pollCRPtr( (integer poll_interval=1000) ) {
+  bit[63:0] rcr_start_addr, rcr_tail_l, rcr_tail_h;
+  bit[63:0] last_rcr_tail_l, last_rcr_tail_h;
+  integer end_reached=0;
+  integer no_of_entries, ring_length;
+  Ccr_update cr_update;
+  bit[63:0] rd_data;
+  integer not_done=1;
+  integer NO_OF_ITER = 2;
+
+  ring_length = completionring.ring_length;
+  //gen_pio_drv.pio_rd(getPIOAddress(RCR_STAT_B_START + RXDMA_STEP*id, dis_pio_virt), last_rcr_tail_h);
+  gen_pio_drv.pio_rd(getPIOAddress(RCR_STAT_C_START + RXDMA_STEP*id, dis_pio_virt), last_rcr_tail_l);
+  gen_pio_drv.pio_rd(getPIOAddress(RCR_CFIG_A_START + RXDMA_STEP*id, dis_pio_virt), rcr_start_addr);
+  printf("RxDMAChannel::pollCRPtr dma=%0d cring_len=0x%0h start_addr=0x%0h starting at time=%d\n", id, ring_length, rcr_start_addr, {get_time(HI), get_time(LO)});
+
+  poll_cr_active = 1;
+ while(not_done) {
+    if(RX_TEST_REACHED_END){
+      end_reached++ ;
+      printf("%d RxDMAChannel::pollCRPtr dma_id=%d REACHED END count - %d \n", {get_time(HI), get_time(LO)}, id,end_reached);
+    }
+    //gen_pio_drv.pio_rd(getPIOAddress(RCR_STAT_B_START + RXDMA_STEP*id, dis_pio_virt), rcr_tail_h);
+    gen_pio_drv.pio_rd(getPIOAddress(RCR_STAT_C_START + RXDMA_STEP*id, dis_pio_virt), rcr_tail_l);
+
+    if(last_rcr_tail_l>rcr_tail_l) {   //wrap around case
+      no_of_entries=((rcr_tail_l-rcr_start_addr[31:0])+((rcr_start_addr[31:0]+ring_length)-last_rcr_tail_l))/8;
+      //printf("pollCR dma=%0d l>c rcr-start=0x%0h rcr+ring_len-last=0x%0h\n", id, (rcr_tail_l-rcr_start_addr[31:0]), ((rcr_start_addr[31:0 ]+ring_length)-last_rcr_tail_l));
+      printf("pollCR dma=%0d l>c last_rcr_tail_l=%x rcr_tail_l=%x no_of_entries=%0d\n", id, last_rcr_tail_l, rcr_tail_l, no_of_entries);
+      //last_rcr_tail_h = rcr_tail_h;
+      last_rcr_tail_l = rcr_tail_l;
+    }
+    else if(last_rcr_tail_l<rcr_tail_l) {
+      no_of_entries=(rcr_tail_l-last_rcr_tail_l)/8;
+      printf("pollCR dma=%0d l<c last_rcr_tail_l=%x rcr_tail_l=%x no_of_entries=%0d\n", id, last_rcr_tail_l, rcr_tail_l, no_of_entries);
+      //last_rcr_tail_h = rcr_tail_h;
+      last_rcr_tail_l = rcr_tail_l;
+    }
+    else {
+      no_of_entries=0;
+      //printf("pollCR dma=%0d l=c last_rcr_tail_l=%x rcr_tail_l=%x\n", id, last_rcr_tail_l, rcr_tail_l);
+    }
+
+    if(no_of_entries>0) {
+     printf(" Sending mbox to checker DMA - %d no_of_entries - %d \n",id,no_of_entries);
+      cr_update = new();
+      cr_update.dma_no = id;
+      cr_update.no_of_entries = no_of_entries;
+      if(get_plus_arg (CHECK, "RX_DROP_PKT_CHECK"))
+        mailbox_put(mbox_id.niu_rxpath_cr, cr_update);
+
+     printf(" Done Sending mbox to checker DMA - %d no_of_entries - %d \n",id,no_of_entries);
+
+     // ######## updating PTRREAD/PKTREAD fields to RX_DMA_CTL_STAT has to be done in 1 place: checker #######
+        //gen_pio_drv.pio_rd(getPIOAddress(RX_DMA_CTL_STAT_START + RXDMA_STEP*id, dis_pio_virt), rd_data, 1'b0);
+        //rd_data[31:16] = no_of_entries;
+        //gen_pio_drv.pio_wr(getPIOAddress(RX_DMA_CTL_STAT_START + RXDMA_STEP*id, dis_pio_virt), rd_data);
+    }
+    if(end_reached>=NO_OF_ITER) {
+     not_done =0;
+    } 
+    
+    repeat(poll_interval) @(posedge CLOCK);
+  }
+
+  poll_cr_done= 1;
+}
+task RxDMAChannel::UpdateRCRStat() {
+
+  bit[63:0] rd_data;
+  rxdma_ctl_stat_reg ctlstat_reg;
+  Crcr_update rcr_update;
+  integer no_of_entries;
+  integer total_pkts, total_rcr_entries;
+  integer i;
+
+ while(1) {
+  no_of_entries = mailbox_get(WAIT,mbox_id.niu_rxpath_rcr_update[id], rcr_update);
+  ctlstat_reg = new();
+
+  total_pkts = rcr_update.pkts_checked;
+  total_rcr_entries = 0;
+  for(i=0;i<rcr_update.pkts_checked;i++) {
+    total_rcr_entries += rcr_update.scatters[i];
+  }
+
+  ctlstat_reg.update_PKTREAD = total_pkts;
+  ctlstat_reg.update_PTRREAD = total_rcr_entries;
+  rxdma_ctl_stat_update(2, ctlstat_reg);
+
+  printf("UpdateRCRStat rxdma=%0d updated RX_DMA_CTL_STAT with PTRREAD=0x%x PKTREAD=0x%x at %0d\n",
+                id, total_rcr_entries, total_pkts, get_time(LO));
+
+/*
+  for(i=0;i<rcr_update.pkts_checked;i++) {
+    ctlstat_reg.update_PKTREAD = 1;
+    ctlstat_reg.update_PTRREAD = rcr_update.scatters[i];
+    rxdma_ctl_stat_update(2, ctlstat_reg);
+  }
+  
+  //update CR read pointer with num of entries read
+    gen_pio_drv.pio_rd(getPIOAddress(RX_DMA_CTL_STAT_START + RXDMA_STEP*id, dis_pio_virt), rd_data, 1'b0);
+    rd_data[RX_DMA_CTL_STAT_PKTREAD] = 1; // Choose these appropriately this cannot be more than rcr_update.pkts_checked
+    rd_data[RX_DMA_CTL_STAT_PTRREAD] = rcr_update.scatters[i];
+    gen_pio_drv.pio_wr(getPIOAddress(RX_DMA_CTL_STAT_START + RXDMA_STEP*id, dis_pio_virt), rd_data);
+    printf("UpdateRCRStat dma=%0d updated rx_dma_ctl_stat[31:0] with rcr_update 0x%h at %0d\n",
+		id, {rd_data[RX_DMA_CTL_STAT_PTRREAD],rd_data[RX_DMA_CTL_STAT_PKTREAD]}, get_time(LO));
+*/
+
+ }
+}
+///////////////////////////////////////////////////////////
+task RxDMAChannel::UpdateCompletionRing(CRxToken RxToken) {
+  // Parse through the info in the Token and format the completion ring content
+  completionring.UpdateCompletionRing(RxToken);
+}
+
+function integer  RxDMAChannel::getPacketAddress(CRxToken RxToken)  {
+  // This is where the scheduler kicks in --
+  // Need to get the exact address from the scheduler
+   integer status;
+   integer i;
+
+      printf ("[%0d] curr_ring_size = %0d, max_size = %0d\n", get_time(LO), 
+      descpScheduler.desc_ring.desc_ring.size(), desc_ring.ring_size);
+// TO BE CHANGED - should be baed upon reading head pointer before adding more descriptors-
+      if (descpScheduler.desc_ring.desc_ring.size() > desc_ring.ring_size) {
+        RxToken.pkt_type = RNGFULL_DROP_RxPKT;
+        status = -1;
+      } else {
+   // Update Header length-
+        updateHeaderLength(RxToken);
+        status = descpScheduler.getAddress(RxToken);
+        printf(" RDMC DEBUG  - SCHEDULER RETURN ADDRESS - %x  PktType Set to %d  \n",RxToken.packet_start_address[0],RxToken.pkt_type);
+
+      // update completion ring here
+      if(RxToken.pkt_type == GOOD_RxPKT)
+        UpdateCompletionRing( RxToken );
+
+      // The following are the various status-
+      
+      //   No More - descriptor available - ie errors
+      //   successful and address get set in the Token
+      }
+       getPacketAddress = status;
+}
+
+function integer  RxDMAChannel::CheckDMAStatus(CRxToken RxToken)  {
+
+// A generic function which is supposed to check the DMA's status and return
+// the status of DMA. The status being -
+
+//  If the DMA is inactive - 
+//  Is the Ring Full/Empty?
+//  Is Completion Ring Full 
+//  Any Errors?
+
+   // For now lets return valid if the DMA is active and has been kicked
+   
+   // Check if Completion ring ack is still pending in the host, if so
+   // check for CR shadow getting full, based upon that drop the packet
+   integer cr_status;
+
+   if(active) {
+       // cr_status = completionring.CheckPendingAckStatus();
+       // if(cr_status) 
+       // else {
+	// CheckDMAStatus = 0;
+        // RxToken.pkt_type = CRCACHE_FULL_DROP_RxPKT;
+       // }
+    CheckDMAStatus = 1;
+   } else {
+    CheckDMAStatus = 0;
+    RxToken.pkt_type = RNGFULL_DROP_RxPKT;
+   }
+}
+
+task RxDMAChannel::resetRxDma() {
+  bit [39:0] address;
+  bit [63:0] data;
+
+        address = RXDMA_CFIG1 + id*40'h200;
+	data = 64'h0;
+	data[30] = 1; // reset bit
+        //gen_pio_drv.pio_wr(address,data);
+	//RXDMA_CFIG1_pio_wr(address,data);
+        pio_wr_RXDMA_CFIG1(data);
+  printf ("RxDMAChannel::resetRxDma() Time %0d, DMA - %0d was just reset\n", {get_time(HI),get_time(LO)}, id);
+}
+
+task RxDMAChannel::setRxDmaCfig_1(bit [63:0] data, (bit read_back = 1'b0), (bit read_only = 1'b0)){
+  bit [39:0] address;
+  bit [63:0] rd_data;
+  bit [63:0] data_tmp0;
+  bit [63:0] Rdata0;
+  bit rst_done = 1;
+  bit [63:0] memArray_addr;
+  bit [7:0] be = 8'hff;
+
+  if(~read_only) {
+        active = data[31];
+	address = RXDMA_CFIG1 + id*40'h200;
+	//gen_pio_drv.pio_wr(address,data);
+	//RXDMA_CFIG1_pio_wr(address, data);
+        pio_wr_RXDMA_CFIG1(data);
+
+        if(read_back) {
+	   repeat(10) @(posedge CLOCK);
+	   //gen_pio_drv.pio_rd(address,rd_data);
+	   //RXDMA_CFIG1_pio_rd(address,rd_data);
+           pio_wr_RXDMA_CFIG1(data);
+	}
+  } else {
+           while(rst_done) {
+	       repeat(100) @(posedge CLOCK);
+	       address = RXDMA_CFIG1 + id*40'h200;
+               //gen_pio_drv.pio_rd(address,rd_data);
+	       //RXDMA_CFIG1_pio_rd(address,rd_data);
+               pio_wr_RXDMA_CFIG1(rd_data);
+               rst_done = rd_data[30];
+           }
+  }
+          
+#ifdef N2_FC
+         Fc_Niu_Ev2a_setRxDmaCfig_1(data);
+#endif
+}
+ 
+task RxDMAChannel::SetPage0Registers(bit [31:0] mask,bit [31:0] value, bit [31:0] reloc) {
+   bit [39:0] address;
+   bit [63:0] memArray_addr;
+   bit [63:0] Rdata0;
+   bit [63:0] Rdata1;
+   bit [63:0] Rdata2;
+   bit [63:0] data_tmp0;
+   bit [63:0] data_tmp1;
+   bit [63:0] data_tmp2;
+   bit [7:0] be = 8'hff;
+
+   page_mask0=mask; page_value0=value; page_reloc0=reloc; 
+   address = RX_LOG_MASK1_START + id*8'h40;
+   gen_pio_drv.pio_wr(getPIOAddress(address, dis_pio_virt),{32'h0,mask});
+
+   address = RX_LOG_VAL1_START + id*8'h40;
+   gen_pio_drv.pio_wr(getPIOAddress(address, dis_pio_virt),{32'h0,value});
+
+   address = RX_LOG_RELO1_START + id*8'h40;
+   gen_pio_drv.pio_wr(getPIOAddress(address, dis_pio_virt),{32'h0,reloc});
+
+#ifdef N2_FC
+ Fc_Niu_Ev2a_SetPage0Registers (mask, value, reloc);
+#endif
+
+}
+
+task RxDMAChannel::SetPage1Registers(bit [31:0] mask,bit [31:0] value, bit [31:0] reloc) {
+   bit [39:0] address;
+   bit [63:0] memArray_addr;
+   bit [7:0] be = 8'hff;
+   bit [63:0] Rdata0;
+   bit [63:0] Rdata1;
+   bit [63:0] Rdata2;
+   bit [63:0] data_tmp0;
+   bit [63:0] data_tmp1;
+   bit [63:0] data_tmp2;
+
+    page_mask1=mask; page_value1=value; page_reloc1=reloc;  
+   address = RX_LOG_MASK2_START + id*8'h40;
+   gen_pio_drv.pio_wr(getPIOAddress(address, dis_pio_virt),{32'h0,mask});
+
+   address = RX_LOG_VAL2_START + id*8'h40;
+   gen_pio_drv.pio_wr(getPIOAddress(address, dis_pio_virt),{32'h0,value});
+
+   address = RX_LOG_RELO2_START + id*8'h40;
+   gen_pio_drv.pio_wr(getPIOAddress(address, dis_pio_virt),{32'h0,reloc});
+
+#ifdef N2_FC
+Fc_Niu_Ev2a_SetPage1Registers (mask, value, reloc);
+#endif
+
+}
+
+
+// Should be used from common class between Tx and Rx
+task RxDMAChannel::setRxLogPgVld(bit [63:0] data,(bit read_back = 1'b0)) {
+
+
+	bit [39:0] address;
+	bit [63:0] rd_data;
+        bit [63:0] Rdata0;
+        bit [63:0] data_tmp0;
+        bit [63:0] memArray_addr;
+        bit [7:0] be = 8'hff;
+
+	address = RX_LOG_PAGE_VLD + id*40'h40;
+        printf("Log Page Address is %x \n", address);
+
+	if(fun_no_has_been_set) {
+	   gen_pio_drv.pio_rd(getPIOAddress(address, dis_pio_virt),rd_data);
+	   data[3:2] = rd_data[3:2]; // retain the original function number.
+	   gen_pio_drv.pio_wr(getPIOAddress(address, dis_pio_virt),data);
+	} else {
+	   SetDefFunc(data[3:2]);
+	   gen_pio_drv.pio_wr(getPIOAddress(address, dis_pio_virt),data);
+	}
+
+#ifdef N2_FC
+  Fc_Niu_Ev2a_setRxLogPgVld (data);
+#endif
+
+
+
+        if(read_back) {
+	   repeat(10) @(posedge CLOCK);
+	   gen_pio_drv.pio_rd(getPIOAddress(address, dis_pio_virt),rd_data);
+	}
+}
+
+
+task RxDMAChannel::setRbrConfig_A(bit [63:0] data, (bit read_back = 1'b0),(integer ring_page_id = 0) ){
+
+	bit [39:0] address;
+        integer status;
+	bit [63:0] config_rbr_data1;
+	bit [63:0] rd_data;
+        bit [63:0] Rdata0;
+        bit [63:0] data_tmp0;
+	bit [5:0] rand_num;
+	bit [63:0] memArray_addr;
+	bit [7:0] be = 8'hff;
+ 
+
+	//  RBR_CFIG_A address is a function of dma channel
+	
+        rand_num = random()%64;
+	ring_size = data[63:48];
+	address = RBR_CFIG_A + id*40'h200;
+        //config_rbr_data1 = {data[63:48],4'hf,ring_start_addr[43:6],rand_num};
+        config_rbr_data1 = data[63:0];
+        ring_start_addr = data[43:0];
+        printf("RNG_STADDR %0h\n",ring_start_addr);
+	desc_ring.initRing(ring_start_addr,ring_size,xlate_on, ring_page_id);
+        desc_ring.xlate_on = xlate_on;
+	// ncu_driver.write_data(address,data);
+	gen_pio_drv.pio_wr(getPIOAddress(address, dis_pio_virt),config_rbr_data1);
+
+#ifdef N2_FC
+  Fc_Niu_Ev2a_setRbrConfig_A (config_rbr_data1);
+#endif
+
+        if(read_back) {
+	   repeat(10) @(posedge CLOCK);
+	   gen_pio_drv.pio_rd(getPIOAddress(address, dis_pio_virt),rd_data);
+	}
+	
+}
+
+task RxDMAChannel::setZcpRdc(bit [63:0] data, (bit read_back = 1'b0)){
+
+
+	bit [39:0] address;
+	bit [63:0] rd_data;
+        bit [4:0]  dma_chnl;
+        dma_chnl = data[4:0];
+
+        address = ZCP_RDC_TBL; 
+	gen_pio_drv.pio_wr(getPIOAddress(address, dis_pio_virt),data);
+
+        if(read_back) {
+	   repeat(10) @(posedge CLOCK);
+	   gen_pio_drv.pio_rd(getPIOAddress(address, dis_pio_virt),rd_data);
+	}
+
+
+}
+task RxDMAChannel::setRbrConfig_B(bit [63:0] data, (bit read_back = 1'b0)){
+
+
+      bit [39:0] address;
+      bit[1:0] blk_size; //00=4k,01=8K,10=16K,11=32K
+      bit[1:0] buf_siz0; 
+      bit[1:0] buf_siz1; 
+      bit[1:0] buf_siz2; 
+      bit [63:0] config_rbr_data2;
+      bit [63:0] rd_data;
+      bit [63:0] Rdata0;
+      bit [63:0] data_tmp0;
+      bit valid0,valid1,valid2;
+      bit [63:0] memArray_addr;
+      bit [7:0] be = 8'hff;
+
+      //config_data2 = {38'h00_0000_0000,blk_size,valid2,5'b0_0000,buf_siz2,valid1,5'b0_0000,buf_size1,valid0,5'b0_0000,buf_size0};
+
+      valid0 = data[7];
+      valid1 = data[15];
+      valid2 = data[23];
+
+      descpScheduler.set_blk_size(data[25:24]);
+      case(data[25:24]) {
+        0: dma_block_size = 4096;
+        1: dma_block_size = 8192;
+        2: dma_block_size = 16384;
+        3: dma_block_size = 32768;
+ 	default: { printf("WARNING: Not a valid block size for the RxDMA\n"); }
+      }
+      descpScheduler.set_bufsz0(data[1:0],valid0);
+      descpScheduler.set_bufsz1(data[9:8],valid1);
+      descpScheduler.set_bufsz2(data[17:16],valid2);
+      
+     descpScheduler.print();
+      
+      address = RBR_CFIG_B + id*40'h200;
+	// Add this to descriptor carving class
+
+
+
+      gen_pio_drv.pio_wr(getPIOAddress(address, dis_pio_virt),data);
+
+        if(read_back) {
+	   repeat(10) @(posedge CLOCK);
+	   gen_pio_drv.pio_rd(getPIOAddress(address, dis_pio_virt),rd_data);
+	}
+
+#ifdef N2_FC
+ Fc_Niu_Ev2a_setRbrConfig_B (data);
+#endif
+
+}
+task RxDMAChannel::readRxRingHead(var bit [63:0] data){
+	bit [39:0] address;
+	integer status;
+	
+	// This should be called once at the config time and then hardware updates it.
+	address = RBR_HDH + id*40'h200;
+	gen_pio_drv.pio_rd(getPIOAddress(address, dis_pio_virt),data);	
+}
+
+task RxDMAChannel::setRxRingKick(bit[63:0] data){
+  bit[39:0] address;
+  bit[15:0] no_of_desc;
+  bit [63:0] memArray_addr;
+  bit [63:0] Rdata0;
+  bit [63:0] data_tmp0;
+  bit [7:0] be = 8'hff;
+
+  no_of_desc = data[15:0];
+  printf("No of descriptors kicked is %0h\n", data); 
+  address = RBR_KICK + id*40'h200;
+  set_descriptor(no_of_desc);
+  curr_rbr_desc_kicked_cnt += data;
+  curr_rbr_desc_kicked_cnt = curr_rbr_desc_kicked_cnt % (desc_ring.ring_size + 1);
+
+  gen_pio_drv.pio_wr(getPIOAddress(address, dis_pio_virt),data);
+
+#ifdef N2_FC
+Fc_Niu_Ev2a_setRxRingKick (data);
+#endif
+}
+
+
+task RxDMAChannel::setRcrConfig_A(bit[63:0] data, (bit read_back = 1'b0), (integer ring_page_id = 0)) {
+  bit[39:0] address;
+  bit[63:0] rd_data;
+  bit[63:0] Rdata0;
+  bit[63:0] data_tmp0;
+  bit [63:0] memArray_addr;
+  bit [7:0] be = 8'hff;
+
+  // Add this to RCR class
+
+  address = RCR_CFIG_A + id*40'h200;
+  completionring.config_ring(data[43:0],data[63:48],ring_page_id);
+        
+  gen_pio_drv.pio_wr(getPIOAddress(address, dis_pio_virt),data);
+
+  if(read_back) {
+    repeat(10) @(posedge CLOCK);
+    gen_pio_drv.pio_rd(getPIOAddress(address, dis_pio_virt),rd_data);
+  }
+#ifdef N2_FC
+  Fc_Niu_Ev2a_setRcrConfig_A (data);
+#endif
+}
+
+
+// add transmit channel control and status reg 
+task RxDMAChannel::create_descriptor(var CRxdescriptor desc, bit[31:0] address, (integer pkt_page_id = 0)  ){
+  desc = new(0,pkt_page_id);
+  desc.blk_addr = address;	
+  desc.valid = 1;
+  desc.pkt_page_id = pkt_page_id;
+}
+
+
+task RxDMAChannel::set_descriptor(integer no_of_desc) {
+  integer i;
+  bit[43:0] address;
+  CRxdescriptor desc;
+
+  for(i=0; i<no_of_desc; i++) {
+    if(pkts_in_alternate_pages)
+      PktBuffers_page_id = (i%2) ? page0_id : page1_id;
+    else 
+      PktBuffers_page_id = PktBuffers_page  ? page1_id : page0_id;
+    address = SparseMem.get_address( (dma_block_size/SparseMem.get_block_size()),PktBuffers_page_id,dma_block_size);
+
+    if(descr_addr_error_pkt_num!=0) {
+      if(i==descr_addr_error_pkt_num-1) {	//only corrupt descr specified
+        printf("InitRXDMA descr_addr_error_pkt_num=%0d\n", descr_addr_error_pkt_num);
+        address = SparseMem.get_address( (dma_block_size/SparseMem.get_block_size()), PktBuffers_page_id+3, dma_block_size);
+      }
+    }
+
+    create_descriptor(desc,address[43:12],PktBuffers_page_id);
+    desc_ring.add_descriptor(desc);
+    descpScheduler.pushDescForSch(address[43:12],PktBuffers_page_id);
+  }
+}
+
+
+task RxDMAChannel::InitDMAChan(integer dma_chnl, integer desc_ring_length, integer compl_ring_len, bit [63:0] rbr_config_B_data, bit [15:0] initial_kick, integer xlation) {
+
+bit [19:0] handle;
+bit [15:0] RBR_LEN;
+bit [15:0] compl_ring_length;
+bit [39:0] ring_start_address, rcr_start_addr, mailbox_address;
+integer status0;
+integer status1;
+bit [31:0] mask0, value0, reloc0;
+bit [31:0] mask1, value1, reloc1;
+bit full_hdr;
+integer page_id, ret ;
+integer byte_alignment;
+integer blk_size, buf_siz0, buf_siz1, buf_siz2, vld0, vld1, vld2;
+integer desired_blocks;
+integer mailbox_size;
+integer no_of_pages;
+integer pkt_configurator;
+integer sp_bsize;
+bit rbr_addr_overflow;
+bit [63:0] cfig2_wr_data=0;
+bit [63:0] memArray_addr;
+bit [7:0] be = 8'hff;
+bit [63:0] Rdata0;
+bit [63:0] Rdata1;
+bit [63:0] data_tmp0;
+bit [63:0] data_tmp1;
+bit [1:0] func_num;
+
+sp_bsize = SparseMem.get_block_size();
+
+if (get_plus_arg (CHECK,"PKT_CONFIGURATOR"))
+  pkt_configurator = 1;
+else
+  pkt_configurator = 0;
+
+if (!pkt_configurator) {
+// Set the dma number in the ZCP RDC Table
+       setZcpRdc({32'h0000_0000,dma_chnl});
+}
+
+// program the control header length in the hardware/shadow, bit[0] in RXDMA_CFIG2 reg
+printf ("buffer_offset=%0d, ctrl_hdr_len=%0d\n", buffer_offset,ctrl_hdr_len);
+if (ctrl_hdr_len==18)
+   cfig2_wr_data[0] = 1;
+if (buffer_offset==64)
+   cfig2_wr_data[1] = 1;
+if (buffer_offset==128)
+   cfig2_wr_data[2] = 1;
+if (cfig2_wr_data[2:0] && (cfig2_wr_data[2:1] != 2'b11)) {
+   //gen_pio_drv.pio_wr(RXDMA_CFIG2_START + RXDMA_STEP*dma_chnl, cfig2_wr_data);
+   gen_pio_drv.pio_wr(getPIOAddress(RXDMA_CFIG2_START + RXDMA_STEP*dma_chnl, dis_pio_virt), cfig2_wr_data);
+   printf ("InitRXDMA buffer offset encoding = 2'b%b, full_hdr_len = %b for dma - %0d\n", \
+           cfig2_wr_data[2:1], cfig2_wr_data[0], dma_chnl);
+}
+
+  //printf("InitRXDMA calling setRbrConfig_B rbr_config_B_data=0x%0h dma=%0d\n", rbr_config_B_data, dma_chnl);
+  setRbrConfig_B(rbr_config_B_data,1'b0);
+
+#ifdef	N2_FC
+#else
+     xlate_on = xlation;
+#endif
+
+// RBR Setup. Using SparseMem model for unique start_addresses allocation across RDMA channels
+     handle = SparseMem.get_page_handle();
+     printf("Value of the Page handle is %h\n", handle);
+
+     // get mask,value and reloc for page0
+     compl_ring_length = compl_ring_len;
+     RBR_LEN = desc_ring_length;
+     mailbox_size = 64;
+     no_of_pages = (4*RBR_LEN + 8*compl_ring_length + RBR_LEN*dma_block_size + mailbox_size)/sp_bsize;
+     //no_of_pages = (4*RBR_LEN + 8*compl_ring_length + RBR_LEN*sp_bsize + mailbox_size)/sp_bsize;
+     if (no_of_pages < 1)  no_of_pages = 1; else no_of_pages = no_of_pages + 1;
+
+     // to account for prefetch which is 4 wide 8 deep, we need to allocate 32 more than desired
+     no_of_pages += 32;
+
+#ifdef N2_FC
+    xlate_on = xlation;
+    if(xlate_on){
+     status0 = SparseMem.get_page_mask(no_of_pages,0,page0_id,mask0,value0,reloc0);
+    } else {
+        mask0  = 0;
+        value0 = 0;
+        reloc0 = 0;
+        status0 = 1;
+    }
+#else
+     status0 = SparseMem.get_page_mask(no_of_pages,0,page0_id,mask0,value0,reloc0);
+     if (!xlate_on) {
+	ret = SparseMem.force_page_contexts(page0_id, 32'h0, 32'h0, 32'h0);
+	mask0  = 0;
+        value0 = 0;
+        reloc0 = 0;
+        status0 = 1;
+     }
+#endif
+
+     if(status0 == -1) {
+        return;
+        printf("TB_ERROR: SparseMem.get_page_mask() function call was not Successful\n");
+    } else {
+        // add the task set page0 registers
+	if(xlate_on) {
+         printf("InitRXDMA: RxAddressTranslation Mask0  %h Page_id %4d for DMA-%0d\n",mask0,page0_id,dma_chnl);
+         printf("InitRXDMA: RxAddressTranslation Value0 %h Page_id %4d for DMA-%0d\n",value0,page0_id,dma_chnl);
+         printf("InitRXDMA: RxAddressTranslation Reloc0 %h Page_id %4d for DMA-%0d\n",reloc0,page0_id,dma_chnl);
+ 	}
+        // call task setpage0 registers
+	if (xlate_on)
+          SetPage0Registers( mask0,value0,reloc0);
+    }
+
+     // get mask,value and reloc for page1
+     compl_ring_length = compl_ring_len;
+     RBR_LEN = desc_ring_length;
+     mailbox_size = 64;
+     no_of_pages = (4*RBR_LEN + 8*compl_ring_length + RBR_LEN*dma_block_size + mailbox_size)/sp_bsize;
+     //no_of_pages = (4*RBR_LEN + 8*compl_ring_length + RBR_LEN*sp_bsize + mailbox_size)/sp_bsize;
+     if (no_of_pages < 1)  no_of_pages = 1; else no_of_pages = no_of_pages + 1;
+
+     // to account for prefetch which is 4 wide 8 deep, we need to allocate 32 more than desired
+     no_of_pages += 32;
+
+#ifdef N2_FC
+    if(xlate_on){
+     status1 = SparseMem.get_page_mask(no_of_pages,0,page1_id,mask1,value1,reloc1);
+    } else {
+        mask1  = 0;
+        value1 = 0;
+        reloc1 = 0;
+        status1 = 1;
+    }
+#else
+     status1 = SparseMem.get_page_mask(no_of_pages,0,page1_id,mask1,value1,reloc1);
+     if (!xlate_on) {
+	ret = SparseMem.force_page_contexts(page1_id, 32'h0, 32'h0, 32'h0);
+	mask1  = 0;
+        value1 = 0;
+        reloc1 = 0;
+        status1 = 1;
+     }
+#endif
+
+     if(status1 == -1) {
+        return;
+        printf("TB_ERROR: SparseMem.get_page_mask() function call was not Successful\n");
+    } else {
+        // add the task set page1 registers
+	if(xlate_on) {
+         printf("InitRXDMA: RxAddressTranslation Mask1  %h Page_id %4d for DMA-%0d\n",mask1,page1_id,dma_chnl);
+         printf("InitRXDMA: RxAddressTranslation Value1 %h Page_id %4d for DMA-%0d\n",value1,page1_id,dma_chnl);
+         printf("InitRXDMA: RxAddressTranslation Reloc1 %h Page_id %4d for DMA-%0d\n",reloc1,page1_id,dma_chnl);
+	}
+        // call task setpage1 registers
+	if (xlate_on)
+          SetPage1Registers( mask1,value1,reloc1);
+    }
+
+     // set the id
+     id = dma_chnl;
+
+
+      
+     // Enable the logical pages
+	func_num = function_no;
+        setRxLogPgVld({60'h0, func_num, page1_valid, page0_valid},1'b0);
+	printf("function number assigned to rxdma%0d is %0d\n", id, func_num);
+
+     // page_id = (random()%2) ? page0_id : page1_id;
+
+
+	if (random_page_alloc) {
+	  RBR_page_id 	     = (random()%2) ? page0_id : page1_id;
+	  RCR_page_id 	     = (random()%2) ? page0_id : page1_id;
+	  MailBox_page_id    = (random()%2) ? page0_id : page1_id;
+	  PktBuffers_page_id = (random()%2) ? page0_id : page1_id;
+	}
+	else {
+	  RBR_page_id 	     = RBR_page 	? page1_id : page0_id;
+	  RCR_page_id 	     = RCR_page 	? page1_id : page0_id;
+	  MailBox_page_id    = MailBox_page 	? page1_id : page0_id;
+	  PktBuffers_page_id = PktBuffers_page 	? page1_id : page0_id;
+	}
+	printf ("InitRXDMA(): random_page_alloc=%b, RBR_page=%0d, RCR_page=%0d, MailBox_page=%0d, PktBuffers_page=%0d\n",
+		random_page_alloc,RBR_page,RCR_page,MailBox_page,PktBuffers_page);
+        page_id = page0_id;
+        byte_alignment = 64;
+
+        RBR_LEN = desc_ring_length;
+        printf ("SparseMem.get_block_size() = %0d\n", SparseMem.get_block_size());
+	if ((4*RBR_LEN/SparseMem.get_block_size()) < 1)
+	  desired_blocks = 1;
+	else
+	  desired_blocks = 4*RBR_LEN/SparseMem.get_block_size() + 1;
+
+     //printf ("desired_blocks asking SparseMem.get_page_mask() for ring_start_address = %0d\n", desired_blocks);
+     //To avoid rbr_addr_overflow, 
+        ring_start_address = SparseMem.get_address(desired_blocks,RBR_page_id,RBR_PAGE_ALIGNMENT);
+
+        if(dring_addr_error==1) {
+          printf("InitRXDMA dring_addr_error=1 'before corrupt' Dring_start_addr=0x%0h\n", ring_start_address);
+          ring_start_address=SparseMem.get_address(desired_blocks, RBR_page_id+3, RBR_PAGE_ALIGNMENT);
+        }
+        printf("InitRXDMA Dring_start_addr=0x%0h\n", ring_start_address);
+
+
+	rbr_addr_overflow = (ring_start_address[17:2]+RBR_LEN) > RBR_MAX_RING_LEN;
+
+	while (rbr_addr_overflow) {
+	  printf ("SparseMem allocated a non-64KB-aligned addr. start_addr+RBR_LEN=%0d, MAX_RBR_PAGE_LEN=65536\n");
+	  ring_start_address = SparseMem.get_address(desired_blocks,RBR_page_id,64);
+	  rbr_addr_overflow = (ring_start_address[17:2]+RBR_LEN) > RBR_MAX_RING_LEN;
+	}
+
+
+        if(ring_start_address === 40'hzz_zzzz_zzzz) {
+           printf("TESTBENCH ERROR. SparseMem.get_address() returned an unknown value.\n");
+           return;
+        }
+	else {
+           printf("Start Address of the RBR for dma[%0d] is %h\n", id, ring_start_address);
+ 	}
+
+      // Now that we have start_addr, program the RBR_CONFIG_A register with LEN and STADDR
+      RBR_LEN = desc_ring_length;
+      rbr_ring_len = desc_ring_length; // global variable for other functions' use
+      setRbrConfig_A({RBR_LEN, 8'h00, ring_start_address}, 1'b0,RBR_page_id); 
+      //moved above to get dma_block_size    setRbrConfig_B(rbr_config_B_data,1'b0);
+
+	if ((8*compl_ring_length/SparseMem.get_block_size()) < 1)
+	  desired_blocks = 1;
+	else
+	  desired_blocks = 8*compl_ring_length/SparseMem.get_block_size() + 1;
+
+        rcr_start_addr = SparseMem.get_address(desired_blocks,RCR_page_id,RCR_PAGE_ALIGNMENT);
+
+        if(cring_addr_error==1) {
+          printf("InitRXDMA cring_addr_error=1 'before corrupt' Cring_start_addr=0x%0h\n", rcr_start_addr);
+          rcr_start_addr=SparseMem.get_address(desired_blocks, RCR_page_id+3, RCR_PAGE_ALIGNMENT);
+        }
+        printf("InitRXDMA Cring_start_addr=0x%0h\n", rcr_start_addr);
+
+
+        if(rcr_start_addr === 40'hzz_zzzz_zzzz) {
+           printf("TESTBENCH ERROR. SparseMem.get_address() returned an unknown value.\n");
+           return;
+        }
+        else {
+           printf("Start Address of the RCR for dma[%0d] is %h\n", id, rcr_start_addr);
+        }
+
+	rcr_ring_len = rcr_start_addr;
+        setRcrConfig_A({compl_ring_length, 8'h0, rcr_start_addr}, 1'b0,RCR_page_id);
+
+	// Get the mailbox address too
+	mailbox_address = SparseMem.get_address(8,MailBox_page_id,64);
+	printf ("MAILBOX address allocated by SparseMem for dma[%0d] is %h\n", id, mailbox_address);
+
+	// program the mailbox address
+        setRxDmaCfig_1({32'h0000_0000, 24'h000000, mailbox_address[39:32]}, 1'b0);
+	full_hdr = (ctrl_hdr_len==18);
+	//gen_pio_drv.pio_wr(RXDMA_CFIG2_START+12'h200*id, {32'h0000_0000, mailbox_address[31:6], 3'b000, cfig2_wr_data[2:1], full_hdr});
+	gen_pio_drv.pio_wr(getPIOAddress(RXDMA_CFIG2_START+12'h200*id,dis_pio_virt), {32'h0000_0000, mailbox_address[31:6], 3'b000, cfig2_wr_data[2:1], full_hdr});
+
+#ifdef N2_FC
+  Fc_Niu_Ev2a_setRxDmaCfig_2 ({32'h0000_0000, mailbox_address[31:6], 6'h00});
+#endif
+	// Enable this particular DMA channel (#dma_chnl)
+        setRxDmaCfig_1({32'h0000_0000, 24'h800000, mailbox_address[39:32]}, 1'b0);
+#ifdef N2_FC
+  Fc_Niu_Ev2a_setRxDmaCfig_1_1 ({32'h0000_0000, 24'h800000, mailbox_address[39:32]});
+#endif
+
+	// Enable WRED by default (extremely desirable)
+	enableWRED(16'h6512, rcr_ring_len-16'h0020, 4'h0, rcr_ring_len-16'h0020, 4'h0);
+
+	// Kick the initial number of blocks specified as the argument
+        setRxRingKick({48'h0, initial_kick});
+        repeat (50) @(posedge CLOCK);
+
+
+}
+
+
+task RxDMAChannel::CheckMailboxData(bit [63:0] ctl_data_mask) {
+bit [63:0] mbox_addr_h, mbox_addr_l,rx_dma_ctl_stat,rbr_stat,rbr_hdl,rbr_hdh,rcr_stat_a,rcr_stat_b,rcr_stat_c;
+bit [63:0] mailbox_address,mem_read_data;
+
+     // read the mailbox address
+     //gen_pio_drv.pio_rd(RXDMA_CFIG1_START+12'h200*id,mbox_addr_h);
+     gen_pio_drv.pio_rd(getPIOAddress(RXDMA_CFIG1_START+12'h200*id, dis_pio_virt),mbox_addr_h);
+     //gen_pio_drv.pio_rd(RXDMA_CFIG2_START+12'h200*id,mbox_addr_l);
+     gen_pio_drv.pio_rd(getPIOAddress(RXDMA_CFIG2_START+12'h200*id, dis_pio_virt),mbox_addr_l);
+
+     printf ("RxDMAChannel::CheckMailboxData:  xlate_on = %d \n", xlate_on);
+     if (!xlate_on)
+       mailbox_address = {20'h0,mbox_addr_h[11:0],mbox_addr_l[31:6],6'b0}; 
+     else
+       mailbox_address = { 24'h0, SparseMem.xlate_addr({20'h0,mbox_addr_h[11:0],mbox_addr_l[31:6],6'b0}, page0_id) };
+
+     printf ("RxDMAChannel::CheckMailboxData:  actual mailbox address %h\n", mailbox_address);
+     
+     // read all the status registers which go into the mailbox update
+     gen_pio_drv.pio_rd(getPIOAddress(RX_DMA_CTL_STAT_START+12'h200*id, dis_pio_virt),rx_dma_ctl_stat);
+     gen_pio_drv.pio_rd(getPIOAddress(RBR_STAT_START+12'h200*id, dis_pio_virt),rbr_stat);
+     gen_pio_drv.pio_rd(getPIOAddress(RBR_HDL_START+12'h200*id, dis_pio_virt),rbr_hdl);
+     gen_pio_drv.pio_rd(getPIOAddress(RBR_HDH_START+12'h200*id, dis_pio_virt),rbr_hdh);
+     gen_pio_drv.pio_rd(getPIOAddress(RCR_STAT_C_START+12'h200*id, dis_pio_virt),rcr_stat_c);
+     gen_pio_drv.pio_rd(getPIOAddress(RCR_STAT_B_START+12'h200*id, dis_pio_virt),rcr_stat_b);
+     gen_pio_drv.pio_rd(getPIOAddress(RCR_STAT_A_START+12'h200*id, dis_pio_virt),rcr_stat_a);
+     
+
+     SparseMem.ReadMem(mailbox_address,mem_read_data,8'hff);
+     if ((mem_read_data&ctl_data_mask) != ((rx_dma_ctl_stat|64'h0000_8000_0000_0000)&ctl_data_mask))
+	printf( "ERROR: MailBox update WRONG in bytes 0-7. Expected %h Got %h @ Addr %h\n", rx_dma_ctl_stat, mem_read_data, mailbox_address);
+     else
+	printf ("MailBox update is CORRECT in bytes 0-7. Expected %h Got %h @ Addr %h\n", rx_dma_ctl_stat, mem_read_data, mailbox_address);
+
+     SparseMem.ReadMem(mailbox_address+8,mem_read_data,8'hff);
+     if (mem_read_data != rbr_stat)
+        printf( "ERROR: MailBox update WRONG in bytes 8-15. Expected %h Got %h @ Addr %h\n", rbr_stat, mem_read_data, mailbox_address+8);
+     else
+        printf ("MailBox update is CORRECT in bytes 8-15. Expected %h Got %h @ Addr %h\n", rbr_stat, mem_read_data, mailbox_address+8);
+
+     SparseMem.ReadMem(mailbox_address+16,mem_read_data,8'hff);
+     if (mem_read_data[31:0] != rbr_hdl[31:0])
+        printf( "ERROR: MailBox update WRONG in bytes 16-19. Expected %h Got %h @ Addr %h\n", rbr_hdl[31:0], mem_read_data, mailbox_address+16);
+     else
+        printf ("MailBox update is CORRECT in bytes 16-19. Expected %h Got %h @ Addr %h\n", rbr_hdl[31:0], mem_read_data, mailbox_address+16);
+
+     SparseMem.ReadMem(mailbox_address+20,mem_read_data,8'hff);
+     if (mem_read_data[31:0] != rbr_hdh[31:0])
+        printf( "ERROR: MailBox update WRONG in bytes 20-23. Expected %h Got %h @ Addr %h\n", rbr_hdh[31:0], mem_read_data, mailbox_address+20);
+     else
+        printf ("MailBox update is CORRECT in bytes 20-23. Expected %h Got %h @ Addr %h\n", rbr_hdh[31:0], mem_read_data, mailbox_address+20);
+
+     SparseMem.ReadMem(mailbox_address+32,mem_read_data,8'hff);
+     if (mem_read_data[31:0] != rcr_stat_c[31:0])
+        printf( "ERROR: MailBox update WRONG in bytes 32-35. Expected %h Got %h @ Addr %h\n", rcr_stat_c[31:0], mem_read_data, mailbox_address+32);
+     else
+        printf ("MailBox update is CORRECT in bytes 32-35. Expected %h Got %h @ Addr %h\n", rcr_stat_c[31:0], mem_read_data, mailbox_address+32);
+
+     SparseMem.ReadMem(mailbox_address+36,mem_read_data,8'hff);
+     if (mem_read_data[31:0] != rcr_stat_b[31:0])
+        printf( "ERROR: MailBox update WRONG in bytes 36-39. Expected %h Got %h @ Addr %h\n", rcr_stat_b[31:0], mem_read_data, mailbox_address+36);
+     else
+        printf ("MailBox update is CORRECT in bytes 36-39. Expected %h Got %h @ Addr %h\n", rcr_stat_b[31:0], mem_read_data, mailbox_address+36);
+
+     SparseMem.ReadMem(mailbox_address+40,mem_read_data,8'hff);
+     if (mem_read_data != rcr_stat_a)
+        printf( "ERROR: MailBox update WRONG in bytes 40-47. Expected %h Got %h @ Addr %h\n", rcr_stat_a, mem_read_data, mailbox_address+40);
+     else
+        printf ("MailBox update is CORRECT in bytes 40-47. Expected %h Got %h @ Addr %h\n", rcr_stat_a, mem_read_data, mailbox_address+40);
+
+}
+
+// obseleted, see other funs
+//task RxDMAChannel::RXDMA_CFIG1_pio_wr(bit [63:0] address, bit [63:0] data) {
+//     gen_pio_drv.pio_wr(getPIOAddress(address, dis_pio_virt),data);
+//}
+//
+//task RxDMAChannel::RXDMA_CFIG1_pio_rd(bit [63:0] address, var bit [63:0] data) {
+//     gen_pio_drv.pio_rd(getPIOAddress(address, dis_pio_virt),data);
+//}
+//
+//task RxDMAChannel::RXDMA_CFIG2_pio_wr(bit [63:0] address, bit [63:0] data) {
+//     gen_pio_drv.pio_wr(getPIOAddress(address, dis_pio_virt),data);
+//}
+//
+//task RxDMAChannel::RXDMA_CFIG2_pio_rd(bit [63:0] address, var bit [63:0] data) {
+//     gen_pio_drv.pio_rd(getPIOAddress(address, dis_pio_virt),data);
+//}
+
+task RxDMAChannel::periodic_kick((integer interval = 3000), 
+                                 (integer num_desc = -1),  // -1 indicate random #desc kick
+				 (integer threshold = 256)) {
+
+     bit [31:0] num_desc_local;
+     integer max_desc_can_be_kicked; 
+
+     // over write input parameters using plus args
+     if(get_plus_arg( CHECK, "RX_PERIODIC_KICK_NUM_DESC="))
+        num_desc = get_plus_arg( NUM, "RX_PERIODIC_KICK_NUM_DESC=");
+
+     if(get_plus_arg( CHECK, "RX_PERIODIC_KICK_THRESHOLD="))
+        threshold = get_plus_arg( NUM, "RX_PERIODIC_KICK_THRESHOLD=");
+
+     if(get_plus_arg( CHECK, "RX_PERIODIC_KICK_INTERVAL="))
+        interval = get_plus_arg( NUM, "RX_PERIODIC_KICK_INTERVAL=");
+
+     printf("<%0d> RxDMAChannel::periodic_kick: interval:%0d num_desc:%0d threshold:%0d id:%0d\n",
+             get_time(LO), interval, num_desc, threshold, id);
+
+     // wait for init done
+     while(!active) { repeat (100) @(posedge CLOCK); }
+
+     while(1) {
+
+	      // interval
+	      if (interval <= 100)
+	          interval = 3000;
+
+	      repeat (interval) @(posedge CLOCK);
+
+	      // avoid infinite loop
+	      @(posedge CLOCK);
+
+
+	      // check input parameters
+	      max_desc_can_be_kicked = desc_ring.ring_size - descpScheduler.desc_ring.desc_ring.size();
+
+	      // avoid ERROR: Modulo by zero!
+	      if(max_desc_can_be_kicked == 0) 
+	         max_desc_can_be_kicked =1;
+
+	      // threshold
+	      if(threshold > desc_ring.ring_size) {
+	         threshold = desc_ring.ring_size;
+	      } else if(threshold < 2) {
+	         threshold = 2; // to account for large/medium/min
+	      }
+
+	      // num_desc
+	      if(num_desc > max_desc_can_be_kicked) {
+	         num_desc_local = max_desc_can_be_kicked;
+	      } else if (num_desc == -1) {
+	         num_desc_local = urandom();
+	         num_desc_local = num_desc_local % (max_desc_can_be_kicked+1);
+	      } else {
+	        num_desc_local = num_desc;
+	      } 
+
+	      // Kick multiples of 16 to accomadate issue with rdmc reorder mechanism.
+	      num_desc_local = num_desc_local - (num_desc_local % 16);
+
+	      // kick 16 more descriptors if it is reaching max count to avoid rtl to issue
+	      // non aligned 64 byte address which will land up in out of order responses from
+	      // siu bus.
+	      if ((desc_ring.ring_size - curr_rbr_desc_kicked_cnt) < 16) {
+	           num_desc_local += desc_ring.ring_size - curr_rbr_desc_kicked_cnt;
+	      }
+
+	      
+	      num_desc_local = num_desc_local % (max_desc_can_be_kicked+1);
+
+	      // avoid -ve number
+	      num_desc_local[31] = 0;
+
+
+	      if(RX_TEST_REACHED_END) {
+	         printf("<%0d> RxDMAChannel::periodic_kick: exiting the task since RX_TEST_REACHED_END=1\n", get_time(LO));
+		 return;
+	      }
+
+	      // if current ring size reduced to threshold, kick specified num_desc
+	      if(descpScheduler.desc_ring.desc_ring.size() <= threshold) {
+		 printf("<%0d> RxDMAChannel::periodic_kick: interval:%0d num_desc:%0d threshold:%0d curr_desc_size:%0d, max_desc_size:%0d, dma_id:%0d\n",
+		        get_time(LO), interval, num_desc_local, threshold, descpScheduler.desc_ring.desc_ring.size(), desc_ring.ring_size, id);
+	         setRxRingKick(num_desc_local);
+	      }
+     }
+}
+
+task RxDMAChannel::auto_periodic_kick() {
+     bit [31:0] dma_num;
+
+     if(get_plus_arg( CHECK, "RX_PERIODIC_KICK_AUTO=")) {
+        dma_num = get_plus_arg( HNUM, "RX_PERIODIC_KICK_AUTO=");
+	if(dma_num[id] == 1'b1 && (id < 16)) {
+	   fork
+	   periodic_kick();
+	   join none
+	}
+     }
+}
+task RxDMAChannel::pio_wr_RXDMA_CFIG1(bit [63:0] rd_data) {
+	gen_pio_drv.pio_wr(getPIOAddress(RXDMA_CFIG1 + RXDMA_STEP*id, dis_pio_virt), rd_data);
+}
+task RxDMAChannel::pio_rd_RXDMA_CFIG1(var bit [63:0] rd_data) {
+	gen_pio_drv.pio_rd(getPIOAddress(RXDMA_CFIG1+RXDMA_STEP*id, dis_pio_virt),rd_data);
+}
+task RxDMAChannel::pio_wr_RXDMA_CFIG2(bit [63:0] rd_data) {
+	gen_pio_drv.pio_wr(getPIOAddress(RXDMA_CFIG2 + RXDMA_STEP*id, dis_pio_virt), rd_data);
+}
+task RxDMAChannel::pio_rd_RXDMA_CFIG2(var bit [63:0] rd_data) {
+	gen_pio_drv.pio_rd(getPIOAddress(RXDMA_CFIG2+RXDMA_STEP*id, dis_pio_virt),rd_data);
+}
+
+task RxDMAChannel::pio_wr_RX_DMA_CTL_STAT_START(bit [63:0] rd_data) {
+     gen_pio_drv.pio_wr(getPIOAddress(RX_DMA_CTL_STAT_START + RXDMA_STEP*id, dis_pio_virt), rd_data);
+}
+task RxDMAChannel::pio_rd_RX_DMA_CTL_STAT_START(var bit [63:0] rd_data) {
+     gen_pio_drv.pio_rd(getPIOAddress(RX_DMA_CTL_STAT_START+RXDMA_STEP*id, dis_pio_virt),rd_data);
+}
+
+task RxDMAChannel::pio_wr_RX_DMA_ENT_MSK_START(bit [63:0] rd_data) {
+     gen_pio_drv.pio_wr(getPIOAddress(RX_DMA_ENT_MSK_START + RXDMA_STEP*id, dis_pio_virt), rd_data);
+}
+task RxDMAChannel::pio_rd_RX_DMA_ENT_MSK_START(var bit [63:0] rd_data) {
+     gen_pio_drv.pio_rd(getPIOAddress(RX_DMA_ENT_MSK_START+RXDMA_STEP*id, dis_pio_virt),rd_data);
+}
+
+task RxDMAChannel::pio_wr_RCR_CFIG_B_START(bit [63:0] rd_data) {
+     gen_pio_drv.pio_wr(getPIOAddress(RCR_CFIG_B_START + RXDMA_STEP*id, dis_pio_virt), rd_data);
+}
+task RxDMAChannel::pio_rd_RCR_CFIG_B_START(var bit [63:0] rd_data) {
+     gen_pio_drv.pio_rd(getPIOAddress(RCR_CFIG_B_START+RXDMA_STEP*id, dis_pio_virt),rd_data);
+}
+
+task RxDMAChannel::pio_wr_RX_DMA_INTR_DEBUG_START(bit [63:0] rd_data) {
+     gen_pio_drv.pio_wr(getPIOAddress(RX_DMA_INTR_DEBUG_START + RXDMA_STEP*id, dis_pio_virt), rd_data);
+}
+task RxDMAChannel::pio_rd_RX_DMA_INTR_DEBUG_START(var bit [63:0] rd_data) {
+     gen_pio_drv.pio_rd(getPIOAddress(RX_DMA_INTR_DEBUG_START+RXDMA_STEP*id, dis_pio_virt),rd_data);
+}
+
+task RxDMAChannel::pio_rd_RCR_CFIG_A(var bit [63:0] rd_data){
+     gen_pio_drv.pio_rd(getPIOAddress(RCR_CFIG_A+RXDMA_STEP*id, dis_pio_virt), rd_data);
+}
+task RxDMAChannel::pio_rd_RX_MISC_DROP(var bit [63:0] rd_data){
+     gen_pio_drv.pio_rd(getPIOAddress(RX_MISC_START+RXDMA_STEP*id, dis_pio_virt), rd_data);
+}
+task RxDMAChannel::pio_rd_RED_DISC(var bit [63:0] rd_data){
+     gen_pio_drv.pio_rd(getPIOAddress(RED_DIS_CNT_START+RED_DIS_CNT_STEP*id, dis_pio_virt), rd_data);
+}
+task RxDMAChannel::pio_wr_RDC_RED_PARA(bit [63:0] rd_data) {
+     gen_pio_drv.pio_wr(getPIOAddress(RDC_RED_PARA + 'h40*id, dis_pio_virt), rd_data);
+}
+task RxDMAChannel::pio_rd_RDC_RED_PARA(var bit [63:0] rd_data) {
+     gen_pio_drv.pio_rd(getPIOAddress(RDC_RED_PARA+'h40*id, dis_pio_virt),rd_data);
+}
+
+
+
+

@@ -1,0 +1,605 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: niu_macintr_utils.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "niu_int_dev.vrh"
+#include "niu_int_mgr.vrh"
+#include "mbox_class.vrh"
+#include "get_mbox_id.vrh"
+#include "neptune_memory_map.vri"
+#include "mac_defines.vri"
+#include "pio_driver.vrh"
+#include "mac_pio_class.vrh"
+#include "xmac_util.vrh"
+#include "bmac_util.vrh"
+#include "mac_shadow_class.vrh"
+#include "xmac_shadow_class.vrh"
+#include "vega_shadow_class.vrh"
+#include "cMesg.vrh"
+#include "mac_defines.vri"
+
+extern Mesg be_msg;
+extern niu_gen_pio gen_pio_drv;
+extern CNiuIntrMgr NiuIntrMgr;
+extern pio_drv pio_driver_class;
+extern mac_pio_cl mac_pio_class;
+extern shadow_cl shadow_class;
+extern mac_util_class mac_util;
+extern bmac_util_class bmac_util;
+extern hdl_task deassert_mdint(bit[2:0] id);
+extern hdl_task check_mdint_status(bit[2:0] id, var bit status);
+
+#define PCS_INT_MASK 6
+#define CSR_LANE_ALIGN 12
+#define CSR_LANE3_SYNC 3
+#define CSR_LANE2_SYNC 2
+#define CSR_LANE1_SYNC 1
+#define CSR_LANE0_SYNC 0
+#define CSR_FAULT 7
+#define CSR_RX_LINK_UP 2
+#define CSR_TX_FAULT 11
+#define CSR_RX_FAULT 10
+
+class CNiuIntrDevMAC extends CNiuIntrDev {
+  integer mac_id;
+  integer isr_count=0, lf_intr_cnt=0, rf_intr_cnt=0;
+  integer underrun_cnt=0, pkts_txmt_cnt=0, tx_xfer_err_cnt=0;
+  integer txfrm_cnt_int=0, txbyte_cnt_int=0;
+  event clear_crc_cnt, clear_broadcast_cnt, clear_frag_cnt, clear_hist1_cnt, clear_hist2_cnt, clear_hist3_cnt, clear_hist4_cnt, clear_hist5_cnt, clear_hist6_cnt, clear_hist7_cnt, clear_mpsz_cnt, clear_multicast_cnt, clear_byte_cnt, clear_link_fault_cnt;
+event clear_frame_cnt;
+  bit byte_cnt_int=0;
+  bit TxMacInNotPauseSt=0, TxMacInPauseSt=0, RxMacRcvPause=0; // FC
+  bit mdint_int=0;
+
+  task new(integer port_id, integer dev_id) {
+    super.new(dev_id);
+    mac_id = port_id;
+  }
+  task set_masks();
+  task set_rx_mask(bit[31:0] val);
+  task set_brx_mask(bit[31:0] val);
+  function integer isr( (bit[1:0] ldf_flags=0) );
+  task check_xpcs_int();
+  task check_pcs_int();
+  task check_XmacTX_int();
+  task check_XmacRX_int();
+  task check_XmacFC_int();
+  task check_BmacTX_int();
+  task check_BmacRX_int();
+  task check_BmacFC_int();
+}
+
+function integer CNiuIntrDevMAC::isr( (bit[1:0] ldf_flags=0) ) {
+  bit[31:0] rd_data, rd_status, rd_mask;
+  bit[39:0] base_addr;
+
+  isr_done = 0;
+  SetPendingFlag();
+
+  printf("Start macISR ISR id=%0d mac_id=%0d LDF_flags=%0d time=%0d\n", super.dev_id, mac_id, ldf_flags, get_time(LO));
+  if(ldf_flags!=2) printf("ERROR ldf_flags is not set to the correct value of 2\n");
+
+  if(mac_id==0 || mac_id==1) {
+    check_XmacRX_int();
+    check_XmacTX_int();
+    check_XmacFC_int();
+    //check_xpcs_int();   not tested yet
+    //check_pcs_int();    not tested yet
+  }
+  if(mac_id==2 || mac_id==3) {
+    check_BmacRX_int();
+    check_BmacTX_int();
+    check_BmacFC_int();
+  }
+
+  base_addr = mac_util.get_mac_reg_base(mac_id);
+  //mac_pio_class.xmac_pio_rd(base_addr + XMAC_C_S_MSK, rd_mask, 1'b0);
+  mac_pio_class.xmac_pio_rd(base_addr + XMAC_CTRL_STAT, rd_status, 1'b0);
+  printf("macISR CTRL id=%0d status=0x%0x\n", super.dev_id, rd_status);
+
+  ClrPendingFlag();
+  isr_done=1;
+}
+
+task CNiuIntrDevMAC::check_XmacFC_int() {
+  bit[31:0] rd_data, rd_status, rd_mask, active_int;
+  bit[39:0] base_addr;
+
+  base_addr = mac_util.get_mac_reg_base(mac_id);
+  mac_pio_class.xmac_pio_rd(base_addr + XMAC_C_S_MSK, rd_mask, 1'b0);
+  mac_pio_class.xmac_pio_rd(base_addr + XMAC_CTRL_STAT, rd_status, 1'b0);
+  active_int=rd_status & ~rd_mask;
+
+  printf("macISR xmac FC id=%0d status=0x%0x\n", super.dev_id, rd_status);
+  if(active_int[0]) {
+    printf("macISR rxxmac FC mac_id=%0d RxMacRcvPause Interrupt RxMacRcvPauseTime=%0h\n", mac_id, rd_status[31:16]);
+    RxMacRcvPause=1;
+  }
+  if(active_int[1]) {
+    printf("macISR rxxmac FC mac_id=%0d TxMacInPauseSt Interrupt\n", mac_id);
+    TxMacInPauseSt=1;
+  }
+  if(active_int[2]) {
+    printf("macISR rxxmac FC mac_id=%0d TxMacInNotPauseSt Interrupt\n", mac_id);
+    TxMacInNotPauseSt=1;
+  }
+}
+
+task CNiuIntrDevMAC::check_BmacFC_int() {
+  bit[31:0] rd_data, rd_status, rd_mask, active_int;
+  bit[39:0] base_addr;
+
+  base_addr = mac_util.get_mac_reg_base(mac_id);
+  mac_pio_class.xmac_pio_rd(base_addr + BMAC_C_S_MSK, rd_mask, 1'b0);
+  mac_pio_class.xmac_pio_rd(base_addr + BMAC_CTRL_STAT, rd_status, 1'b0);
+  active_int=rd_status & ~rd_mask;
+
+  printf("macISR xmac FC id=%0d status=0x%0x\n", super.dev_id, rd_status);
+  if(active_int[2]) {
+    printf("macISR rxbmac FC mac_id=%0d TxMacInNotPauseSt Interrupt\n", mac_id);
+    //Not_Paused_State=1;
+    TxMacInNotPauseSt=1;
+  }
+  if(active_int[1]) {
+    printf("macISR rxbmac FC mac_id=%0d TxMacInPauseSt Interrupt\n", mac_id);
+    //Paused_State=1;
+    TxMacInPauseSt=1;
+  }
+  if(active_int[0]) {
+    printf("macISR rxbmac FC mac_id=%0d RxMacRcvPause=1 Interrupt Pause_Time_Rcvd=%0h\n", mac_id, rd_status[31:16]);
+    //Pause_Received=1;
+    RxMacRcvPause=1;
+  }
+}
+
+task CNiuIntrDevMAC::check_BmacTX_int() {
+  bit[31:0] rd_data, rd_status, rd_mask, active_int;
+  bit[39:0] base_addr;
+
+  base_addr = mac_util.get_mac_reg_base(mac_id);
+  mac_pio_class.xmac_pio_rd(base_addr + BTxMAC_STATUS, rd_status, 1'b0);
+  mac_pio_class.xmac_pio_rd(base_addr + BTxMAC_STAT_MSK, rd_mask, 1'b0);
+  active_int=rd_status & ~rd_mask;
+
+  printf("macISR bmac TX id=%0d status=0x%0x mask=0x%0x active_int=0x%0x\n", super.dev_id, rd_status, rd_mask, active_int);
+  if(active_int[11]) {
+    //printf("macISR TX mac_id=%0d byte_cnt Interrupt\n", mac_id);
+    printf("macISR TX mac_id=%0d byte_cnt Interrupt (set mask)\n", mac_id);
+    rd_mask[11]=1;
+    mac_pio_class.xmac_pio_wr(base_addr + BTxMAC_STAT_MSK, rd_mask);
+    mac_pio_class.xmac_pio_rd(base_addr + TxMAC_FRM_CNT, rd_data, 1'b0);
+    txfrm_cnt_int++;
+    if(rd_data!=='hffffffff) printf("ERROR CNiuIntrDevMAC Interrupt TxMAC_FRM_CNT=0x%0x\n", rd_data);
+    //while(rd_data=='hffffffff) mac_pio_class.xmac_pio_rd(base_addr + TxMAC_FRM_CNT, rd_data, 1'b0);
+  }
+  if(active_int[10]) {
+    //printf("macISR TX mac_id=%0d byte_cnt Interrupt\n", mac_id);
+    printf("macISR TX mac_id=%0d byte_cnt Interrupt (set mask)\n", mac_id);
+    rd_mask[10]=1;
+    mac_pio_class.xmac_pio_wr(base_addr + BTxMAC_STAT_MSK, rd_mask);
+    mac_pio_class.xmac_pio_rd(base_addr + TxMAC_BYTE_CNT, rd_data, 1'b0);
+    txbyte_cnt_int++;
+    if(rd_data!=='hffffffff) printf("ERROR CNiuIntrDevMAC Interrupt TxMAC_BYTE_CNT=0x%0x\n", rd_data);
+    while(rd_data=='hffffffff) mac_pio_class.xmac_pio_rd(base_addr + TxMAC_BYTE_CNT, rd_data, 1'b0);
+  }
+  if(active_int[1]) {
+    printf("CNiuIntrDevMAC TX mac_id=%0d recived underrun_interrupt\n",mac_id);
+    underrun_cnt++;
+  }
+  if(active_int[0]) {
+    printf("CNiuIntrDevMAC TX mac_id=%0d recived Pkts_xmtd_interrupt\n",mac_id);
+    pkts_txmt_cnt++;
+  }
+}
+
+task CNiuIntrDevMAC::check_BmacRX_int() {
+  bit[31:0] rd_data, rd_status, rd_mask, active_int;
+  bit[39:0] base_addr;
+
+  base_addr = mac_util.get_mac_reg_base(mac_id);
+  mac_pio_class.xmac_pio_rd(base_addr + BRxMAC_STAT_MSK, rd_mask, 1'b0);
+  mac_pio_class.xmac_pio_rd(base_addr + BRxMAC_STATUS, rd_status, 1'b0);
+  active_int=rd_status & ~rd_mask;
+
+  printf("macISR bmac RX id=%0d status=0x%0x mask=0x%0x active_int=0x%0x\n", super.dev_id, rd_status, rd_mask, active_int);
+  if(active_int[7]) {
+    printf("macISR bmac RX mac_id=%0d byte_cnt Interrupt\n", mac_id);
+    //mac_pio_class.xmac_pio_rd(base_addr + BT, rd_data, 1'b0);
+    trigger(ONE_SHOT, clear_byte_cnt);
+    byte_cnt_int=1;
+    //if(rd_data!=='hffff) printf("ERROR macISR Interrupt BT=0x%0x\n", rd_data);
+  }
+  if(active_int[2]) {
+    printf("macISR bmac RX mac_id=%0d frame_cnt Interrupt\n", mac_id);
+    mac_pio_class.xmac_pio_rd(base_addr + BRxMAC_FRM_CNT, rd_data, 1'b0);
+    trigger(ONE_SHOT, clear_frame_cnt);
+    // sims show that bmac frm counter = 0 at interrupt
+    //if(rd_data!=='hffff) printf("ERROR macISR Interrupt BRxMAC_FRM_CNT=0x%0x\n", rd_data);
+    printf("macISR Interrupt BRxMAC_FRM_CNT=0x%0x\n", rd_data);
+  }
+  if(active_int[5]) {
+    printf("macISR bmac RX mac_id=%0d len_cnt Interrupt\n", mac_id);
+    mac_pio_class.xmac_pio_rd(base_addr + MAC_LEN_ER_CNT, rd_data, 1'b0);
+    trigger(ONE_SHOT, clear_mpsz_cnt);
+    printf("macISR Interrupt bMAC_LEN_ER_CNT=0x%0x\n", rd_data);
+    // sims show that bmac len counter = 0 at interrupt
+    //if(rd_data!=='hffff) printf("ERROR macISR Interrupt bMAC_LEN_ER_CNT=0x%0x\n", rd_data);
+    printf("macISR Interrupt bMAC_LEN_ER_CNT=0x%0x\n", rd_data);
+  }
+  if(active_int[4]) {
+    printf("macISR bmac RX mac_id=%0d crc_cnt Interrupt\n", mac_id);
+    mac_pio_class.xmac_pio_rd(base_addr + BMAC_CRC_ER_CNT, rd_data, 1'b0);
+    trigger(ONE_SHOT, clear_crc_cnt);
+    // sims show that bmac crc counter = 0 at interrupt
+    //if(rd_data!=='hffff) printf("ERROR macISR Interrupt BMAC_CRC_ER_CNT=0x%0x\n", rd_data);
+    printf("macISR Interrupt BMAC_CRC_ER_CNT=0x%0x\n", rd_data);
+  }
+}
+
+task CNiuIntrDevMAC::check_xpcs_int() {
+  bit[31:0] rd_data, rd_status, rd_mask;
+
+  mac_pio_class.xmac_pio_rd(XPCS0_BASE + XPCS_STATUS, rd_status, 1'b0);
+  printf("macISR XPCS0 id=%0d status=0x%0x\n", super.dev_id, rd_status);
+  //printf("macISR XPCS0 id=%0d status CSR_LANE_ALIGN=%b\n", super.dev_id, rd_status[CSR_LANE_ALIGN]);
+  //printf("macISR XPCS0 id=%0d status CSR_LANE3_SYNC=%b\n", super.dev_id, rd_status[CSR_LANE3_SYNC]);
+  //printf("macISR XPCS0 id=%0d status CSR_LANE2_SYNC=%b\n", super.dev_id, rd_status[CSR_LANE2_SYNC]);
+  //printf("macISR XPCS0 id=%0d status CSR_LANE1_SYNC=%b\n", super.dev_id, rd_status[CSR_LANE1_SYNC]);
+  //printf("macISR XPCS0 id=%0d status CSR_LANE0_SYNC=%b\n", super.dev_id, rd_status[CSR_LANE0_SYNC]);
+
+  mac_pio_class.xmac_pio_rd(XPCS0_BASE + XPCS_STATUS1, rd_status, 1'b0);
+  printf("macISR XPCS0 id=%0d status1=0x%0x\n", super.dev_id, rd_status);
+  //printf("macISR XPCS0 id=%0d status1 CSR_FAULT=%b\n", super.dev_id, rd_status[CSR_FAULT]);
+  //printf("macISR XPCS0 id=%0d status1 CSR_RX_LINK_UP=%b\n", super.dev_id, rd_status[CSR_RX_LINK_UP]);
+
+  mac_pio_class.xmac_pio_rd(XPCS0_BASE + XPCS_STATUS2, rd_status, 1'b0);
+  printf("macISR XPCS0 id=%0d status2=0x%0x\n", super.dev_id, rd_status);
+  //printf("macISR XPCS0 id=%0d status2 CSR_TX_FAULT=%b\n", super.dev_id, rd_status[CSR_TX_FAULT]);
+  //printf("macISR XPCS0 id=%0d status2 CSR_RX_FAULT=%b\n", super.dev_id, rd_status[CSR_RX_FAULT]);
+  if(rd_status[CSR_RX_FAULT]) {
+    printf("  macISR XPCS0 CSR_RX_FAULT Interrupt\n");
+    mac_pio_class.xmac_pio_rd(XPCS0_BASE + XPCS_STATUS1, rd_status, 1'b0);
+    printf("  macISR XPCS0 id=%0d status1 CSR_FAULT=%b\n", super.dev_id, rd_status[CSR_FAULT]);
+    mac_pio_class.xmac_pio_rd(XPCS0_BASE + XPCS_STATUS2, rd_status, 1'b0);
+    printf(" macISR XPCS0 id=%0d status2 CSR_RX_FAULT=%b\n", super.dev_id, rd_status[CSR_RX_FAULT]);
+  }
+  if(rd_status[CSR_TX_FAULT]) {
+    printf("  macISR XPCS0 CSR_TX_FAULT Interrupt\n");
+  }
+  mac_pio_class.xmac_pio_rd(XPCS1_BASE + XPCS_STATUS, rd_status, 1'b0);
+  printf("macISR XPCS1 id=%0d status=0x%0x\n", super.dev_id, rd_status);
+  //printf("macISR XPCS1 id=%0d status CSR_LANE_ALIGN=%b\n", super.dev_id, rd_status[CSR_LANE_ALIGN]);
+  //printf("macISR XPCS1 id=%0d status CSR_LANE3_SYNC=%b\n", super.dev_id, rd_status[CSR_LANE3_SYNC]);
+  //printf("macISR XPCS1 id=%0d status CSR_LANE2_SYNC=%b\n", super.dev_id, rd_status[CSR_LANE2_SYNC]);
+  //printf("macISR XPCS1 id=%0d status CSR_LANE1_SYNC=%b\n", super.dev_id, rd_status[CSR_LANE1_SYNC]);
+  //printf("macISR XPCS1 id=%0d status CSR_LANE0_SYNC=%b\n", super.dev_id, rd_status[CSR_LANE0_SYNC]);
+
+  mac_pio_class.xmac_pio_rd(XPCS1_BASE + XPCS_STATUS1, rd_status, 1'b0);
+  printf("macISR XPCS1 id=%0d status1=0x%0x\n", super.dev_id, rd_status);
+  //printf("macISR XPCS1 id=%0d status1 CSR_FAULT=%b\n", super.dev_id, rd_status[CSR_FAULT]);
+  //printf("macISR XPCS1 id=%0d status1 CSR_RX_LINK_UP=%b\n", super.dev_id, rd_status[CSR_RX_LINK_UP]);
+
+  mac_pio_class.xmac_pio_rd(XPCS1_BASE + XPCS_STATUS2, rd_status, 1'b0);
+  printf("macISR XPCS1 id=%0d status2=0x%0x\n", super.dev_id, rd_status);
+  //printf("macISR XPCS1 id=%0d status2 CSR_TX_FAULT=%b\n", super.dev_id, rd_status[CSR_TX_FAULT]);
+  //printf("macISR XPCS1 id=%0d status2 CSR_RX_FAULT=%b\n", super.dev_id, rd_status[CSR_RX_FAULT]);
+  if(rd_status[CSR_RX_FAULT]) {
+    printf("  macISR XPCS1 CSR_RX_FAULT Interrupt\n");
+    mac_pio_class.xmac_pio_rd(XPCS1_BASE + XPCS_STATUS1, rd_status, 1'b0);
+    printf("  macISR XPCS1 id=%0d status1 CSR_FAULT=%b\n", super.dev_id, rd_status[CSR_FAULT]);
+    mac_pio_class.xmac_pio_rd(XPCS1_BASE + XPCS_STATUS2, rd_status, 1'b0);
+    printf("  macISR XPCS1 id=%0d status2 CSR_RX_FAULT=%b\n", super.dev_id, rd_status[CSR_RX_FAULT]);
+  }
+  if(rd_status[CSR_TX_FAULT]) {
+    printf("  macISR XPCS1 CSR_TX_FAULT Interrupt\n");
+  }
+}
+
+task CNiuIntrDevMAC::check_pcs_int() {
+  bit[31:0] rd_data, rd_status, rd_mask;
+
+  mac_pio_class.xmac_pio_rd(PCS0_BASE + PCS_INTERRUPT_STATUS, rd_status, 1'b0);
+  printf("macISR PCS0 id=%0d status=0x%0x\n", super.dev_id, rd_status);
+  if(rd_status[2]) {
+    printf("macISR PCS0 link down Interrupt\n");
+  }
+  mac_pio_class.xmac_pio_rd(PCS1_BASE + PCS_INTERRUPT_STATUS, rd_status, 1'b0);
+  printf("macISR PCS1 id=%0d status=0x%0x\n", super.dev_id, rd_status);
+  if(rd_status[2]) {
+    printf("macISR PCS1 link down Interrupt\n");
+  }
+}
+
+task CNiuIntrDevMAC::check_XmacTX_int() {
+  bit[31:0] rd_data, rd_status, rd_mask, active_int;
+  bit[39:0] base_addr;
+
+  base_addr = mac_util.get_mac_reg_base(mac_id);
+  mac_pio_class.xmac_pio_rd(base_addr + XTxMAC_STAT_MSK, rd_mask, 1'b0);
+  mac_pio_class.xmac_pio_rd(base_addr + XTxMAC_STATUS, rd_status, 1'b0);
+  active_int=rd_status & ~rd_mask;
+
+  printf("macISR TX id=%0d status=0x%0x mask=0x%0x active_int=0x%0x\n", super.dev_id, rd_status, rd_mask, active_int);
+  if(active_int[11]) {
+    //printf("macISR TX mac_id=%0d frame_cnt Interrupt\n", mac_id);
+    printf("macISR TX mac_id=%0d frame_cnt Interrupt (set mask)\n", mac_id);
+    rd_mask[11]=1;
+    mac_pio_class.xmac_pio_wr(base_addr + XTxMAC_STAT_MSK, rd_mask);
+    mac_pio_class.xmac_pio_rd(base_addr + TxMAC_FRM_CNT, rd_data, 1'b0);
+    txfrm_cnt_int++;
+    if(rd_data!=='hffffffff) printf("ERROR macISR Interrupt TxMAC_FRM_CNT=0x%0x\n", rd_data);
+    //while(rd_data=='hffffffff) mac_pio_class.xmac_pio_rd(base_addr + TxMAC_FRM_CNT, rd_data, 1'b0);
+  }
+  if(active_int[10]) {
+    //printf("macISR TX mac_id=%0d byte_cnt Interrupt\n", mac_id);
+    printf("macISR TX mac_id=%0d byte_cnt Interrupt (set mask)\n", mac_id);
+    rd_mask[10]=1;
+    mac_pio_class.xmac_pio_wr(base_addr + XTxMAC_STAT_MSK, rd_mask);
+    mac_pio_class.xmac_pio_rd(base_addr + TxMAC_BYTE_CNT, rd_data, 1'b0);
+    txbyte_cnt_int++;
+    if(rd_data!=='hffffffff) printf("ERROR macISR Interrupt TxMAC_BYTE_CNT=0x%0x\n", rd_data);
+    //while(rd_data=='hffffffff) mac_pio_class.xmac_pio_rd(base_addr + TxMAC_BYTE_CNT, rd_data, 1'b0);
+  }
+  if(rd_status[4]) {
+    printf("CNiuIntrDevMAC TX mac_id=%0d recived tx_xfer_err_interrupt\n",mac_id);
+    tx_xfer_err_cnt++; 
+  }
+  if(rd_status[1]) {
+    printf("CNiuIntrDevMAC TX mac_id=%0d recived underrun_interrupt\n",mac_id);
+    underrun_cnt++;
+  }
+  if(rd_status[0]) {
+    printf("CNiuIntrDevMAC TX mac_id=%0d recived Pkts_xmtd_interrupt\n",mac_id);
+    pkts_txmt_cnt++;  
+  }
+}
+
+task CNiuIntrDevMAC::check_XmacRX_int() {
+  bit[31:0] rd_data, rd_status, rd_mask, active_int;
+  bit[39:0] base_addr;
+  bit mdint_status;
+
+  base_addr = mac_util.get_mac_reg_base(mac_id);
+  mac_pio_class.xmac_pio_rd(base_addr + XRxMAC_STAT_MSK, rd_mask, 1'b0);
+  mac_pio_class.xmac_pio_rd(base_addr + XRxMAC_STATUS, rd_status, 1'b0);
+  active_int=rd_status & ~rd_mask;
+
+  printf("macISR RX id=%0d mask=0x%0x status=0x%0x active_int=0x%0x\n", super.dev_id, rd_status, rd_mask, active_int);
+  if(active_int[0]) {
+    printf("macISR RX mac_id=%0d Frame Recieved Interrupt\n", mac_id);
+  }
+  if(active_int[1]) {
+    printf("macISR RX mac_id=%0d Overflow Interrupt\n", mac_id);
+  }
+  if(active_int[2]) {
+    printf("macISR RX mac_id=%0d Underflow Interrupt\n", mac_id);
+  }
+  if(active_int[3]) {
+    printf("macISR RX mac_id=%0d crc_cnt Interrupt (set mask)\n", mac_id);
+    rd_mask[3]=1;
+    mac_pio_class.xmac_pio_wr(base_addr + XRxMAC_STAT_MSK, rd_mask);
+    mac_pio_class.xmac_pio_rd(base_addr + MAC_CRC_ER_CNT, rd_data, 1'b0);
+    trigger(ONE_SHOT, clear_crc_cnt);
+    if(rd_data!=='hff) printf("ERROR macISR Interrupt MAC_CRC_ER_CNT=0x%0x\n", rd_data);
+  }
+  if(active_int[4]) {
+    printf("macISR RX mac_id=%0d mpsz Interrupt (set mask)\n", mac_id);
+    rd_mask[4]=1;
+    mac_pio_class.xmac_pio_wr(base_addr + XRxMAC_STAT_MSK, rd_mask);
+    mac_pio_class.xmac_pio_rd(base_addr + RxMAC_MPSZER_CNT, rd_data, 1'b0);
+    trigger(ONE_SHOT, clear_mpsz_cnt);
+    if(rd_data!=='hff) printf("ERROR macISR Interrupt MPSZER_CNT=0x%0x\n", rd_data);
+  }
+  if(active_int[5]) {
+    printf("macISR RX mac_id=%0d code viol Interrupt\n", mac_id);
+  }
+  if(active_int[6]) {
+    printf("macISR RX mac_id=%0d byte_cnt Interrupt (set mask)\n", mac_id);
+    rd_mask[6]=1;
+    mac_pio_class.xmac_pio_wr(base_addr + XRxMAC_STAT_MSK, rd_mask);
+    mac_pio_class.xmac_pio_rd(base_addr + RxMAC_BT_CNT, rd_data, 1'b0);
+    //trigger(ONE_BLAST, clear_byte_cnt);
+    trigger(ONE_SHOT, clear_byte_cnt);
+    byte_cnt_int=1;
+    printf("macISR Interrupt BT_CNT=0x%h time=%0d\n", rd_data, get_time(LO));
+    if(rd_data!=='hffffffff) printf("ERROR macISR Interrupt BT_CNT=0x%0x\n", rd_data);
+    //delay for byte cntr to clear
+    repeat(30) @(posedge CLOCK);
+    //read status again because int triggered
+    mac_pio_class.xmac_pio_rd(base_addr + XRxMAC_STATUS, rd_data, 1'b0);
+    printf("macISR RX id=%0d status=0x%0x\n", super.dev_id, rd_data);
+  }
+  if(active_int[7]) {
+    printf("macISR RX mac_id=%0d hist1 Interrupt (set mask)\n", mac_id);
+    rd_mask[7]=1;
+    mac_pio_class.xmac_pio_wr(base_addr + XRxMAC_STAT_MSK, rd_mask);
+    mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT1, rd_data, 1'b0);
+    trigger(ONE_SHOT, clear_hist1_cnt);
+    if(rd_data!=='h1fffff) printf("ERROR macISR Interrupt HIST_CNT1=0x%0x (64)\n", rd_data);
+  }
+  if(active_int[8]) {
+    printf("macISR RX mac_id=%0d hist2 Interrupt (set mask)\n", mac_id);
+    rd_mask[8]=1;
+    mac_pio_class.xmac_pio_wr(base_addr + XRxMAC_STAT_MSK, rd_mask);
+    mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT2, rd_data, 1'b0);
+    trigger(ONE_SHOT, clear_hist2_cnt);
+    if(rd_data!=='h1fffff) printf("ERROR macISR Interrupt HIST_CNT2=0x%0x (65-127)\n", rd_data);
+  }
+  if(active_int[9]) {
+    printf("macISR RX mac_id=%0d hist3 Interrupt (set mask)\n", mac_id);
+    rd_mask[9]=1;
+    mac_pio_class.xmac_pio_wr(base_addr + XRxMAC_STAT_MSK, rd_mask);
+    mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT3, rd_data, 1'b0);
+    trigger(ONE_SHOT, clear_hist3_cnt);
+    if(rd_data!=='hfffff) printf("ERROR macISR Interrupt HIST_CNT3=0x%0x (128-255)\n", rd_data);
+  }
+  if(active_int[10]) {
+    printf("macISR RX mac_id=%0d hist4 Interrupt (set mask)\n", mac_id);
+    rd_mask[10]=1;
+    mac_pio_class.xmac_pio_wr(base_addr + XRxMAC_STAT_MSK, rd_mask);
+    mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT4, rd_data, 1'b0);
+    trigger(ONE_SHOT, clear_hist4_cnt);
+    if(rd_data!=='h7ffff) printf("ERROR macISR Interrupt HIST_CNT4=0x%0x (256-511)\n", rd_data);
+  }
+  if(active_int[11]) {
+    printf("macISR RX mac_id=%0d hist5 Interrupt (set mask)\n", mac_id);
+    rd_mask[11]=1;
+    mac_pio_class.xmac_pio_wr(base_addr + XRxMAC_STAT_MSK, rd_mask);
+    mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT5, rd_data, 1'b0);
+    trigger(ONE_SHOT, clear_hist5_cnt);
+    if(rd_data!=='h3ffff) printf("ERROR macISR Interrupt HIST_CNT5=0x%0x (512-1023)\n", rd_data);
+  }
+  if(active_int[12]) {
+    printf("macISR RX mac_id=%0d hist6 Interrupt (set mask)\n", mac_id);
+    rd_mask[12]=1;
+    mac_pio_class.xmac_pio_wr(base_addr + XRxMAC_STAT_MSK, rd_mask);
+    mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT6, rd_data, 1'b0);
+    trigger(ONE_SHOT, clear_hist6_cnt);
+    if(rd_data!=='h1ffff) printf("ERROR macISR Interrupt HIST_CNT6=0x%0x\n (1024-1522)", rd_data);
+  }
+  if(active_int[13]) {
+    printf("macISR RX mac_id=%0d broadcast_cnt Interrupt (set mask)\n", mac_id);
+    rd_mask[13]=1;
+    mac_pio_class.xmac_pio_wr(base_addr + XRxMAC_STAT_MSK, rd_mask);
+    mac_pio_class.xmac_pio_rd(base_addr + RxMAC_BC_FRM_CNT, rd_data, 1'b0);
+    trigger(ONE_SHOT, clear_broadcast_cnt);
+    if(rd_data!=='h1fffff) printf("ERROR macISR Interrupt BC_FRM_CNT=0x%0x\n", rd_data);
+  }
+  if(active_int[14]) {
+    printf("macISR RX mac_id=%0d multicast_cnt Interrupt (set mask)\n", mac_id);
+    rd_mask[14]=1;
+    mac_pio_class.xmac_pio_wr(base_addr + XRxMAC_STAT_MSK, rd_mask);
+    mac_pio_class.xmac_pio_rd(base_addr + RxMAC_MC_FRM_CNT, rd_data, 1'b0);
+    trigger(ONE_SHOT, clear_multicast_cnt);
+    if(rd_data!=='h1fffff) printf("ERROR macISR Interrupt MC_FRM_CNT=0x%0x\n", rd_data);
+  }
+  if(active_int[15]) {
+    printf("macISR RX mac_id=%0d frag_cnt Interrupt (set mask)\n", mac_id);
+    rd_mask[15]=1;
+    mac_pio_class.xmac_pio_wr(base_addr + XRxMAC_STAT_MSK, rd_mask);
+    mac_pio_class.xmac_pio_rd(base_addr + RxMAC_FRAG_CNT, rd_data, 1'b0);
+    trigger(ONE_SHOT, clear_frag_cnt);
+    if(rd_data!=='h1fffff) printf("ERROR macISR Interrupt FRAG_CNT=0x%0x\n", rd_data);
+  }
+  if(active_int[16]) {
+`ifdef N2_FC
+`else 
+    printf("macISR RX mac_id=%0d PHY_MDINT Interrupt time=%0d\n", mac_id, get_time(LO));
+    mdint_int=1;
+    check_mdint_status(mac_id, mdint_status);
+    if(mdint_status!==0) printf("macISR mac_id=%0d  ERROR Interrupt PHY_MDINT signal not low.\n", mac_id);
+    deassert_mdint(mac_id);
+    delay(500);
+    check_mdint_status(mac_id, mdint_status);
+    if(mdint_status!==1) printf("macISR mac_id=%0d ERROR Interrupt PHY_MDINT signal not high after deassert time=%0d\n", mac_id, get_time(LO));
+`endif
+  }
+  if(active_int[17]) {
+    printf("macISR RX mac_id=%0d link_fault_count Interrupt\n", mac_id);
+    mac_pio_class.xmac_pio_rd(base_addr + LINK_FAULT_CNT, rd_data, 1'b0);
+    trigger(ONE_SHOT, clear_link_fault_cnt);
+    if(rd_data!=='hff) printf("ERROR macISR Interrupt LINK_FAULT_CNT=0x%0x\n", rd_data);
+    printf("macISR RX mac_id=%0d link_fault_count Interrupt\n", mac_id);
+    mac_pio_class.xmac_pio_rd(base_addr + LINK_FAULT_CNT, rd_data, 1'b0);
+    trigger(ONE_SHOT, clear_link_fault_cnt);
+    if(rd_data!=='h0) printf("ERROR macISR Interrupt LINK_FAULT_CNT=0x%0x\n", rd_data);
+  }
+  if(active_int[18]) {
+    rf_intr_cnt++;
+    printf("macISR RX mac_id=%0d remote_fault_detected Interrupt count=%0d\n", mac_id, rf_intr_cnt);
+    mac_pio_class.xmac_pio_rd(base_addr + XRxMAC_STATUS, rd_data, 1'b0);
+    if(rd_data[18]!=0) {
+    printf("INFO remote_fault_status interrupt not cleared,possible that a new remote fault event has happened\n");
+    rf_intr_cnt++;
+    }
+  }
+  if(active_int[19]) {
+    lf_intr_cnt++;
+    printf("macISR RX mac_id=%0d local_fault_detected Interrupt count=%0d\n", mac_id, lf_intr_cnt);
+    mac_pio_class.xmac_pio_rd(base_addr + XRxMAC_STATUS, rd_data, 1'b0);
+    if(rd_data[19]!=0) {
+      printf("INFO local_fault_status interrupt not cleared,possible that a new local fault event has happened\n");
+    lf_intr_cnt++;
+   }
+  }
+  if(active_int[20]) {
+    printf("macISR RX mac_id=%0d hist7 Interrupt (set mask)\n", mac_id);
+    rd_mask[20]=1;
+    mac_pio_class.xmac_pio_wr(base_addr + XRxMAC_STAT_MSK, rd_mask);
+    mac_pio_class.xmac_pio_rd(base_addr + RxMAC_HIST_CNT7, rd_data, 1'b0);
+    trigger(ONE_SHOT, clear_hist7_cnt);
+    if(rd_data!=='h1fffff) printf("ERROR macISR Interrupt HIST_CNT7=0x%0x\n", rd_data);
+  }
+}
+
+task CNiuIntrDevMAC::set_rx_mask(bit[31:0] val) {
+  if(mac_id==0 || mac_id==1)
+    mac_pio_class.xmac_pio_wr(mac_util.get_mac_reg_base(mac_id) + XRxMAC_STAT_MSK, val);
+}
+task CNiuIntrDevMAC::set_brx_mask(bit[31:0] val) {
+  if(mac_id==2 || mac_id==3)
+    mac_pio_class.xmac_pio_wr(mac_util.get_mac_reg_base(mac_id) + BRxMAC_STAT_MSK, val);
+}
+
+task CNiuIntrDevMAC::set_masks () {
+  bit[39:0] base_addr;
+  bit[31:0] rd_data;
+
+  printf("macISR setting masks=0 mac_id=%0d\n", mac_id);
+  base_addr = mac_util.get_mac_reg_base(mac_id);
+  if(mac_id==0 || mac_id==1) {
+    mac_pio_class.xmac_pio_wr(base_addr + XTxMAC_STAT_MSK, 32'h1);   //keep frame_transmitted masked
+    mac_pio_class.xmac_pio_wr(base_addr + XRxMAC_STAT_MSK, 32'h1);   //keep frame_receieved masked
+    mac_pio_class.xmac_pio_wr(base_addr + XMAC_C_S_MSK, 32'h0);    
+
+    mac_pio_class.xmac_pio_wr(base_addr + XMAC_C_S_MSK, 32'b0);
+    mac_pio_class.xmac_pio_wr(base_addr + BMAC_C_S_MSK, 32'b0);
+
+    mac_pio_class.xmac_pio_rd(PCS0_BASE + PCS_MII_CONTROL, rd_data, 1'b0);
+    rd_data[PCS_INT_MASK]=0;
+    mac_pio_class.xmac_pio_wr(PCS0_BASE + PCS_MII_CONTROL, rd_data);
+
+    mac_pio_class.xmac_pio_rd(PCS1_BASE + PCS_MII_CONTROL, rd_data, 1'b0);
+    rd_data[PCS_INT_MASK]=0;
+    mac_pio_class.xmac_pio_wr(PCS1_BASE + PCS_MII_CONTROL, rd_data);
+
+    mac_pio_class.xmac_pio_wr(XPCS0_BASE + XPCS_MASK1, 0);
+    mac_pio_class.xmac_pio_wr(XPCS1_BASE + XPCS_MASK1, 0);
+  }
+  else {
+    mac_pio_class.xmac_pio_wr(base_addr + BRxMAC_STAT_MSK, 32'h1);   //keep frame_receieved masked 
+    mac_pio_class.xmac_pio_wr(base_addr + BTxMAC_STAT_MSK, 32'h1);   //keep frame_transmitted masked 
+    mac_pio_class.xmac_pio_wr(base_addr + BMAC_C_S_MSK, 32'h0);    
+  }
+}

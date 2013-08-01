@@ -1,0 +1,633 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: baseParamsClass.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+// defines
+#include "plusArgMacros.vri"
+#include "baseParamDefines.vri"
+
+
+// NOTE, this class is *not* using std_display due to this class being
+// used in many/any bench. It is meant to be a more generic class.
+// #include "std_display_defines.vri"
+// #include "std_display_class.vrh"
+
+
+// usage:  In your extended class, do something like this to make use of this
+// base class's methods.
+//
+//   // Paramater precedence is:
+//   // highest) If paramater is a +arg passed into vcs.
+//   // middle)  If paramater is in the config/param file.
+//   // last)    Default value given in getParam call.
+//   // There will always be a value.
+//   task Params::getCfg(string fileName = null)
+//   {
+// 
+//     // "open" config file for the testcase, even if null
+//     openFile(fileName);
+//    
+//     //         getParam(type,name,min,max,default)
+//     myParam1 = getParam(DEC,"ZZZ",10,100,20);
+//
+//     // hex values
+//     myParam2 = getParam(HEX,"myParamTwo",64'h55,64'h1fff,64'hfa);
+//
+//     // User can select from 2-5 or RAND (if RANDOK is set), default is RAND
+//     // in this case.  RAND is -1 and applies to integers only. Your code has
+//     // to decide what to do when myParam3 = -1. Generally, it means don't use
+//     // one of 2,3,4 or 5 but instead, freely pick an appropriate random value
+//     // in your code. Your code decides. See "RAND/RANDOK EXAMPLE" below...
+//     myParam3 = getParam(DEC,"abc",2,5,RAND,RANDOK);
+//     
+//     closeFile(fileName);
+//     check4conflict();
+//   }
+
+// RAND/RANDOK EXAMPLE
+// if (gParam.por_delay == -1) repeat (urandom_range(1,10)) @ (posedge CLOCK);
+// else repeat (gParam.por_delay) @ (posedge CLOCK);
+
+
+
+class BaseParams {
+
+  protected string  configFileName;          // configuration file name
+  protected integer cfgFileHndl;    // file handle
+  protected reg requireConfig;
+  
+  protected function reg [127:0] getParam(integer type,
+                                          string name,
+                                          reg [127:0] minval,
+                                          reg [127:0] maxval,
+                                          reg [127:0] defval,
+                                          reg randOK = 0,
+                                          reg noWarn = 0); // careful!
+
+  protected task getRegArray(integer type,
+                             string name,
+                             reg [127:0] minval,
+                             reg [127:0] maxval,
+                             reg [127:0] defval,
+                             var reg[511:0] data[],
+                             integer     itemCnt=0,
+                             reg randOK = 0);
+  
+  protected task getArray(integer type,
+                          string      name,
+                          integer     minval,
+                          integer     maxval,
+                          integer     defval,
+                          var integer data[],
+                          integer     itemCnt=0,
+                          reg randOK = 0);         
+  
+  
+  protected task openFile(string fileName = null);
+  protected task closeFile(string fileName = null);
+  protected function string getStringParam(string name);
+  task new(reg requireConfig = 0);  
+}
+
+task BaseParams::new(reg requireConfig = 0) {
+  // if this is set, bench may fail if config fileName is null. see openFile
+  this.requireConfig = requireConfig;
+}
+
+task BaseParams::openFile(string fileName = null)
+{
+  // check to see if fileName is null or bogus,
+  // if so, we will be using defaults and +args only.
+  // No file will be opened or read or closed but all
+  // methods can be called anyway.
+  //
+  // if requireConfig is set, bench will fail if config fileName is null
+  // and +noConfig is not set.
+  if (fileName == null || fileName.len() < 3) {
+    configFileName = null;
+    cfgFileHndl = 0;
+    if (requireConfig && !mChkPlusarg(noConfig)) {
+      printf("\n\n%9d: baseParamsClass[]: ERROR This bench requires one of 2 things, a non-null config file name or the plus arg -vcs_run_args=+noConfig\n",get_cycle());
+      printf("ERROR: You may have miss-typed when specifying the config file name plus arg?\n\n");
+      exit(0);
+    }
+  } else {
+    configFileName = fileName;
+    cfgFileHndl = fopen(configFileName,"r");
+    if (cfgFileHndl == 0) {
+      printf("\n\n%9d: baseParamsClass[]: ERROR: config file %s open failed!\n", get_cycle(), configFileName);
+      exit(0);
+    }
+    printf("%9d: baseParamsClass[]: reading config from %s\n",get_cycle(),configFileName);
+  }
+}
+
+task BaseParams::closeFile(string fileName = null)
+{
+  if (fileName !== null && cfgFileHndl !== 0) fclose(cfgFileHndl);
+}
+
+// Initialize the parameter requested.  We will check to see if a
+// corresponding +arg was provided by the user. If so, it will be used
+// after a min/max check. If not, next we will search the
+// config/paramater file for the paramater name and if found do a min/max
+// check and set the variable, otherwise parmeter is set to the default
+// value.
+// 
+//  type      - DEC convert ascii to 32 bit signed integer,
+//              HEX convert ascii to 64 bit hex,
+//              FLAG interpret as 1/0 (+arg/no +arg detection)
+//                   Will flip default value.
+//  name      - ascii string of the paramater/+arg name
+//  minval    - minimum valid value
+//  maxval    - maximum valid value
+//  default   - default value.
+//  randOK    - allow a value of -1 (your final code can interpret -1
+//                                   as "wide open" or whatever)
+function reg [127:0] BaseParams::getParam(integer type,
+                                          string name,
+                                          reg [127:0] minval,
+                                          reg [127:0] maxval,
+                                          reg [127:0] defval,
+                                          reg randOK = 0,
+                                          reg noWarn = 0) // careful!
+{
+  string varstring;
+  string varname;
+  string varval;
+  string fullname;
+  string tempstr;
+  integer tmpi = 0, maxvali = 0, minvali = 0;
+  reg [127:0] tmpReg = 0;
+  reg match=0;
+
+  getParam = defval; // use default value if no match below.
+
+  // user over-ride, do not try to find setting in config file
+  // if user has passed in the corresponding plus argument.
+  //sprintf(fullname, "%s", name); // "%s=" to append = but this disallows non value +args
+
+  if (type == FLAG) sprintf(fullname, "%s", name);
+  else sprintf(fullname, "%s=", name);
+
+  if (mChkPlusargSvar(fullname)) {
+    match = 1;
+
+
+//    breakpoint;
+
+
+    case (type) {
+      DEC: {
+        mGetPlusargDecSvar(fullname,tmpi);
+      }
+      HEX: {
+        mGetPlusargStrSvar(fullname,tmpReg);
+        tempstr.bittostr(tmpReg);
+        if (tempstr == "all") tmpReg = 64'hffffffffffffffff; // special case
+        else tmpReg = tempstr.atohex();
+      }
+      FLAG: {
+        if (defval > 0) getParam = 0;
+        else getParam = 1; // flip default value
+      } 
+    }
+
+    if (!noWarn) {
+      printf("* WARNING: The following setting was given on the command line as +%s *\n",name);
+      //printf("* WARNING: Setting was given as +%s or +%s=%0d or +%s=%0h *\n",name,name,tmpi,name,tmpReg);    
+      printf("* WARNING: You need to know this, and do it again, in order to recreate failures! *\n");
+    }
+  } else if (cfgFileHndl !== 0) {
+    // try to find setting in file
+    varstring = freadstr(cfgFileHndl,SILENT);
+    while (varstring != null) {
+      sscanf(varstring,"%s %s",varname,varval);
+      if (name == varname) {
+        match = 1;
+        case (type) {
+          DEC: tmpi = varval.atoi();
+          HEX: tmpReg = varval.atohex();
+          FLAG: {
+            getParam = varval.atoi();
+            if (getParam !== 1 && getParam !== 0)
+              if (defval > 0) getParam = 0;
+              else getParam = 1; // flip default value
+          }
+        }
+        break;
+      }
+      varstring = freadstr(cfgFileHndl,SILENT);
+    } // while
+  }
+
+
+  // Do min/max check if either a match was found in config file
+  // OR the corresponding plus arg was passed in.
+  if (match == 1) {
+    if (type == HEX) {
+      if ((tmpReg >= minval) &&
+          (tmpReg <= maxval)) {
+        getParam = tmpReg;
+      } else {
+        printf("\n%9d: baseParamsClass::getParam[]: ERROR Following hex parameter failed minmax test\n",get_cycle());
+        printf("%9d: baseParamsClass::getParam[]: ERROR actual=0x%0h min=0x%0h max=0x%0h\n",get_cycle(),tmpReg,minval,maxval);
+        exit(0);
+      }
+    } else if (type == DEC) {
+      minvali = minval;
+      maxvali = maxval;
+      if ( (tmpi >= minvali && tmpi <= maxvali) ||
+           (tmpi == -1 && randOK == RANDOK) ) {
+        getParam = 0;
+        getParam[31:0] = tmpi;
+      } else {
+        printf("\n%9d: baseParamsClass::getParam[]: ERROR Following integer parameter failed minmax test\n",get_cycle());
+        printf("%9d: baseParamsClass::getParam[]: ERROR name=%s actual=%0d min=%0d max=%0d\n",get_cycle(),name, tmpi,minvali,maxvali);
+        exit(0);
+      }
+    }
+  } // if match
+
+  // Put final value in log and on screen.
+  if (type == HEX) {
+    if (getParam == defval)
+      printf("%9d: baseParamsClass::getParam[]: setting %s to 0x%0h (== default)\n",get_cycle(),name,getParam);
+    else
+      printf("%9d: baseParamsClass::getParam[]: setting %s to 0x%0h (!= default)\n",get_cycle(),name,getParam);
+  }
+  else if (type == DEC) {
+    tmpi = getParam[31:0]; // casting to signed integer so -1 prints as "-1"
+    if (getParam == defval)
+      printf("%9d: baseParamsClass::getParam[]: setting %s to %0d (== default)\n",get_cycle(),name,tmpi);
+    else
+      printf("%9d: baseParamsClass::getParam[]: setting %s to %0d (!= default)\n",get_cycle(),name,tmpi);
+  } else if (type == FLAG) {
+    if (getParam == defval) printf("%9d: baseParamsClass::getParam[]: setting %s is %0d (== default)\n",get_cycle(),name,getParam);
+    else printf("%9d: baseParamsClass::getParam[]: setting %s is %0d (!= default)\n",get_cycle(),name,getParam);
+  }
+  
+  // for next getParam call
+#ifdef NTB
+    closeFile(configFileName);
+    openFile(configFileName);
+#else
+  if (cfgFileHndl !== 0) rewind(cfgFileHndl);
+#endif
+  
+}
+
+
+task BaseParams::getArray(integer type,
+                         string      name,
+                         integer     minval,
+                         integer     maxval,
+                         integer     defval,
+                         var integer data[],
+                         integer     itemCnt=0,
+                         reg randOK = 0)
+{
+  reg [511:0] tmpData [];
+  integer i;
+  integer index = -1;
+
+  //Use the prexisting getRegArray task
+  getRegArray(type, name, minval, maxval, defval, tmpData, itemCnt, randOK);
+
+  //Copy the contents of the bit array to the integer array;
+  void = assoc_index(FIRST, tmpData, index);
+
+  for (i=0; i < assoc_index(CHECK, tmpData); i++)
+  {
+    data[index] = tmpData[index];
+    assoc_index(NEXT, tmpData, index);
+  }
+
+}
+
+// For each listed element found after the parameter, the element  will be
+// put in the next available index of the array that is passed into this task.
+//
+//   type  - DEC convert ascii to 32 bit signed integer
+//           HEX convert ascii to 64 bit hex
+//           STRING store as a string
+//   name      - ascii string of the paramater array name
+//   minval    - minimum valid value - only for integers and hex
+//   maxval    - maximum valid value - only for integers and hex
+//
+// Spaces are ignored. Trailing comma indicates continuation.
+//
+// example list usage in a users file
+// paramater_list   1,  2,
+//    3,
+// 4,5,  6,
+//       7,  8,9,10,  01,  02,  03,  04,  05,  06
+//
+// or ideally
+// paramater_list   1,2,3,4,5
+
+//
+task  BaseParams::getRegArray(integer     type,
+                              string      name,
+                              reg [127:0] minval,
+                              reg [127:0] maxval,
+                              reg [127:0] defval,
+                              var reg[511:0] array[],
+                              integer     itemCnt=0,
+                              reg randOK = 0)
+{
+  string     fullLine = null;
+  string     paramName;
+  string     paramValue;
+  string     fullname;
+  integer    tmpi = 0;
+  reg [511:0] tmpReg = 0;
+  integer    i, match, foundPlusArg=0;
+  integer    index  = 0;
+  string     element, tempstr;
+  integer    done = 0, nextLine = 0;
+  integer    arrayIndex = 0;
+  integer    minvali, maxvali, value;
+
+  // If an itemCnt is passed into the routine then Initialize all elements
+  // of the array to default value. Still look for elements in the file though.
+  for (i=0; i<itemCnt; i++)
+  {
+    if (type == DEC)
+    {
+      tmpi = defval; // cast to int
+      array[i] = tmpi;
+      printf("%9d: baseParamsClass::getArray[]: setting %s[%0d] to %0d (== default)\n",get_cycle(),name,i,tmpi);
+    } else {
+      array[i] = defval;
+      printf("%9d: baseParamsClass::getArray[]: setting %s[%0d] to 0x%0h (== default)\n",get_cycle(),name,i,defval);
+    }
+  }
+
+
+  // user over-ride, do not try to find setting in config file
+  // if user has passed in the corresponding plus argument.
+  //sprintf(fullname, "%s=", name); // append =
+
+  if (type == FLAG) sprintf(fullname, "%s", name);
+  else sprintf(fullname, "%s=", name);
+
+  if (mChkPlusargSvar(fullname)) {
+    match = 1;
+    mGetPlusargStrSvar(fullname,tmpReg);
+    tempstr.bittostr(tmpReg);
+    printf("* WARNING: The following setting was given on the command line as  +arg *\n");
+    printf("*          +%s%s\n", fullname, tempstr);
+    printf("* WARNING: You need to know this, and do it again, in order to recreate failures! *\n");
+    // let the file parser parse the +arg
+    fullLine = {name, " ", tempstr};
+    foundPlusArg = 1;
+  }
+  
+  // try to find setting in file
+  if (cfgFileHndl !== 0 && !foundPlusArg) 
+    fullLine = freadstr(cfgFileHndl,SILENT);
+
+  while (fullLine != null)
+  {
+    //Remove whitespace from the beginning of the line
+    if (fullLine.match("\s*\S"))
+    {
+      fullLine.match("^[ \t]*");
+      fullLine = fullLine.postmatch();
+    }
+    
+    sscanf(fullLine,"%s %s",paramName,paramValue);
+
+    if (name == paramName)
+    {
+      index = paramName.len();
+      paramValue  = fullLine.substr(index);
+      
+      // remove any trailing white space from paramValue
+      index = paramValue.len() - 1;
+      while ( paramValue.substr(index) == " " )
+      {
+        paramValue = paramValue.substr(0,index-1);
+        index--;
+      }
+      // do we have a trailing comma? If so, then line is continued.
+      if (paramValue.substr(index) == "," ) nextLine = 1;
+      else nextLine = 0;
+
+      while (!done)
+      {
+        // Are there no more commas on the line? We could have:
+        // 1) element
+        // 2) element,
+        // 3) element, element
+        index = paramValue.search(",");
+
+        if (index == -1) // no commas
+        {
+          // grab last/only element on line
+          element = paramValue;
+
+          // if this line is NOT continued, then done
+          if (!nextLine)
+          {
+            done = 1;
+          }
+          else // line is continued, get next line
+          {
+            // Read in the next line since previous line was continued
+            if (!foundPlusArg) paramValue = freadstr(cfgFileHndl,SILENT);
+
+            // remove any trailing white space from paramValue
+            index = paramValue.len() - 1;
+            while ( paramValue.substr(index) == " " )
+            {
+              paramValue = paramValue.substr(0,index-1);
+              index--;
+            }
+            // do we have a trailing comma? If so, then line is continued.
+            if (paramValue.substr(index) == "," ) nextLine = 1;
+            else nextLine = 0;
+
+            // remove any leading whitespace
+            while ( paramValue.substr(0,0) == " " )
+            {
+              paramValue = paramValue.substr(1,paramValue.len()-1);
+            }
+
+            // if first char is a comma, remove it
+            if (paramValue.substr(0) == ",")
+              paramValue = paramValue.substr(1,paramValue.len()-1);
+
+            // now get the first element by continuing the loop
+            continue;
+
+          }
+        }
+        else // there is still a comma on the line
+        {
+          // grab the element up to the trailing comma
+          element = paramValue.substr(0, index - 1);
+
+          // remove leading element and comma from paramValue
+          // now that it is captured. (element,)
+          paramValue = paramValue.substr(index + 1, paramValue.len());
+        }
+
+        // remove white space from element
+        sscanf(element,"%s",element);
+
+        case (type)
+        {
+          DEC:
+          {
+            tmpi =   element.atoi();
+            minvali = minval;
+            maxvali = maxval;
+
+            if ( (tmpi >= minvali && tmpi <= maxvali) ||
+                (tmpi == -1 && randOK == RANDOK) ) {
+              array[arrayIndex] = tmpi;
+            }
+            else
+            {
+              printf("\n%9d: baseParamsClass::getArray[]: ERROR Failed minmax test\n",get_cycle());
+              printf("%9d: baseParamsClass::getArray[]: ERROR actual=%0d min=%0d max=%0d\n",
+                     get_cycle(),tmpi,minvali,maxvali);
+              exit(0);
+            }
+            
+            printf("%9d: baseParamsClass::getArray[]: setting %0s[%0d] to %0d (user selected)\n",
+                   get_cycle(),name,arrayIndex, tmpi);
+          }   
+
+
+          HEX:
+          {
+            tmpReg =   element.atohex();
+
+            if ((tmpReg < minval) || (tmpReg > maxval))
+            {
+              printf("\n%9d: baseParamsClass::getArray[]: ERROR Failed minmax test\n",get_cycle());
+              printf("%9d: baseParamsClass::getArray[]: ERROR actual=0x%0h min=0x%0h max=0x%0h\n",
+                     get_cycle(),tmpReg,minval,maxval);
+             exit(0);
+            }
+            else
+              array[arrayIndex] = tmpReg;
+
+            printf("%9d: baseParamsClass::getArray[]: setting %0s[%0d] to 0x%0h (user selected)\n",
+                   get_cycle(),name,arrayIndex, array[arrayIndex]);
+          }
+
+
+          STRING:
+          {
+            // Remove any white space and force a space before string
+            sscanf(element," %s",element);
+            array[arrayIndex] = element;
+            printf("%9d: baseParamsClass::getArray[]: setting %0s[%0d] to %0s (user selected)\n",
+                   get_cycle(),name,arrayIndex, array[arrayIndex]);
+          }
+
+        }
+
+        arrayIndex++;
+
+      } // while !done
+    } // if param
+
+    if (!foundPlusArg) fullLine = freadstr(cfgFileHndl,SILENT);
+    else fullLine = null;
+
+  } // while parsing file
+
+
+  // for next get* call
+#ifdef NTB
+    closeFile(configFileName);
+    openFile(configFileName);
+#else
+  if (cfgFileHndl !== 0 && !foundPlusArg) rewind(cfgFileHndl);
+#endif
+  
+}
+
+
+function string BaseParams::getStringParam(string name)
+{
+  string varstring;
+  string varname;
+  string varval;
+  string fullname;
+  reg [127:0] tmpReg = 0;
+  
+  getStringParam = null;
+  
+  // user over-ride, do not try to find setting in config file
+  // if user has passed in the corresponding plus argument.
+  sprintf(fullname, "%s=", name); // append =
+  
+  if (mChkPlusargSvar(fullname)) {
+    mGetPlusargStrSvar(fullname,tmpReg);
+    getStringParam.bittostr(tmpReg);
+    printf("* WARNING: The following (non-default?) setting was given on the command line! *\n");
+    printf("* WARNING: You need to know this, and do it again, in order to recreate failures! *\n");
+  } else if (cfgFileHndl !== 0) {
+    // try to find setting in file
+    varstring = freadstr(cfgFileHndl,SILENT);
+    while (varstring != null) {
+      sscanf(varstring,"%s %s",varname,varval);
+      if (name == varname) {
+        getStringParam = varval;
+        break;
+      }
+      varstring = freadstr(cfgFileHndl,SILENT);
+    } //  end while
+  }
+
+  if (getStringParam != null) {
+    printf("%9d: baseParamsClass::getStringParam: setting %s to %s\n",get_cycle(),name,getStringParam);
+  }
+
+  // for next getParam call 
+#ifdef NTB
+    closeFile(configFileName);
+    openFile(configFileName);
+#else
+  if (cfgFileHndl !== 0) rewind(cfgFileHndl);
+#endif
+
+} // end function getStringParam

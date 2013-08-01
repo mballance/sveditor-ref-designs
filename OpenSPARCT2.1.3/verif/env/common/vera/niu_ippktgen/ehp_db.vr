@@ -1,0 +1,157 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ehp_db.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+extern class ehp_fwd_dec_cl;
+
+class ehp_fwd_dec_cl {
+bit		multicast = 	1'bx;
+bit	[2:0]   l2_option = 	3'bx;	
+bit	[1:0]	l3_version = 	2'bx;
+bit	[1:0]	l4_protocol = 	2'bx;
+bit	[3:0]	l4_hd_length = 	4'bx;
+bit		push_bit =     	1'bx;
+bit	[31:0]	seq_num =       32'bx;
+bit	[15:0]	cam_index =     16'bx;
+bit		drop_bit =      1'bx;
+bit	[1:0]	pkt_dest =      2'bx;
+bit	[1:0]	pkt_mode =      2'bx;
+bit		vlan_match =	1'bx;
+bit		cfg_def_vlan_ena = 1'bx;
+bit	[2:0]	pkt_priority =  3'bx;
+bit	[7:0]	qp_info =       8'bx;
+bit		cam_match =     1'bx;
+
+}	// end of class ehp_fwd_dec_cl
+
+
+class ehp_db {
+
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+//@   EHP CAM RAM related parameters               @
+//@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+bit		cam_match;	// 1: packet's flow id matches one cam entry
+bit	[415:0]	exp_cam_data;
+bit	[415:0]	cam_data[256]; 
+bit	[103:0]	cam_mask[256];
+bit	[37:0]	matched_ram_data;
+bit		bypass;
+bit		drop;
+bit		short;
+bit		cfi;
+bit		ils;
+bit		cksum_err;
+bit		vlan_match;
+bit		vlan_mmatch;
+bit	[7:0]	vlan_table_qp_num;
+bit		vlan_default_ena;
+bit	[7:0]	vlan_default_qp;
+
+bit	[2:0]	ipp_ffl_mac_port;
+bit	[7:0]	ipp_ffl_mac_index;
+bit	[11:0]	ipp_ffl_mac_default;
+bit		ipp_ffl_data_done;
+bit	[22:0]	mac_ctrl;
+
+integer		ipp_ffl_hdr_cycles;
+integer		cam_value, i;
+
+ehp_fwd_dec_cl	exp_fwd_dec;
+ehp_fwd_dec_cl	col_fwd_dec;
+
+  task new ()
+  {
+    exp_fwd_dec = new;
+    col_fwd_dec = new;
+
+    exp_fwd_dec.multicast = 	1'bx;
+    exp_fwd_dec.l2_option = 	3'bx;
+    exp_fwd_dec.l3_version = 	2'bx;
+    exp_fwd_dec.l4_protocol = 	2'bx;
+    exp_fwd_dec.l4_hd_length = 	4'bx;
+    exp_fwd_dec.push_bit = 	1'bx;
+    exp_fwd_dec.seq_num = 	32'bx;
+    exp_fwd_dec.cam_index = 	16'bx;
+    exp_fwd_dec.drop_bit = 	1'bx;
+    exp_fwd_dec.pkt_dest = 	2'bx;
+    exp_fwd_dec.pkt_mode = 	2'bx;
+    exp_fwd_dec.vlan_match =	1'bx;
+    exp_fwd_dec.cfg_def_vlan_ena = 1'bx;
+    exp_fwd_dec.qp_info = 	8'bx;
+    exp_fwd_dec.cam_match = 	1'bx;
+
+    col_fwd_dec.multicast =     1'bx;
+    col_fwd_dec.l2_option =     3'bx;
+    col_fwd_dec.l3_version =    2'bx;
+    col_fwd_dec.l4_protocol =   2'bx;
+    col_fwd_dec.l4_hd_length =  4'bx;
+    col_fwd_dec.push_bit =      1'bx;
+    col_fwd_dec.seq_num =       32'bx;
+    col_fwd_dec.cam_index =     16'bx;
+    col_fwd_dec.drop_bit =      1'bx;
+    col_fwd_dec.pkt_dest =      2'bx;
+    col_fwd_dec.pkt_mode =      2'bx;
+    col_fwd_dec.vlan_match =	1'bx;
+    col_fwd_dec.cfg_def_vlan_ena = 1'bx;
+    col_fwd_dec.qp_info =       8'bx;
+    col_fwd_dec.cam_match =     1'bx;
+
+    bypass = 1'b0;
+    drop = 1'b0;
+    short = 1'b0;
+    cfi = 1'b0;
+    ils = 1'b0;
+    cksum_err = 1'b0;
+    vlan_match = 1'b0;
+    vlan_mmatch = 1'b0;
+    vlan_table_qp_num = 8'h0;
+    vlan_default_ena = 1'h0;
+    vlan_default_qp = 8'h0;
+
+    ipp_ffl_mac_port = 3'h0;
+    ipp_ffl_mac_index = 8'h0;
+    ipp_ffl_mac_default = 12'h0;
+    ipp_ffl_data_done = 1'h0;
+    mac_ctrl = 23'h0;
+
+    for (i = 0; i < 256; i = i +1) {
+      cam_data[i] = 416'hx;
+      cam_mask[i] = 104'hx;
+    }
+
+//  cam_data = 416'h0;
+
+  }	// end of task new
+
+}	// end of class ehp_db
+

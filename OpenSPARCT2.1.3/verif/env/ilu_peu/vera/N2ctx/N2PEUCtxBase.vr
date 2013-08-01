@@ -1,0 +1,132 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: N2PEUCtxBase.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+class PEUCtxBase extends CTContextBase 
+  {
+  PEUTestEnv  f_env;			// Our test environment
+  integer StratMax;			// How many strategies in parallel, 32?
+  bit StratStop;			// Set this to one to drain the strats
+  bit StratPause;                       // Set this to pause the context
+  integer _stratNum;			// The number of strategies launched
+
+  public PECParamMode           _IPDelay_mode = e_random;
+  public integer                _IPDelay_fixed = 1;
+  public integer                _IPDelay_min = 1;
+  public integer                _IPDelay_max = 15;
+
+  task new( string a_name, PEUTestEnv a_env )
+    {
+    super.new(a_name);
+    f_env = a_env;
+    _stratNum = 0;
+    StratMax = 32;
+    StratStop = 0;
+    StratPause = 0;
+    }
+
+  task Execute()
+    {
+    super.Execute();
+    //Delay to allow death spiral to finish if needed
+    repeat( 20 ) @(posedge CLOCK);
+    }
+
+    virtual  protected function CTStrategyBase ProvideStrategy()
+    {
+    error( "PEUCtxBase/ProvideStrategy has been called?!?\n" );
+    ProvideStrategy = null;
+    }
+    
+    virtual protected function CTStrategyBase FinalizeParms( CTStrategyBase a_strategy )
+    {
+    FinalizeParms = a_strategy;
+    }
+
+  
+  protected task DelayIssue()
+    {
+    integer  IPDelay;
+
+    // ******************************************************************
+    // Gotta wait if we already have enough strategies 
+    // ******************************************************************    
+    while (((( this._stratNum + 1 ) - this.StratDone) > this.StratMax ) ||
+           (this.StratPause == 1)) {
+
+      @(posedge CLOCK);
+    }
+
+    
+    // ******************************************************************
+    // Determine the IP Delay.
+    // ******************************************************************
+    if (this._IPDelay_mode === e_random)
+      IPDelay = urandom_range(this._IPDelay_max, this._IPDelay_min);
+  
+    else /* if (this._IPDelay_mode === e_fixed) */
+      IPDelay = this._IPDelay_fixed;
+
+
+    // ******************************************************************
+    // Wait the number of cycles specified by the IP Delay.
+    // ******************************************************************
+    if (this.StratStop === 1'b0)
+      repeat (IPDelay) @(posedge CLOCK);
+
+    this._stratNum = this._stratNum + 1;
+    }
+
+
+  public task pause()
+  {
+    this.StratPause = 1;
+  }
+
+  public task unpause()
+  {
+    this.StratPause = 0;
+  }
+
+  public task waitUntilIdle()
+  {
+    integer i;
+    i = 1;
+    while (this._stratNum > this.StratDone) {
+      if ( (i % 100) == 0 )
+      printf("PEUCtxBase::waitUntilIdle this._stratNum=%0d this.StratDone=%0d\n", this._stratNum, this.StratDone);
+      @(posedge CLOCK);
+      i = i + 1;
+    }
+  }  
+}  

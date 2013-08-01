@@ -1,0 +1,118 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: fc_8core_jtag_debug.diaglist
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+<sys(jtag_debug)>
+ <runargs  -drm_cpufreq="1200 ..">
+  <runargs -nosas -vcs_run -max_cycle=+10000000 -rtl_timeout=4000000 -vcs_run_args=+skt_timeout=250000 -fast_boot -vcs_run_args=+stepWaitTime=100000 >
+
+    <fc_8core_ss name=fc_8core_ss>
+      <runargs  -midas_args=-DCMP_THREAD_START=0xffffffffffffffff -finish_mask=ffffffffffffffff -midas_args=-DSYNC_THREADS=0xffffffffffffffff>
+        memop_all_loads   memop_all_loads.s fc_jtag_single_step_core.vr
+        memop_all_stores  memop_all_stores.s -vcs_run_args=+TCK_PERIOD=13333 fc_jtag_single_step_core.vr
+      </runargs>
+    </fc_8core_ss>
+
+    <fc_8core_do name=fc_8core_do>
+      allcores_allbanks  allcores_allbanks.s -midas_args=-DCMP_THREAD_START=0x0101010101010101 -finish_mask=0101010101010101 -vcs_run_args=+TCK_PERIOD=12520 fc_jtag_disable_overlap_core.vr
+      memop_all_loads         memop_all_loads.s -midas_args=-DCMP_THREAD_START=0xffffffffffffffff -finish_mask=ffffffffffffffff fc_jtag_disable_overlap_core.vr
+    </fc_8core_do>
+
+//    Removing this diag.  We test this at fc1, and hence dont really need an fc8 test
+//    Regardless, this asm diag has not been modified to work with the vera diag, and hence this test is useless
+//    Also, diag needs the following runargs to even run correctly, which were not present:
+//    -midas_args=-DPART_0_BASE=0x200000000 -midas_args=-DL2_REG_PROG -fast_boot
+//
+//    <jtag_l2_access_8core name=jtag_l2_access_8core>
+//      allcores_allbanks  allcores_allbanks.s -midas_args=-DCMP_THREAD_START=0x0101010101010101 -finish_mask=0101010101010101 fc_jtag_l2_access.vr
+//    </jtag_l2_access_8core>
+
+  </runargs>
+
+//  <shadow_scan_8core name=shadow_scan_8core>
+//    <runargs -sas -vcs_run -max_cycle=+10000000 -rtl_timeout=4000000 -vcs_run_args=+skt_timeout=250000>
+//      memop_mt_fpu_ld_st	memop_mt_fpu_ld_st.s -midas_args=-DCMP_THREAD_START=0x01010101010101 -finish_mask=01010101010101 fc_jtag_shadow_scan_core.vr
+//      interrupt_SWVR_INTR_W_all_threads interrupt_SWVR_INTR_W_all_threads.s -midas_args=-DCMP_THREAD_START=0xffffff -finish_mask=ffffff -midas_args=-DSYNC_THREADS=0xffffff fc_jtag_shadow_scan_core.vr
+//      <runargs  -midas_args=-DCMP_THREAD_START=0xffffffffffffffff -finish_mask=ffffffffffffffff -midas_args=-DSYNC_THREADS=0xffffffffffffffff>
+//        interrupt_INT_VEC_DIS_all	interrupt_INT_VEC_DIS_all.s fc_jtag_shadow_scan_core.vr
+//        interrupt_pci_INTx_all_threads	interrupt_pci_INTx_all_threads.s -vcs_run_args=+PEU_TEST fc_jtag_shadow_scan_core.vr
+//        interrupt_INT_MAN_thread_all	interrupt_INT_MAN_thread_all.s -midas_args=-DDIAG_NUM_THREADS=64 fc_jtag_shadow_scan_core.vr
+//        interrupt_mondo_intr_all_threads	interrupt_mondo_intr_all_threads.s -vcs_run_args=+PEU_TEST -nosas fc_jtag_shadow_scan_core.vr
+//      </runargs>
+//    </runargs>
+//  </shadow_scan_8core>
+
+
+  <shadow_scan_8core name=shadow_scan_8core>
+    <runargs -sas -vcs_run -max_cycle=+10000000 -rtl_timeout=4000000 -vcs_run_args=+skt_timeout=250000 >
+    <runargs -tg_seed=1 -fast_boot -midas_args=-DPART_0_BASE=0x200000000 -midas_args=-DL2_REG_PROG -midas_args=-DINC_SOC_ERR_TRAPS >
+    <runargs -vcs_run_args=+l2esr_mon_off -vcs_run_args=+l2cpx_mon_off -vcs_run_args=+l2cpx_errmon_off -vcs_run_args=+ios_0in_ras_chk_off -max_cycle=+1000000 >
+    <runargs -midas_args=-DCREGS_L2_ERR_EN_REG_CEEN=0 -midas_args=-DCREGS_L2_ERR_EN_REG_NCEEN=0 -midas_args=-DL2_NDSP_err -vcs_run_args=+PEU_TEST >
+    <runargs -vcs_run_args=+PEU_MEM_Chkr_off -midas_args=-DCMP_THREAD_START=0xffffffffffffffff -finish_mask=ffffffffffffffff -vcs_run_args=+TCK_PERIOD=12250>
+    <runargs -midas_args=-DSYNC_THREADS=0xffffffffffffffff -midas_args=-DDIAG_NUM_THREADS=64 >
+    n2_err_L2_NotData_NDDM_shadow n2_err_L2_NotData_NDDM_shadow.s fc_jtag_shadow_scan_core.vr 
+    </runargs>
+    </runargs>
+    </runargs>
+    </runargs>
+    </runargs>
+    </runargs>
+  </shadow_scan_8core>
+ 
+//   <shadow_scan_l2_8core name=shadow_scan_l2_8core>
+//    <runargs -nosas -vcs_run -vcs_run_args=+thread=1 -vcs_run_args=+l2esr_mon_off -vcs_run_args=+l2cpx_mon_off -vcs_run_args=+l2cpx_errmon_off -vcs_run_args=+L2DA_ERR_ENABLE_FWD>
+//      n2_err_l2_err_mcu_l2  n2_err_l2_err_mcu_l2.s fc_jtag_shadow_scan_l2t.vr
+//    </runargs>
+//    <runargs -nosas -vcs_run -midas_args=-DCMP_THREAD_START=3 -finish_mask=3 -vcs_run_args=+l2esr_mon_off -vcs_run_args=+l2cpx_mon_off -vcs_run_args=+l2cpx_errmon_off>
+//      n2_err_L2_LDWC_errstr_thid1     n2_err_L2_LDWC_errstr_thid1.s fc_jtag_shadow_scan_l2t.vr
+//    </runargs>
+//  </shadow_scan_l2_8core>
+
+
+   <shadow_scan_l2_8core name=shadow_scan_l2_8core>
+    <runargs -sas -vcs_run -max_cycle=+10000000 -rtl_timeout=4000000 -vcs_run_args=+skt_timeout=250000 >
+    <runargs -tg_seed=1 -fast_boot -midas_args=-DPART_0_BASE=0x200000000 -midas_args=-DL2_REG_PROG -midas_args=-DINC_SOC_ERR_TRAPS >
+    <runargs -vcs_run_args=+l2esr_mon_off -vcs_run_args=+l2cpx_mon_off -vcs_run_args=+l2cpx_errmon_off -vcs_run_args=+ios_0in_ras_chk_off -max_cycle=+1000000 >
+    <runargs -midas_args=-DCREGS_L2_ERR_EN_REG_CEEN=0 -midas_args=-DCREGS_L2_ERR_EN_REG_NCEEN=0 -midas_args=-DL2_NDSP_err -vcs_run_args=+PEU_TEST >
+    <runargs -vcs_run_args=+PEU_MEM_Chkr_off -midas_args=-DCMP_THREAD_START=0xffffffffffffffff -finish_mask=ffffffffffffffff >
+    <runargs -midas_args=-DSYNC_THREADS=0xffffffffffffffff -midas_args=-DDIAG_NUM_THREADS=64 >
+      n2_err_L2_NotData_NDDM_shadow n2_err_L2_NotData_NDDM_shadow.s  fc_jtag_shadow_scan_l2t.vr
+    </runargs>
+    </runargs>
+    </runargs>
+    </runargs>
+    </runargs>
+    </runargs>
+  </shadow_scan_l2_8core>
+ </runargs>
+</sys(jtag_debug)>

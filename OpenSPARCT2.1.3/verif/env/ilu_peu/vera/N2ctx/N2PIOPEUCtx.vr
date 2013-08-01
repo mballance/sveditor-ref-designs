@@ -1,0 +1,591 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: N2PIOPEUCtx.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+//#include "PEC.vri"
+//#include "PECCtx.vri"
+//#include "PECTestEnv.vri"
+//
+//#include "PioBasePECStr.vrh"
+//
+//#include "PioMWrPECStr.vrh"
+//#include "PioMRdPECStr.vrh"
+//#include "PioCfgIOWrPECStr.vrh"
+//#include "PioCfgIORdPECStr.vrh"
+
+
+
+class PIOPEUCtx extends PEUCtxBase {
+
+
+  // ******************************************************************
+  // The Test Environment objects need to execute the context.
+  // ******************************************************************
+  local PEUTestEnv              _env;
+
+
+  // ******************************************************************
+  // Context Control Fields - These fields are randomized using the
+  // Randomiztion Parameters in the following section, and the 
+  // ******************************************************************
+  local PECPIOType              _PIOType;
+
+  
+  // ******************************************************************
+  // Randomization Parameters - These parameters are set by the user
+  // prior to executing the context.  These fields are used as
+  // constraints for the previous Context Control Parameters.
+  // ******************************************************************
+  public PECParamMode           _PIOType_mode = e_random_all;
+  public PECPIOType             _PIOType_fixed = e_PIOMWr;
+  public integer                _PIOType_MWr = 1;
+  public integer                _PIOType_MRd = 1;
+  public integer                _PIOType_CfgIOWr = 1;
+  public integer                _PIOType_CfgIORd = 1;
+  
+
+  // ******************************************************************
+  // Constraint Parameters - These parameters are used to set the
+  // randomization constraints in the selected strategy.
+  // ******************************************************************
+  public PECParamMode           _format_req_mode = e_random_all;
+  public integer                _format_req_fixed = 3;
+  public integer                _format_req_prob_4dw = 50;
+  public integer                _format_req_prob_3dw = 50;
+  //N2 parameters to be able to select between PIO Cfg and IO in test
+  public integer                _type_req_prob_cfg0 = 1;
+  public integer                _type_req_prob_cfg1 = 1;
+  public integer                _type_req_prob_io = 1;
+
+  public PECParamMode           _td_cpl_mode = e_random_all;
+  public PECBool                _td_cpl_fixed = e_false;
+  public integer                _td_cpl_prob_false = 50;
+  public integer                _td_cpl_prob_true  = 50;
+  
+  public PECParamMode           _ep_cpl_mode = e_random_all;
+  public PECBool                _ep_cpl_fixed = e_false;
+  public integer                _ep_cpl_prob_false = 50;
+  public integer                _ep_cpl_prob_true  = 50;
+
+  public PECParamMode           _len_mode = e_random_all;
+  public bit [9:0]              _len_fixed = 1;
+  public bit [9:0]              _len_min = 1;
+  public bit [9:0]              _len_max = 4; //N2 supports 8 byte PIO write, 16 byte PIO read. // 16;
+  
+  public PECParamMode           _req_id_mode = e_random_all;
+  public bit [15:0]             _req_id_fixed = 0;
+  public bit [15:0]             _req_id_min = 0;
+  public bit [15:0]             _req_id_max = 65535;
+  
+  public PECParamMode           _addr_lsb_mode = e_random_all;
+  public bit [31:0]             _addr_lsb_fixed = 32'h_0000_0000;
+  public bit [31:0]             _addr_lsb_min = 32'h_0000_0000;
+  public bit [31:0]             _addr_lsb_max = 32'h_FFFF_FFFF;
+
+  public PECParamMode           _first_dwbe_mode = e_random_all;
+  public bit [3:0]              _first_dwbe_fixed = 4'b_1111;
+  public bit [3:0]              _first_dwbe_min = 4'b_0000;
+  public bit [3:0]              _first_dwbe_max = 4'b_1111;
+  
+  public PECParamMode           _last_dwbe_mode = e_random_all;
+  public bit [3:0]              _last_dwbe_fixed = 4'b_1111;
+  public bit [3:0]              _last_dwbe_min = 4'b_0000;
+  public bit [3:0]              _last_dwbe_max = 4'b_1111;
+  
+  public PECParamMode           _cpl_id_mode = e_random_all;
+  public bit [15:0]             _cpl_id_fixed = 0;
+  public bit [15:0]             _cpl_id_min = 0;
+  public bit [15:0]             _cpl_id_max = 65535;
+
+  public PECParamMode           _cpl_status_mode = e_random_all;
+  public bit [3:0]              _cpl_status_fixed = PEC_PCI__CPL_STATUS_SC;
+  public integer                _cpl_status_prob_sc = 1;
+  public integer                _cpl_status_prob_ur = 0;
+  public integer                _cpl_status_prob_crs = 0;
+  public integer                _cpl_status_prob_ca = 0;
+  public integer                _cpl_status_prob_rsvd1 = 0;
+  public integer                _cpl_status_prob_rsvd2 = 0;
+  public integer                _cpl_status_prob_rsvd3 = 0;
+  public integer                _cpl_status_prob_rsvd4 = 0;
+  
+  public PECParamMode           _bcm_mode = e_random_all;
+  public PECBool                _bcm_fixed = e_false;
+  public bit                    _bcm_prob_false = 50;
+  public bit                    _bcm_prob_true  = 50;
+
+
+
+  
+  // ******************************************************************
+  // Constructor
+  // ******************************************************************
+  public task new(PEUTestEnv a_env);
+
+  
+  // ******************************************************************
+  // Methods required to execute the Context.
+  // ******************************************************************
+  protected function CTStrategyBase ProvideStrategy(); 
+  protected function CTStrategyBase FinalizeParms(CTStrategyBase S);
+}
+
+
+
+//-------------------------------------------------------------------
+// Method Name: 
+// Description: 
+//-------------------------------------------------------------------
+task PIOPEUCtx::new(PEUTestEnv a_env) {
+
+  super.new("PIO Context", a_env);
+  this._env = a_env;
+}
+
+
+
+//-------------------------------------------------------------------
+// Method Name: 
+// Description: 
+//-------------------------------------------------------------------
+function CTStrategyBase PIOPEUCtx::ProvideStrategy() {
+
+  
+  PEUStrBase            sNull;
+  PioMWrPEUStr          sMWr;
+  PioMRdPEUStr          sMRd;
+  PioCfgIOWrPEUStr      sCfgIOWr;
+  PioCfgIORdPEUStr      sCfgIORd;
+
+  
+  
+  // ******************************************************************
+  // Determine the PIO Type, based on the PIO Type Mode.
+  // ******************************************************************
+  if (super.StratStop === 1'b1) {
+
+    sNull = new(this._env);
+    ProvideStrategy = sNull;
+  }
+
+
+  else if (this._PIOType_mode === e_random) {
+
+    randcase {
+
+      this._PIOType_MWr     : { sMWr     = new(this._env); ProvideStrategy = sMWr; }
+      this._PIOType_MRd     : { sMRd     = new(this._env); ProvideStrategy = sMRd; }
+      this._PIOType_CfgIOWr : { sCfgIOWr = new(this._env); ProvideStrategy = sCfgIOWr; }
+      this._PIOType_CfgIORd : { sCfgIORd = new(this._env); ProvideStrategy = sCfgIORd; }
+    }
+  }
+
+  
+  else if (this._PIOType_mode === e_fixed) {
+
+    case (this._PIOType_fixed) {
+
+      e_PIOMWr     : { sMWr     = new(this._env); ProvideStrategy = sMWr; }
+      e_PIOMRd     : { sMRd     = new(this._env); ProvideStrategy = sMRd; }
+      e_PIOCfgIOWr : { sCfgIOWr = new(this._env); ProvideStrategy = sCfgIOWr; }
+      e_PIOCfgIORd : { sCfgIORd = new(this._env); ProvideStrategy = sCfgIORd; }
+      
+      default : error("Invalid PIOType_fixed\n");           
+    }
+  }
+
+  else if (this._PIOType_mode === e_random_all) {
+
+    randcase {
+
+      1 : { sMWr     = new(this._env); ProvideStrategy = sMWr; }
+      1 : { sMRd     = new(this._env); ProvideStrategy = sMRd; }
+      1 : { sCfgIOWr = new(this._env); ProvideStrategy = sCfgIOWr; }
+      1 : { sCfgIORd = new(this._env); ProvideStrategy = sCfgIORd; }
+    }
+  }
+  
+  else {
+
+    error("Invalid PIOType_mode\n");
+  }
+}
+
+
+
+//-------------------------------------------------------------------
+// Method Name: 
+// Description: 
+//-------------------------------------------------------------------
+function CTStrategyBase PIOPEUCtx::FinalizeParms(CTStrategyBase S) {
+
+
+  PioBasePEUStr   strategy;
+
+
+  if (cast_assign(strategy, S, CHECK) === 0) {
+    
+    FinalizeParms = S;
+    return;
+  }
+
+
+  
+  // ******************************************************************
+  
+  // ******************************************************************
+  if (this._format_req_mode === e_random) {
+    
+    strategy._format_req_prob_4dw = this._format_req_prob_4dw;
+    strategy._format_req_prob_3dw = this._format_req_prob_3dw;
+  }
+
+  else if (this._format_req_mode === e_fixed) {
+
+    strategy._format_req_prob_4dw = (this._format_req_fixed === 4) ? 100 : 0;
+    strategy._format_req_prob_3dw = (this._format_req_fixed === 3) ? 100 : 0;
+  }
+ 
+  else if (this._format_req_mode === e_random_all) {
+    
+    strategy._format_req_prob_4dw = 50;
+    strategy._format_req_prob_3dw = 50;
+  }
+
+  else
+    error("Invalid Format Request Mode\n");
+
+
+  
+  // ******************************************************************
+  
+  // ******************************************************************
+  if (this._td_cpl_mode === e_random) {
+    
+    strategy._td_cpl_prob_true = this._td_cpl_prob_true;
+    strategy._td_cpl_prob_false = this._td_cpl_prob_false;
+  }
+
+  else if (this._td_cpl_mode === e_fixed) {
+
+    strategy._td_cpl_prob_true  = (this._td_cpl_fixed === e_true)  ? 100 : 0;
+    strategy._td_cpl_prob_false = (this._td_cpl_fixed === e_false) ? 100 : 0;
+  }
+   
+  else if (this._td_cpl_mode === e_random_all) {
+    
+    strategy._td_cpl_prob_true = 50;
+    strategy._td_cpl_prob_false = 50;
+  }
+
+  else
+    error("Invalid TD Completion Mode\n");
+  
+
+  
+  // ******************************************************************
+  
+  // ******************************************************************
+  if (this._ep_cpl_mode === e_random) {
+    
+    strategy._ep_cpl_prob_true = this._ep_cpl_prob_true;
+    strategy._ep_cpl_prob_false = this._ep_cpl_prob_false;
+  }
+
+  else if (this._ep_cpl_mode === e_fixed) {
+
+    strategy._ep_cpl_prob_true  = (this._ep_cpl_fixed === e_true)  ? 100 : 0;
+    strategy._ep_cpl_prob_false = (this._ep_cpl_fixed === e_false) ? 100 : 0;
+  }
+
+  else if (this._ep_cpl_mode === e_random_all) {
+    
+    strategy._ep_cpl_prob_true = 50;
+    strategy._ep_cpl_prob_false = 50;
+  }
+
+  else
+    error("Invalid EP Completion Mode\n");
+
+
+  
+  // ******************************************************************
+  
+  // ******************************************************************
+  if (this._len_mode === e_random) {
+
+    strategy._len_min = this._len_min;
+    strategy._len_max = this._len_max;
+  }
+
+  else if (this._len_mode === e_fixed) {
+
+    strategy._len_min = this._len_fixed;
+    strategy._len_max = this._len_fixed;      
+  }
+
+  else if (this._len_mode === e_random_all) {
+
+    strategy._len_min = 10'h_001;
+    strategy._len_max = 10'h_004;
+  }
+
+  else
+    error ("Invalid Length Mode\n");
+
+  
+  
+  // ******************************************************************
+  
+  // ******************************************************************
+  if (this._req_id_mode === e_random) {
+
+    strategy._req_id_min = this._req_id_min;
+    strategy._req_id_max = this._req_id_max;
+  }
+
+  else if (this._req_id_mode === e_fixed) {
+
+    strategy._req_id_min = this._req_id_fixed;
+    strategy._req_id_max = this._req_id_fixed;      
+  }
+
+  else if (this._req_id_mode === e_random_all) {
+
+    strategy._req_id_min = 16'h_0000;
+    strategy._req_id_max = 16'h_FFFF;
+  }
+
+  else
+    error ("Invalid Requestor ID Mode\n");
+
+
+  
+  // ******************************************************************
+  
+  // ******************************************************************
+  if (this._addr_lsb_mode === e_random) {
+
+    strategy._addr_lsb_min = this._addr_lsb_min;
+    strategy._addr_lsb_max = this._addr_lsb_max;
+  }
+
+  else if (this._addr_lsb_mode === e_fixed) {
+
+    strategy._addr_lsb_min = this._addr_lsb_fixed;
+    strategy._addr_lsb_max = this._addr_lsb_fixed;      
+  }
+
+  else if (this._addr_lsb_mode === e_random_all) {
+
+    strategy._addr_lsb_min = 32'h_0000_0000;
+    strategy._addr_lsb_max = 32'h_FFFF_FFFF;      
+  }
+
+  else
+    error ("Invalid Address Mode\n");
+
+
+  
+  // ******************************************************************
+  
+  // Enables.
+  // ******************************************************************
+  if (this._first_dwbe_mode === e_random) {
+
+    strategy._first_dwbe_min = this._first_dwbe_min;
+    strategy._first_dwbe_max = this._first_dwbe_max;
+  }
+
+  else if (this._first_dwbe_mode === e_fixed) {
+
+    strategy._first_dwbe_min = this._first_dwbe_fixed;
+    strategy._first_dwbe_max = this._first_dwbe_fixed;      
+  }
+
+  else if (this._first_dwbe_mode === e_random_all) {
+
+    strategy._first_dwbe_min = 4'h_0;
+    strategy._first_dwbe_max = 4'h_F;      
+  }
+
+  else
+    error ("Invalid First Double Word Byte Enable Mode\n");
+
+
+  
+  // ******************************************************************
+  
+  // Enables.
+  // ******************************************************************
+  if (this._last_dwbe_mode === e_random) {
+
+    strategy._last_dwbe_min = this._last_dwbe_min;
+    strategy._last_dwbe_max = this._last_dwbe_max;
+  }
+
+  else if (this._last_dwbe_mode === e_fixed) {
+
+    strategy._last_dwbe_min = this._last_dwbe_fixed;
+    strategy._last_dwbe_max = this._last_dwbe_fixed;      
+  }
+
+  else if (this._last_dwbe_mode === e_random_all) {
+
+    strategy._last_dwbe_min = 4'h_0;
+    strategy._last_dwbe_max = 4'h_F;      
+  }
+
+  else
+    error ("Invalid Last Double Word Byte Enable Mode\n");
+
+
+  
+  // ******************************************************************
+  
+  // ******************************************************************
+  if (this._cpl_id_mode === e_random) {
+
+    strategy._cpl_id_min = this._cpl_id_min;
+    strategy._cpl_id_max = this._cpl_id_max;
+  }
+
+  else if (this._cpl_id_mode === e_fixed) {
+
+    strategy._cpl_id_min = this._cpl_id_fixed;
+    strategy._cpl_id_max = this._cpl_id_fixed;      
+  }
+
+  else if (this._cpl_id_mode === e_random_all) {
+
+    strategy._cpl_id_min = 16'h_0000;
+    strategy._cpl_id_max = 16'h_FFFF;
+  }
+
+  else
+    error ("Invalid Completor ID Mode\n");
+
+
+  
+  // ******************************************************************
+  
+  // ******************************************************************
+  if (this._cpl_status_mode === e_random) {
+
+    strategy._cpl_status_prob_sc    = this._cpl_status_prob_sc;
+    strategy._cpl_status_prob_ur    = this._cpl_status_prob_ur;
+    strategy._cpl_status_prob_crs   = this._cpl_status_prob_crs;
+    strategy._cpl_status_prob_ca    = this._cpl_status_prob_ca;
+    strategy._cpl_status_prob_rsvd1 = this._cpl_status_prob_rsvd1;
+    strategy._cpl_status_prob_rsvd2 = this._cpl_status_prob_rsvd2;
+    strategy._cpl_status_prob_rsvd3 = this._cpl_status_prob_rsvd3;
+    strategy._cpl_status_prob_rsvd4 = this._cpl_status_prob_rsvd4;
+  }
+
+  else if (this._cpl_status_mode === e_fixed) {
+
+    strategy._cpl_status_prob_sc  =
+      (this._cpl_status_fixed === PEC_PCI__CPL_STATUS_SC) ? 1 : 0;
+    
+    strategy._cpl_status_prob_ur  =
+      (this._cpl_status_fixed === PEC_PCI__CPL_STATUS_UR) ? 1 : 0;
+    
+    strategy._cpl_status_prob_crs =
+      (this._cpl_status_fixed === PEC_PCI__CPL_STATUS_CRS) ? 1 : 0;
+    
+    strategy._cpl_status_prob_ca  =
+      (this._cpl_status_fixed === PEC_PCI__CPL_STATUS_CA) ? 1 : 0;
+
+    strategy._cpl_status_prob_rsvd1 =
+      (this._cpl_status_fixed === PEC_PCI__CPL_STATUS_RSVD1) ? 1 : 0;
+     
+    strategy._cpl_status_prob_rsvd2 =
+      (this._cpl_status_fixed === PEC_PCI__CPL_STATUS_RSVD2) ? 1 : 0;
+     
+    strategy._cpl_status_prob_rsvd3 =
+      (this._cpl_status_fixed === PEC_PCI__CPL_STATUS_RSVD3) ? 1 : 0;
+    
+    strategy._cpl_status_prob_rsvd4 = 
+      (this._cpl_status_fixed === PEC_PCI__CPL_STATUS_RSVD4) ? 1 : 0;
+  }
+
+  else if (this._cpl_status_mode === e_random_all) {
+
+    strategy._cpl_status_prob_sc    = 5;
+    strategy._cpl_status_prob_ur    = 1;
+    strategy._cpl_status_prob_crs   = 5;
+    strategy._cpl_status_prob_ca    = 5;
+    strategy._cpl_status_prob_rsvd1 = 1;
+    strategy._cpl_status_prob_rsvd2 = 1;
+    strategy._cpl_status_prob_rsvd3 = 1;
+    strategy._cpl_status_prob_rsvd4 = 1;
+  }
+    
+  else
+    error("Invalid Completion Status Mode\n");
+
+
+  
+  // ******************************************************************
+  
+  // ******************************************************************
+  if (this._bcm_mode === e_random) {
+    
+    strategy._bcm_prob_true = this._bcm_prob_true;
+    strategy._bcm_prob_false = this._bcm_prob_false;
+  }
+
+  else if (this._bcm_mode === e_fixed) {
+
+    strategy._bcm_prob_true  = (this._bcm_fixed === e_true)  ? 100 : 0;
+    strategy._bcm_prob_false = (this._bcm_fixed === e_false) ? 100 : 0;
+  }
+
+  else if (this._bcm_mode === e_random_all) {
+    
+    strategy._bcm_prob_true = 50;
+    strategy._bcm_prob_false = 50;
+  }
+    
+  else
+    error("Invalid Byte Count Modifier (BCM) Mode\n");
+
+  //Set Cfg or IO type since test can specify
+  strategy._type_req_prob_cfg0 = this._type_req_prob_cfg0;
+  strategy._type_req_prob_cfg1 = this._type_req_prob_cfg1;
+  strategy._type_req_prob_io = this._type_req_prob_io;
+
+
+  
+  FinalizeParms = strategy;
+}

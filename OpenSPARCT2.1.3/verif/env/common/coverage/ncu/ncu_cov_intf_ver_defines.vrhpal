@@ -1,0 +1,455 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ncu_cov_intf_ver_defines.vrhpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#define NCU_PER_REG 40'h8000003028
+#define PCX_PKT_LOAD	5'b00000
+#define PCX_LOAD_8BYTE 8'h3
+#define CPX_PKT_LOAD_RTN	4'b1000
+
+
+  //----------PCX-------------------
+  event ncu_pcx_sample_evnt_trig;
+  reg [31:0]	ncu_pcx_b2b;
+  reg [31:0]    ncu_pcx_stall_cnt;
+  reg [39:0]    ncu_pcx_add; 
+  reg [4:0]     ncu_pcx_type;
+  reg [5:0]     ncu_pcx_cpu;
+  reg [7:0]     ncu_pcx_size;
+  reg [1:0]    pcx_int_des_reg;
+  reg [63:0]    ncu_pcx_adata0_thr_reg;
+  reg [63:0]    ncu_pcx_adata1_thr_reg;
+  reg [63:0]    ncu_pcx_abusy_thr_reg;
+  reg [10:0]    pcx_int_clk_cnt;
+  reg [9:0]  	ncu_pcx_store_b2b=0;
+  reg [9:0]  	ncu_pcx_load_b2b=0;
+  reg [9:0]  	ncu_pcx_niu_b2b=0;
+  reg [9:0]  	ncu_pcx_ccu_b2b=0;
+  reg [9:0]  	ncu_pcx_mcu0_b2b=0;
+  reg [9:0]  	ncu_pcx_mcu1_b2b=0;
+  reg [9:0]  	ncu_pcx_mcu2_b2b=0;
+  reg [9:0]  	ncu_pcx_mcu3_b2b=0;
+  reg [9:0]  	ncu_pcx_tcu_b2b=0;
+  reg [9:0]  	ncu_pcx_dbg1_b2b=0;
+  reg [9:0]  	ncu_pcx_rst_b2b=0;
+  reg [9:0]  	ncu_pcx_ssi_b2b=0;
+  reg [9:0]  	ncu_pcx_dmu_b2b=0;
+  reg [9:0]  	ncu_pcx_pio_b2b=0;
+  reg [9:0]     ncu_pcx_pkt_gap_cnt=0;
+
+  //----------CPX-------------------
+  event cpx_sample_evnt_trig;
+  reg ncu_ccx_pkt_flag;
+  reg [3:0]      ncu_cpx_int_multi_pkt=0;
+  reg [31:0] 	ncu_cpx_b2b;
+  reg [3:0] 	ncu_cpx_type;
+  reg [1:0] 	ncu_cpx_err;
+  reg [7:0]	ncu_cpx_cpu;
+  reg [5:0]     ncu_cpx_cpu_thr_id;
+  reg [5:0]     ncu_cpx_int_vec;
+  reg [9:0]     ncu_cpx_req_to_gnt_cnt=0;
+
+  //----------SIU-------------------
+  event siu_sample_evnt_trig;
+  reg [31:0] 	ncu_siu_b2b;
+  reg 		ncu_siu_pio;
+  reg [5:0] 	ncu_siu_cpu;
+  reg [1:0] 	ncu_siu_bufid;
+  reg [3:0] 	ncu_siu_credid;
+  reg [5:0] 	ncu_siu_mondid;
+  reg [3:0] 	ncu_siu_err;
+  reg 		ncu_siu_type;
+  reg [7:0] siu_ncu_pkt_gap_cnt=0;
+  reg [7:0] ncu_siu_req_cnt=0;
+ 
+
+  //----------PIO-------------------
+  event pio_sample_evnt_trig;
+  reg 		ncu_pio_type;
+  reg [31:0] 	ncu_pio_b2b;
+  reg [3:0]	ncu_pio_credit;
+  reg [3:0]	ncu_pio_size;
+  reg [1:0]	ncu_pio_cmap;
+  reg [1:0]	ncu_pio_bufid;
+  reg [5:0]	ncu_pio_cpu;
+  reg [35:0]	ncu_pio_add;
+  reg [4:0]     ncu_pio_pkt_gap = 0;
+  reg [2:0]     ncu_pio_mmu;
+
+
+ //----------TCU->NCU-------------------
+ event tcu_ncu_sample_evnt_trig;
+ reg [31:0]    tcu_ncu_b2b;
+ reg [31:0]    ncu_tcu_stall_b2b;
+ reg [31:0]    tcu_ncu_vld_to_stall_cnt;
+ reg [31:0]    tcu_ncu_pkt_gap = 0;
+ reg [2:0]     tcu_ncu_size;
+ reg [1:0]     tcu_ncu_bufid;
+ reg [5:0]     tcu_ncu_cpuid;
+ reg [3:0]     tcu_ncu_type;
+ reg [8:0]     tcu_ncu_deviceid;
+ reg [5:0]     tcu_ncu_int_vec;
+ reg [7:0]     tcu_ncu_add;
+ //----------NCU->TCU-------------------
+ event ncu_tcu_sample_evnt_trig;
+ reg [31:0]    ncu_tcu_b2b;
+ reg [31:0]    tcu_ncu_stall_b2b;
+ reg [31:0]    ncu_tcu_vld_to_stall_cnt;
+ reg [31:0]    ncu_tcu_pkt_gap = 0;
+ reg [39:0]    ncu_tcu_add;
+ reg [2:0]     ncu_tcu_size;
+ reg [1:0]     ncu_tcu_bufid;
+ reg [5:0]     ncu_tcu_cpuid;
+ reg [3:0]     ncu_tcu_type;
+ //----------CCU->NCU-------------------
+ event ccu_ncu_sample_evnt_trig;
+ reg [31:0]    ccu_ncu_b2b;
+ reg [31:0]    ncu_ccu_stall_b2b;
+ reg [31:0]    ccu_ncu_vld_to_stall_cnt;
+ reg [31:0]    ccu_ncu_pkt_gap = 0;
+ reg [1:0]     ccu_ncu_bufid;
+ reg [5:0]     ccu_ncu_cpuid;
+ reg [3:0]     ccu_ncu_type;
+ reg [8:0]     ccu_ncu_deviceid;
+ reg [5:0]     ccu_ncu_int_vec;
+ reg [2:0]     ccu_ncu_size;
+ //----------NCU->CCU-------------------
+ event ncu_ccu_sample_evnt_trig;
+ reg [31:0]    ncu_ccu_b2b;
+ reg [31:0]    ccu_ncu_stall_b2b;
+ reg [31:0]    ncu_ccu_vld_to_stall_cnt;
+ reg [31:0]    ncu_ccu_pkt_gap = 0;
+ reg [39:0]    ncu_ccu_add;
+ reg [2:0]     ncu_ccu_size;
+ reg [1:0]     ncu_ccu_bufid;
+ reg [5:0]     ncu_ccu_cpuid;
+ reg [3:0]     ncu_ccu_type;
+ //----------DBG1->NCU-------------------
+ event dbg1_ncu_sample_evnt_trig;
+ reg [31:0]    dbg1_ncu_b2b;
+ reg [31:0]    ncu_dbg1_stall_b2b;
+ reg [31:0]    dbg1_ncu_vld_to_stall_cnt;
+ reg [31:0]    dbg1_ncu_pkt_gap = 0;
+ reg [1:0]     dbg1_ncu_bufid;
+ reg [5:0]     dbg1_ncu_cpuid;
+ reg [3:0]     dbg1_ncu_type;
+ reg [8:0]     dbg1_ncu_deviceid;
+ reg [5:0]     dbg1_ncu_int_vec;
+ reg [2:0]     dbg1_ncu_size;
+
+ //----------NCU->DBG1-------------------
+ event ncu_dbg1_sample_evnt_trig;
+ reg [31:0]    ncu_dbg1_b2b;
+ reg [31:0]    dbg1_ncu_stall_b2b;
+ reg [31:0]    ncu_dbg1_vld_to_stall_cnt;
+ reg [31:0]    ncu_dbg1_pkt_gap = 0;
+ reg [39:0]    ncu_dbg1_add;
+ reg [2:0]     ncu_dbg1_size;
+ reg [1:0]     ncu_dbg1_bufid;
+ reg [5:0]     ncu_dbg1_cpuid;
+ reg [3:0]     ncu_dbg1_type;
+
+ //----------RST->NCU-------------------
+ event rst_ncu_sample_evnt_trig;
+ reg [31:0]    rst_ncu_b2b;
+ reg [31:0]    ncu_rst_stall_b2b;
+ reg [31:0]    rst_ncu_vld_to_stall_cnt;
+ reg [31:0]    rst_ncu_pkt_gap = 0;
+ reg [1:0]     rst_ncu_bufid;
+ reg [5:0]     rst_ncu_cpuid;
+ reg [3:0]     rst_ncu_type;
+ reg [8:0]     rst_ncu_deviceid;
+ reg [5:0]     rst_ncu_int_vec;
+ reg [2:0]     rst_ncu_size;
+
+ //----------NCU->RST-------------------
+ event ncu_rst_sample_evnt_trig;
+ reg [31:0]    ncu_rst_b2b;
+ reg [31:0]    rst_ncu_stall_b2b;
+ reg [31:0]    ncu_rst_vld_to_stall_cnt;
+ reg [31:0]    ncu_rst_pkt_gap = 0;
+ reg [39:0]    ncu_rst_add;
+ reg [2:0]     ncu_rst_size;
+ reg [1:0]     ncu_rst_bufid;
+ reg [5:0]     ncu_rst_cpuid;
+ reg [3:0]     ncu_rst_type;
+
+ //----------SSI->NCU-------------------
+ event ssi_ncu_sample_evnt_trig;
+ reg [31:0]    ssi_ncu_b2b;
+ reg [31:0]    ncu_ssi_stall_b2b;
+ reg [31:0]    ssi_ncu_vld_to_stall_cnt;
+ reg [31:0]    ssi_ncu_pkt_gap = 0;
+ reg [2:0]     ssi_ncu_size;
+ reg [1:0]     ssi_ncu_bufid;
+ reg [5:0]     ssi_ncu_cpuid;
+ reg [3:0]     ssi_ncu_type;
+ reg [8:0]     ssi_ncu_deviceid;
+ reg [5:0]     ssi_ncu_int_vec;
+
+ //----------NCU->SSI-------------------
+ event ncu_ssi_sample_evnt_trig;
+ reg [31:0]    ncu_ssi_b2b;
+ reg [31:0]    ssi_ncu_stall_b2b;
+ reg [31:0]    ncu_ssi_vld_to_stall_cnt;
+ reg [31:0]    ncu_ssi_pkt_gap = 0;
+ reg [39:0]    ncu_ssi_add;
+ reg [2:0]     ncu_ssi_size;
+ reg [1:0]     ncu_ssi_bufid;
+ reg [5:0]     ncu_ssi_cpuid;
+ reg [3:0]     ncu_ssi_type;
+
+ //----------MCU0->NCU-------------------
+ event mcu0_ncu_sample_evnt_trig;
+ reg [31:0]    mcu0_ncu_b2b;
+ reg [31:0]    ncu_mcu0_stall_b2b;
+ reg [31:0]    mcu0_ncu_vld_to_stall_cnt;
+ reg [31:0]    mcu0_ncu_pkt_gap = 0;
+ reg [1:0]     mcu0_ncu_bufid;
+ reg [5:0]     mcu0_ncu_cpuid;
+ reg [3:0]     mcu0_ncu_type;
+ reg [8:0]     mcu0_ncu_deviceid;
+ reg [5:0]     mcu0_ncu_int_vec;
+ reg [2:0]     mcu0_ncu_size;
+ //----------NCU->MCU0-------------------
+ event ncu_mcu0_sample_evnt_trig;
+ reg [31:0]    ncu_mcu0_b2b;
+ reg [31:0]    mcu0_ncu_stall_b2b;
+ reg [31:0]    ncu_mcu0_vld_to_stall_cnt;
+ reg [31:0]    ncu_mcu0_pkt_gap = 0;
+ reg [39:0]    ncu_mcu0_add;
+ reg [2:0]     ncu_mcu0_size;
+ reg [1:0]     ncu_mcu0_bufid;
+ reg [5:0]     ncu_mcu0_cpuid;
+ reg [3:0]     ncu_mcu0_type;
+ //----------MCU1->NCU-------------------
+ event mcu1_ncu_sample_evnt_trig;
+ reg [31:0]    mcu1_ncu_b2b;
+ reg [31:0]    ncu_mcu1_stall_b2b;
+ reg [31:0]    mcu1_ncu_vld_to_stall_cnt;
+ reg [31:0]    mcu1_ncu_pkt_gap = 0;
+ reg [1:0]     mcu1_ncu_bufid;
+ reg [5:0]     mcu1_ncu_cpuid;
+ reg [3:0]     mcu1_ncu_type;
+ reg [8:0]     mcu1_ncu_deviceid;
+ reg [5:0]     mcu1_ncu_int_vec;
+ reg [2:0]     mcu1_ncu_size;
+ //----------NCU->MCU1-------------------
+ event ncu_mcu1_sample_evnt_trig;
+ reg [31:0]    ncu_mcu1_b2b;
+ reg [31:0]    mcu1_ncu_stall_b2b;
+ reg [31:0]    ncu_mcu1_vld_to_stall_cnt;
+ reg [31:0]    ncu_mcu1_pkt_gap = 0;
+ reg [39:0]    ncu_mcu1_add;
+ reg [2:0]     ncu_mcu1_size;
+ reg [1:0]     ncu_mcu1_bufid;
+ reg [5:0]     ncu_mcu1_cpuid;
+ reg [3:0]     ncu_mcu1_type;
+ //----------MCU2->NCU-------------------
+ event mcu2_ncu_sample_evnt_trig;
+ reg [31:0]    mcu2_ncu_b2b;
+ reg [31:0]    ncu_mcu2_stall_b2b;
+ reg [31:0]    mcu2_ncu_vld_to_stall_cnt;
+ reg [31:0]    mcu2_ncu_pkt_gap = 0;
+ reg [1:0]     mcu2_ncu_bufid;
+ reg [5:0]     mcu2_ncu_cpuid;
+ reg [3:0]     mcu2_ncu_type;
+ reg [8:0]     mcu2_ncu_deviceid;
+ reg [5:0]     mcu2_ncu_int_vec;
+ reg [2:0]     mcu2_ncu_size;
+ //----------NCU->MCU2-------------------
+ event ncu_mcu2_sample_evnt_trig;
+ reg [31:0]    ncu_mcu2_b2b;
+ reg [31:0]    mcu2_ncu_stall_b2b;
+ reg [31:0]    ncu_mcu2_vld_to_stall_cnt;
+ reg [31:0]    ncu_mcu2_pkt_gap = 0;
+ reg [39:0]    ncu_mcu2_add;
+ reg [2:0]     ncu_mcu2_size;
+ reg [1:0]     ncu_mcu2_bufid;
+ reg [5:0]     ncu_mcu2_cpuid;
+ reg [3:0]     ncu_mcu2_type;
+ //----------MCU3->NCU-------------------
+ event mcu3_ncu_sample_evnt_trig;
+ reg [31:0]    mcu3_ncu_b2b;
+ reg [31:0]    ncu_mcu3_stall_b2b;
+ reg [31:0]    mcu3_ncu_vld_to_stall_cnt;
+ reg [31:0]    mcu3_ncu_pkt_gap = 0;
+ reg [1:0]     mcu3_ncu_bufid;
+ reg [5:0]     mcu3_ncu_cpuid;
+ reg [3:0]     mcu3_ncu_type;
+ reg [8:0]     mcu3_ncu_deviceid;
+ reg [5:0]     mcu3_ncu_int_vec;
+ reg [2:0]     mcu3_ncu_size;
+ //----------NCU->MCU3-------------------
+ event ncu_mcu3_sample_evnt_trig;
+ reg [31:0]    ncu_mcu3_b2b;
+ reg [31:0]    mcu3_ncu_stall_b2b;
+ reg [31:0]    ncu_mcu3_vld_to_stall_cnt;
+ reg [31:0]    ncu_mcu3_pkt_gap = 0;
+ reg [39:0]    ncu_mcu3_add;
+ reg [2:0]     ncu_mcu3_size;
+ reg [1:0]     ncu_mcu3_bufid;
+ reg [5:0]     ncu_mcu3_cpuid;
+ reg [3:0]     ncu_mcu3_type;
+ //----------NIU->NCU-------------------
+ event niu_ncu_sample_evnt_trig;
+ reg [31:0]    niu_ncu_b2b;
+ reg [31:0]    ncu_niu_stall_b2b;
+ reg [31:0]    niu_ncu_vld_to_stall_cnt;
+ reg [31:0]    niu_ncu_pkt_gap = 0;
+ reg [1:0]     niu_ncu_bufid;
+ reg [5:0]     niu_ncu_cpuid;
+ reg [3:0]     niu_ncu_type;
+ reg [8:0]     niu_ncu_deviceid;
+ reg [5:0]     niu_ncu_int_vec;
+ reg [4:0]     niu_ncu_int_des_reg;
+ reg [2:0]     niu_ncu_size;
+ //----------NCU->NIU-------------------
+ event ncu_niu_sample_evnt_trig;
+ reg [31:0]    ncu_niu_b2b;
+ reg [31:0]    niu_ncu_stall_b2b;
+ reg [31:0]    ncu_niu_vld_to_stall_cnt;
+ reg [31:0]    ncu_niu_pkt_gap = 0;
+ reg [39:0]    ncu_niu_add;
+ reg [2:0]     ncu_niu_size;
+ reg [1:0]     ncu_niu_bufid;
+ reg [5:0]     ncu_niu_cpuid;
+ reg [3:0]     ncu_niu_type;
+ //----------DMU->NCU-------------------
+ event dmu_ncu_sample_evnt_trig;
+ reg [31:0]    dmu_ncu_b2b;
+ reg [31:0]    dmu_ncu_stall_b2b;
+ reg [31:0]    dmu_ncu_vld_to_stall_cnt;
+ reg [31:0]    dmu_ncu_pkt_gap = 0;
+ reg [1:0]     dmu_ncu_bufid;
+ reg [5:0]     dmu_ncu_cpuid;
+ reg [3:0]     dmu_ncu_type;
+ reg [8:0]     dmu_ncu_deviceid;
+ reg [5:0]     dmu_ncu_int_vec;
+ reg [2:0]     dmu_ncu_size;
+ //----------NCU->DMU-------------------
+ event ncu_dmu_sample_evnt_trig;
+ reg [31:0]    ncu_dmu_b2b;
+ reg [31:0]    ncu_dmu_stall_b2b;
+ reg [31:0]    ncu_dmu_vld_to_stall_cnt;
+ reg [31:0]    ncu_dmu_pkt_gap = 0;
+ reg [39:0]    ncu_dmu_add;
+ reg [2:0]     ncu_dmu_size;
+ reg [1:0]     ncu_dmu_bufid;
+ reg [5:0]     ncu_dmu_cpuid;
+ reg [3:0]     ncu_dmu_type;
+
+//--------- NCU_RAS-------------------
+ event ncu_soc_report_sample_evnt_trig;
+ reg [7:0] mcu_err;
+ reg [2:0] mcu_err_b2b;
+ reg [2:0] niu_err;
+ reg [2:0] niu_err_b2b;
+ reg [10:0] siu_err;
+ reg [10:0] siu_err_b2b;
+ reg [5:0] dmu_err;
+ reg [5:0] dmu_err_b2b;
+ reg [7:0] mcu_erri;
+ reg [2:0] niu_erri;
+ reg [10:0] siu_erri;
+ reg [5:0] dmu_erri;
+ reg [37:0] ncu_soc_err;
+ reg [1:0] ncu_ctag_ce;
+ reg [1:0] ncu_ctag_ue;
+ reg [1:0] ncu_data_pe;
+ reg [1:0] ncu_int_tb_pe;
+ reg ncu_ras_esr_err_cnt_flag = 0;
+ reg [5:0] ncu_ras_esr_err_cnt = 0;
+ reg [5:0] mcu_err_cnt = 0;
+ reg [5:0] niu_err_cnt = 0;
+ reg [42:0] raserr_in_ele_off;
+ reg [42:0] raserr_in_eie_off;
+ reg [42:0] raserr_in_fee_off;
+ reg [20:0]  multi_err_sign_reg = 0;
+ reg  ras_tran_syn = 0; 
+
+//------- ADVINCE INT ---------------
+reg    	    spc_int_flag = 0;
+reg [3:0]   spc_niu_int_skew = 4'hf;
+reg [3:0]   spc_ssi_int_skew = 4'hf;
+reg [3:0]   spc_siu_int_skew = 4'hf;
+
+reg    	    niu_int_flag = 0;
+reg [3:0]   niu_spc_int_skew = 4'hf;
+reg [3:0]   niu_ssi_int_skew = 4'hf;
+reg [3:0]   niu_siu_int_skew = 4'hf;
+
+reg    	    ssi_int_flag = 0;
+reg [3:0]   ssi_niu_int_skew = 4'hf;
+reg [3:0]   ssi_siu_int_skew = 4'hf;
+reg [3:0]   ssi_spc_int_skew = 4'hf;
+
+reg    	    siu_int_flag = 0;
+reg [3:0]   siu_ssi_int_skew = 4'hf;
+reg [3:0]   siu_niu_int_skew = 4'hf;
+reg [3:0]   siu_spc_int_skew = 4'hf;
+
+reg [2:0]   niu_siu_ssi = 0;
+reg [2:0]   siu_ssi_spc = 0;
+reg [2:0]   ssi_spc_niu = 0;
+reg [2:0]   spc_niu_siu = 0;
+
+reg [3:0] mondo_wait_id_reg_cov0;
+reg [3:0] mondo_wait_id_reg_cov1;
+reg [3:0] mondo_wait_id_reg_cov2;
+reg [3:0] mondo_wait_id_reg_cov3;
+event  mondo_wait_id_reg_cov_trig;
+reg mondo_ack_nack_cov_flag = 0;
+
+//-------------- SPC --------------
+
+reg [7:0] ncu_spc_core_enable_status;
+reg [7:0] ncu_spc_core_available;
+reg [63:0] ncu_spc_core_running;
+reg [63:0] spc_ncu_core_running_status;
+reg [4:0] ncu_spc_ba;
+reg [4:0] ncu_sii_ba;
+reg [4:0] ncu_l2t_ba;
+reg [4:0] ncu_mcu_ba;
+
+//-------------- EFU --------------
+event efu_ncu_evnt_trig;
+reg [5:0] efu_ncu_intf_hit;
+reg [63:0] efu_ncu_sernum0 = 0;
+reg [63:0] efu_ncu_sernum1 = 0;
+reg [63:0] efu_ncu_sernum2 = 0;
+reg [63:0] efu_ncu_coreaval = 0;
+reg [63:0] efu_ncu_bankaval = 0;
+reg [63:0] efu_ncu_efustat = 0;
+
+reg ncu_io_sample_flag = 0;

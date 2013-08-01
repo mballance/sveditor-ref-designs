@@ -1,0 +1,242 @@
+# ========== Copyright Header Begin ==========================================
+# 
+# OpenSPARC T2 Processor File: Makefile.defs
+# Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+# 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+#
+# * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+#
+# For the avoidance of doubt, and except that if any non-GPL license 
+# choice is available it will apply instead, Sun elects to use only 
+# the General Public License version 2 (GPLv2) at this time for any 
+# software where a choice of GPL license versions is made 
+# available with the language indicating that GPLv2 or any later version 
+# may be used, or where a choice of which version of the GPL is applied is 
+# otherwise unspecified. 
+#
+# Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+# CA 95054 USA or visit www.sun.com if you need additional information or 
+# have any questions. 
+# 
+# ========== Copyright Header End ============================================
+# -*-Makefile-*-  tell emacs what mode to use
+
+# This make file is to be included by all the makefiles for 
+# each sub modules. This should not be edited unless it is absolutely
+# necessary. 
+
+grp_dir = $(DV_ROOT)/verif/env/fnx
+
+#-------------------------------------------------------------------------------
+# If you want to see the entire build process define `verbose_make' like so:
+# verbose_make = 1
+#-------------------------------------------------------------------------------
+
+SPEW_START	= @$(echo) "----------------- Building $(lib)/$(@F) -----------------"
+SPEW_END	= @$(echo) "----------------- Done $(lib)/$(@F) ------------------\n"
+
+#-------------------------------------------------------------------------------
+# Select tool versions, set _HOME variables as required
+#-------------------------------------------------------------------------------
+
+export csrtool		 = csrtool
+export vera		 = vera
+
+#export cc  = /net/suntools/export/tools/sparc/bin/gcc
+#export cpp = /net/suntools/export/tools/sparc/bin/g++
+#export ld  = /net/suntools/export/tools/sparc/bin/g++
+export cc  = gcc
+export cpp = g++
+export ld  = g++
+export gcc = gcc
+export ar  = /usr/ccs/bin/ar
+#VCS_HOME   = /import/vcs-release/vcs$(shell configsrch vcs $(TRE_ENTRY))
+#VERA_HOME  = /import/vcs-release/vera,$(shell configsrch vera $(TRE_ENTRY))/5.x
+#denali_dir = /net/inandout/export/home2/corpcad/tools/commercial/denali/v14/denali
+#denali_dir = /net/cadcombo1/export/home3/corpcad/tools/commercial/denali/pcie,v1.0_23
+#denali_dir = /import/cadist/pkgs/denali/pcie,v1.0_23/5.x
+denali_dir = $(DENALI)
+
+RM         = /bin/rm -f
+cp         = /bin/cp
+
+#-------------------------------------------------------------------------------
+# Perl scripts and other executables.  Define the complete path so everyone
+# uses the same versions.  Bsub and lsmake are left alone since they are
+# links through mwtool.  SHELL defaults to the right thing (/bin/sh).
+#-------------------------------------------------------------------------------
+
+export basename		 = /bin/basename
+export bsub		 = /import/camelot/exe/csub
+export cat		 = /bin/cat
+export CC		 = cc
+export chmod		 = /bin/chmod -f
+export echo		 = /bin/echo
+export egrep		 = /usr/xpg4/bin/egrep
+export find		 = /usr/bin/find
+export gzip		 = /usr/dist/exe/gzip # ENV{GZIP} is used by the gzip program. be careful
+export link		 = ln -sf
+export mkdir		 = /usr/bin/mkdir
+export rm		 = $(RM)
+export sed		 = /bin/sed
+export tee		 = /bin/tee
+export test		 = /bin/test
+export touch		 = /usr/bin/touch
+export tr		 = /usr/ucb/tr
+export zgrep		 = /usr/dist/exe/zgrep
+
+sh_it = /bin/sh
+perl_path = $(DV_ROOT)/tools/perl-5.8.0/bin/perl
+check_regression	 = $(perl_path) $(grp_tools_bin_dir)/check_regression.pl
+no_comment		 = $(sh_it) $(grp_tools_bin_dir)/no_comment.pl
+pass_or_fail		 = $(grp_tools_bin_dir)/pass_or_fail.pl
+regman_waitfor		 = $(sh_it) $(grp_tools_bin_dir)/regman-waitfor
+runsim_aid		 = $(grp_tools_bin_dir)/runsim_aid.pl
+export make_lib_depends	 = $(perl_path) $(grp_tools_bin_dir)/make_lib_depends3.pl
+
+gen_csr_input		 = $(grp_tools_bin_dir)/gen_csr_input.pl
+fix_csr_output		 = $(grp_tools_bin_dir)/fix_csr_output.pl
+vrhfix			 = $(sh_it) $(grp_tools_bin_dir)/vrhfix.pl
+export reggie		 = $(grp_dir)/runsim/reggie/reggie.pl
+register_logfile	 = register-logfile
+
+#----------------------------------------------------------------
+# Useful variables for dump task generation and runtime dump generation
+#----------------------------------------------------------------
+dump_vh_template	 = $(grp_tools_inc_dir)/dump_vh_template.vh
+create_dump_vsrc	 = $(sed) -e 's/_this_here_dut_/$(dump_scope)/g' \
+		-e 's/_powertheater_dut_/$(powertheater_dut)/g' \
+		$(dump_vh_template) > $(@)
+dump_vsrc		 = dump.v
+default_dump_levels	 = 0
+
+
+#------------------------------------------------------------------------------
+# directory variables controlling simulator build directories
+#------------------------------------------------------------------------------
+# Utility function that can add a prefix selectively to a list of
+# files in order to make them absolute
+make_absolute = $(filter /%,$(1)) $(addprefix $(2)/,$(filter-out /%,$(1)))
+
+testbench_home_dir		= $(shell pwd)
+dconf				= rtl
+sim_type			= plain
+results				= .
+
+# Absolute path for build directory
+abs_build_dir			= $(testbench_home_dir)/$(build_dir)
+
+#-------------------------------------------------------------------------------
+# Project Level Timestamp Definitions
+#-------------------------------------------------------------------------------
+proj_timestamps = $(proj_report_timestamp) $(proj_csr_timestamp)
+
+export proj_report_timestamp = $(proj_verif_common_vlib_dir)/report/report_timestamp
+proj_csr_timestamp = $(addsuffix /csr_timestamp, $(csrtool_list))
+
+
+#-------------------------------------------------------------------------------
+# common directory variabes, group
+#-------------------------------------------------------------------------------
+#runsim_dir			= $(grp_dir)/tools/runsim
+#export grp_tools_bin_dir	= $(grp_dir)/tools/runsim/bin
+#grp_tools_inc_dir		= $(grp_dir)/tools/runsim/include
+#grp_tools_lib_dir		= $(grp_dir)/tools/runsim/lib
+#export grp_tools_src_dir	= $(grp_dir)/tools/runsim/pli_src
+#grp_vsrc_common_dir		= $(grp_dir)/rtl/common
+#grp_bfm_dir			= $(grp_dir)/verif/bfm
+#export grp_verif_common_dir	= $(grp_dir)/verif/common
+
+#vlsi_dir			= /vobs/vlsi
+#export grp_vlib_dir		= $(vlsi_dir)/ops/verif/vlib
+
+runsim_dir			= $(grp_dir)/runsim
+export grp_tools_bin_dir	= $(grp_dir)/runsim/bin
+grp_tools_inc_dir		= $(grp_dir)/runsim/include
+grp_tools_lib_dir		= $(grp_dir)/runsim/lib
+export grp_tools_src_dir	= $(grp_dir)/runsim/pli_src
+#grp_vsrc_common_dir		= $(grp_dir)/rtl/common
+#grp_bfm_dir			= $(grp_dir)/verif/bfm
+#export grp_verif_common_dir	= $(grp_dir)/verif/common
+
+#vlsi_dir			= /vobs/vlsi
+#export grp_vlib_dir		= $(vlsi_dir)/ops/verif/vlib
+
+#------------------------------------------------------------------------------
+# common directory variabes, project
+#------------------------------------------------------------------------------
+
+# csrtool includes are needed by both design and verif code
+proj_common_inc_dir      	= $(csrtool_vsrc_incdir)
+
+proj_design_src_dir	   	= $(project_dir)/design
+proj_design_common_src_dir 	= 
+proj_design_common_inc_dir	=
+proj_design_wrapper_src_dir	= $(proj_design_src_dir)/wrappers
+proj_design_generated_src_dir   = $(proj_design_src_dir)/generated
+proj_design_interface_src_dir   = $(proj_design_src_dir)/interface
+
+proj_verif_src_dir		= $(project_dir)/verif
+proj_bfm_dir			= $(proj_verif_src_dir)/bfm
+proj_verif_common_dir		= $(proj_verif_src_dir)/common
+
+proj_tools_dir			= $(project_dir)/ops/tools
+export proj_vlib_dir		= $(project_dir)/ops/verif/vlib
+
+# Some variables needed by report tool, using HESE naming conventions
+# (proj/asic instead of grp/proj).
+export proj_tools_src_dir	= $(grp_tools_src_dir)
+export proj_verif_common_vlib_dir = $(grp_vlib_dir)
+export proj_verif_common_clib_dir = $(vlsi_dir)/ops/verif/clib
+export proj_design_common_dir	= $(vlsi_dir)/ops/rtl
+
+#-------------------------------------------------------------------------------
+# Project level libvrl files.  You will have to add a target to build these
+# unless they are built via the `timestamps'.
+#-------------------------------------------------------------------------------
+proj_libvrl			= $(proj_report_libvrl)
+proj_lib_dir_list		= $(proj_report_lib_dir)
+
+
+#------------------------------------------------------------------------------
+# This is stuff that must be included across all builds for this project
+# (like top level defines and such.)  These are verilog source that are not
+# explicitly included in design makefile.includes andn that will not be
+# found when searching libraries.  (e.g. addr.vh, itool_defines.vh)
+proj_design_common_vsrc		= $(proj_report_include)
+#----------------------------------------------------------------------------
+#----------------------------------------------------------------------------
+# Make the `force' dependency work
+#----------------------------------------------------------------------------
+.PHONY:	force
+force : 
+
+#----------------------------------------------------------------
+# Don't mess with NULLSTRING or SPACE.  These enable insertion of spaces
+# (ascii 0x20) into macro definitions.  The space between `$(NULLSTRING)'
+# and the `#' in the SPACE definition is the actual value of the SPACE
+# macro.
+NULLSTRING :=
+SPACE := $(NULLSTRING) # keep that space.
+
+# What time is it?
+_HOUR = "%H"
+_MIN  = "%M"
+_SEC  = "%S"
+_FORMAT = "%Y%h%d."$(_HOUR)$(_MIN)$(_SEC)
+NOW := $(shell /usr/bin/date +"$(_FORMAT)")
+
+#============================= The End =================================

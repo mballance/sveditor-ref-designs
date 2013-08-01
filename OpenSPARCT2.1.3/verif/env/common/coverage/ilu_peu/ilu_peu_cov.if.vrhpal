@@ -1,0 +1,647 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ilu_peu_cov.if.vrhpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#ifndef __ILU_PEU_COV_IF_VRH__
+#define __ILU_PEU_COV_IF_VRH__
+
+#include <vera_defines.vrh>
+
+#define INPUT_EDGE   PSAMPLE
+#define INPUT_SKEW   #-1
+
+// define PEU	tb_top.cpu.peu
+#define ILU	tb_top.cpu.dmu.ilu
+// #define PSR	tb_top.cpu.psr
+// #define PEU_REGISTERS tb_top.cpu.peu.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp
+
+
+
+interface dmu_ilu_coverage_ifc
+{
+  //------------------------------------------------------------------------
+  //  Clock and Reset Signals
+  //------------------------------------------------------------------------
+  // input       cmp_diag_done   PSAMPLE;
+  // input	      ilu_clk         CLOCK			verilog_node "`ILU.l1clk";// inputclock 375 MHz
+ //  input	      ilu_clk         CLOCK			verilog_node "iol2clk";// inputclock 375 MHz
+ //  input	      iol2clk         CLOCK;			
+  // input	      ilu_clk         CLOCK;		// 	verilog_node "iol2clk";// inputclock 375 MHz
+  // input	      ilu_clk         CLOCK 	verilog_node "`TOP.cpu.dmu.iol2clk";// inputclock 375 MHz
+  input	      ilu_clk         CLOCK 	verilog_node "tb_top.cpu.dmu.iol2clk";// inputclock 375 MHz
+  
+  // input      peu_clk         INPUT_EDGE INPUT_SKEW     verilog_node "`PEU.pc_clk"; 
+  input	        j2d_por_l       INPUT_EDGE INPUT_SKEW	verilog_node "`PEU.rst_por_";
+  input	        j2d_rst_l       INPUT_EDGE INPUT_SKEW	verilog_node "`PEU.rst_wmr_";
+//   input	[15:0]  d2p_req_id      INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.d2p_req_id";
+//  input [15:0]  d2p_req_id      INPUT_EDGE INPUT_SKEW	verilog_node "`PEU.d2p_req_id"; 
+  input [2:0]  d2p_req_id_1     INPUT_EDGE INPUT_SKEW	verilog_node "tb_top.cpu.dmu.d2p_req_id[2:0]"; 
+  input [4:0]  d2p_req_id_2     INPUT_EDGE INPUT_SKEW	verilog_node "tb_top.cpu.dmu.d2p_req_id[7:3]"; 
+  input [7:0]  d2p_req_id_3     INPUT_EDGE INPUT_SKEW	verilog_node "tb_top.cpu.dmu.d2p_req_id[15:8]"; 
+
+  //------------------------------------------------------------------------
+  //   data path -
+  //     note: k2y_buf_addr_vld_monitor & y2k_buf_addr_vld_monitor are added 
+  //           for the use in DMU-ILU monitor only
+  //------------------------------------------------------------------------
+  input	k2y_buf_addr_vld_monitor    INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.k2y_buf_addr_vld_monitor";
+  input [7:0]        k2y_buf_addr   INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.k2y_buf_addr";// read pointer to IDB
+  input  [127:0]      y2k_buf_data   INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_buf_data";// 16-byte data    
+  input  [3:0]        y2k_buf_dpar   INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_buf_dpar";// data parity
+  input	y2k_buf_addr_vld_monitor    INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_buf_addr_vld_monitor";
+  input  [7:0]        y2k_buf_addr   INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_buf_addr";// read address to DOU
+  input [127:0]      k2y_buf_data   INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.k2y_buf_data";// payload
+  input [3:0]        k2y_buf_dpar   INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.k2y_buf_dpar";// word parity for the payload
+
+  //------------------------------------------------------------------------
+  //   record interface to TMU
+  //------------------------------------------------------------------------
+  input              k2y_rcd_deq     INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.k2y_rcd_deq";// ingress record fifo dequeue
+  //DMU is 116 bits wide so add 10'b0 to LSB when hooking up to DMUXtr in ilu_peu_top.vcon
+  // input  [125:0]      y2k_rcd         INPUT_EDGE INPUT_SKEW	verilog_node "{`ILU.y2k_rcd,10'h0}";// ingress PEC record
+  input  [115:0]      y2k_rcd         INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_rcd";// ingress PEC record
+  input		      y2k_rcd_enq     INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_rcd_enq";// ingress PEC record enqueue
+  // input [125:0]      k2y_rcd         INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.k2y_rcd";// egress PEC rcd
+  input [123:0]      k2y_rcd         INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.k2y_rcd";// egress PEC rcd
+  input              k2y_rcd_enq     INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.k2y_rcd_enq";// egress enqueue for PEC rcd
+  input		      y2k_rcd_deq     INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_rcd_deq";// egress rcd fifo dequeue 
+  
+  //------------------------------------------------------------------------
+  //   release interface with TMU
+  //------------------------------------------------------------------------
+  input [8:0]        k2y_rel_rcd     INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.k2y_rel_rcd";// ingress 1 PCIE FC data credit (16-byte data) w/ d_ptr
+  input              k2y_rel_enq     INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.k2y_rel_enq";     // ingress enqueue for release record
+  input  [8:0]        y2k_rel_rcd     INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_rel_rcd";// egress release rcd
+  input		      y2k_rel_enq     INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_rel_enq";// egress enqueue for release rcd
+  
+  //------------------------------------------------------------------------
+  //   DOU DMA Rd Cpl Buffer status rcd interface with CLU
+  //------------------------------------------------------------------------
+  input [4:0]        k2y_dou_dptr    INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.k2y_dou_dptr";
+  input	      k2y_dou_err     INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.k2y_dou_err";
+  input	      k2y_dou_vld     INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.k2y_dou_vld";
+
+  //------------------------------------------------------------------------
+  input	      ccu_serdes_dtm  INPUT_EDGE INPUT_SKEW	verilog_node "tb_top.cpu.dmu.ccu_serdes_dtm";
+//  INput [1:0] dmu_psr_rate_scale_rx_b0sds0       INPUT_EDGE INPUT_SKEW verilog_node "`PSR.dmu_psr_rate_scale_rx_b0sds0[1:0]"; 	
+  input [1:0] dmu_psr_rate_scale_rx_b0sds0       INPUT_EDGE INPUT_SKEW verilog_node "tb_top.cpu.psr.dmu_psr_rate_scale_rx_b0sds0[1:0]"; 	
+  input [1:0] dmu_psr_rate_scale_rx_b0sds1       INPUT_EDGE INPUT_SKEW verilog_node "tb_top.cpu.psr.dmu_psr_rate_scale_rx_b0sds1[1:0]"; 	
+  input	[1:0] dmu_psr_rate_scale_rx_b1sds0       INPUT_EDGE INPUT_SKEW verilog_node "tb_top.cpu.psr.dmu_psr_rate_scale_rx_b1sds0[1:0]"; 	
+  input [1:0] dmu_psr_rate_scale_rx_b1sds1       INPUT_EDGE INPUT_SKEW verilog_node "tb_top.cpu.psr.dmu_psr_rate_scale_rx_b1sds1[1:0]"; 	
+  input [1:0] dmu_psr_rate_scale_rx_b2sds0       INPUT_EDGE INPUT_SKEW verilog_node "tb_top.cpu.psr.dmu_psr_rate_scale_rx_b2sds0[1:0]"; 	
+  input [1:0] dmu_psr_rate_scale_rx_b2sds1       INPUT_EDGE INPUT_SKEW verilog_node "tb_top.cpu.psr.dmu_psr_rate_scale_rx_b2sds1[1:0]"; 	
+  input [1:0] dmu_psr_rate_scale_rx_b3sds0       INPUT_EDGE INPUT_SKEW verilog_node "tb_top.cpu.psr.dmu_psr_rate_scale_rx_b3sds0[1:0]"; 	
+  input [1:0] dmu_psr_rate_scale_rx_b3sds1       INPUT_EDGE INPUT_SKEW verilog_node "tb_top.cpu.psr.dmu_psr_rate_scale_rx_b3sds1[1:0]"; 	
+  input [1:0] dmu_psr_rate_scale_tx_b0sds0       INPUT_EDGE INPUT_SKEW verilog_node "tb_top.cpu.psr.dmu_psr_rate_scale_tx_b0sds0[1:0]"; 	
+  input [1:0] dmu_psr_rate_scale_tx_b0sds1       INPUT_EDGE INPUT_SKEW verilog_node "tb_top.cpu.psr.dmu_psr_rate_scale_tx_b0sds1[1:0]"; 	
+  input	[1:0] dmu_psr_rate_scale_tx_b1sds0       INPUT_EDGE INPUT_SKEW verilog_node "tb_top.cpu.psr.dmu_psr_rate_scale_tx_b1sds0[1:0]"; 	
+  input [1:0] dmu_psr_rate_scale_tx_b1sds1       INPUT_EDGE INPUT_SKEW verilog_node "tb_top.cpu.psr.dmu_psr_rate_scale_tx_b1sds1[1:0]"; 	
+  input [1:0] dmu_psr_rate_scale_tx_b2sds0       INPUT_EDGE INPUT_SKEW verilog_node "tb_top.cpu.psr.dmu_psr_rate_scale_tx_b2sds0[1:0]"; 	
+  input [1:0] dmu_psr_rate_scale_tx_b2sds1       INPUT_EDGE INPUT_SKEW verilog_node "tb_top.cpu.psr.dmu_psr_rate_scale_tx_b2sds1[1:0]"; 	
+  input [1:0] dmu_psr_rate_scale_tx_b3sds0       INPUT_EDGE INPUT_SKEW verilog_node "tb_top.cpu.psr.dmu_psr_rate_scale_tx_b3sds0[1:0]"; 	
+  input [1:0] dmu_psr_rate_scale_tx_b3sds1       INPUT_EDGE INPUT_SKEW verilog_node "tb_top.cpu.psr.dmu_psr_rate_scale_tx_b3sds1[1:0]"; 	
+  //------------------------------------------------------------------------
+
+  //------------------------------------------------------------------------
+  //   DMU misc. interface
+  //------------------------------------------------------------------------
+  input  [2:0] 	      y2k_mps         INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_mps";// max. payld size to CMU
+  input		      y2k_int_l       INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_int_l";// interrupt req to IMU
+  input		      p2d_drain       INPUT_EDGE INPUT_SKEW     verilog_node "`ILU.p2d_drain"; // drain req to ILU 
+    	  
+  //------------------------------------------------------------------------
+  //  CSR ring to DMU
+  //------------------------------------------------------------------------
+  input [31:0]       k2y_csr_ring_out INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.k2y_csr_ring_out";
+  input  [31:0]       y2k_csr_ring_in  INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.y2k_csr_ring_in";
+  
+  //------------------------------------------------------------------------
+  //  debug ports
+  //------------------------------------------------------------------------
+  input [5:0]        k2y_dbg_sel_a  INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.k2y_dbg_sel_a";
+  input [5:0]        k2y_dbg_sel_b  INPUT_EDGE INPUT_SKEW	verilog_node "`ILU.k2y_dbg_sel_b";
+  input  [7:0]        y2k_dbg_a      INPUT_EDGE  INPUT_SKEW	verilog_node "`ILU.y2k_dbg_a";
+  input  [7:0]        y2k_dbg_b      INPUT_EDGE  INPUT_SKEW	verilog_node "`ILU.y2k_dbg_b";
+
+  //------------------------------------------------------------------------
+  // ILU to PEU interface 
+  //------------------------------------------------------------------------
+  input 	    p2d_ue_int	INPUT_EDGE INPUT_SKEW       verilog_node "`PEU.p2d_ue_int";
+  input 	    p2d_ce_int	INPUT_EDGE INPUT_SKEW       verilog_node "`PEU.p2d_ce_int";
+  input 	    p2d_oe_int	INPUT_EDGE INPUT_SKEW       verilog_node "`PEU.p2d_oe_int";
+
+}  // end of interface if_ILU_PEU
+
+
+
+interface if_ILU_PEU_PCIE_coverage {
+  //Clock
+  input		      refclk         CLOCK			verilog_node "`TOP.PCIE_Clock_250";// inputclock 250 MHz
+  // Denali Clocks
+  input               DEN_CLK_TX      INPUT_EDGE INPUT_SKEW	verilog_node "`TOP.DEN_CLK_TX";
+  input               DEN_CLK_RX      INPUT_EDGE INPUT_SKEW	verilog_node "`TOP.DEN_CLK_RX";
+ 
+  // Misc Port in FNXPCIEXactor
+  input              DEN_RESET       INPUT_EDGE  INPUT_SKEW	verilog_node "`TOP.DEN_RESET";
+  
+  //The Recieve Detect signals were used in FNX , Included here but not connected to N2
+  input              RCV_DET_MODE    INPUT_EDGE  INPUT_SKEW;//1bit
+
+
+//  input [7:0]        RCV_DET_LANES   PRZ          INPUT_SKEW	verilog_node "`TOP.TX_P"; //8bit
+
+ 
+}  // end of interface if_ILU_PEU
+
+
+
+interface peu_registers_coverage_ifc 
+ {
+   //------------------------------------------------------------------------
+   //  Clock and Reset Signals
+   //------------------------------------------------------------------------
+    input	      peu_clk         CLOCK 	verilog_node "`PEU.peu_ptl.l2t_clk";		 	
+
+    // peu debug select b register
+    // input	[2:0]      peu_debug_select_a_block       INPUT_EDGE INPUT_SKEW verilog_node "`PEU_REGISTERS.tlu_dbg_sel_a.tlu_dbg_sel_a_block_hw_read[2:0]"; 	
+    input [2:0]      peu_debug_select_a_block       INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_dbg_sel_a.tlu_dbg_sel_a_block_hw_read[2:0]"; 	
+    input [2:0]      peu_debug_select_a_module       INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_dbg_sel_a.tlu_dbg_sel_a_module_hw_read[2:0]"; 	
+    input [2:0]      peu_debug_select_a_signal       INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_dbg_sel_a.tlu_dbg_sel_a_signal_hw_read[2:0]"; 	
+
+ 
+    // peu debug select a register
+    input [2:0]	   peu_debug_select_b_block   INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_dbg_sel_b.tlu_dbg_sel_b_block_hw_read[2:0]"; 	
+    input [2:0]	   peu_debug_select_b_module  INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_dbg_sel_b.tlu_dbg_sel_b_module_hw_read[2:0]"; 	
+    input [2:0]    peu_debug_select_b_signal  INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_dbg_sel_b.tlu_dbg_sel_b_signal_hw_read[2:0]"; 	
+
+    // peu control register
+    input [7:0]    peu_control_reg_los_tim	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_ctl.tlu_ctl_l0s_tim_hw_read[7:0]";  	 			 
+    input 	   peu_control_reg_npwr_en	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_ctl.tlu_ctl_npwr_en_hw_read";  	 			 
+    input [2:0]	   peu_control_reg_cto_sel	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_ctl.tlu_ctl_cto_sel_hw_read[2:0]";  	 			 
+    input [15:0	]   peu_control_reg_config	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_ctl.tlu_ctl_config_hw_read[15:0]";  	 			 
+
+    // peu pme turn off register
+    input  peu_trn_off_reg_pto	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.trn_off.trn_off_pto_hw_read";  	 			 
+
+    // peu Ingress Credits Initial register
+    input [7:0]    peu_ici_reg_nhc	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_ici.tlu_ici_nhc_hw_read[7:0]";  	 			 
+    input [7:0]    peu_ici_reg_phc	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_ici.tlu_ici_phc_hw_read[7:0]";  	 			 
+    input [7:0]    peu_ici_reg_pdc	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_ici.tlu_ici_pdc_hw_read[7:0]";  	 			 
+
+    // peu performance counter select register
+    input [7:0]    peu_prfc_reg_sel0	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_prfc.tlu_prfc_sel0_hw_read[7:0]";  	 			 
+    input [7:0]    peu_prfc_reg_sel1	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_prfc.tlu_prfc_sel1_hw_read[7:0]";  	 			 
+    input [1:0]    peu_prfc_reg_sel2	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_prfc.tlu_prfc_sel2_hw_read[1:0]";  	 			 
+
+    // peu device control register
+    input [2:0] 	   peu_device_control_reg_mps	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.dev_ctl.dev_ctl_mps_hw_read[2:0]";  	 			 
+
+    // peu diagnostic  register
+    input [63:0] 	   ilu_diagnos_csrbus_read_data	INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_csrbus_read_data[63:0]";  	 			 
+//    input [63:0] 	   ilu_diagnos_csrbus_read_data	INPUT_EDGE INPUT_SKEW verilog_node "`tb_top.cpu.dmu.ilu.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_csrbus_read_data[63:0]";  	 			 
+    input [1:0]  	   ilu_diagnos_rate_scale_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_rate_scale_hw_read[1:0]";  	 			 
+    input        	   ilu_diagnos_ehi_trig_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_ehi_trig_hw_read";  	 			 
+    input        	   ilu_diagnos_edi_trig_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_edi_trig_hw_read";  	 			 
+    input [3:0]  	   ilu_diagnos_ehi_par_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_ehi_par_hw_read[3:0]";  	 			 
+    input [3:0]  	   ilu_diagnos_edi_par_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_edi_par_hw_read[3:0]";  	 			 
+    input        	   ilu_diagnos_enrx0_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_enrx0_hw_read";  	 			 
+    input        	   ilu_diagnos_enrx1_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_enrx1_hw_read";  	 			 
+    input        	   ilu_diagnos_enrx2_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_enrx2_hw_read";  	 			 
+    input        	   ilu_diagnos_enrx3_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_enrx3_hw_read";  	 			 
+    input        	   ilu_diagnos_enrx4_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_enrx4_hw_read";  	 			 
+    input        	   ilu_diagnos_enrx5_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_enrx5_hw_read";  	 			 
+    input        	   ilu_diagnos_enrx6_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_enrx6_hw_read";  	 			 
+    input        	   ilu_diagnos_enrx7_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_enrx7_hw_read";  	 			 
+    input        	   ilu_diagnos_entx0_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_entx0_hw_read";  	 			 
+    input        	   ilu_diagnos_entx1_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_entx1_hw_read";  	 			 
+    input        	   ilu_diagnos_entx2_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_entx2_hw_read";  	 			 
+    input        	   ilu_diagnos_entx3_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_entx3_hw_read";  	 			 
+    input        	   ilu_diagnos_entx4_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_entx4_hw_read";  	 			 
+    input        	   ilu_diagnos_entx5_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_entx5_hw_read";  	 			 
+    input        	   ilu_diagnos_entx6_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_entx6_hw_read";  	 			 
+    input        	   ilu_diagnos_entx7_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_entx7_hw_read";  	 			 
+    input        	   ilu_diagnos_enpll0_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_enpll0_hw_read";  	 			 
+    input        	   ilu_diagnos_enpll1_hw_read INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_diagnos_enpll1_hw_read";  	 			 
+
+    // peu link control register
+    input 	   peu_link_control_reg_extended_sync	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_ctl_hw_read[7]";  	 			 
+    input 	   peu_link_control_reg_common_clock	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_ctl_hw_read[6]";  	 			 
+    input 	   peu_link_control_reg_retrain	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_ctl_hw_read[5]";  	 			 
+    input 	   peu_link_control_reg_disable	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_ctl_hw_read[4]";  	 			 
+    input 	   peu_link_control_reg_rcb	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_ctl_hw_read[3]";  	 			 
+    input [1:0]	   peu_link_control_reg_aspm	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_ctl_hw_read[1:0]";  	 			 
+
+    // peu link status register
+    input 	   peu_link_status_reg_slot_clock	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_sts.lnk_sts_hw_read[12]";  	 			 
+    input 	   peu_link_status_reg_train	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_sts.lnk_sts_hw_read[11]";  	 			 
+    input 	   peu_link_status_reg_error	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_sts.lnk_sts_hw_read[10]";  	 			 
+    input [5:0]	   peu_link_status_reg_width	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_sts.lnk_sts_hw_read[9:4]";  	 			 
+    input [3:0]	   peu_link_status_reg_speed	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_sts.lnk_sts_hw_read[3:0]";  	 			 
+
+
+    // peu slot capability register ?????????? to add 
+    //    input 	   peu_link_status_reg_slot_clock	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_sts_hw_read[12]";  	 
+     input [1:0] peu_slot_cap_register_spls  INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.rio.spl_rcd[9:8]";  	 			 
+     input [7:0]  peu_slot_cap_register_splv INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.rio.spl_rcd[7:0]";  	 			 
+
+    // peu dlpl dll control register 
+    input [7:0]	   peu_dlpl_dll_control_reg_ack_freq	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_cfg.link_cfg_ack_freq_hw_read[7:0]";  	 			 
+    input  	   peu_dlpl_dll_control_reg_flow_disable	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_cfg.link_cfg_csrbus_read_data[4]";  	 			 
+    input 	   peu_dlpl_dll_control_reg_other_message_req	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_cfg.link_cfg_other_message_request_hw_read";  	 			 
+    input 	   peu_dlpl_dll_control_reg_ack_nak_disable	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_cfg.link_cfg_ack_nak_disable_hw_read";  	 			 
+    input 	   peu_dlpl_dll_control_reg_data_link_en	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_cfg.link_cfg_data_link_enable_hw_read";  	 			 
+
+    // peu dlpl macl / pcs  control register 
+    input [7:0]	   peu_dlpl_macl_control_reg_link_num	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_ctl.link_ctl_link_num_hw_read[7:0]";  	 			 
+    input [7:0]	   peu_dlpl_macl_control_reg_nfts	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_ctl.link_ctl_n_fts_hw_read[7:0]";  	 			 
+    input [5:0]	   peu_dlpl_macl_control_reg_link_capable	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_ctl.link_ctl_link_capable_hw_read[5:0]";  	 			 
+    input 	   peu_dlpl_macl_control_reg_fast_link_mode	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_ctl.link_ctl_fast_link_mode_hw_read";  	 			 
+    input 	   peu_dlpl_macl_control_reg_elastic_buffer_disable	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_ctl.link_ctl_elastical_buffer_disable_hw_read";  	 			 
+    input 	   peu_dlpl_macl_control_reg_scramble_disable	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_ctl.link_ctl_scramble_disable_hw_read";  	 			 
+    input 	   peu_dlpl_macl_control_reg_reset_assert	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_ctl.link_ctl_reset_assert_hw_read";  	 			 
+
+
+    // peu dlpl lane skew control register 
+    input 	   peu_dlpl_lane_skew_reg_deskew_disable	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lane_skew.lane_skew_deskew_disable_hw_read";  	 			 
+
+
+    // peu dlpl symbol number register 
+    input [2:0]	   peu_dlpl_sym_num_reg_skip	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.symbol_num.symbol_num_skip_symbols_hw_read[2:0]";  	 			 
+    input [3:0]	   peu_dlpl_sym_num_reg_ts1	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.symbol_num.symbol_num_ts1_symbols_hw_read[3:0]";  	 			 
+
+    // peu dlpl symbol timer register 
+    input [10:0]   peu_dlpl_sym_timer_reg_skip_interval	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.symbol_timer.symbol_timer_skip_interval_hw_read[10:0]";  	 			 
+
+
+
+
+
+
+
+
+    // peu link bit error counter I register 
+    input    peu_link_bit_error_counter_I_reg_ber_en	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.lnk_bit_err_cnt_1_ber_count_en_ext_read_data";  	 			 
+    input    peu_link_bit_error_counter_I_reg_ber_clr	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.lnk_bit_err_cnt_1_ber_count_clr_ext_read_data";  	 			 
+
+    input [7:0]    peu_link_bit_error_counter_I_reg_cnt_bad_dllp	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.lnk_bit_err_cnt_1_cnt_bad_dllp_ext_read_data[7:0]";  	 			 
+    input [7:0]    peu_link_bit_error_counter_I_reg_cnt_bad_tlp	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.lnk_bit_err_cnt_1_cnt_bad_tlp_ext_read_data[7:0]";  	 			 
+    input [9:0]    peu_link_bit_error_counter_I_reg_cnt_pre	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.lnk_bit_err_cnt_1_cnt_pre_ext_read_data[9:0]";  	 			 
+    
+    // peu link bit error counter II register 
+    input [63:0]   peu_link_bit_error_counter_II_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_bit_err_cnt_2_ext_read_data[63:0]";  	 			 
+    
+    // peu serdes pll control register 
+    input [63:0]   serdes_pll_csrbus_read_data	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_pll_csrbus_read_data[63:0]";  	 			 
+    input [1:0]   serdes_pll_lb_hw_read  	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_pll_lb_hw_read[1:0]";  	 			 
+    input [3:0]   serdes_pll_mpy_hw_read  	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_pll_mpy_hw_read[3:0]";  	 			 
+   
+
+    // peu serdes receiver lane control register 
+    input    peu_ser_receiver_lane_ctl0_reg_entest	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_ctl.serdes_receiver_lane_ctl_hw_read_0[0]";  	 			 
+    input    peu_ser_receiver_lane_ctl1_reg_entest	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_ctl.serdes_receiver_lane_ctl_hw_read_1[0]";  	 			 
+    input    peu_ser_receiver_lane_ctl2_reg_entest	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_ctl.serdes_receiver_lane_ctl_hw_read_2[0]";  	 			 
+    input    peu_ser_receiver_lane_ctl3_reg_entest	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_ctl.serdes_receiver_lane_ctl_hw_read_3[0]";  	 			 
+    input    peu_ser_receiver_lane_ctl4_reg_entest	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_ctl.serdes_receiver_lane_ctl_hw_read_4[0]";  	 			 
+    input    peu_ser_receiver_lane_ctl5_reg_entest	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_ctl.serdes_receiver_lane_ctl_hw_read_5[0]";  	 			 
+    input    peu_ser_receiver_lane_ctl6_reg_entest	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_ctl.serdes_receiver_lane_ctl_hw_read_6[0]";  	 			 
+    input    peu_ser_receiver_lane_ctl7_reg_entest	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_ctl.serdes_receiver_lane_ctl_hw_read_7[0]";  	 			 
+
+
+
+    // peu serdes transmitter lane control  register 
+    input    peu_ser_xmitter_ctl_lane0_reg_invert_polarity	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_0[1]";  	 			 
+    input    peu_ser_xmitter_ctl_lane1_reg_invert_polarity	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_1[1]";  	 			 
+    input    peu_ser_xmitter_ctl_lane2_reg_invert_polarity	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_2[1]";  	 			 
+    input    peu_ser_xmitter_ctl_lane3_reg_invert_polarity	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_3[1]";  	 			 
+    input    peu_ser_xmitter_ctl_lane4_reg_invert_polarity	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_4[1]";  	 			 
+    input    peu_ser_xmitter_ctl_lane5_reg_invert_polarity	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_5[1]";  	 			 
+    input    peu_ser_xmitter_ctl_lane6_reg_invert_polarity	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_6[1]";  	 			 
+    input    peu_ser_xmitter_ctl_lane7_reg_invert_polarity	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_7[1]";  	 			 
+
+
+    // peu serdes transmitter lane control  register 
+    input    peu_ser_xmitter_ctl_lane0_reg_entest	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_0[0]";  	 			 
+    input    peu_ser_xmitter_ctl_lane1_reg_entest	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_1[0]";  	 			 
+    input    peu_ser_xmitter_ctl_lane2_reg_entest	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_2[0]";  	 			 
+    input    peu_ser_xmitter_ctl_lane3_reg_entest	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_3[0]";  	 			 
+    input    peu_ser_xmitter_ctl_lane4_reg_entest	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_4[0]";  	 			 
+    input    peu_ser_xmitter_ctl_lane5_reg_entest	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_5[0]";  	 			 
+    input    peu_ser_xmitter_ctl_lane6_reg_entest	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_6[0]";  	 			 
+    input    peu_ser_xmitter_ctl_lane7_reg_entest	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_hw_read_7[0]";  	 			 
+
+  //-----------------------
+  // register connections for above registers but with full register range 
+  //-----------------------
+  
+    //  debug_select_a
+     // input [8:0]      peu_debug_select_a_reg       INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_dbg_sel_a.tlu_dbg_sel_a_csrbus_read_data[8:0]"; 	
+     input [63:0]      peu_debug_select_a_reg       INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_dbg_sel_a.tlu_dbg_sel_a_csrbus_read_data[63:0]"; 	
+  
+     // input [8:0]	   peu_debug_select_b_reg   INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_dbg_sel_b.tlu_dbg_sel_b_csrbus_read_data[8:0]"; 	
+     input [63:0]	   peu_debug_select_b_reg   INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_dbg_sel_b.tlu_dbg_sel_b_csrbus_read_data[63:0]"; 	
+ 
+     // peu control register
+     // input [31:0]    peu_control_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_ctl.tlu_ctl_csrbus_read_data[31:0]";  	 			 
+     input [63:0]    peu_control_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_ctl.tlu_ctl_csrbus_read_data[63:0]";  	 			 
+ 
+    // peu pme turn off register
+    input [63:0]  peu_trn_off_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.trn_off.trn_off_csrbus_read_data[63:0] ";  	 			 
+
+     // peu Ingress Credits Initial register
+     // input [59:0]    peu_ici_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_ici.tlu_ici_csrbus_read_data[59:0]";  	 			 
+     input [63:0]    peu_ici_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_ici.tlu_ici_csrbus_read_data[63:0]";  	 			 
+ 
+     // peu performance counter select register
+     // input [17:0]    peu_prfc_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_prfc.tlu_prfc_csrbus_read_data[17:0]";  	 			 
+     input [63:0]    peu_prfc_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.tlu_prfc.tlu_prfc_csrbus_read_data[63:0]";  	 			 
+ 
+    // peu device control register
+    input [63:0] 	   peu_device_control_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.dev_ctl.dev_ctl_csrbus_read_data[63:0]";  	 			 
+ 
+     // peu link control register
+     input [63:0]   peu_link_control_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_ctl.lnk_ctl_csrbus_read_data[63:0]";  	 			 
+ 
+     // peu link status register
+     input [63:0]  peu_link_status_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_sts.lnk_sts_csrbus_read_data[63:0]";  	 			 
+ 
+ 
+     // peu slot capability register  
+     input [9:0] peu_slot_cap_register  INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.rio.spl_rcd[9:0]";  	 			 
+ 
+     // peu dlpl dll control register 
+     input [63:0]   peu_dlpl_dll_control_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_cfg.link_cfg_csrbus_read_data[63:0]";  	 			 
+ 
+     // peu dlpl macl / pcs  control register 
+     input [63:0]   peu_dlpl_macl_control_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.link_ctl.link_ctl_csrbus_read_data[63:0]";  	 			 
+ 
+ 
+     // peu dlpl lane skew control register 
+     input [63:0]   peu_dlpl_lane_skew_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lane_skew.lane_skew_csrbus_read_data";  	 			 
+ 
+ 
+     // peu dlpl symbol number register 
+     input [63:0]	   peu_dlpl_sym_num_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.symbol_num.symbol_num_csrbus_read_data[63:0]";  	 			 
+ 
+     // peu dlpl symbol timer register 
+     input [63:0]   peu_dlpl_sym_timer_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.symbol_timer.symbol_timer_csrbus_read_data[63:0]";  	 			 
+ 
+     
+     input [63:0]	   peu_dlpl_core_status_reg 	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.core_status.core_status_csrbus_read_data[63:0]";  	 			 
+ 
+    // peu link bit error counter I register 
+    input [1:0]    peu_link_bit_error_counter_I_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.lnk_bit_err_cnt_1_ext_read_data[63:62]";  	 			 
+    
+     // peu serdes receiver lane control register 
+     input [63:0]    peu_ser_receiver_lane_ctl0_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_ctl.serdes_receiver_lane_ctl_csrbus_read_data_0[63:0]";  	 			 
+ 
+ 
+     // peu serdes transmitter lane control  register 
+     input [63:0]   peu_ser_xmitter_ctl_lane0_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_csrbus_read_data_0[63:0]";  	 			 
+     input [63:0]   peu_ser_xmitter_ctl_lane1_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_csrbus_read_data_1[63:0]";  	 			 
+     input [63:0]   peu_ser_xmitter_ctl_lane2_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_csrbus_read_data_2[63:0]";  	 			 
+     input [63:0]   peu_ser_xmitter_ctl_lane3_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_csrbus_read_data_3[63:0]";  	 			 
+     input [63:0]   peu_ser_xmitter_ctl_lane4_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_csrbus_read_data_4[63:0]";  	 			 
+     input [63:0]   peu_ser_xmitter_ctl_lane5_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_csrbus_read_data_5[63:0]";  	 			 
+     input [63:0]   peu_ser_xmitter_ctl_lane6_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_csrbus_read_data_6[63:0]";  	 			 
+     input [63:0]   peu_ser_xmitter_ctl_lane7_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_ctl.serdes_xmitter_lane_ctl_csrbus_read_data_7[63:0]";  	 			 
+
+     // peu serdes receiver lane status 0 - 7 register: 
+     input [63:0]   peu_ser_receiver_status_lane0_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_0[63:0]";  	 			 
+     input [63:0]   peu_ser_receiver_status_lane1_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_1[63:0]";  	 			 
+     input [63:0]   peu_ser_receiver_status_lane2_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_2[63:0]";  	 			 
+     input [63:0]   peu_ser_receiver_status_lane3_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_3[63:0]";  	 			 
+     input [63:0]   peu_ser_receiver_status_lane4_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_4[63:0]";  	 			 
+     input [63:0]   peu_ser_receiver_status_lane5_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_5[63:0]";  	 			 
+     input [63:0]   peu_ser_receiver_status_lane6_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_6[63:0]";  	 			 
+     input [63:0]   peu_ser_receiver_status_lane7_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_receiver_lane_status.serdes_receiver_lane_status_csrbus_read_data_7[63:0]";  	 			 
+ 
+     // peu serdes xmitter lane status 0 - 7 register: 
+     input [63:0]   peu_ser_xmitter_status_lane0_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_status.serdes_xmitter_lane_status_csrbus_read_data_0[63:0]";  	 			 
+     input [63:0]   peu_ser_xmitter_status_lane1_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_status.serdes_xmitter_lane_status_csrbus_read_data_1[63:0]";  	 			 
+     input [63:0]   peu_ser_xmitter_status_lane2_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_status.serdes_xmitter_lane_status_csrbus_read_data_2[63:0]";  	 			 
+     input [63:0]   peu_ser_xmitter_status_lane3_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_status.serdes_xmitter_lane_status_csrbus_read_data_3[63:0]";  	 			 
+     input [63:0]   peu_ser_xmitter_status_lane4_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_status.serdes_xmitter_lane_status_csrbus_read_data_4[63:0]";  	 			 
+     input [63:0]   peu_ser_xmitter_status_lane5_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_status.serdes_xmitter_lane_status_csrbus_read_data_5[63:0]";  	 			 
+     input [63:0]   peu_ser_xmitter_status_lane6_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_status.serdes_xmitter_lane_status_csrbus_read_data_6[63:0]";  	 			 
+     input [63:0]   peu_ser_xmitter_status_lane7_reg	INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.serdes_xmitter_lane_status.serdes_xmitter_lane_status_csrbus_read_data_7[63:0]";  	 			 
+ 
+
+ //------------------------------------------------------------------------
+ // peu ras  
+ //------------------------------------------------------------------------
+
+
+  // peu_oe_log_en register
+    input peu_oe_log_w_ld INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.oe_log.oe_log_w_ld"; 
+    input [23:0] peu_oe_log_en_reg INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.oe_log.oe_log_en_hw_read[23:0]"; 
+
+   
+  // peu_oe_int_en register
+    input peu_oe_int_en_w_ld INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.oe_int_en.oe_int_en_w_ld"; 
+    input [63:0] peu_oe_int_en_reg INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.oe_int_en.oe_int_en_hw_read[63:0]"; 
+
+  // peu_oe_err register 
+    input peu_oe_err_w_ld INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.oe_err.oe_err_w_ld"; 
+    input peu_oe_err_rw1c INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.oe_err.rw1c_alias"; 
+    input peu_oe_err_rw1s INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.oe_err.rw1s_alias"; 
+    input [63:0] peu_oe_err_hw_set INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.oe_err.oe_err_hw_set[63:0]"; 
+    input [63:0] peu_oe_err_csrbus_wr_data INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.oe_err.csrbus_wr_data[63:0]"; 
+    input [63:0] peu_oe_err_csrbus_read_data INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.oe_err.oe_err_csrbus_read_data[63:0]"; 
+  
+
+  // peu_ue_log_en register
+    input peu_ue_log_w_ld INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_log.ue_log_w_ld"; 
+    // input [23:0] peu_ue_log_en_reg INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_log.ue_log_en_hw_read[23:0]"; 
+    input [63:0] peu_ue_log_en_reg INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_log.ue_log_csrbus_read_data[63:0]"; 
+
+   
+  // peu_ue_int_en register
+    input peu_ue_int_en_w_ld INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_int_en.ue_int_en_w_ld"; 
+    // input [63:0] peu_ue_int_en_reg INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_int_en.ue_int_en_hw_read[63:0]"; 
+    input [63:0] peu_ue_int_en_reg INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_int_en.ue_int_en_csrbus_read_data[63:0]"; 
+
+  // peu_ue_err register
+    input peu_ue_err_w_ld INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_err.ue_err_w_ld";
+    input peu_ue_err_rw1c INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_err.rw1c_alias";
+    input peu_ue_err_rw1s INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_err.rw1s_alias";
+    input [63:0] peu_ue_err_hw_set INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_err.ue_err_hw_set[63:0]";
+    input [63:0] peu_ue_err_csrbus_wr_data INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_err.csrbus_wr_data[63:0]";
+    input [63:0] peu_ue_err_csrbus_read_data INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ue_err.ue_err_csrbus_read_data[63:0]";
+
+  // peu_ce_log_en register
+    input peu_ce_log_w_ld INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_log.ce_log_w_ld"; 
+    // input [23:0] peu_ce_log_en_reg INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_log.ce_log_en_hw_read[23:0]"; 
+    input [63:0] peu_ce_log_en_reg INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_log.ce_log_csrbus_read_data[23:0]"; 
+
+   
+  // peu_ce_int_en register
+    input peu_ce_int_en_w_ld INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_int_en.ce_int_en_w_ld"; 
+    // input [63:0] peu_ce_int_en_reg INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_int_en.ce_int_en_hw_read[63:0]"; 
+    input [63:0] peu_ce_int_en_reg INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_int_en.ce_int_en_csrbus_read_data[63:0]"; 
+
+  // peu_ce_err register
+    input peu_ce_err_w_ld INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_err.ce_err_w_ld";
+    input peu_ce_err_rw1c INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_err.rw1c_alias";
+    input peu_ce_err_rw1s INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_err.rw1s_alias";
+    input [63:0] peu_ce_err_hw_set INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_err.ce_err_hw_set[63:0]";
+    input [63:0] peu_ce_err_csrbus_wr_data INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_err.csrbus_wr_data[63:0]";
+    input [63:0] peu_ce_err_csrbus_read_data INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.ce_err.ce_err_csrbus_read_data[63:0]";
+
+  // peu dlpl event_log_en register
+    input peu_event_log_w_ld INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.event_err_log_en.event_err_log_en_w_ld"; 
+    input [63:0] peu_event_log_en_reg INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.event_err_log_en.event_err_log_en_csrbus_read_data[63:0]"; 
+
+   
+  // peu dlpl event_int_en register
+    input peu_event_int_en_w_ld INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.event_err_int_en.event_err_int_en_w_ld"; 
+    input [63:0] peu_event_int_en_reg INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.event_err_int_en.event_err_int_en_csrbus_read_data[63:0]"; 
+
+  
+  // peu dlpl event_err status register
+    input peu_event_w_ld INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.event_err_sts_clr.event_err_sts_clr_w_ld";
+    input peu_event_rw1c INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.event_err_sts_clr.rw1c_alias";
+    input peu_event_rw1s INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.event_err_sts_clr.rw1s_alias";
+    input [63:0] peu_event_hw_set INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.event_err_sts_clr.event_err_sts_clr_hw_set[63:0]";
+    input [63:0] peu_event_csrbus_wr_data INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.event_err_sts_clr.csrbus_wr_data[63:0]";
+    input [63:0] peu_event_csrbus_read_data INPUT_EDGE INPUT_SKEW verilog_node "`PEU.peu_ptl.ctb.tlr.csr.ptl_ctb_tlr_default_grp.event_err_sts_clr.event_err_sts_clr_csrbus_read_data[63:0]";
+
+  // peu error event_log_en register
+    input  ilu_error_log_enable_reg 		INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_log_en.ilu_log_en_ihb_pe_hw_read"; 
+
+  // peu error interrupt register : 
+    input  ilu_error_interrupt_p_reg 		INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_int_en.ilu_int_en_ihb_pe_p_hw_read"; 
+    input  ilu_error_interrupt_s_reg 		INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_int_en.ilu_int_en_ihb_pe_s_hw_read"; 
+
+  // peu error status register : 
+    input  ilu_error_status_p_reg 		INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_log_err.ilu_log_err_ihb_pe_p_hw_read"; 
+    input  ilu_error_status_s_reg 		INPUT_EDGE INPUT_SKEW verilog_node "`ILU.cib.csr.dmu_ilu_cib_default_grp.ilu_log_err.ilu_log_err_ihb_pe_s_hw_read"; 
+
+
+ } // end of interface peu_registers_coverage_ifc
+ 
+interface ilu_peu_coverage_ihb_rd_coverage_group
+{
+input         d2p_ihb_clk   INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.d2p_ihb_clk";
+input         d2p_ihb_rd    INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.d2p_ihb_rd";
+input [5:0]   d2p_ihb_addr  INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.d2p_ihb_addr";
+}
+
+interface ilu_peu_coverage_ihb_wr_coverage_group
+{
+input         d2p_ihb_clk   INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.d2p_ihb_clk";
+input         it2ih_we      INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.it2ih_we";
+input [5:0]   it2ih_addr    INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.it2ih_addr";
+}
+
+interface ilu_peu_coverage_idb_rd_coverage_group
+{
+input         d2p_idb_clk   INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.d2p_idb_clk";
+input         d2p_idb_rd    INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.d2p_idb_rd";
+input [7:0]   d2p_idb_addr  INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.d2p_idb_addr";
+}
+
+interface ilu_peu_coverage_idb_wr_coverage_group
+{
+input         d2p_idb_clk   INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.d2p_idb_clk";
+input         it2id_we      INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.it2id_we";
+input [7:0]   it2id_addr    INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.it2id_addr";
+}
+
+interface ilu_peu_coverage_ehb_rd_coverage_group
+{
+input         d2p_ehb_clk   INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.d2p_ehb_clk";
+input         et2eh_rd      INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.et2eh_rd";
+input [5:0]   et2eh_addr    INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.et2eh_addr";
+}
+
+interface ilu_peu_coverage_ehb_wr_coverage_group
+{
+input         d2p_ehb_clk   INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.d2p_ehb_clk";
+input         d2p_ehb_we    INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.d2p_ehb_we";
+input [5:0]   d2p_ehb_addr  INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.d2p_ehb_addr";
+}
+
+interface ilu_peu_coverage_edb_rd_coverage_group
+{
+input         d2p_edb_clk   INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.d2p_edb_clk";
+input         et2ed_rd      INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.et2ed_rd";
+input [7:0]   et2ed_addr    INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.et2ed_addr";
+}
+
+interface ilu_peu_coverage_edb_wr_coverage_group
+{
+input         d2p_edb_clk   INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.d2p_edb_clk";
+input         d2p_edb_we    INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.d2p_edb_we";
+input [7:0]   d2p_edb_addr  INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.d2p_edb_addr";
+}
+
+interface ilu_peu_coverage_pmc_state_coverage_group
+{
+input         clk                INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.clk";
+input [3:0]   lpm2ctb_pmc_state  INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_ptl.pmc.lpm.lpm2ctb_pmc_state";
+}
+
+interface ilu_peu_coverage_fcsm_state_coverage_group
+{
+input         core_clk  INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_plp.plp_dlpl.u_rtlh.u_rtlh_fc.u_rtlh_fc_arb.core_clk";
+input [3:0]   fc_state  INPUT_EDGE      INPUT_SKEW      verilog_node "`PEU.peu_plp.plp_dlpl.u_rtlh.u_rtlh_fc.u_rtlh_fc_arb.fc_state";
+}
+
+interface ilu_peu_coverage_ltssm_state_coverage_group
+{
+input         core_clk             INPUT_EDGE    INPUT_SKEW   verilog_node "`PEU.peu_plp.plp_dlpl.u_xmlh.u_xmlh_ltssm.core_clk";
+input [4:0]   lts_state            INPUT_EDGE    INPUT_SKEW   verilog_node "`PEU.peu_plp.plp_dlpl.u_xmlh.u_xmlh_ltssm.lts_state";
+}
+
+interface ilu_peu_coverage_replay_times_coverage_group
+{
+input         core_clk             INPUT_EDGE    INPUT_SKEW   verilog_node "`PEU.peu_plp.plp_dlpl.u_xdlh.u_xdlh_retrybuf.core_clk";
+input [1:0]   replay_num           INPUT_EDGE    INPUT_SKEW   verilog_node "`PEU.peu_plp.plp_dlpl.u_xdlh.u_xdlh_retrybuf.replay_num";
+}
+
+interface ilu_peu_coverage_retry_buf_rd_coverage_group
+{
+input         core_clk             INPUT_EDGE    INPUT_SKEW   verilog_node "`PEU.peu_plp.plp_dlpl.u_xdlh.u_xdlh_retrybuf.core_clk";
+input         xdlh_rbuf_rd         INPUT_EDGE    INPUT_SKEW   verilog_node "`PEU.peu_plp.plp_dlpl.u_xdlh.u_xdlh_retrybuf.xdlh_rbuf_rd";
+input [7:0]   rbuf_raddr           INPUT_EDGE    INPUT_SKEW   verilog_node "`PEU.peu_plp.plp_dlpl.u_xdlh.u_xdlh_retrybuf.rbuf_raddr";
+}
+
+interface ilu_peu_coverage_retry_buf_wr_coverage_group
+{
+input         core_clk             INPUT_EDGE    INPUT_SKEW   verilog_node "`PEU.peu_plp.plp_dlpl.u_xdlh.u_xdlh_retrybuf.core_clk";
+input         xdlh_retryram_we     INPUT_EDGE    INPUT_SKEW   verilog_node "`PEU.peu_plp.plp_dlpl.u_xdlh.u_xdlh_retrybuf.xdlh_retryram_we";
+input [7:0]   rbuf_waddr           INPUT_EDGE    INPUT_SKEW   verilog_node "`PEU.peu_plp.plp_dlpl.u_xdlh.u_xdlh_retrybuf.rbuf_waddr";
+}
+
+
+#endif  

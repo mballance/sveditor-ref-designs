@@ -1,0 +1,163 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: pack_db.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include "pcg_types.vri"
+#include "flow_db.vrh"
+#include "mac_db.vrh"
+#include "ipp_db.vrh"
+#include "fflp_db.vrh"
+
+class out_header_class {
+	byte_array      header[];             // Output header (OPP to MAC to PC)
+	integer		use_header = -1;
+	integer		header_len[];
+	bit		ifedx = 0;		// This is a interfedx packet
+	bit [15:0]	ifedx_ctrl   = 0;	// control word for each port
+	bit [15:0]	txmac_status = 0;       // txmac status word for each port
+	bit [63:0]	txbmac_status = 0;      // txmac status word forP1-P3
+   }
+
+
+// -----  Global Packet DB Entry -----
+class pack_db_entry {
+
+        flow_desc       flow;                   // Flow Descriptor
+	frame_desc	frame;			// Frame Descriptor
+	node_desc	src_node;		// Source Port Descriptor
+	node_desc	dst_node;		// Destanation Port Descriptor
+	tup_descr	tup;			// TCP/UDP Ports
+        rcv_param       rx_param;               // TCP Rx Parameters 
+        tmt_param       tx_param;               // TCP Tx Parameters 
+        tcp_state       fl_state;               // TCP State Parameters 
+	integer		ttl;			// Frames ttl field (only for L3 frames)
+	integer		data_length = 0;			// Frames ttl field (only for L3 frames)
+	integer		org_port;		// Originating Port Number
+	integer		order_seq;		// Ordering sequence number
+	integer		pckt_num;		// Packet counter for this packet generator
+	bit [3:0]	port_type;		// Port Type
+	bit	[63:0]	options;		// Options
+	bit		pg_done;		// 0-packet is queued in pg; 1-packet was sent out
+	bit	[15:0]	ifedx_control;		// Interfedx packet control word
+	bit	[31:0]	ifedx_crc;		// Interfedx CRC
+	bit	[31:0]	pack_crc;		// Original Packet CRC
+	integer		frame_len;		// Total frame length as genereted by the PG
+	integer		pc_check[];		// Status of the packet after packet checker checked
+	byte_array	header[];		// A working copy of the header as it's being modified
+	integer		header_len[];		// Length of the header
+	integer		use_hdr;		// Points to header in header array
+	out_header_class out_header[];		// Output header array for each port;
+
+	integer		pass;			// Packet pass/fail flag
+        //
+        // MAC/IPP Interface Checker
+        //
+	integer		im_check;		// Status of the packet after ipp/mac i/f checker checked
+        bit [19:0]      final_fwd_dec;          // True Forwarding Decision
+	//
+	// MAC Descriptor / Parameters
+	//
+
+		mac_db		mac;			// MAC variables database
+        ipp_db		ipp;			// MAC variables database
+        fflp_db         fflp;
+	integer gId;
+        bit [95:0] psu_hdr; // pseudo header for checksum
+        integer preamble_cnt=0;
+        integer sfd = 32'hd5;
+
+
+	task new ( integer i = 0) {
+	  gId = i;
+	}
+	function integer add(integer org_port, flow_desc flow,frame_desc frame, node_desc src_node,
+		node_desc dst_node, tup_descr tup, rcv_param rx_param, tmt_param tx_param, 
+                tcp_state fl_state, integer data_length, integer ttl, bit[63:0] options, integer order_seq,
+		integer pckt_num, bit [15:0] ifedxc) ;
+
+	task add_header( byte_array buf, integer start, integer len);
+
+   }
+
+
+
+//
+function integer pack_db_entry::add(integer org_port, flow_desc flow,frame_desc frame, node_desc src_node,
+		node_desc dst_node, tup_descr tup, rcv_param rx_param, tmt_param tx_param, tcp_state fl_state, integer data_length, integer ttl, bit[63:0] options, integer order_seq,
+		integer pckt_num, bit [15:0] ifedxc) {
+	integer n;
+
+	this.org_port     = org_port;
+	this.order_seq    = order_seq;
+	this.pckt_num     = pckt_num;
+	this.flow         = new flow;
+	this.frame        = new frame;
+	this.src_node     = new src_node;
+	this.dst_node     = new dst_node;
+	this.tup          = new tup;
+	this.rx_param     = new rx_param;
+	this.tx_param     = new tx_param;
+	this.fl_state     = new fl_state;
+	this.ttl          = ttl;
+	this.data_length  = data_length;
+	this.options      = options;
+	this.ifedx_control= ifedxc;
+	this.pg_done      = 0;
+	this.im_check     = 0;
+
+	for(n=0;n<20;n++)
+		this.pc_check[n]     = 0;
+
+	this.mac          = new;
+	this.ipp          = new;
+	this.fflp         = new;
+	this.use_hdr      = 0;
+	this.pass         = 0;
+	add = this.gId;
+   }
+
+task pack_db_entry:: add_header( byte_array buf, integer start, integer len) {
+	integer n;
+	len = len-start;
+	this.header[ this.use_hdr ] = new;
+	len++;
+	for(n=0;n<len;n++)
+		this.header[ this.use_hdr ].val[n] = buf.val[start+n];
+	this.header_len[ this.use_hdr ] = len;
+
+	printf(" in add_header - len - %d use_hdr - %d  \n",len,this.use_hdr);
+
+   }
+
+

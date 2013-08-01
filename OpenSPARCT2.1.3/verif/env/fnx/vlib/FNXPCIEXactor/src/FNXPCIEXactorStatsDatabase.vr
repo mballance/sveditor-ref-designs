@@ -1,0 +1,493 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: FNXPCIEXactorStatsDatabase.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "DenaliPCIE.vri"
+
+// FNXPCIEXactor library
+#include "FNXPCIEXactorDefines.vri"
+
+// report library
+#include "cReport.vrh"
+#include "FNXPCIEXactorReportMacros.vri"
+
+class FNXPCIEXactorStatsDatabase {
+
+  // Base Class and Method Names For QR Macros
+  local string ClassName  = "FNXPCIEXactorStatsDatabase";
+  local string MethodName = null;
+  
+  local ReportClass MyReport;
+  local string XactorName;
+
+  // Overall TLP Statistics
+  integer NumTLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+
+  // Overall DLLP Statistics
+  integer NumDLLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+
+  // DLLP Distribution
+  integer NumAckDLLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+  integer NumNakDLLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+  integer NumUpFCPDLLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+  integer NumUpFCNPDLLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+  integer NumUpFCCplDLLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+  
+  // TLP Distribution
+  integer NumMWr32TLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+  integer NumMWr64TLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+
+  integer NumMRd32TLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+  integer NumMRd64TLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+  integer NumMRdLk32TLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+  integer NumMRdLk64TLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+
+  integer NumIOWrTLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+  integer NumIORdTLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+
+  integer NumCfgWr0TLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+  integer NumCfgRd0TLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+  integer NumCfgWr1TLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+  integer NumCfgRd1TLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+
+  integer NumCplTLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+  integer NumCplDTLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+  integer NumCplLkTLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+  integer NumCplDLkTLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+
+  integer NumMsgTLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+  integer NumMsgDTLPs[FNX_PCIE_XTR_NUM_STAT_DIRS];
+
+  // TLP Length
+  integer MWr32Bytes[FNX_PCIE_XTR_NUM_STAT_DIRS][FNX_PCIE_XTR_NUM_STAT_TYPES];
+  integer MWr64Bytes[FNX_PCIE_XTR_NUM_STAT_DIRS][FNX_PCIE_XTR_NUM_STAT_TYPES];
+  integer MRd32Bytes[FNX_PCIE_XTR_NUM_STAT_DIRS][FNX_PCIE_XTR_NUM_STAT_TYPES];
+  integer MRd64Bytes[FNX_PCIE_XTR_NUM_STAT_DIRS][FNX_PCIE_XTR_NUM_STAT_TYPES];
+  integer IOWrBytes[FNX_PCIE_XTR_NUM_STAT_DIRS][FNX_PCIE_XTR_NUM_STAT_TYPES];
+  integer IORdBytes[FNX_PCIE_XTR_NUM_STAT_DIRS][FNX_PCIE_XTR_NUM_STAT_TYPES];
+  integer CfgWr0Bytes[FNX_PCIE_XTR_NUM_STAT_DIRS][FNX_PCIE_XTR_NUM_STAT_TYPES];
+  integer CfgRd0Bytes[FNX_PCIE_XTR_NUM_STAT_DIRS][FNX_PCIE_XTR_NUM_STAT_TYPES];
+  integer CfgWr1Bytes[FNX_PCIE_XTR_NUM_STAT_DIRS][FNX_PCIE_XTR_NUM_STAT_TYPES];
+  integer CfgRd1Bytes[FNX_PCIE_XTR_NUM_STAT_DIRS][FNX_PCIE_XTR_NUM_STAT_TYPES];
+  integer CplDBytes[FNX_PCIE_XTR_NUM_STAT_DIRS][FNX_PCIE_XTR_NUM_STAT_TYPES];
+  
+  // constructor
+  task new( ReportClass _Report,
+	    string      _XactorName );
+
+  // public methods
+  task Reset();
+  function string GetStr();
+  task Display( ReportType rptType );
+  task UpdatePkt( FNXPCIEXactorPacket pkt,
+		  integer statDir );
+}
+
+task FNXPCIEXactorStatsDatabase::new( ReportClass _Report,
+				      string      _XactorName )
+{
+  string MethodName = "new";
+  
+  MyReport = _Report;
+  XactorName = _XactorName;
+  Reset();
+}
+
+task FNXPCIEXactorStatsDatabase::Reset()
+{
+  string MethodName = "Reset";
+  string tmp, whiteSpaceStr;
+  integer i, j;
+
+  for (i=0; i < FNX_PCIE_XTR_NUM_STAT_DIRS; i++) {  
+    NumTLPs[i]        = 0;
+    NumMWr32TLPs[i]   = 0;
+    NumMWr64TLPs[i]   = 0;    
+    NumMRd32TLPs[i]   = 0;
+    NumMRd64TLPs[i]   = 0;
+    NumMRdLk32TLPs[i] = 0;
+    NumMRdLk64TLPs[i] = 0;
+    NumIOWrTLPs[i]    = 0;
+    NumIORdTLPs[i]    = 0;
+    NumCfgWr0TLPs[i]  = 0;
+    NumCfgRd0TLPs[i]  = 0;
+    NumCfgWr1TLPs[i]  = 0;
+    NumCfgRd1TLPs[i]  = 0;
+    NumCplTLPs[i]     = 0;
+    NumCplDTLPs[i]    = 0;
+    NumCplLkTLPs[i]   = 0;
+    NumCplDLkTLPs[i]  = 0;
+    NumMsgTLPs[i]     = 0;
+    NumMsgDTLPs[i]    = 0;
+
+    NumDLLPs[i]        = 0;
+    NumAckDLLPs[i]     = 0;
+    NumNakDLLPs[i]     = 0;
+    NumUpFCPDLLPs[i]   = 0;
+    NumUpFCNPDLLPs[i]  = 0;
+    NumUpFCCplDLLPs[i] = 0;
+
+    for (j=0; j < FNX_PCIE_XTR_NUM_STAT_TYPES; j++) {
+      if (j === FNX_PCIE_XTR_STAT_TYPE_MIN) {
+	MWr32Bytes[i][j]  = 512;  // Default Min to Maximum Size To Ease Math Later
+	MWr64Bytes[i][j]  = 512;
+	MRd32Bytes[i][j]  = 4096;
+	MRd64Bytes[i][j]  = 4096;
+	CplDBytes[i][j]   = 512;
+	IOWrBytes[i][j]   = 4;
+	IORdBytes[i][j]   = 4;
+	CfgWr0Bytes[i][j] = 4;
+	CfgRd0Bytes[i][j] = 4;
+	CfgWr1Bytes[i][j] = 4;
+	CfgRd1Bytes[i][j] = 4;
+      } else {
+	MWr32Bytes[i][j]  = 0;
+	MWr64Bytes[i][j]  = 0;
+	MRd32Bytes[i][j]  = 0;
+	MRd64Bytes[i][j]  = 0;
+	CplDBytes[i][j]   = 0;
+	IOWrBytes[i][j]   = 0;
+	IORdBytes[i][j]   = 0;
+	CfgWr0Bytes[i][j] = 0;
+	CfgRd0Bytes[i][j] = 0;
+	CfgWr1Bytes[i][j] = 0;
+	CfgRd1Bytes[i][j] = 0;
+      }
+    }
+  }
+}
+
+function string FNXPCIEXactorStatsDatabase::GetStr()
+{
+  string MethodName = "GetStr";
+  string tmp, dirStr;
+  integer i;
+
+  // Add TLP Information
+  for (i=0; i < FNX_PCIE_XTR_NUM_STAT_DIRS; i++) {
+    
+    if (i === FNX_PCIE_XTR_STAT_DIR_XMIT)
+      sprintf( tmp, "TLPs Transmitted\n" );
+    if (i === FNX_PCIE_XTR_STAT_DIR_RCV)
+      sprintf( tmp, "\nTLPs Received\n" );
+    GetStr = { GetStr, tmp };
+
+
+    sprintf( tmp, "   Type     Num       Min     Max     Avg     Total\n" );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  Total   %7d\n", NumTLPs[i] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  MWr32   %7d    %4d    %4d    %4d       %0d\n", NumMWr32TLPs[i],
+	     MWr32Bytes[i][FNX_PCIE_XTR_STAT_TYPE_MIN],
+	     MWr32Bytes[i][FNX_PCIE_XTR_STAT_TYPE_MAX],
+	     MWr32Bytes[i][FNX_PCIE_XTR_STAT_TYPE_AVG],
+	     MWr32Bytes[i][FNX_PCIE_XTR_STAT_TYPE_TOTAL] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  MWr64   %7d    %4d    %4d    %4d       %0d\n", NumMWr64TLPs[i],
+	     MWr64Bytes[i][FNX_PCIE_XTR_STAT_TYPE_MIN],
+	     MWr64Bytes[i][FNX_PCIE_XTR_STAT_TYPE_MAX],
+	     MWr64Bytes[i][FNX_PCIE_XTR_STAT_TYPE_AVG],
+	     MWr64Bytes[i][FNX_PCIE_XTR_STAT_TYPE_TOTAL] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  MRd32   %7d    %4d    %4d    %4d       %0d\n", NumMRd32TLPs[i],
+	     MRd32Bytes[i][FNX_PCIE_XTR_STAT_TYPE_MIN],
+	     MRd32Bytes[i][FNX_PCIE_XTR_STAT_TYPE_MAX],
+	     MRd32Bytes[i][FNX_PCIE_XTR_STAT_TYPE_AVG],
+	     MRd32Bytes[i][FNX_PCIE_XTR_STAT_TYPE_TOTAL] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  MRd64   %7d    %4d    %4d    %4d       %0d\n", NumMRd64TLPs[i],
+	     MRd64Bytes[i][FNX_PCIE_XTR_STAT_TYPE_MIN],
+	     MRd64Bytes[i][FNX_PCIE_XTR_STAT_TYPE_MAX],
+	     MRd64Bytes[i][FNX_PCIE_XTR_STAT_TYPE_AVG],
+	     MRd64Bytes[i][FNX_PCIE_XTR_STAT_TYPE_TOTAL] );
+    GetStr = { GetStr, tmp };    
+    sprintf( tmp, "  MRdLk32 %7d\n", NumMRdLk32TLPs[i] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  MRdLk64 %7d\n", NumMRdLk64TLPs[i] );
+    GetStr = { GetStr, tmp };       
+    sprintf( tmp, "  IOWr    %7d    %4d    %4d    %4d       %0d\n", NumIOWrTLPs[i],
+	     IOWrBytes[i][FNX_PCIE_XTR_STAT_TYPE_MIN],
+	     IOWrBytes[i][FNX_PCIE_XTR_STAT_TYPE_MAX],
+	     IOWrBytes[i][FNX_PCIE_XTR_STAT_TYPE_AVG],
+	     IOWrBytes[i][FNX_PCIE_XTR_STAT_TYPE_TOTAL] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  IORd    %7d    %4d    %4d    %4d       %0d\n", NumIORdTLPs[i],
+	     IORdBytes[i][FNX_PCIE_XTR_STAT_TYPE_MIN],
+	     IORdBytes[i][FNX_PCIE_XTR_STAT_TYPE_MAX],
+	     IORdBytes[i][FNX_PCIE_XTR_STAT_TYPE_AVG],
+	     IORdBytes[i][FNX_PCIE_XTR_STAT_TYPE_TOTAL] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  CfgWr0  %7d    %4d    %4d    %4d       %0d\n", NumCfgWr0TLPs[i],
+	     CfgWr0Bytes[i][FNX_PCIE_XTR_STAT_TYPE_MIN],
+	     CfgWr0Bytes[i][FNX_PCIE_XTR_STAT_TYPE_MAX],
+	     CfgWr0Bytes[i][FNX_PCIE_XTR_STAT_TYPE_AVG],
+	     CfgWr0Bytes[i][FNX_PCIE_XTR_STAT_TYPE_TOTAL] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  CfgRd0  %7d    %4d    %4d    %4d       %0d\n", NumCfgRd0TLPs[i],
+	     CfgRd0Bytes[i][FNX_PCIE_XTR_STAT_TYPE_MIN],
+	     CfgRd0Bytes[i][FNX_PCIE_XTR_STAT_TYPE_MAX],
+	     CfgRd0Bytes[i][FNX_PCIE_XTR_STAT_TYPE_AVG],
+	     CfgRd0Bytes[i][FNX_PCIE_XTR_STAT_TYPE_TOTAL] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  CfgWr1  %7d    %4d    %4d    %4d       %0d\n", NumCfgWr1TLPs[i],
+	     CfgWr1Bytes[i][FNX_PCIE_XTR_STAT_TYPE_MIN],
+	     CfgWr1Bytes[i][FNX_PCIE_XTR_STAT_TYPE_MAX],
+	     CfgWr1Bytes[i][FNX_PCIE_XTR_STAT_TYPE_AVG],
+	     CfgWr1Bytes[i][FNX_PCIE_XTR_STAT_TYPE_TOTAL] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  CfgRd1  %7d    %4d    %4d    %4d       %0d\n", NumCfgRd1TLPs[i],
+	     CfgRd1Bytes[i][FNX_PCIE_XTR_STAT_TYPE_MIN],
+	     CfgRd1Bytes[i][FNX_PCIE_XTR_STAT_TYPE_MAX],
+	     CfgRd1Bytes[i][FNX_PCIE_XTR_STAT_TYPE_AVG],
+	     CfgRd1Bytes[i][FNX_PCIE_XTR_STAT_TYPE_TOTAL] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  Cpl     %7d\n", NumCplTLPs[i] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  CplD    %7d    %4d    %4d    %4d       %0d\n", NumCplDTLPs[i],
+	     CplDBytes[i][FNX_PCIE_XTR_STAT_TYPE_MIN],
+	     CplDBytes[i][FNX_PCIE_XTR_STAT_TYPE_MAX],
+	     CplDBytes[i][FNX_PCIE_XTR_STAT_TYPE_AVG],
+	     CplDBytes[i][FNX_PCIE_XTR_STAT_TYPE_TOTAL] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  CplLk   %7d\n", NumCplLkTLPs[i] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  CplDLk  %7d\n", NumCplDLkTLPs[i] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  Msg     %7d\n", NumMsgTLPs[i] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  MsgD    %7d", NumMsgDTLPs[i] );
+    GetStr = { GetStr, tmp };
+  }
+
+  // Add DLLP Information
+  for (i=0; i < FNX_PCIE_XTR_NUM_STAT_DIRS; i++) {
+    if (i === FNX_PCIE_XTR_STAT_DIR_XMIT)
+      sprintf( tmp, "\nDLLPs Transmitted\n" );
+    if (i === FNX_PCIE_XTR_STAT_DIR_RCV)
+      sprintf( tmp, "\nDLLPs Received\n" );
+    GetStr = { GetStr, tmp };
+
+    sprintf( tmp, "   Type     Num\n" );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  Total   %7d\n", NumDLLPs[i] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  Ack     %7d\n", NumAckDLLPs[i] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  Nak     %7d\n", NumNakDLLPs[i] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  UpFCP   %7d\n", NumUpFCPDLLPs[i] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  UpFCNP  %7d\n", NumUpFCNPDLLPs[i] );
+    GetStr = { GetStr, tmp };
+    sprintf( tmp, "  UpFCCpl %7d", NumUpFCCplDLLPs[i] );
+    GetStr = { GetStr, tmp };
+  }
+}
+
+task FNXPCIEXactorStatsDatabase::Display( ReportType rptType )
+{
+  string MethodName = "Display";
+  
+  PCIEX_QR_Type( rptType, GetStr() );
+}
+
+task FNXPCIEXactorStatsDatabase::UpdatePkt( FNXPCIEXactorPacket pkt,
+					    integer statDir )
+{
+  string MethodName = "UpdatePkt";
+
+  if ((statDir !== FNX_PCIE_XTR_STAT_DIR_XMIT) && (statDir !== FNX_PCIE_XTR_STAT_DIR_RCV))
+    PCIEX_QR_ERR( "%s-> Illegal Statistic Direction=%0d Specified.",
+		  XactorName, statDir );
+
+  if (pkt.isTlp()) {
+    NumTLPs[statDir]++;
+
+    if (pkt.isTlpIORequest()) {
+      if (pkt.GetFmtType() === FNX_PCIE_XTR_FMT_TYPE_IORD) {
+	NumIORdTLPs[statDir]++;
+	IORdBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] += pkt.NumBytes();
+	if (pkt.NumBytes() < IORdBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN])
+	  IORdBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN] = pkt.NumBytes();
+	if (IORdBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] < pkt.NumBytes())
+	  IORdBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] = pkt.NumBytes();
+	IORdBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_AVG] = IORdBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] / NumIORdTLPs[statDir];
+      }
+      if (pkt.GetFmtType() === FNX_PCIE_XTR_FMT_TYPE_IOWR) {
+	NumIOWrTLPs[statDir]++;
+	IOWrBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] += pkt.NumBytes();
+	if (pkt.NumBytes() < IOWrBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN])
+	  IOWrBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN] = pkt.NumBytes();
+	if (IOWrBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] < pkt.NumBytes())
+	  IOWrBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] = pkt.NumBytes();
+	IOWrBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_AVG] = IOWrBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] / NumIOWrTLPs[statDir];
+      }
+    }
+    else {
+      if (pkt.isTlpCfgRequest()) {
+	if (pkt.GetFmtType() === FNX_PCIE_XTR_FMT_TYPE_CFGRD0) {
+	  NumCfgRd0TLPs[statDir]++;
+	  CfgRd0Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] += pkt.NumBytes();
+	  if (pkt.NumBytes() < CfgRd0Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN])
+	    CfgRd0Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN] = pkt.NumBytes();
+	  if (CfgRd0Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] < pkt.NumBytes())
+	    CfgRd0Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] = pkt.NumBytes();
+	  CfgRd0Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_AVG] = CfgRd0Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] / NumCfgRd0TLPs[statDir];
+	}
+	if (pkt.GetFmtType() === FNX_PCIE_XTR_FMT_TYPE_CFGWR0) {
+	  NumCfgWr0TLPs[statDir]++; 
+	  CfgWr0Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] += pkt.NumBytes();
+	  if (pkt.NumBytes() < CfgWr0Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN])
+	    CfgWr0Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN] = pkt.NumBytes();
+	  if (CfgWr0Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] < pkt.NumBytes())
+	    CfgWr0Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] = pkt.NumBytes();
+	  CfgWr0Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_AVG] = CfgWr0Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] / NumCfgWr0TLPs[statDir];
+	}
+	if (pkt.GetFmtType() === FNX_PCIE_XTR_FMT_TYPE_CFGRD1) {
+	  NumCfgRd1TLPs[statDir]++;
+	  CfgRd1Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] += pkt.NumBytes();
+	  if (pkt.NumBytes() < CfgRd1Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN])
+	    CfgRd1Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN] = pkt.NumBytes();
+	  if (CfgRd1Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] < pkt.NumBytes())
+	    CfgRd1Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] = pkt.NumBytes();
+	  CfgRd1Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_AVG] = CfgRd1Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] / NumCfgRd1TLPs[statDir];
+	}
+	if (pkt.GetFmtType() === FNX_PCIE_XTR_FMT_TYPE_CFGWR1) {
+	  NumCfgWr1TLPs[statDir]++; 
+	  CfgWr1Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] += pkt.NumBytes();
+	  if (pkt.NumBytes() < CfgWr1Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN])
+	    CfgWr1Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN] = pkt.NumBytes();
+	  if (CfgWr1Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] < pkt.NumBytes())
+	    CfgWr1Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] = pkt.NumBytes();
+	  CfgWr1Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_AVG] = CfgWr1Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] / NumCfgWr1TLPs[statDir];
+	}
+      }
+      else {
+	if (pkt.isTlpMemRequest32()) {
+	  if (pkt.GetFmtType() === FNX_PCIE_XTR_FMT_TYPE_MRD_32) {
+	    NumMRd32TLPs[statDir]++;
+	    MRd32Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] += pkt.NumBytes();
+	    if (pkt.NumBytes() < MRd32Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN])
+	      MRd32Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN] = pkt.NumBytes();
+	    if (MRd32Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] < pkt.NumBytes())
+	      MRd32Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] = pkt.NumBytes();
+	    MRd32Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_AVG] = MRd32Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] / NumMRd32TLPs[statDir];
+	  }
+	  if (pkt.GetFmtType() === FNX_PCIE_XTR_FMT_TYPE_MRDLK_32)
+	    NumMRdLk32TLPs[statDir]++;
+	  if (pkt.GetFmtType() === FNX_PCIE_XTR_FMT_TYPE_MWR_32) {
+	    NumMWr32TLPs[statDir]++;
+	    MWr32Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] += pkt.NumBytes();
+	    if (pkt.NumBytes() < MWr32Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN])
+	      MWr32Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN] = pkt.NumBytes();
+	    if (MWr32Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] < pkt.NumBytes())
+	      MWr32Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] = pkt.NumBytes();
+	    MWr32Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_AVG] = MWr32Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] / NumMWr32TLPs[statDir];
+	  }
+	}
+	else {
+	  if (pkt.isTlpMemRequest64()) {
+	    if (pkt.GetFmtType() === FNX_PCIE_XTR_FMT_TYPE_MRD_64) {
+	      NumMRd64TLPs[statDir]++;
+	      MRd64Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] += pkt.NumBytes();
+	      if (pkt.NumBytes() < MRd64Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN])
+		MRd64Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN] = pkt.NumBytes();
+	      if (MRd64Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] < pkt.NumBytes())
+		MRd64Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] = pkt.NumBytes();
+	      MRd64Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_AVG] = MRd64Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] / NumMRd64TLPs[statDir];
+	    }
+	    if (pkt.GetFmtType() === FNX_PCIE_XTR_FMT_TYPE_MRDLK_64)
+	      NumMRdLk64TLPs[statDir]++;
+	    if (pkt.GetFmtType() === FNX_PCIE_XTR_FMT_TYPE_MWR_64) {
+	      NumMWr64TLPs[statDir]++;
+	      MWr64Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] += pkt.NumBytes();
+	      if (pkt.NumBytes() < MWr64Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN])
+		MWr64Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN] = pkt.NumBytes();
+	      if (MWr64Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] < pkt.NumBytes())
+		MWr64Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] = pkt.NumBytes();
+	      MWr64Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_AVG] = MWr64Bytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] / NumMWr64TLPs[statDir];
+	    }
+	  }
+	  else {
+	    if (pkt.isTlpCompletion()) {
+	      if (pkt.GetFmtType() === FNX_PCIE_XTR_FMT_TYPE_CPL)
+		NumCplTLPs[statDir]++;
+	      if (pkt.GetFmtType() === FNX_PCIE_XTR_FMT_TYPE_CPLD) {
+		NumCplDTLPs[statDir]++;
+		CplDBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] += pkt.NumBytes();
+		if (pkt.NumBytes() < CplDBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN])
+		  CplDBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MIN] = pkt.NumBytes();
+		if (CplDBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] < pkt.NumBytes())
+		  CplDBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_MAX] = pkt.NumBytes();
+		CplDBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_AVG] = CplDBytes[statDir][FNX_PCIE_XTR_STAT_TYPE_TOTAL] / NumCplDTLPs[statDir];
+	      }
+	      if (pkt.GetFmtType() === FNX_PCIE_XTR_FMT_TYPE_CPLLK)
+		NumCplLkTLPs[statDir]++;
+	      if (pkt.GetFmtType() === FNX_PCIE_XTR_FMT_TYPE_CPLDLK)
+		NumCplDLkTLPs[statDir]++;
+	    }
+	    else {
+	      if (pkt.isTlpMessage()) {
+		if (pkt.GetFmtType() =?= FNX_PCIE_XTR_FMT_TYPE_MSG)
+		  NumMsgTLPs[statDir]++;
+		if (pkt.GetFmtType() =?= FNX_PCIE_XTR_FMT_TYPE_MSGD)
+		  NumMsgDTLPs[statDir]++;
+	      }
+	    }
+	  }
+	}
+      }
+    }
+  }
+  if (pkt.isDllp()) {
+    NumDLLPs[statDir]++;
+
+    if (pkt.isDllpAckNak()) {
+      
+      if (pkt.DllpType === FNX_PCIE_XTR_DLLP_TYPE_ACK)
+	NumAckDLLPs[statDir]++;
+      if (pkt.DllpType === FNX_PCIE_XTR_DLLP_TYPE_NAK)
+	NumNakDLLPs[statDir]++;
+    }
+    else {
+      if (pkt.isDllpFC()) {
+	if (pkt.DllpType =?= FNX_PCIE_XTR_DLLP_TYPE_UPDATE_FC_P)
+	  NumUpFCPDLLPs[statDir]++;
+	if (pkt.DllpType =?= FNX_PCIE_XTR_FC_DLLP_TYPE_UPDATE_FC_NP)
+	  NumUpFCNPDLLPs[statDir]++;
+	if (pkt.DllpType =?= FNX_PCIE_XTR_DLLP_TYPE_UPDATE_FC_CPL)
+	  NumUpFCCplDLLPs[statDir]++;
+      }
+    }
+  }
+}

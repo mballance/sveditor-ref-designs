@@ -1,0 +1,368 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: l2sat_misc_cov.vrpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#inc "l2sat_cov_inc.pal"
+
+#include <vera_defines.vrh>
+//#include "l2sat_cov_ports_binds.vrh"
+#include "misc_cov_if.vrh"
+#include "l2sat_defines.vrh"
+//#include "l2sat_cov_defines.vrh"
+
+extern class l2sat_intf_coverage_class {
+   bit         l2_iq_cas12_samp_trigger;
+   bit [13:0]  l2_atomic_store_samp_trigger;
+   bit [2:0]   l2_pst1_dataerr_pst2_tagerr_samp_trigger;
+   bit [19:0]  l2_error_vuad_ecc_samp_trigger;
+   bit         l2_single_pcx_WRI_same_addr_samp_trigger;
+   bit         l2_double_pcx_WRI_same_addr_samp_trigger;
+   bit         l2_single_pcx_WR8_same_addr_samp_trigger;
+   bit         l2_double_pcx_WR8_same_addr_samp_trigger;
+   bit         l2_single_pcx_RDD_same_addr_samp_trigger;
+   bit         l2_double_pcx_RDD_same_addr_samp_trigger;
+   bit         l2_single_pcx_WRI_diff_addr_samp_trigger;
+   bit         l2_double_pcx_WRI_diff_addr_samp_trigger;
+   bit         l2_single_pcx_WR8_diff_addr_samp_trigger;
+   bit         l2_double_pcx_WR8_diff_addr_samp_trigger;
+   bit         l2_single_pcx_RDD_diff_addr_samp_trigger;
+   bit         l2_double_pcx_RDD_diff_addr_samp_trigger;
+}
+
+
+task InitMiscCov (var l2sat_intf_coverage_class  l2sat_intf_coverage) {
+
+   shadow integer i;
+   shadow bit [39:0] address;
+   shadow bit [39:0] address_temp;
+   shadow bit [4:0] reqtype;
+   shadow bit cas;
+   shadow bit jbi;
+   shadow bit [15:0] way_sel;
+   shadow bit [15:0] way_sel_temp;
+   shadow bit [15:0] l2t_l2d_way_sel_c2;
+   shadow bit tag_hit;
+   shadow bit tag_hit_temp;
+   shadow bit [39:0] sii_address;
+   shadow bit atomic;
+   shadow bit [2:0] siu_reqtype;
+   shadow bit [31:0] sii_l2t_req_prev;
+   shadow bit [31:0] sii_l2t_req_next;
+
+   //initialize all triggers to zero
+   l2sat_intf_coverage.l2_iq_cas12_samp_trigger = 0;
+   l2sat_intf_coverage.l2_atomic_store_samp_trigger = 0;
+   l2sat_intf_coverage.l2_pst1_dataerr_pst2_tagerr_samp_trigger = 0;
+   l2sat_intf_coverage.l2_error_vuad_ecc_samp_trigger=0;
+
+   l2sat_intf_coverage.l2_single_pcx_WRI_same_addr_samp_trigger = 0;
+   l2sat_intf_coverage.l2_double_pcx_WRI_same_addr_samp_trigger = 0;
+   l2sat_intf_coverage.l2_single_pcx_WR8_same_addr_samp_trigger = 0;
+   l2sat_intf_coverage.l2_double_pcx_WR8_same_addr_samp_trigger = 0;
+   l2sat_intf_coverage.l2_single_pcx_RDD_same_addr_samp_trigger = 0;
+   l2sat_intf_coverage.l2_double_pcx_RDD_same_addr_samp_trigger = 0;
+   l2sat_intf_coverage.l2_single_pcx_WRI_diff_addr_samp_trigger = 0;
+   l2sat_intf_coverage.l2_double_pcx_WRI_diff_addr_samp_trigger = 0;
+   l2sat_intf_coverage.l2_single_pcx_WR8_diff_addr_samp_trigger = 0;
+   l2sat_intf_coverage.l2_double_pcx_WR8_diff_addr_samp_trigger = 0;
+   l2sat_intf_coverage.l2_single_pcx_RDD_diff_addr_samp_trigger = 0;
+   l2sat_intf_coverage.l2_double_pcx_RDD_diff_addr_samp_trigger = 0;
+
+
+fork
+{
+   //for l2_iq_cas12_samp
+   while(1) {
+      // wait for arbctl to select CAS1_RQ from PCX (not IQ)
+      while (1) {
+         if (misc_cov_if.iqsel_px2_0 && misc_cov_if.ique_iq_arb_atm_px2_0 && !misc_cov_if.iqu_sel_iq_0) {
+            break;
+         }
+         @(posedge CLOCK);
+      }
+      @(posedge CLOCK);
+
+      // wait for arbctl to select CAS2_RQ
+      while (1) {
+         if (misc_cov_if.iqsel_px2_0 && !misc_cov_if.ique_iq_arb_atm_px2_0) {
+            break;
+         }
+         @(posedge CLOCK);
+      }
+
+      if (misc_cov_if.iqu_sel_iq_0) {
+         l2sat_intf_coverage.l2_iq_cas12_samp_trigger= 1'b1;
+      }
+
+      @(posedge CLOCK);
+   }
+}
+
+{
+   while(1){
+   //wait for first pass with vuad ecc correctible error
+   while (1) {
+          address_temp = misc_cov_if.arbdp_addr_c2_0;
+          way_sel_temp = misc_cov_if.l2t_l2d_way_sel_c2_0;
+          tag_hit_temp = misc_cov_if.tag_hit_unqual_c2_0;
+       if (misc_cov_if.arbctl_inst_vld_c2_0 && misc_cov_if.arb_vuad_ce_err_c2_0){
+          address = address_temp;
+          way_sel = way_sel_temp;
+          tag_hit = tag_hit_temp;
+          //printf("Coverage Debug: VUAD ECC first pass detected: address->%x, way_sel->%x, tag_hit ->%x\n", address, way_sel, tag_hit);
+          break;
+       }
+         @(posedge CLOCK);
+   }
+   @(posedge CLOCK);
+   
+   fork{
+      while(1){
+         l2t_l2d_way_sel_c2 = misc_cov_if.l2t_l2d_way_sel_c2_0;
+         if (misc_cov_if.arbctl_inst_vld_c2_0 && misc_cov_if.arbdp_addr_c2_0 == address && !misc_cov_if.arb_vuad_ce_err_c2_0){
+            //true hit
+          //printf("Coverage Debug: VUAD ECC second pass detected: address->%x, way_sel->%x, tag_hit ->%x, misc_cov_if.tag_hit_unqual_c2_0->%x, l2t_l2d_way_sel_c2 ->%x \n", address, way_sel, tag_hit,  misc_cov_if.tag_hit_unqual_c2_0, l2t_l2d_way_sel_c2);
+            case({tag_hit, misc_cov_if.tag_hit_unqual_c2_0}){
+               2'b00: l2sat_intf_coverage.l2_error_vuad_ecc_samp_trigger = {16'b0, 4'b0001};
+               2'b01: l2sat_intf_coverage.l2_error_vuad_ecc_samp_trigger = {l2t_l2d_way_sel_c2, 4'b0010};
+               2'b10: l2sat_intf_coverage.l2_error_vuad_ecc_samp_trigger = {way_sel, 4'b0100};
+               2'b11: l2sat_intf_coverage.l2_error_vuad_ecc_samp_trigger = {way_sel, 4'b1000};
+            }
+            break;
+         }
+         else
+	    l2sat_intf_coverage.l2_error_vuad_ecc_samp_trigger = 0;	
+         @(posedge CLOCK);
+      }
+   }
+   join none
+   }
+
+}
+
+{
+   //for l2_atomic_store_samp
+   while (1) {
+      // wait for atomic load to hit cache
+      while (1) {
+         if (misc_cov_if.arbctl_inst_vld_c2_0 && misc_cov_if.tagctl_hit_l2orfb_c2_0 &&
+             !misc_cov_if.arbdp_inst_c2_0[JBI_INST] &&
+            (misc_cov_if.arbdp_inst_c2_0[REQTYPE] == CAS1_RQ ||
+             misc_cov_if.arbdp_inst_c2_0[REQTYPE] == SWAP_RQ && !misc_cov_if.arbdp_inst_c2_0[CTRUE])) {
+            address = misc_cov_if.arbdp_addr_c2_0;
+            cas = (misc_cov_if.arbdp_inst_c2_0[REQTYPE] == CAS1_RQ);
+            break;
+         }
+         @(posedge CLOCK);
+      } //while 1
+      @(posedge CLOCK);
+
+      fork
+      {
+         // wait for instruction with the same address[39:4] to hit cache
+         while (1) {
+            if (misc_cov_if.arbctl_inst_vld_c2_0 && misc_cov_if.arbdp_addr_c2_0[39:4] == address[39:4]) {
+               reqtype = misc_cov_if.arbdp_inst_c2_0[REQTYPE];
+
+               // instruction is atomic store
+               if (misc_cov_if.tagctl_hit_l2orfb_c2_0 && !misc_cov_if.arbdp_inst_c2_0[JBI_INST] &&
+                  (cas && reqtype == CAS2_RQ || !cas && reqtype == SWAP_RQ && misc_cov_if.arbdp_inst_c2_0[CTRUE])) {
+                  break;
+               }
+               // instruction is not atomic store
+               else {
+                  if (!misc_cov_if.arbdp_inst_c2_0[JBI_INST]) {
+                     // STORE
+                     if (reqtype == STORE_RQ && !misc_cov_if.arbdp_inst_c2_0[BIS])
+                        l2sat_intf_coverage.l2_atomic_store_samp_trigger = cas ? CAS_STORE : SWAP_STORE;
+                        // BLKSTORE
+                        else if (reqtype == STORE_RQ && misc_cov_if.arbdp_inst_c2_0[PF] &&
+                                 misc_cov_if.arbdp_inst_c2_0[BIS])
+                           l2sat_intf_coverage.l2_atomic_store_samp_trigger = cas ? CAS_BLKSTORE: SWAP_BLKSTORE;
+                        // BLKINITST
+                        else if (reqtype == STORE_RQ && !misc_cov_if.arbdp_inst_c2_0[PF]
+                                 && misc_cov_if.arbdp_inst_c2_0[BIS])
+                           l2sat_intf_coverage.l2_atomic_store_samp_trigger = cas ? CAS_BLKINITST: SWAP_BLKINITST;
+                        // STRST
+                        else if(reqtype == STRST_RQ)
+                           l2sat_intf_coverage.l2_atomic_store_samp_trigger = cas? CAS_STRST : SWAP_STRST;
+                        // FWDRQ_STORE
+                        else if(reqtype == FWD_RQ && !misc_cov_if.arbdp_inst_c2_0[NC])
+                           l2sat_intf_coverage.l2_atomic_store_samp_trigger = cas ? CAS_FWDRQST : SWAP_FWDRQST;
+                        }
+                        else {
+                           // WR8
+                           if (reqtype[2:0] == 3'b010)
+                              l2sat_intf_coverage.l2_atomic_store_samp_trigger = cas ? CAS_WR8 : SWAP_WR8;
+                           // WRI
+                           else if(reqtype[2:0] == 3'b100)
+                              l2sat_intf_coverage.l2_atomic_store_samp_trigger = cas ? CAS_WRI : SWAP_WRI;
+                        }
+               }
+            }
+            @(posedge CLOCK);
+         } // while(1)
+      }
+      join none
+   } // while(1)
+}
+
+
+{
+   //for l2_pst1_dataerr_pst2_tagerr_samp
+   while (1) {
+      // wait for partial store 1st hit pass
+      if (misc_cov_if.arbctl_inst_vld_c2_0 && misc_cov_if.decdp_pst_inst_c2_0
+          && misc_cov_if.tagctl_hit_l2orfb_c2_0) {
+         reqtype = misc_cov_if.arbdp_inst_c2_0[REQTYPE];
+         address = misc_cov_if.arbdp_addr_c2_0;
+         jbi = misc_cov_if.arbdp_inst_c2_0[JBI_INST];
+
+         fork
+         {
+            // wait till C8
+            repeat(6+1) @(posedge CLOCK);
+
+            // pst1 detects data error
+            if (misc_cov_if.data_corr_err_c8_0) {
+               // wait for partial store 2nd pass
+               while (1) {
+                  if (misc_cov_if.arbctl_inst_vld_c2_0 && misc_cov_if.decdp_pst_inst_c2_0
+                      && misc_cov_if.arbdp_inst_c2_0[CTRUE] && misc_cov_if.arbdp_inst_c2_0[REQTYPE] == reqtype
+                      && misc_cov_if.arbdp_inst_c2_0[JBI_INST] == jbi &&
+                      misc_cov_if.arbdp_addr_c2_0 == address) {
+                     // pst2 detects tag error
+                     if (misc_cov_if.par_err_c2_0) {
+                        if (!jbi) {
+                           // STORE
+                           if (reqtype == STORE_RQ)
+                              l2sat_intf_coverage.l2_pst1_dataerr_pst2_tagerr_samp_trigger = PST12_STORE;
+                           // STRST
+                           else if (reqtype == STRST_RQ)
+                              l2sat_intf_coverage.l2_pst1_dataerr_pst2_tagerr_samp_trigger = PST12_STRST;
+                        }
+                        else {
+                           // WR8 (WR8 is the only JBI instruction that can be a partial store)
+                           l2sat_intf_coverage.l2_pst1_dataerr_pst2_tagerr_samp_trigger = PST12_WR8;
+                        }
+                     }
+
+                     @(posedge CLOCK);
+                     break;
+                  }
+
+                  @(posedge CLOCK);
+               } // while(1)
+            } // if(misc_cov_if.data_corr_err_c8)
+         }
+         join none
+      } // if(misc_cov_if.arbctl_inst_vld_c2 && misc_cov_if.decdp_pst_inst_c2 && misc_cov_if.tagctl_hit_l2orfb_c2)
+
+      @(posedge CLOCK);
+   } // while(1)
+}
+
+{
+   while(1){
+         sii_address[39:32] = misc_cov_if.sii_l2t_req[7:0];
+         atomic = misc_cov_if.pcx_l2t_atm_px1;
+         siu_reqtype[2:0] = misc_cov_if.sii_l2t_req[26:24];
+      if(misc_cov_if.pcx_l2t_data_rdy_px1 && misc_cov_if.sii_l2t_req_vld){
+         printf("Coverage Debug, sii_l2t_req %x\n", misc_cov_if.sii_l2t_req);
+         @(posedge CLOCK); 
+         sii_address[31:6] = misc_cov_if.sii_l2t_req[31:6];
+         printf("Coverage Debug: sii_address %x, pcx_l2t_data_px2 %x, siu_reqtype %x\n", {sii_address[39:32], misc_cov_if.sii_l2t_req[31:6]}, misc_cov_if.pcx_l2t_data_px2[103:70], siu_reqtype);
+         if(misc_cov_if.pcx_l2t_data_px2[103:70] == {sii_address[39:32], misc_cov_if.sii_l2t_req[31:6]}){
+         printf("Coverage Debug: sii_address %x, pcx_l2t_data_px2 %x, siu_reqtype %x\n", {sii_address[39:32], misc_cov_if.sii_l2t_req[31:6]}, misc_cov_if.pcx_l2t_data_px2[103:70], siu_reqtype);
+            case (siu_reqtype){
+            3'b100:
+	    if(atomic)
+	       l2sat_intf_coverage.l2_single_pcx_WRI_same_addr_samp_trigger = 1'b1;
+            else
+	       l2sat_intf_coverage.l2_double_pcx_WRI_same_addr_samp_trigger = 1'b1;
+            3'b010:
+	    if(atomic)
+	       l2sat_intf_coverage.l2_single_pcx_WR8_same_addr_samp_trigger = 1'b1;
+            else
+	       l2sat_intf_coverage.l2_double_pcx_WR8_same_addr_samp_trigger = 1'b1;
+	    3'b001:
+	    if(atomic)
+	       l2sat_intf_coverage.l2_single_pcx_RDD_same_addr_samp_trigger = 1'b1;
+            else
+	       l2sat_intf_coverage.l2_double_pcx_RDD_same_addr_samp_trigger = 1'b1;
+	    }
+	 }
+         else{
+            case (siu_reqtype){
+            3'b100:
+	    if(atomic)
+	       l2sat_intf_coverage.l2_single_pcx_WRI_diff_addr_samp_trigger = 1'b1;
+            else
+	       l2sat_intf_coverage.l2_double_pcx_WRI_diff_addr_samp_trigger = 1'b1;
+            3'b010:
+	    if(atomic)
+	       l2sat_intf_coverage.l2_single_pcx_WR8_diff_addr_samp_trigger = 1'b1;
+            else
+	       l2sat_intf_coverage.l2_double_pcx_WR8_diff_addr_samp_trigger = 1'b1;
+	    3'b001:
+	    if(atomic)
+	       l2sat_intf_coverage.l2_single_pcx_RDD_diff_addr_samp_trigger = 1'b1;
+            else
+	       l2sat_intf_coverage.l2_double_pcx_RDD_diff_addr_samp_trigger = 1'b1;
+	    }
+	 }
+      }
+      else{
+            l2sat_intf_coverage.l2_single_pcx_WRI_same_addr_samp_trigger = 1'b0;
+            l2sat_intf_coverage.l2_double_pcx_WRI_same_addr_samp_trigger = 1'b0;
+            l2sat_intf_coverage.l2_single_pcx_WR8_same_addr_samp_trigger = 1'b0;
+            l2sat_intf_coverage.l2_double_pcx_WR8_same_addr_samp_trigger = 1'b0;
+            l2sat_intf_coverage.l2_single_pcx_RDD_same_addr_samp_trigger = 1'b0;
+            l2sat_intf_coverage.l2_double_pcx_RDD_same_addr_samp_trigger = 1'b0;
+            l2sat_intf_coverage.l2_single_pcx_WRI_diff_addr_samp_trigger = 1'b0;
+            l2sat_intf_coverage.l2_double_pcx_WRI_diff_addr_samp_trigger = 1'b0;
+            l2sat_intf_coverage.l2_single_pcx_WR8_diff_addr_samp_trigger = 1'b0;
+            l2sat_intf_coverage.l2_double_pcx_WR8_diff_addr_samp_trigger = 1'b0;
+            l2sat_intf_coverage.l2_single_pcx_RDD_diff_addr_samp_trigger = 1'b0;
+            l2sat_intf_coverage.l2_double_pcx_RDD_diff_addr_samp_trigger = 1'b0;
+      }
+      @(posedge CLOCK);
+   }
+
+}
+
+join none
+
+
+}
+

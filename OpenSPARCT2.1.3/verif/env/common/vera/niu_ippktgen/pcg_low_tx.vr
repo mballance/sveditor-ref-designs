@@ -1,0 +1,483 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: pcg_low_tx.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+task send_packet(bit [3:0] ptype, byte_array buf, integer len, bit [63:0] options) {
+	integer n;
+
+	case(my_port) {
+	   0:	{
+		send_packet_xgmii with  xgm0(ptype, buf, len, options);
+		}
+
+	   1:	{ 
+		send_packet_gmii with  gm1(ptype, buf, len, options);
+		}
+	   2:	{
+		send_packet_gmii with  gm2(ptype, buf, len, options);
+		}
+	   3:	{ 
+		send_packet_gmii with  gm3(ptype, buf, len, options);
+		}
+
+	   }
+   }
+
+
+task assert_col_tx with mii_def(bit [63:0] options) {
+        integer itmp;
+ 
+        // Wait for txen
+	while(rxdv_set == 0)	@(posedge $rxclk);
+
+        //printf("DEBUG: pcg_low_rx: Got token %0d at time: %0d\n",om_token,{get_time(HI),get_time(LO)} );
+ 
+        if( check_option( options, O_RX_COL) & cfg_reg[CFG_COL_LEN]>0 & !tx_done ) {
+                itmp = cfg_reg[CFG_COL_DEL];
+                while(itmp>0 & !tx_done) {
+                        itmp--;
+                        @(posedge $rxclk);
+                   }
+                $rxcol = 1 async;
+                itmp = cfg_reg[CFG_COL_LEN];
+                while(itmp>0 & !tx_done) {
+                        itmp--;
+                        @(posedge $rxclk);
+                   }
+                $rxcol = 0 async;
+           }
+ 
+   }
+ 
+
+task assert_mii_err with mii_def() {
+	integer cnt=0;
+
+	if(tx_err_start==-1)	return;
+
+	if(tx_err_len<1) {
+		printf("PG: WARNING: tx_err injection length to short. (Start: %0d, Length: %0d)\n",
+				tx_err_start,tx_err_len);
+		return;
+	   }
+
+	while(cnt++ < tx_err_start & !tx_done) 
+		@(posedge $rxclk);
+
+	if(!tx_done) {
+		$rxerr = 1;
+		cnt=0;
+		while(cnt++ < tx_err_len & !tx_done)
+			@(posedge $rxclk);
+		$rxerr = 0;
+	   } else
+		printf("PG: WARNING: Packet was sent before tx_err could be assrted.(Start: %0d, Length: %0d)\n",
+				tx_err_start,tx_err_len);
+
+	tx_err_start = -1;
+   }
+
+task send_packet_mii with mii_def(bit [3:0] ptype, byte_array buf, integer len, bit [63:0] options) {
+	integer n, cnt;
+	bit [7:0] tmp;
+	bit [63:0] current_time;
+	bit [63:0] min_gap, time_tmp;
+
+	tx_done = 0;
+
+	if(debug_mii==1)
+		printf("DEBUG: PG low tx started: current_time: %0d\n",  {get_time(HI),get_time(LO)} );
+	
+
+	current_time = {get_time(HI),get_time(LO)};
+	if(port_speed==1)	min_gap = 800 * MII_IP_GAP;	// 800ns * MII_IP_GAP inter packet cycles
+	else			min_gap = 80 * MII_IP_GAP;	// 80ns * MII_IP_GAP inter packet cycles
+	time_tmp = current_time - last_tx_time;
+	if(debug_mii_tx)
+		printf("DEBUG: PG low tx: last_time: %0d, current_time: %0d, diff: %0d\n",
+				last_tx_time,current_time,time_tmp);
+	if((time_tmp < min_gap) & !check_option(options, O_NO_IP_GAP_FIX) & !check_option(options, O_CUSTOM_IP_GAP) ) {
+		time_tmp = min_gap - time_tmp;
+		if(debug_mii_tx) printf("DEBUG: PG low tx: Min_gap: %0d, gap_diff: %0d\n",min_gap,time_tmp);
+		if(port_speed==1)	time_tmp = time_tmp / 400;
+		else			time_tmp = time_tmp / 40;
+		if(debug_mii_tx) printf("DEBUG: PG low tx: waiting additional %0d cycles\n",time_tmp);
+		repeat(time_tmp)	@(posedge $rxclk);
+	   } else
+	if( check_option(options, O_CUSTOM_IP_GAP) ) {
+		repeat(cfg_reg[CFG_IP_GAP])	@(posedge $rxclk);
+	   }
+
+	fork
+		assert_mii_err with (get_bind())();
+	join none
+
+
+	$rxdv = 1;
+	rxdv_set = 1;
+	//$rxerr = 0;
+
+	if( check_option(options, O_PREAMB_ERR) )	cnt = cfg_reg[CFG_PRAMB_CNT];
+	else						cnt = 7;
+
+	//$rxcol = 0;
+	for(n=0;n<cnt;n++) {
+		tmp = MII_PREAMBLE;
+		$rxd = tmp[3:0];
+		@(posedge $rxclk);
+		$rxd = tmp[7:4];
+		@(posedge $rxclk);
+	   }
+
+	if( check_option(options, O_SFD_ERR) )	tmp = cfg_reg[CFG_SFD_TOKEN];
+	else					tmp = MII_SOF;
+
+	$rxd = tmp[3:0];
+	@(posedge $rxclk);
+	$rxd = tmp[7:4];
+	@(posedge $rxclk);
+
+	for(n=0;n<len;n++) {
+		if(debug_mii==1)	printf("MII: Sending Byte[%0d]: %h\n", n, buf.val[n] );
+		tmp = buf.val[n];
+		$rxd = tmp[3:0];
+		@(posedge $rxclk);
+		//if( check_option(options, O_CD_ERR) )	$rxcrs = 1;
+		if(n != (len-1) | !check_option(options, O_NIBBLE_ERR) ) {	// Force nibble error
+			$rxd = tmp[7:4];
+			@(posedge $rxclk);
+		   }
+	   }
+
+	$rxdv = 0;
+	rxdv_set = 0;
+
+	tmp = MII_PREAMBLE;
+	$rxd = tmp[3:0];
+
+/* -----------------------------------------------
+    SEND EXTEND NOT NEEDED FOR MII
+   -----------------------------------------------
+
+	//
+	// Send EXTEND
+	//
+	for(n=0;n<8;n++) {
+		tmp = MII_EXTEND;
+		$rxd = tmp[3:0];
+		$rxerr = 0;
+		@(posedge $rxclk); 
+		$rxd = tmp[7:4];
+		@(posedge $rxclk); 
+	   }
+	$rxerr = 0;
+------------------------------------------------ */
+
+	@(posedge $rxclk); 
+	tx_done = 1;
+	last_tx_time =  {get_time(HI),get_time(LO)};
+
+   }
+
+
+task assert_gmii_err with gmii_def() {
+	integer cnt=0;
+
+	if(tx_err_start==-1)	return;
+
+	if(tx_err_len<1) {
+		printf("PG: WARNING: tx_err injection length to short. (Start: %0d, Length: %0d)\n",
+				tx_err_start,tx_err_len);
+		return;
+	   }
+
+	while(cnt++ < tx_err_start & !tx_done) 
+		@(posedge $rxclk);
+
+	if(!tx_done) {
+		$rxerr = 1;
+		cnt=0;
+		while(cnt++ < tx_err_len & !tx_done)
+			@(posedge $rxclk);
+		$rxerr = 0;
+	   } else
+		printf("PG: WARNING: Packet was sent before tx_err could be assrted.(Start: %0d, Length: %0d)\n",
+				tx_err_start,tx_err_len);
+
+	tx_err_start = -1;
+   }
+
+task send_packet_gmii with gmii_def(bit [3:0] ptype, byte_array buf, integer len, bit [63:0] options) {
+	integer n, cnt;
+	bit [7:0] tmp;
+	bit [63:0] current_time;
+	bit [63:0] min_gap, time_tmp;
+
+	tx_done = 0;
+
+	current_time = {get_time(HI),get_time(LO)};
+	min_gap = 8 * GMII_IP_GAP;			// 8nS * GMII_IP_GAP inter packet cycles
+
+	//if(port_speed==1)	min_gap = 400 * MII_IP_GAP;	// 400ns * MII_IP_GAP inter packet cycles
+	//else			min_gap = 40 * MII_IP_GAP;	// 40ns * MII_IP_GAP inter packet cycles
+
+	time_tmp = current_time - last_tx_time;
+	if(debug_mii_tx)
+		printf("DEBUG: PG low tx: last_time: %0d, current_time: %0d, diff: %0d\n",
+				last_tx_time,current_time,time_tmp);
+	if((time_tmp < min_gap) & !check_option(options, O_NO_IP_GAP_FIX) & !check_option(options, O_CUSTOM_IP_GAP) ) {
+		time_tmp = min_gap - time_tmp;
+		if(debug_mii_tx) printf("DEBUG: PG low tx: Min_gap: %0d, gap_diff: %0d\n",min_gap,time_tmp);
+		//if(port_speed==1)	time_tmp = time_tmp / 400;
+		//else			time_tmp = time_tmp / 40;
+		time_tmp = time_tmp / 8;
+		if(debug_mii_tx) printf("DEBUG: PG low tx: waiting additional %0d cycles\n",time_tmp);
+		repeat(time_tmp)	@(posedge $rxclk);
+	   } else
+	if( check_option(options, O_CUSTOM_IP_GAP) ) {
+		repeat(cfg_reg[CFG_IP_GAP])	@(posedge $rxclk);
+	   }
+
+	fork
+		assert_gmii_err with (get_bind())();
+	join none
+
+	$rxdv = 1;
+	//$rxerr = 0;
+
+	if( check_option(options, O_PREAMB_ERR) )	cnt = cfg_reg[CFG_PRAMB_CNT];
+	else						cnt = 7;
+
+	for(n=0;n<cnt;n++) {
+		$rxd = GMII_PREAMBLE;
+		@(posedge $rxclk);
+	   }
+
+
+	$rxdv = 1;
+	if( check_option(options, O_SFD_ERR) )	$rxd = cfg_reg[CFG_SFD_TOKEN];
+	else					$rxd = GMII_SOF;
+	@(posedge $rxclk);
+
+	for(n=0;n<len;n++) {
+		if(debug_gmii==1)	printf("GMII: Sending Byte[%0d]: %h\n", n, buf.val[n] );
+		if(n != (len-1) | !check_option(options, O_NIBBLE_ERR) ) {	// Force nibble error
+			$rxd = buf.val[n];
+			@(posedge $rxclk);
+		   }
+	   }
+
+	$rxdv = 0;
+	$rxd = GMII_PREAMBLE;
+
+/* -----------------------------------------------
+	//
+	// Send EXTEND
+	//
+	for(n=0;n<8;n++) {
+		$rxd = GMII_EXTEND;
+		$rxerr = 1;
+		@(posedge $rxclk); 
+	   }
+   ----------------------------------------------- */
+	tx_done = 1;
+	$rxerr = 0;
+	@(posedge $rxclk); 
+	last_tx_time =  {get_time(HI),get_time(LO)};
+   }
+
+
+task assert_xgmii_err with xgmii_def() {
+	integer cnt=0;
+
+	if(tx_err_start==-1)	return;
+
+	if(tx_err_len<1) {
+		printf("PG: WARNING: tx_err injection length to short. (Start: %0d, Length: %0d)\n",
+				tx_err_start,tx_err_len);
+		return;
+	   }
+
+	while(cnt++ < tx_err_start & !tx_done) 
+		@(posedge $rxclk_int);
+
+	if(!tx_done) {
+		$rxerr = 1;
+		cnt=0;
+		while(cnt++ < tx_err_len & !tx_done)
+			@(posedge $rxclk_int);
+		$rxerr = 0;
+	   } else
+		printf("PG: WARNING: Packet was sent before tx_err could be assrted.(Start: %0d, Length: %0d)\n",
+				tx_err_start,tx_err_len);
+
+	tx_err_start = -1;
+   }
+
+
+task send_packet_xgmii with xgmii_def(bit [3:0] ptype, byte_array buf, integer len, bit [63:0] options) {
+	integer n, cnt;
+	bit [7:0] tmp;
+	bit [63:0] current_time;
+	bit [63:0] min_gap, time_tmp;
+
+	tx_done = 0;
+
+	current_time = {get_time(HI),get_time(LO)};
+	min_gap = 8 * XGMII_IP_GAP;			// 8nS * GMII_IP_GAP inter packet cycles
+
+
+	time_tmp = current_time - last_tx_time;
+	if(debug_xgmii_tx)
+		printf("DEBUG: PG low tx: last_time: %0d, current_time: %0d, diff: %0d\n",
+				last_tx_time,current_time,time_tmp);
+	if((time_tmp < min_gap) & !check_option(options, O_NO_IP_GAP_FIX) & !check_option(options, O_CUSTOM_IP_GAP) ) {
+		time_tmp = min_gap - time_tmp;
+		if(debug_xgmii_tx) printf("DEBUG: PG low tx: Min_gap: %0d, gap_diff: %0d\n",min_gap,time_tmp);
+		//if(port_speed==1)	time_tmp = time_tmp / 400;
+		//else			time_tmp = time_tmp / 40;
+		time_tmp = time_tmp / 8;
+		if(debug_xgmii_tx) printf("DEBUG: PG low tx: waiting additional %0d cycles\n",time_tmp);
+		//repeat(time_tmp)	@(posedge $rxclk);
+		repeat(time_tmp)	@(posedge $rxclk_int);
+	   } else
+	if( check_option(options, O_CUSTOM_IP_GAP) ) {
+		//repeat(cfg_reg[CFG_IP_GAP])	@(posedge $rxclk);
+		repeat(cfg_reg[CFG_IP_GAP])	@(posedge $rxclk_int);
+	   }
+
+	fork
+		assert_xgmii_err with (get_bind())();
+	join none
+
+	$rxdv = 1;
+	//$rxerr = 0;
+
+
+		$rxd =  XGMII_SOP;
+	        $rxdv = 1;
+		@(posedge $rxclk_int);
+
+	if( check_option(options, O_PREAMB_ERR) )	cnt = cfg_reg[CFG_PRAMB_CNT];
+	else						cnt = 6;
+
+	for(n=0;n<cnt;n++) {
+		$rxd =  XGMII_PREAMBLE;
+	        $rxdv = 0;
+		//@(posedge $rxclk);
+		@(posedge $rxclk_int);
+	   }
+
+
+	$rxdv = 0;
+	if( check_option(options, O_SFD_ERR) )	$rxd = cfg_reg[CFG_SFD_TOKEN];
+	else					$rxd = XGMII_SOF;
+	@(posedge $rxclk_int);
+
+	for(n=0;n<len;n++) {
+		if(debug_xgmii==1)	printf("XGMII: Sending Byte[%0d]: %h\n", n, buf.val[n] );
+		if(n != (len-1) | !check_option(options, O_NIBBLE_ERR) ) {	// Force nibble error
+			$rxd = buf.val[n];
+			@(posedge $rxclk_int);
+		   }
+	   }
+
+	$rxdv = 1;
+	//$rxd = XGMII_PREAMBLE;
+	$rxd = XGMII_EOP;
+		@(posedge $rxclk_int);
+
+	//$rxd = XGMII_PREAMBLE;
+	//$rxd = 2'h00;
+	$rxd = XGMII_IDLE;
+	$rxdv = 1;
+/* -----------------------------------------------
+	//
+	// Send EXTEND
+	//
+	for(n=0;n<8;n++) {
+		$rxd = GMII_EXTEND;
+		$rxerr = 1;
+		@(posedge $rxclk); 
+	   }
+   ----------------------------------------------- */
+	tx_done = 1;
+	$rxerr = 0;
+	@(posedge $rxclk_int); 
+	last_tx_time =  {get_time(HI),get_time(LO)};
+   }
+
+
+task wait_clk(integer count) {
+        repeat(count)   @(posedge CLOCK);
+   }
+/* 
+task wait_tx_clk(integer count) {
+	case(my_port) {
+	   0:	wait_tx_clk_if with  m0(count);
+	   1:	wait_tx_clk_if with  m1(count);
+	   2:	wait_tx_clk_if with  m2(count);
+	   3:	wait_tx_clk_if with  m3(count);
+	   4:	wait_tx_clk_if with  m4(count);
+	   5:	wait_tx_clk_if with  m5(count);
+	   6:	wait_tx_clk_if with  m6(count);
+	   7:	wait_tx_clk_if with  m7(count);
+	   8:	wait_tx_clk_if with m18(count);
+	   19:	wait_tx_clk_if with m19(count);
+	   }
+   }
+*/
+task wait_tx_clk_if with mii_def(integer count) {
+	repeat(count)   @(posedge $txclk);
+   }
+
+task wait_rx_clk(integer count) {
+	case(my_port) {
+	   0:	wait_rx_clk_if with  m0(count);
+/*
+	   1:	wait_rx_clk_if with  m1(count);
+	   2:	wait_rx_clk_if with  m2(count);
+	   3:	wait_rx_clk_if with  m3(count);
+	   4:	wait_rx_clk_if with  m4(count);
+	   5:	wait_rx_clk_if with  m5(count);
+	   6:	wait_rx_clk_if with  m6(count);
+	   7:	wait_rx_clk_if with  m7(count);
+	   8:	wait_rx_clk_if with m18(count);
+	   19:	wait_rx_clk_if with m19(count);
+*/
+	   }
+   }
+
+task wait_rx_clk_if with mii_def(integer count) {
+	repeat(count)   @(posedge $rxclk);
+   }

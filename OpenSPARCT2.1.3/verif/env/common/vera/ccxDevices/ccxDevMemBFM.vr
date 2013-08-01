@@ -1,0 +1,1526 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ccxDevMemBFM.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// To use this class, you must have in your bench a files called globals.vri
+// that has all global extern declerations in it.
+#include <globals.vri>
+
+#include <ccxDevicesDefines.vri>
+#include <cmp.vri>
+#include <std_display_defines.vri>
+
+#include <std_display_class.vrh>
+#include <basePktClass.vrh>
+#include <cpxPktClass.vrh>
+#include <pcxPktClass.vrh>
+#include <baseParamsClass.vrh>
+#include <sparcParams.vrh>
+#include <ccxDevBaseBFM.vrh>
+#include <memArray.vrh>
+#include <baseUtilsClass.vrh>
+#include <sparcBenchUtils.vrh>
+#include <ccx_tag_class.vrh>
+
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// To use this class, you must have in your bench a class that extends
+// sparcBenchUtils.vr. It must be in files named utilsClass.vr/utilsClass.vrh
+// AND have a global handle called gUtil. 
+#include <utilsClass.vrh>
+
+// uncomment to debug
+//#define CCXDEVMEMBFM_DEBUG
+
+
+// #define  MON_CCXPKT   24
+// #define  GNT_ATTEMPTS 20
+
+#define CLASSNAME CcxDevMemBFM
+#define CLASSNAMEQ "CcxDevMemBFM"
+
+class CLASSNAME extends CcxDevBaseBFM {
+  
+  local reg [63:0] cas1Data[64], cas1Addr[64];
+  local reg cas_swap [64];
+//  local reg [31:0] invVectorCAS;
+  local reg cacheOff = 0;
+  local integer reqId;
+  local integer ldstSyncLock;
+  local integer stalling;
+  static reg burstSync;
+
+  // methods
+  task new(integer instatnce, reg passiveIn=0,
+           reg cacheoff = 0, reg flagUnexpected=0, reg ccxOnly=0);
+
+  // virtual in base
+  task recv(BasePkt pktHndl);
+  task cancelRecv(BasePkt pktHndl);
+
+  local task slave();
+  local task respond(PcxPkt reqPkt);
+//  local task monitor();
+  local function reg [3:0] lineState(PcxPkt reqPkt,
+                                     string why="debug lineState:",
+                                     reg quiet=1);
+
+  task sendIntr(reg [5:0] tid,
+                reg [1:0] type,
+                reg [5:0] vect);
+   
+  local task updateItag(PcxPkt reqPkt, CpxPkt rspPkt, CpxPkt rspPkt2 = null,
+                        reg [2:0] cpuId, integer how = TAG_VAL);
+  local task updateDtag(PcxPkt reqPkt, CpxPkt rspPkt,
+                        reg [2:0] cpuId, integer how = TAG_VAL);
+  local function reg data_equal(reg [63:0] data1, 
+                                reg [63:0] data2, 
+                                reg[7:0] size);
+//  local task create_vector(reg table, reg [3:0] way,
+//                           var reg [31:0] vect, reg [2:0] core_num);
+  local function reg [31:0] getInvalVector(integer type,
+                                           PcxPkt reqPkt,
+                                           reg [2:0] cpuId);
+
+  local task ldstSync(reg [2:0] cpuId, CpxPkt rspPkt);
+  public task enqueueEvict(reg [7:0] coreEnable,
+                                reg [39:0] evictPA = 40'hffffffffff,
+                                reg [3:0] cid = 4'hf,
+                                reg all_cores = 0,
+                                integer dCacheWeight = 60);
+
+  local task burstResp(integer amount);
+
+}
+
+
+task CLASSNAME::new(integer instatnce, reg passiveIn=0,
+                    reg cacheoff = 0, reg flagUnexpected=0, reg ccxOnly=0) {
+
+  super.new(instatnce, passiveIn, CLASSNAMEQ);
+  super.ccxOnly = ccxOnly; // only testing ccx
+  super.flagUnexpected = flagUnexpected;
+  srandom(gSeed,this);
+
+  cacheOff = cacheoff;
+  stalling = 0;
+  reqId = 0;
+  burstSync = 0;
+  ldstSyncLock = alloc( SEMAPHORE, 0, 1, 1 ); // this may not be needed anymore
+
+  // in base
+  super.stallStart = gParam.stallStart;
+  super.stallStop =  gParam.stallStop;
+  
+  if (myPort == DEV_NCU) lineHash[0] = 0;
+  
+  if (!passiveIn) {
+    // Initialize Outputs
+    gPcxPort[myPort].$stall <= 0;
+    gCpxPort[myPort].$req <= 0;
+//     gCpxPort[myPort].$datao <= 0;
+    if (myPort !== DEV_NCU) gCpxPort[myPort].$atmo <= 0;
+  }
+
+  fork {
+    @(posedge gPcxPort[myPort].$clk);
+    gCpxPort[myPort].$gnt == 0;
+    gPcxPort[myPort].$rdy == 0;
+    gPcxPort[myPort].$datai == 0;
+    if (myPort !== DEV_NCU) gPcxPort[myPort].$atmi == 0;
+  } join none
+
+  fork slave();
+  join none
+  
+  // service mailboxes, send packets
+  fork super.serviceSends2(PP_CPX);
+  join none
+
+  if (gParam.burstAmount) {
+    fork burstResp(gParam.burstAmount);
+    join none
+  }
+  
+}
+
+
+
+// Wait for data from PCX, we are a cache/IO BFM
+task CLASSNAME::slave() {
+  
+  ccxPort portVar = gPcxPort[myPort];
+  reg [145:0] tmpVec;
+  
+  if (!passive) {
+    
+    fork
+    { // wait for packets.
+      // we can get back to back packets...
+      while (1) {
+
+        if (!portVar.$rdy) {
+          @(portVar.$rdy);
+        }
+
+        if (portVar.$rdy && stalling) {
+          error("ERROR FAIL: should not get rdy when stalled\n");
+        }
+        
+        { // keep block! {}
+          PcxPkt reqPkt = new();
+          // need to fork to handle back to back reqs
+          // and delayed responses
+          fork {  
+            outstandingReqs++;
+            reqPkt.ccxSourced = 1;
+            @(negedge portVar.$clk);
+            reqPkt.loadPkt(portVar.$datai, myPort);
+
+            // if on L2 port, look at portVar.$atmi and save value
+            if (myPort !== DEV_NCU) reqPkt.atm_wire = portVar.$atmi;
+            
+#ifdef CCXDEVMEMBFM_DEBUG
+            printf("%0d: CcxDevMemBFM[%2d]::slave: got req packet, outstandingReqs++=%0d, atm=%0d, ccxSourced=%0d, vec=%h\n",get_time(LO),myPort,outstandingReqs,reqPkt.atm_wire,reqPkt.ccxSourced,reqPkt.getVector());
+#endif
+
+            // for CCX testing, anyone waiting for this packet?
+            // was it expected? should we auto respond?
+            if (ccxOnly) {
+              tmpVec = reqPkt.makeSignature();
+              if (assoc_index(CHECK, expectedSig, tmpVec)) {
+                expectedSig[tmpVec].loadPkt(reqPkt.getVector(), myPort);
+                expectedSig[tmpVec].arrivalTime = get_cycle();
+                expectedSig[tmpVec].pktArrived = ~expectedSig[tmpVec].pktArrived;
+              } else if (flagUnexpected) {
+                reqPkt.print(myPort);
+                PR_ERROR(CLASSNAMEQ, MON_ERROR,
+                         psprintf ("Unexpected packet on port %0d, vector=%h",
+                                   myPort,reqPkt.getVector()));
+              }
+            } else {
+              // check how/if we should respond and do it
+              suspend_thread(); // do as last thing in this time slot.
+              if (!ccxOnly && reqPkt.valid) {
+                fork respond(reqPkt);   
+                join none
+              } else {
+                // drop this packet
+                outstandingReqs--;
+                printf("%0d: CcxDevMemBFM[%2d]::slave: got invalid req packet, outstandingReqs++=%0d, atm=%0d, ccxSourced=%0d, vec=%h\n",get_time(LO),myPort,outstandingReqs,reqPkt.atm_wire,reqPkt.ccxSourced,reqPkt.getVector());
+                reqPkt.print(myPort);
+                reqPkt = null;
+              }
+            }
+
+          } join none
+        }
+
+        @(negedge portVar.$clk);
+        
+      } // while
+    }
+
+    
+    {  // stall signal management
+      while (1) {
+        wait_var(outstandingReqs);
+        //printf("%0d: wait_var at stall check outstandingReqs=%0d\n", get_time(LO), outstandingReqs);
+        // stall? Takes 3 clocks for the CCX to actually stall
+        if (outstandingReqs >= stallStart && !stalling) {
+          fork {
+            portVar.$stall = 1;
+            //printf("%0d: CcxDevMemBFM[%2d]::stalling, outstandingReqs=%0d\n", get_time(LO),myPort, outstandingReqs);            
+            repeat (2) @(negedge portVar.$clk);
+            stalling = 1;
+          } join none
+        }
+        if (outstandingReqs <= stallStop && stalling) {
+          fork {
+            portVar.$stall = 0;
+            @(negedge portVar.$clk);
+            stalling = 0;
+            //printf("%0d: CcxDevMemBFM[%2d]::un-stalling, outstandingReqs=%0d\n", get_time(LO),myPort, outstandingReqs);
+            @(negedge portVar.$clk);
+            stalling = 0; // yes, twice, in case we started stalling above
+            //printf("%0d: CcxDevMemBFM[%2d]::done un-stalling, outstandingReqs=%0d\n", get_time(LO),myPort, outstandingReqs);
+          } join none
+        }
+
+      }
+    }
+    join all
+
+  } // ! passive
+}
+
+
+task CLASSNAME::sendIntr(reg [5:0] tid,
+                         reg [1:0] type,
+                         reg [5:0] vect)
+{
+  CpxPkt     reqPkt;
+
+  reqPkt = new();
+  reqPkt.createIntr(tid,type,vect); // INTR_RESET,INTR_POR
+  reqPkt.sendPorts = 1 << myPort;
+  reqPkt.targetPorts = 1 << tid[5:3]; // not multicast
+  reqPkt.send(1);
+}
+
+
+
+// check how/if we should respond and do it.
+// check response signature and use user response if hit (review)
+// else return a built in response. 
+task CLASSNAME::respond(PcxPkt reqPkt) {
+
+  CpxPkt rspPkt, rspPkt2, rspPkt3;
+  reg [7:0]  cas1size, targetCores;  
+  reg [127:0] tmpData;
+  reg [31:0] invVector = 0;
+  reg [31:0] tmpInvVect = 0;
+  reg [1:0]  invField = 0;
+  reg [63:0] tmp64;
+  integer    i;
+  reg [5:0] thread;
+  ccxPort portVar = gCpxPort[myPort];
+  reg [63:0] tmpAddr;
+  reg [39:0] tmpPa;
+  
+  // do not drive on this port
+  if (passive) return;
+
+  thread = {reqPkt.cpuId,reqPkt.tid};
+
+  // check response signature & use user pkt if hit
+  // else return built in response pkt based on request pkt fields.
+  // use fast resp mailbox.
+
+  // Some may be illegal for L2 port, check port number and address!
+  if (myPort !== DEV_NCU && reqPkt.addr[39] == 1 &&
+      (reqPkt.addr[39:32] < 8'hA0 ||  reqPkt.addr[39:32] > 8'hBF)) {
+    reqPkt.print(myPort);
+    PR_ERROR (CLASSNAMEQ, MON_ERR,
+              psprintf ("T%d Port=%0d request type [128:124]=%b. ERROR FAIL: Illegal I/O on non-NCU port!",thread,myPort,reqPkt.rqtyp));
+    return;
+  }
+  
+  // create response packets
+  rspPkt = new(reqPkt);
+  rspPkt.sendPorts = 1 << myPort;
+  rspPkt.addr = reqPkt.addr;
+  
+#ifdef CCXDEVMEMBFM_DEBUG
+  reqPkt.reqId = reqId;
+  rspPkt.reqId = reqId;
+  reqId++;
+  if (reqId == 10000) reqId = 0;
+  reqPkt.reqTime = get_time(LO);
+  rspPkt.reqTime = reqPkt.reqTime;
+  // state of tag for line at this time
+  reqPkt.lineWay = lineState(reqPkt, *, 1);
+  reqPkt.print(myPort);
+#endif
+  
+  // pick a response
+  case (reqPkt.rqtyp) {
+    PCX_LD,
+      PCX_PREF,
+      PCX_PREF_ICE,
+      PCX_DIAG_LD,
+      PCX_D_INVAL:
+    {
+      case ({reqPkt.inv,reqPkt.pf}) {
+        0: {
+          if (myPort !== DEV_NCU) {
+            // can't tell diag load from load so both are load!
+            rspPkt.rtntyp = CPX_LD; // code is done
+            rspPkt.rtntypU = U_CPX_LD;
+          } else {
+            // can't tell diag load from load so both are load!
+            rspPkt.rtntyp = CPX_NCU_LD; // code is done
+            rspPkt.rtntypU = U_CPX_NCU_LD;
+          }
+        }
+        1: {
+          if (reqPkt.nc) {
+            rspPkt.rtntyp = CPX_PREF;
+            rspPkt.rtntypU = U_CPX_PREF;
+          } else {
+            error("");
+          }
+        }
+        2: {
+          if (!reqPkt.nc) {
+            rspPkt.rtntyp = CPX_D_INVAL;
+            rspPkt.rtntypU = U_CPX_D_INVAL;
+            invField = D_INVAL;
+          } else {
+            error("");
+          }
+        }
+        3: {
+          if (reqPkt.nc) {
+            rspPkt.rtntyp = CPX_PREF_ICE;
+            rspPkt.rtntypU = U_CPX_PREF_ICE;
+          } else {
+            error("");
+          }
+          
+        }
+      } // case
+    } // case
+    
+    PCX_ST,
+      PCX_BLK_ST,
+      PCX_BLK_INIT_ST,
+      PCX_DIAG_ST : {
+      if (reqPkt.l1wayBis && !reqPkt.pf) {
+        rspPkt.rtntyp = CPX_ST; // code is done
+        rspPkt.rtntypU = U_CPX_BIS;
+      } else if (reqPkt.l1wayBis && reqPkt.pf) {
+        rspPkt.rtntyp = CPX_ST; // code is done
+        rspPkt.rtntypU = U_CPX_BLK_ST;
+      } else {
+        // can't tell diag store from store so both are store!
+        rspPkt.rtntyp = CPX_ST; // code is done
+        rspPkt.rtntypU = U_CPX_ST;
+      }
+    }
+
+    PCX_CAS1: {
+      rspPkt.rtntyp = CPX_CAS_RTN;
+      rspPkt.rtntypU = U_CPX_CAS_RTN;
+    }
+    
+    PCX_CAS2: {
+      rspPkt.rtntyp = CPX_CAS_ACK;
+      rspPkt.rtntypU = U_CPX_CAS_ACK;
+    }
+
+    PCX_STR_LD: {
+      rspPkt.rtntyp = CPX_STR_LD; // code is done
+      rspPkt.rtntypU = U_CPX_STR_LD;
+    }
+    
+    PCX_STR_ST: {
+      rspPkt.rtntyp = CPX_STR_ST; // code is done
+      rspPkt.rtntypU = U_CPX_STR_ST;
+    }
+
+    PCX_SWAP: {
+      rspPkt.rtntyp = CPX_SWAP_RTN; // will do ack as well.
+      rspPkt.rtntypU = U_CPX_SWAP_RTN; // will do U_CPX_SWAP_ACK as well.
+    }
+
+    PCX_MMU_LD: {
+      rspPkt.rtntyp = CPX_MMU_RTN; // code is done
+      rspPkt.rtntypU = U_CPX_MMU_RTN;
+    }
+    
+    PCX_IFILL: {
+      if (reqPkt.inv == 0) {
+        if (myPort !== DEV_NCU) {
+          rspPkt.rtntyp = CPX_IFILL; // code is done
+          rspPkt.rtntypU = U_CPX_IFILL;
+        } else {
+          rspPkt.rtntyp = CPX_NCU_IFILL; // code is done
+          rspPkt.rtntypU = U_CPX_NCU_IFILL;
+        }
+      } else {
+        rspPkt.rtntyp = CPX_I_INVAL;
+        rspPkt.rtntypU = U_CPX_I_INVAL;
+        invField = I_INVAL;
+      }
+    }
+      
+    default :  {
+      reqPkt.print(myPort);
+      PR_ERROR (CLASSNAMEQ, MON_ERR,
+                psprintf ("T%d Port=%0d request type [128:124]=%b. ERROR FAIL: Unsupported rqtyp",thread,myPort,reqPkt.rqtyp));
+      reqPkt = null; rspPkt2 = null;
+    }
+  } // case
+
+
+  // finalize random values for response times
+  if (myPort == DEV_NCU)
+    void = rspPkt.randomize() with {hit == 1;};
+  else
+    void = rspPkt.randomize();
+
+  
+  // do the response
+  case (rspPkt.rtntypU) {
+
+    U_CPX_LD, U_CPX_DIAG_LD,
+    U_CPX_STR_LD, U_CPX_MMU_RTN, U_CPX_PREF,
+    U_CPX_PREF_ICE, U_CPX_NCU_LD: {
+
+      integer i;
+
+      repeat (ordering(rspPkt, "LD RTN")) @(posedge portVar.$clk);
+      // get semaphore for this clock
+      semaphore_get(WAIT, ldstSyncLock, 1);
+      
+      if (reqPkt.addr[39] && myPort == DEV_NCU) {
+
+        // is it a special address for us?       
+//         if (reqPkt.addr[IO_ASI_ADDR_NCU] == IO_ASI_CPU ||
+//             reqPkt.addr[IO_ASI_ADDR_NCU] == IO_ASI_NCU) {
+          rspPkt.err[1] = ! gUtil.ioSpaceAccess(reqPkt.addr,
+                                                tmpData, *,
+                                                reqPkt.size,
+                                                thread, myPort);
+          
+          if (reqPkt.size == 4)
+            PR_ERROR(CLASSNAMEQ, MON_ERROR, psprintf("TID %0d is doing a 16 byte load to I/O addr %0h!",reqPkt.tid,reqPkt.addr));
+          
+          rspPkt.data = gUtil.copyDataByte(tmpData,reqPkt.size,reqPkt.addr[3:0]);
+//         }
+//         
+//       } else if (reqPkt.addr[39] && myPort !== DEV_NCU &&
+//                  (reqPkt.addr[IO_ASI_ADDR_NCU] < 8'hA0 ||
+//                   reqPkt.addr[IO_ASI_ADDR_NCU] > 8'hBF) ) {
+//         // I/O but not L2 CSRs
+//         error("I/O LD to L2, but is not L2 CSRs");
+      } else { // LD from non-NCU space or L2 CSRs
+        
+        // Address in req is quad word aligned.
+        // Access memory at double word boundaries.
+        tmpAddr = {reqPkt.addr[39:4],4'b0000};
+        rspPkt.data = gMem.read128(tmpAddr,myPort,1);
+        if (gParam.mcuMemPrint[READ]) {
+          printf("\n%7d00: dumpMem: dumping memory related to this request pkt:",get_cycle());
+          reqPkt.print(myPort);
+          gMem.dumpMem(reqPkt.addr[39:0] & 40'hFFFFFFFFC0, 8);
+        }
+
+        if (rspPkt.rtntypU == U_CPX_MMU_RTN)
+          rspPkt.wayMMUid = reqPkt.l1wayMMUid;
+        
+        if (rspPkt.rtntypU == U_CPX_PREF) {
+          rspPkt.nc = 1;
+          rspPkt.pf = 1;
+          // prefetch data is irrelevant since data does not allocate in L1
+          rspPkt.data = {urandom(),urandom(),urandom(),urandom()};
+
+          // does this imply the the L1 does not have this line?
+          
+          //invVector = getInvalVector(rspPkt.rtntypU, reqPkt, reqPkt.cpuId);
+        }
+
+        // evict line from L1 & L2.
+        // send invalidates to other cores for this address.
+        // do not send response to initiating core!!!
+        // Used by SW to flush lines in L2 based on an index and a
+        // way specified as part of the Physical Address in the instruction
+        // itself. Bits [39:37] of the PA has to be driven as 3'b011 by SW and
+        // the way,index,bank information would be on PA[21:18], PA[17:9] and
+        // PA[8:6] respectively.         
+        if (rspPkt.rtntypU == U_CPX_PREF_ICE) {
+
+          // the BFM is not going to support this because the "address"
+          // only makes sense to L2 RTL. Can't properly handle this.
+          printf("\n\n%7d: WARNING, L2 BFM does not support prefetchICE, ignoring!\n\n\n");
+          return;
+          
+          // create a single EVICTION packet and send it to every core needing it
+          rspPkt.targetPorts[8:0] = gParam.coreEnable;
+          rspPkt.rtntypU = U_CPX_EVICT;
+          rspPkt.rtntyp = CPX_EVICT;
+          rspPkt.l2miss = 0;
+          rspPkt.err = 0;
+          rspPkt.nc = 0;
+          rspPkt.pf = 0;
+
+          tmpPa = reqPkt.addr[39:0];         
+
+          // gets evict vector and invals dup tags.
+          rspPkt.data = gUtil.evictVector(gParam.coreEnable,
+                                          tmpPa,
+                                          reqPkt.cpuId,
+                                          targetCores); // return val for target cores
+
+          rspPkt.targetPorts = targetCores;
+
+          
+          // inval line from L1 & L2.
+          // send invalidates to other cores for this address.
+          // do not send response to initiating core!!!         
+          if (rspPkt.data) {
+            // notify LDST sync just once when doing U_CPX_PREF_ICE
+            // no matter what targets get invalidated.
+            ldstSync(reqPkt.cpuId,rspPkt);
+            rspPkt.send(1);
+          }           
+                  
+          @(posedge portVar.$clk);
+          semaphore_put(ldstSyncLock, 1 );
+          
+          return; // due to U_CPX_PREF_ICE
+          
+        }  // U_CPX_PREF_ICE
+
+      } // l2 ld
+      
+
+      // Plusargs to dump LD/ST to logfile
+      if (gParam.show_load) {
+        if (rspPkt.rtntypU == U_CPX_STR_LD)
+          PR_NORMAL(CLASSNAMEQ, MON_NORMAL, psprintf("Tx LOAD  PA = %h DATA = %h TYPE = %0d",reqPkt.addr,rspPkt.data,rspPkt.rtntypU));
+        else
+          PR_NORMAL(CLASSNAMEQ, MON_NORMAL, psprintf("T%d LOAD  PA = %h DATA = %h TYPE = %0d",reqPkt.tid,reqPkt.addr,rspPkt.data,rspPkt.rtntypU));
+      }
+
+      // notify LDST sync
+      ldstSync(reqPkt.cpuId,rspPkt);
+      
+      // Update D$ tag table
+      if (reqPkt.nc == 0 && rspPkt.rtntypU !== U_CPX_PREF_ICE)
+        updateDtag(reqPkt, rspPkt, reqPkt.cpuId, TAG_VAL);
+
+#ifdef CCXDEVMEMBFM_DEBUG
+      // state of tag for line at this time
+      rspPkt.lineWay = lineState(reqPkt, *, 1);
+#endif
+      
+      // queue packet for delivery, in this case, this BFM will drive it.
+      rspPkt.send(1);
+      
+      @(posedge portVar.$clk);
+      semaphore_put(ldstSyncLock, 1 );
+      
+      
+    } // LD
+      
+
+    U_CPX_ST, U_CPX_DIAG_ST,
+    U_CPX_STR_ST, U_CPX_BIS, U_CPX_BLK_ST: {
+
+      
+      repeat (ordering(rspPkt, "ST RTN")) @(posedge portVar.$clk);
+      // get semaphore for this clock
+      semaphore_get(WAIT, ldstSyncLock, 1);
+      
+      if (reqPkt.addr[39] && myPort == DEV_NCU) { // I/O ?
+
+        // is it a special address for us?       
+//         if (reqPkt.addr[IO_ASI_ADDR_NCU] == IO_ASI_CPU ||
+//             reqPkt.addr[IO_ASI_ADDR_NCU] == IO_ASI_NCU) {
+          if (reqPkt.addr[IO_ASI_ADDR_REG] == ASI_SWVR_UDB_INTR_W) {
+            // Send Store Ack but don't store to anything
+            // Send INTERRUPT packet behind it
+            rspPkt2 = new(reqPkt);
+            rspPkt2 = rspPkt.object_copy();
+            
+            // second packets must not have this set because it will
+            // cause outstandingRequests to decrement twice.
+            rspPkt2.ccxSourced = 0;
+            rspPkt2.sendPorts = 1 << myPort;
+            rspPkt2.createIntr(reqPkt.data[13:8],reqPkt.data[15:14],reqPkt.data[5:0]);
+          } else {
+            tmpData[63:0] = reqPkt.data;
+            void = gUtil.ioSpaceAccess(reqPkt.addr, tmpData, 0,
+                                       reqPkt.size, thread, myPort);
+//           }
+         }
+//       } else if (reqPkt.addr[39] && myPort !== DEV_NCU &&
+//                  (reqPkt.addr[39:32] < 8'hA0 || reqPkt.addr[39:32] > 8'hBF) ) {
+//         // I/O but not L2 CSRs
+//         error("I/O ST to L2, but it is not a L2 CSR!");
+      } else { // not NCU space, L2 or L2 CSR
+        // this only gets done on hit. nas never does this so we wont either.
+        // if (rspPkt.rtntypU == U_CPX_BIS)
+        //   gMem.write512({reqPkt.addr[39:6],6'b000000}, 0, myPort);
+
+        // do not write if inv is set! BIS does not init w/ zeros.
+        if (reqPkt.inv == 0) {
+          gMem.writeBM({reqPkt.addr[39:3],3'b000}, reqPkt.data, reqPkt.size, myPort);
+          if (gParam.mcuMemPrint[WRITE]) {
+            printf("\n%7d00: dumpMem: dumping memory related to this request pkt:",get_cycle());
+            reqPkt.print(myPort);
+            gMem.dumpMem(reqPkt.addr & 40'hFFFFFFFFC0, 8);
+          }
+        }
+        
+      }
+
+      // Plusargs to dump LD/ST to logfile
+      if (gParam.show_store) {
+        if (rspPkt.rtntypU == U_CPX_STR_ST)
+          PR_NORMAL(CLASSNAMEQ, MON_NORMAL,
+                    psprintf("Tx STORE PA = %h DATA = %h BYTE_MASK = %b TYPE = %0d",
+                             reqPkt.addr,reqPkt.data,reqPkt.size,rspPkt.rtntypU));    
+        else
+          PR_NORMAL(CLASSNAMEQ, MON_NORMAL,
+                    psprintf("T%d STORE PA = %h DATA = %h BYTE_MASK = %b TYPE = %0d",
+                             reqPkt.tid,reqPkt.addr,reqPkt.data,reqPkt.size,rspPkt.rtntypU));    
+      }
+      
+      // L1 cache tags, get inv vec and invalidate all our dupe tags as needed. ST
+      invVector = 0;
+      targetCores = 0;
+      // always target the requester
+      targetCores[reqPkt.cpuId] = 1;
+      
+      for (i=0;i<=gParam.coreMax;i++) {
+        tmpInvVect = getInvalVector(rspPkt.rtntypU, reqPkt, i);
+        if (tmpInvVect) targetCores[i] = 1;
+        invVector = invVector | tmpInvVect;
+      }   
+
+      invField = 0;    
+      rspPkt.data = {2'b0, reqPkt.l1wayBis,
+        invField, reqPkt.addr[5:4], reqPkt.cpuId[2:0],
+        reqPkt.addr[11:6],7'b0, reqPkt.addr[3],
+        reqPkt.size[7:0],invVector, reqPkt.data[63:0]};    
+
+      if (rspPkt.rtntypU == U_CPX_STR_ST)
+        rspPkt.l2miss = 0;
+      
+#ifdef CCXDEVMEMBFM_DEBUG
+      // state of tag for line at this time
+      rspPkt.lineWay = lineState(reqPkt, *, 1);
+#endif
+
+      // queue packet(s) for delivery, in this case, this BFM will drive it.
+      if ((reqPkt.addr[IO_ASI_ADDR_NCU] == IO_ASI_CPU ||
+           reqPkt.addr[IO_ASI_ADDR_NCU] == IO_ASI_NCU) &&
+          reqPkt.addr[IO_ASI_ADDR_REG] == ASI_SWVR_UDB_INTR_W) {
+        rspPkt.send(1);
+        repeat (rspPkt.pkt2Delay) @(posedge portVar.$clk);
+        // special interrupt "reflection"
+        rspPkt2.l2miss = 0;
+        rspPkt2.send(1);
+      } else {
+        // need to invalidate other cores on store/blkSt/BIS!
+        rspPkt.targetPorts = targetCores;
+        rspPkt.send(1);
+
+      }
+
+      // notify LDST sync
+      ldstSync(reqPkt.cpuId,rspPkt);
+
+      @(posedge portVar.$clk);
+      semaphore_put(ldstSyncLock, 1 );
+      
+    } // U_CPX_ST, U_CPX_DIAG_ST, U_CPX_STR_ST, U_CPX_BIS
+
+
+    U_CPX_D_INVAL, U_CPX_I_INVAL: {
+
+      integer i;
+
+      repeat (ordering(rspPkt, "INVAL")) @(posedge portVar.$clk);
+      // get semaphore for this clock
+      semaphore_get(WAIT, ldstSyncLock, 1);
+
+      // Core wants to invalidate all entries in the cache line
+      if (invField == D_INVAL) {
+        for (i=0; i<=3; i=i+1) {
+          dtag[reqPkt.cpuId].write_tag(i,reqPkt.addr[10:4],29'b0,TAG_INVAL);
+        }
+      } else {
+        for (i=0; i<=7; i=i+1) {
+          itag[reqPkt.cpuId].write_tag(i,{1'b0,reqPkt.addr[10:5]},29'b0,TAG_INVAL);
+        }           
+      } 
+
+      invVector = 0;
+      rspPkt.data = {2'b0,reqPkt.l1wayBis,invField,reqPkt.addr[5:4],reqPkt.cpuId,
+        reqPkt.addr[11:6],7'b0,reqPkt.addr[3],reqPkt.size,invVector,reqPkt.data[63:0]};
+
+      
+#ifdef CCXDEVMEMBFM_DEBUG
+      // state of tag for line at this time
+      rspPkt.lineWay = lineState(reqPkt, *, 1);
+#endif
+
+      // queue packet(s) for delivery, in this case, this BFM will drive it.
+      rspPkt.send(1);
+
+      // notify LDST sync
+      ldstSync(reqPkt.cpuId,rspPkt);
+
+      @(posedge portVar.$clk);
+      semaphore_put(ldstSyncLock, 1 );
+      
+  
+    } // U_CPX_D_INVAL, U_CPX_I_INVAL
+
+
+
+    U_CPX_CAS_RTN:
+    {
+
+      if (myPort == DEV_NCU) error("CAS not allowed at NCU"); // I/O
+
+      repeat (ordering(rspPkt, "CAS RTN")) @(posedge portVar.$clk);
+      // get semaphore for this clock
+      semaphore_get(WAIT, ldstSyncLock, 1);
+      
+      // save away cas1Data, cas1Addr.
+      // hold until next packet (cas2)
+      cas1Addr[thread] = reqPkt.addr;
+      cas1Data[thread] = reqPkt.data;
+      tmpAddr = reqPkt.addr[39:0];
+      tmpData = gMem.read_mem(tmpAddr,myPort);
+      
+      // remember to swap on following CAS2 pkt.
+      cas_swap[thread] = data_equal(cas1Data[thread],tmpData,reqPkt.size);
+      // for ldst sync
+      rspPkt.CASstore = cas_swap[thread];
+      
+      // always return the LOAD data at cas1Addr in first response pkt.
+      rspPkt.data = gMem.read128(tmpAddr,myPort,1);
+      if (gParam.mcuMemPrint[READ]) {
+        printf("\n%7d00: dumpMem: dumping memory related to this request pkt:",get_cycle());
+        reqPkt.print(myPort);
+        gMem.dumpMem(tmpAddr & 40'hFFFFFFFFC0, 8);
+      }
+      
+      //         rspPkt.recvPort = reqPkt.cpuId;
+      //         rspPkt.recvPorts = 1 << reqPkt.cpuId;
+      rspPkt.nc = 1;
+      rspPkt.tid = reqPkt.tid;
+      rspPkt.atmIf2 = 1;
+      rspPkt.wv = 0;
+
+      if (gParam.show_load) {
+        if (rspPkt.CASstore)
+          PR_NORMAL(CLASSNAMEQ, MON_NORMAL,
+                    psprintf("T%d LOAD  PA = %h DATA = %h TYPE = CAS swap will be true", reqPkt.tid,reqPkt.addr,tmpData));
+        else
+          PR_NORMAL(CLASSNAMEQ, MON_NORMAL,
+                    psprintf("T%d LOAD  PA = %h DATA = %h TYPE = CAS swap will be false", reqPkt.tid,reqPkt.addr,tmpData));
+      }
+
+
+#ifdef CCXDEVMEMBFM_DEBUG
+      // state of tag for line at this time
+      rspPkt.lineWay = lineState(reqPkt, *, 1);
+#endif
+      
+      rspPkt.send(1);
+
+      // notify LDST sync
+      ldstSync(reqPkt.cpuId,rspPkt);
+
+      @(posedge portVar.$clk);
+      semaphore_put(ldstSyncLock, 1 );
+      
+    } // U_CPX_CAS_RTN
+    
+      
+    U_CPX_CAS_ACK: {
+
+      if (myPort == DEV_NCU) error("CAS not allowed at NCU"); // I/O
+
+      repeat (ordering(rspPkt, "CAS ACK")) @(posedge portVar.$clk);
+      // get semaphore for this clock
+      semaphore_get(WAIT, ldstSyncLock, 1);
+
+      // do the swap here on the second pkt.
+      
+      // compare the data at cas1Addr to the data cas1Data.
+      // if ==, swap cas2 data with the data at cas1Addr.
+      // always return the data at cas1Addr in first response pkt.
+      // 
+      // cas1Data has rs2 data.
+      // cas1Addr has rs1 addr.
+      //
+      // cas2 data has rd.
+
+      // if cas_swap true from previous packet, write the rd/cas2 data to mem.
+      if (cas_swap[thread]) {
+        tmpAddr = cas1Addr[thread];
+        gMem.writeBM(tmpAddr[39:0], reqPkt.data, reqPkt.size, myPort);
+        if (gParam.mcuMemPrint[WRITE]) {
+          printf("\n%7d00: dumpMem: dumping memory related to this request pkt:",get_cycle());
+          reqPkt.print(myPort);
+          gMem.dumpMem(reqPkt.addr & 40'hFFFFFFFFC0, 8);
+        }
+
+        // for ldst sync
+        rspPkt.CASstore = 1;
+        
+        // Plusargs to dump LD/ST to logfile
+        if (gParam.show_store && cas_swap[thread])
+          PR_NORMAL(CLASSNAMEQ, MON_NORMAL,
+                    psprintf("T%d STORE PA = %h DATA = %h BYTE_MASK = %b TYPE = CAS swap true",
+                             reqPkt.tid,reqPkt.addr,reqPkt.data,reqPkt.size));
+        cas_swap[thread] = 0;
+      }
+
+      // ack pkt
+      rspPkt.nc = 1;
+      rspPkt.tid = reqPkt.tid;
+      rspPkt.atmIf2 = 1;
+      rspPkt.wv = 0;
+      
+      // L1 cache tags, get vec and invalidate all duplicate tags as needed. CAS
+      invVector = 0;
+      targetCores = 0;     
+      // always target the requester
+      targetCores[reqPkt.cpuId] = 1;
+
+      for (i=0;i<=gParam.coreMax;i++) {
+        tmpInvVect = getInvalVector(rspPkt.rtntypU, reqPkt, i);
+        if (tmpInvVect) targetCores[i] = 1;
+        invVector = invVector | tmpInvVect;
+      }
+
+      invField = 0;
+      rspPkt.data = {2'b0,reqPkt.l1wayBis,invField,reqPkt.addr[5:4],reqPkt.cpuId,
+        reqPkt.addr[11:6],7'b0,reqPkt.addr[3],reqPkt.size,invVector,reqPkt.data[63:0]};
+
+      
+#ifdef CCXDEVMEMBFM_DEBUG
+      // state of tag for line at this time
+      rspPkt.lineWay = lineState(reqPkt, *, 1);
+#endif
+
+      // queue packet for delivery, in this case, this BFM will drive it.     
+      rspPkt.targetPorts = targetCores;
+      rspPkt.send(1);
+
+      // notify LDST sync
+      ldstSync(reqPkt.cpuId,rspPkt);
+
+      @(posedge portVar.$clk);
+      semaphore_put(ldstSyncLock, 1 );
+      
+    } // U_CPX_CAS_ACK
+
+      
+    U_CPX_SWAP_RTN, U_CPX_SWAP_ACK: 
+      // do the swap, the return pkt, and the ack pkt here.
+      // we get addr and 32 bit swap data. Use size mask.
+    {
+      if (myPort == DEV_NCU) error("SWAP not allowed at NCU"); // I/O
+      
+      fork {
+        
+        repeat (ordering(rspPkt, "SWAP RTN")) @(posedge portVar.$clk);
+        // get semaphore for this clock
+        semaphore_get(WAIT, ldstSyncLock, 1);
+        
+        // load
+        tmpAddr = {reqPkt.addr[39:4],4'b0000};
+        rspPkt.data = gMem.read128(tmpAddr,myPort,1);
+        if (gParam.mcuMemPrint[READ]) {
+          printf("\n%7d00: dumpMem: dumping memory related to this request pkt:",get_cycle());
+          reqPkt.print(myPort);
+          gMem.dumpMem(tmpAddr & 40'hFFFFFFFFC0, 8);
+        }
+
+        // Plusargs to dump LD/ST to logfile
+        if (gParam.show_load) 
+          PR_NORMAL(CLASSNAMEQ, MON_NORMAL, psprintf("T%d LOAD  PA = %h DATA = %h TYPE = SWAP",
+                                                     reqPkt.tid,reqPkt.addr,rspPkt.data));
+        
+        // return pkt
+        //
+        rspPkt.nc = 1;
+        rspPkt.tid = reqPkt.tid;
+        rspPkt.atmIf2 = 1;
+        rspPkt.wv = 0;
+        // for ldst sync
+        rspPkt.CASstore = 1;
+
+        // used by fork 2 when it proceeds
+        rspPkt2 = new(reqPkt);
+        rspPkt2 = rspPkt.object_copy();
+
+#ifdef CCXDEVMEMBFM_DEBUG
+        // state of tag for line at this time
+        rspPkt.lineWay = lineState(reqPkt, *, 1);
+#endif
+
+        // send load data
+        rspPkt.send(1);
+
+        // notify LDST sync
+        ldstSync(reqPkt.cpuId,rspPkt);
+
+        @(posedge portVar.$clk);
+        semaphore_put(ldstSyncLock, 1 );
+
+      } // fork 1
+      
+      /////////////////////////////////
+      
+      { // fork 2
+
+        delay(1);
+
+        // wait
+        repeat (ordering(rspPkt, "SWAP ACK")) @(posedge portVar.$clk);
+        // get semaphore for this clock
+        semaphore_get(WAIT, ldstSyncLock, 1);
+        
+        // ack pkt
+        //
+        gMem.writeBM({reqPkt.addr[39:3],3'b000}, reqPkt.data, reqPkt.size, myPort);
+        if (gParam.mcuMemPrint[WRITE]) {
+          printf("\n%7d00: dumpMem: dumping memory related to this request pkt:",get_cycle());
+          reqPkt.print(myPort);
+          gMem.dumpMem(reqPkt.addr & 40'hFFFFFFFFC0, 8);
+        }
+
+        rspPkt2.ccxSourced2 = reqPkt.ccxSourced;
+        // second packet must not have ccxSourced set because it will
+        // cause outstandingRequests to decrement twice.
+        rspPkt2.ccxSourced = 0;
+        rspPkt2.rtntyp = CPX_SWAP_ACK;
+        rspPkt2.rtntypU = U_CPX_SWAP_ACK;
+        
+        // L1 cache tags, get vec and invalidate all duplicate tags as needed. SW
+        invVector = 0;
+        targetCores = 0;     
+        // always target the requester
+        targetCores[reqPkt.cpuId] = 1;
+
+        for (i=0;i<=gParam.coreMax;i++) {
+          tmpInvVect = getInvalVector(rspPkt2.rtntypU, reqPkt, i);
+          if (tmpInvVect) targetCores[i] = 1;
+          invVector = invVector | tmpInvVect;
+        }
+
+        // Vack
+        invField = 0;
+        rspPkt2.data = {2'b0,reqPkt.l1wayBis,invField,reqPkt.addr[5:4],reqPkt.cpuId,
+          reqPkt.addr[11:6],7'b0,reqPkt.addr[3],reqPkt.size,invVector,reqPkt.data[63:0]};
+
+        
+        // Plusargs to dump LD/ST to logfile
+        if (gParam.show_store)
+          PR_NORMAL(CLASSNAMEQ, MON_NORMAL, psprintf("T%d STORE PA = %h DATA = %h BYTE_MASK = %b TYPE = SWAP",reqPkt.tid,reqPkt.addr,reqPkt.data,reqPkt.size));
+
+#ifdef CCXDEVMEMBFM_DEBUG
+        // state of tag for line at this time
+        rspPkt2.lineWay = lineState(reqPkt, *, 1);
+#endif
+
+        // queue packet for delivery, in this case, this BFM will drive it.
+        rspPkt2.targetPorts = targetCores;
+        rspPkt2.send(1);
+
+        // notify LDST sync
+        ldstSync(reqPkt.cpuId,rspPkt2);
+
+        @(posedge portVar.$clk);
+        semaphore_put(ldstSyncLock, 1 );
+        
+      } join none // all
+      
+    } // PCX_SWAP_RTN
+
+     
+    U_CPX_IFILL, U_CPX_NCU_IFILL: {
+
+      repeat (ordering(rspPkt, "IFILL")) @(posedge portVar.$clk);
+      // get semaphore for this clock
+      semaphore_get(WAIT, ldstSyncLock, 1);
+      
+      tmpAddr = reqPkt.addr;
+      
+      // are we NCU? return 1 packet, not 2
+      if (myPort == DEV_NCU) {
+        // Set error bit on fetch to non-boot I/O to match NCU behavior
+        if (tmpAddr[39] == 1 && tmpAddr[39:32] != 8'hff)
+          rspPkt.err = 2'b10;  // uncorrectable error
+        rspPkt.wayf4b = 1; // 4 byte fill
+        tmpAddr = {reqPkt.addr[39:4],4'b0}; // 4 byte addressing!!!                 
+        rspPkt.data = gMem.read128(tmpAddr,myPort,1);
+        if (gParam.mcuMemPrint[READ]) {
+          printf("\n%7d00: dumpMem: dumping memory related to this request pkt:",get_cycle());
+          reqPkt.print(myPort);
+          gMem.dumpMem(tmpAddr & 40'hFFFFFFFFC0, 8);
+        }
+
+        //printf("%0d: CcxDevMemBFM[%2d]::respond: T%d read @ reqPkt/tmp %0h/%0h\n", get_time(LO),myPort,reqPkt.tid,reqPkt.addr,tmpAddr);
+        //printf("%0d: CcxDevMemBFM[%2d]::respond: T%d read data %0h\n", get_time(LO),myPort,reqPkt.tid,rspPkt.data);
+
+        // queue packet for delivery, this BFM instance will end up driving it.
+                rspPkt.send(1);
+        
+      } else { // L2$
+        rspPkt2 = new(reqPkt);
+        rspPkt2 = rspPkt.object_copy();
+        
+        tmpAddr = {reqPkt.addr[39:5],5'b0};
+        rspPkt.data = gMem.read128(tmpAddr,myPort, 1);
+        if (gParam.mcuMemPrint[READ]) {
+          printf("\n%7d00: dumpMem: dumping memory related to this request pkt:",get_cycle());
+          reqPkt.print(myPort);
+          gMem.dumpMem(tmpAddr & 40'hFFFFFFFFC0, 8);
+        }
+
+        // second packets must not have this set because it will
+        // cause outstandingRequests to decrement twice.
+        rspPkt2.ccxSourced = 0;
+        
+        tmpAddr = tmpAddr + 16; //5'b10000;
+        rspPkt2.atmIf2 = 1;
+        rspPkt2.l2miss = 0;
+        rspPkt2.data = gMem.read128(tmpAddr,myPort, 1);
+
+#ifdef CCXDEVMEMBFM_DEBUG
+      // state of tag for line at this time
+      rspPkt.lineWay = lineState(reqPkt, *, 1);
+#endif
+        // L1$ tag update.
+        updateItag(reqPkt, rspPkt, rspPkt2, reqPkt.cpuId, TAG_VAL);
+
+
+        // queue packets for delivery.
+        //
+        // Atomics must stay in order. The CPX rtl will hold the first
+        // pkt until the second pkt arrives. They will arrive at the core
+        // back to back. Putting time between pkt1 and pkt2 tests the CCX only,
+        // the core never sees time between them. The 2 pkts MUST go into the
+        // mailbox back to back to avoid another pkt from this port getting between
+        // them.
+        rspPkt.send(1);        
+        rspPkt2.send(1);
+        
+      }
+
+      // notify LDST sync
+      // ldstSync(reqPkt.cpuId,rspPkt);
+      
+      @(posedge portVar.$clk);
+      semaphore_put(ldstSyncLock, 1 );     
+
+    }
+   
+
+    default :  {
+      rspPkt.print(myPort);
+      PR_ERROR (CLASSNAMEQ, MON_ERR,
+                psprintf ("T%d Port=%0d rtntyp=%b.  Unsupported rtntyp for CCX MEM device BFM.",thread,myPort, rspPkt.rtntyp));
+    }
+  } // case
+
+}
+
+
+task CLASSNAME::updateDtag(PcxPkt reqPkt, CpxPkt rspPkt, reg [2:0] cpuId, integer how = TAG_VAL)
+{
+  reg [3:0] match;
+
+  if (myPort == DEV_NCU || cacheOff || reqPkt.nc == 1) return;
+  
+  // Update D$ tag table 
+  dtag[cpuId].write_tag (reqPkt.l1wayMMUid,
+                         reqPkt.addr[10:4],
+                         reqPkt.addr[39:11],how);
+
+  // Invalidate the other (I) tag table
+  match = itag[cpuId].get_way ("D, chk 4 hit in I:",
+                                      {1'b0,reqPkt.addr[10:5]},
+                                      reqPkt.addr[39:11]);
+  if (match != 4'b0) {
+    itag[cpuId].write_tag(match[3:1],{1'b0,reqPkt.addr[10:5]},29'b0,TAG_INVAL);
+    rspPkt.wv = 1'b1;
+    rspPkt.wayMMUid = match[3:2];
+    rspPkt.wayf4b = match[1];
+  }
+
+}
+
+
+
+task CLASSNAME::updateItag(PcxPkt reqPkt, CpxPkt rspPkt,
+                           CpxPkt rspPkt2 = null, reg [2:0] cpuId, integer how = TAG_VAL)
+{
+  reg [3:0] match;
+
+  if (myPort == DEV_NCU || cacheOff) return;
+
+  if (!reqPkt.nc) {
+
+    if (match != 4'b0)
+      PR_ERROR(CLASSNAMEQ, MON_ERR,
+               psprintf ("ERROR itag: DUT request to L2$ 0x%0h should have hit in the L1$.\n\n",reqPkt.addr));
+    
+    // Update I$ tag table
+    itag[cpuId].write_tag ({reqPkt.l1wayBis,reqPkt.l1wayMMUid},
+                                  {1'b0,reqPkt.addr[10:5]},
+                                  reqPkt.addr[39:11],how,1);
+  }
+  
+  // Invalidate the other (D) tag table (whether nc=0|1)
+  match = dtag[cpuId].get_way ("I, chk 4 hit in D:",
+                                      reqPkt.addr[10:4],
+                                      reqPkt.addr[39:11]);
+  if (match != 4'b0) {
+    dtag[cpuId].write_tag({1'b0,match[3:2]},reqPkt.addr[10:4],29'b0,TAG_INVAL);
+    rspPkt.wv = 1'b1;
+    rspPkt.wayMMUid = match[3:2];
+  }
+  // ifill covers 2 D$ lines
+  if (rspPkt2 !== null) {
+    match = dtag[cpuId].get_way ("I, chk 4 hit in D:",
+                                        reqPkt.addr[10:4]+1,
+                                        reqPkt.addr[39:11]);
+    if (match != 4'b0) {
+      dtag[cpuId].write_tag({1'b0,match[3:2]},reqPkt.addr[10:4]+1,29'b0,TAG_INVAL);
+      rspPkt2.wv = 1'b1;
+      rspPkt2.wayMMUid = match[3:2];
+    }
+  }
+
+}
+
+
+
+// use to receive an expected packet.
+// mainly for CCX testing.
+//
+// user passes in a packet whos fields are set to match the
+// packet that should show up at this port. When it does, the
+// caller is notified (toggle a var in the passed in packet) and
+// the passed in packet will be populated with what showed up at the
+// destinatin port. Unexpected (not registered via a call to this task)
+// packets will cause failure.
+task CLASSNAME::recv(BasePkt pktHndl) {
+
+  // PcxPkt pcxPkt;
+  
+  // assign/cast pktHndl to be of PcxPkt type rather than base
+  //cast_assign(pcxPkt,pktHndl);
+
+  // load signature hash. key is signature and data is clk count at call time.
+  // expectedSig[pcxPkt.getVector()] = pktHndl;
+  expectedSig[pktHndl.getVector()] = pktHndl;
+  
+}
+
+// Mainly for CCX testing. Call when a pkt should no longer arrive.
+// For CCX, a pkt should never intentionally get dropped so this may not get used.
+task CLASSNAME::cancelRecv(BasePkt pktHndl) {
+
+  // PcxPkt pcxPkt;
+
+  // assign/cast pktHndl to be of PcxPkt type rather than base
+  //cast_assign(pcxPkt,pktHndl);
+
+  // clear signature hash.
+  // void = assoc_index(DELETE,expectedSig,pcxPkt.getVector());
+  void = assoc_index(DELETE,expectedSig,pktHndl.getVector());
+  
+}
+
+
+
+//----------------------------------------------------------
+// Compare 2 data vectors using size as a mask
+function reg CLASSNAME::data_equal (reg [63:0] data1, 
+                                    reg [63:0] data2, 
+                                    reg[7:0] size) {
+
+  reg eq0,eq1,eq2,eq3,eq4,eq5,eq6,eq7;
+
+  eq7 = !size[7] | (data1[63:56]==data2[63:56]);
+  eq6 = !size[6] | (data1[55:48]==data2[55:48]);
+  eq5 = !size[5] | (data1[47:40]==data2[47:40]);
+  eq4 = !size[4] | (data1[39:32]==data2[39:32]);
+  eq3 = !size[3] | (data1[31:24]==data2[31:24]);
+  eq2 = !size[2] | (data1[23:16]==data2[23:16]);
+  eq1 = !size[1] | (data1[15: 8]==data2[15: 8]);
+  eq0 = !size[0] | (data1[ 7: 0]==data2[ 7: 0]);
+  
+  data_equal = eq7 & eq6 & eq5 & eq4 & eq3 & eq2 & eq1 & eq0;
+
+}
+
+
+
+// hit indication, what L2 thinks the core L1 has.
+// returns invalidation vector for the indicated core.
+// Does the invalidate of our duplicate tags.
+function reg [31:0] CLASSNAME::getInvalVector(integer type,
+                                              PcxPkt reqPkt,
+                                              reg [2:0] cpuId)
+{
+  
+  reg [31:0] invVect_d, invVect_i;
+  reg [3:0]  dmatch, imatch;
+  
+  if (myPort == DEV_NCU || cacheOff) {
+    getInvalVector = 0;
+    return;
+  }
+
+#ifdef CCXDEVMEMBFM_DEBUG
+        // state of tag for line at this time
+      dtag[cpuId].dump_line("getInvalVector D1:",
+                                   reqPkt.addr[10:4],
+                                   MON_ALWAYS);
+#endif
+  
+  // Check if store hit the D$ of given cpuId
+  dmatch = dtag[cpuId].get_way("getInvalVector:",
+                               reqPkt.addr[10:4],
+                               reqPkt.addr[39:11]);
+  
+  //create_vector (INSTR_TAG,dmatch,invVect_d,cpuId);
+  invVect_d = dmatch << (cpuId * 4);
+  
+  // Invalidate entry in given cpuId (all cpu's) D$ if found...
+  // Do this for Stream ST, Atomics (CAS/SWAP), Block *ST.
+  if ((type == U_CPX_STR_ST ||
+       type == U_CPX_BIS ||
+       type == U_CPX_CAS_ACK ||
+       type == U_CPX_CAS_RTN ||
+       type == U_CPX_BLK_ST ||
+       type == U_CPX_SWAP_RTN ||
+       type == U_CPX_SWAP_ACK ||
+       reqPkt.cpuId !== cpuId) &&      // hitting core is not requesting core
+       dmatch)
+    dtag[cpuId].write_tag({1'b0,dmatch[3:2]},
+                          reqPkt.addr[10:4],
+                          29'b0,TAG_INVAL);
+
+  // Check if store hit the I$
+  imatch = itag[cpuId].get_way("getInvalVector:",
+                               {1'b0,reqPkt.addr[10:5]},
+                               reqPkt.addr[39:11]);
+  
+  // Invalidate entry in I$ if found
+  if (imatch) itag[cpuId].write_tag(imatch[3:1],
+                                    {1'b0,reqPkt.addr[10:5]},
+                                    29'b0,TAG_INVAL);
+  
+  //create_vector (INSTR_TAG,imatch,invVect_i,cpuId);
+  invVect_i = imatch << (cpuId * 4);
+  
+  // Per spec, you cannot get match in both I$ & D$
+  if ((imatch!=0)&(dmatch!=0)) {
+    PR_ERROR(CLASSNAMEQ, MON_ERR,
+             psprintf ("found match in both D$ and I$ for core %0d.  D$=%b, I$=%b",cpuId,dmatch,imatch)); 
+  }
+
+  getInvalVector = invVect_d | invVect_i;
+
+
+#ifdef CCXDEVMEMBFM_DEBUG
+        // state of tag for line at this time
+      dtag[cpuId].dump_line("getInvalVector D2:",
+                                   reqPkt.addr[10:4],
+                                   MON_ALWAYS);
+#endif
+ 
+}
+
+
+task CLASSNAME::ldstSync(reg [2:0] cpuId, CpxPkt rspPkt) {
+
+  if (rspPkt.ccxSourced || rspPkt.ccxSourced2 || rspPkt.rtntyp == CPX_EVICT) {
+    // notify nas LD/ST Sync for all but these types.
+    // CAS that writes to L2 (CASstore), gntTarget, pa, pkt.
+    if (myPort > 7 &&
+        rspPkt.rtntypU !== U_CPX_STR_LD &&
+        rspPkt.rtntypU !== U_CPX_MMU_RTN &&
+        rspPkt.rtntypU !== U_CPX_PREF) {
+      // these are NR0 interface types (return to zero)
+      gLdStSyncPort[myPort].$cid <= cpuId;
+      gLdStSyncPort[myPort].$ctrue <= rspPkt.CASstore;
+      //gLdStSyncPort[myPort].$swap <= (rspPkt.rtntypU == U_CPX_SWAP_ACK || rspPkt.rtntypU == U_CPX_SWAP_RTN); //  swap;
+      gLdStSyncPort[myPort].$swap <= 0;     
+      gLdStSyncPort[myPort].$pa <= rspPkt.addr;
+      gLdStSyncPort[myPort].$pkt <= rspPkt.getVector();
+    }
+  }
+
+}
+
+
+// special task to potentially create an eviction packet to
+// send to some cores. This task will make sure that LDST sync
+// gets notified correctly. It also makes sure that 
+// duplicate tag updating is ordered and sane. This "psudo request"
+// is ordered like any other.
+// 
+// Caller can specify a target address to evict. Will do nothing if address
+// is not cached. Otherwise, we find an address.
+task CcxDevMemBFM::enqueueEvict(reg [7:0] coreEnable,
+                                reg [39:0] evictPA = 40'hffffffffff,
+                                reg [3:0] cid = 4'hf,
+                                reg all_cores = 0,
+                                integer dCacheWeight = 60) {
+
+  ccxPort portVar = gCpxPort[myPort];
+  reg [7:0] targets;
+  CpxPkt     pkt;
+  reg [127:0] vect;
+
+
+  pkt = new();
+  //pkt.randomize();
+  //pkt.responseDelay = pkt.pkt2Delay;
+  pkt.responseDelay = 2;
+  pkt.tid = cid;
+  pkt.sendPorts = 1 << myPort;
+  pkt.rtntyp = CPX_EVICT;
+  pkt.rtntypU = U_CPX_EVICT;     
+  pkt.addr = evictPA;
+  pkt.l2miss = 0;
+  
+  repeat (ordering(pkt, "XEVICT")) @(posedge portVar.$clk);
+  // get semaphore for this clock
+  semaphore_get(WAIT, ldstSyncLock, 1);
+
+  // get vector and update L1 dup tags
+  vect = gUtil.evictVector (coreEnable,
+                            evictPA,
+                            cid,
+                            targets);
+
+//   vect = gUtil.evictVinv(coreEnable,
+//                          targets,
+//                          evictPA,
+//                          cid,
+//                          all_cores,
+//                          dCacheWeight);
+
+#ifdef CCXDEVMEMBFM_DEBUG  
+  if (! targets) printf("EVICTION gUtil.evictVector did not return any targets!!!\n");
+  else     printf("EVICTION gUtil.evictVector return targets = %b vec = %h\n", targets,vect);
+#endif
+
+  if (vect && targets) {
+    pkt.targetPorts = targets;
+    pkt.addr = evictPA;
+    pkt.tid = cid;
+    pkt.data = vect;
+    ldstSync(0,pkt); // notify
+    pkt.send(1); // doit
+    
+    PR_NORMAL(CLASSNAMEQ, MON_NORMAL,
+              psprintf ("Sending EVICTION pkt to cores targets=0x%h, a=0x%h, vec=0x%h",
+                        pkt.targetPorts,pkt.addr,pkt.data));
+  } else pkt = null;
+  
+  @(posedge portVar.$clk);
+  semaphore_put(ldstSyncLock, 1 );
+}
+
+
+// used for debug only
+function reg [3:0] CLASSNAME::lineState(PcxPkt reqPkt,
+                                        string why="debug lineState:",
+                                        reg quiet=1)
+{
+
+  if (reqPkt.rqtypU == U_PCX_IFILL || reqPkt.rqtyp == PCX_IFILL) {
+    lineState = itag[reqPkt.cpuId].get_way(why,
+                                           {1'b0,reqPkt.addr[10:5]},
+                                           reqPkt.addr[39:11]);
+    if (!quiet)
+      itag[reqPkt.cpuId].dump_line(why, reqPkt.addr[10:4],MON_INFO);
+  }
+  else {
+    lineState = dtag[reqPkt.cpuId].get_way(why,
+                                           reqPkt.addr[10:4],
+                                           reqPkt.addr[39:11]);
+    if (!quiet)
+      dtag[reqPkt.cpuId].dump_line(why, reqPkt.addr[10:4],MON_INFO);
+  }
+  
+  
+}
+
+
+// hold off the responses until outstandingReqs reaches amount.
+// this will clump responses into bursts periodically.
+task CLASSNAME::burstResp(integer amount)
+{
+  reg [63:0] tmp;
+  reg iSync = 0;
+  integer wait, reason;
+  ccxPort portVar = gCpxPort[myPort];
+  
+  if (gParam.burstSync == myPort-8 || gParam.burstSync == myPort) iSync = 1;
+  wait = gParam.burstHoldoff;
+  repeat (10) @(negedge gPcxPort[myPort].$clk);
+  tmp = gUtil.getThreadEnables();
+  while (tmp !== gOutOfBoot) wait_var(gOutOfBoot); // all threads out of boot
+  
+  // make stall agreeable so we do not stall cores requests when trying to
+  // build up a burst
+  stallStart = amount + 6;
+  PR_ALWAYS(CLASSNAMEQ, MON_ALWAYS,
+                psprintf("Port %2d, stallStart changed to %0d due to burst option.",myPort, stallStart));
+  while (1) {
+    if (outstandingReqs < amount) { // just drain naturally if too many in queue
+
+      @(posedge portVar.$clk);
+      semaphore_get(WAIT, ldstSyncLock, 1); // stop responding
+
+      // start respoding after amount or burstSync or x clocks
+      fork
+      {
+        while (outstandingReqs < amount) wait_var(outstandingReqs); // wait
+        reason = 1;
+      }
+      {
+        repeat (wait) @(posedge gPcxPort[myPort].$clk); // but not too long
+        reason = 2;
+      }
+      {
+        wait_var(burstSync); // burst on sync when in use
+        reason = 3;
+      }
+      join any
+      terminate; // kill remaining forks
+
+      if (iSync) burstSync = ~burstSync; // signal the other banks
+
+      if (outstandingReqs >= 2)
+        PR_INFO(CLASSNAMEQ, MON_INFO,
+                psprintf("Port %2d, Letting %0d packets burst through (reason=%0d)",myPort, outstandingReqs, reason));
+
+      @(posedge portVar.$clk);
+      semaphore_put(ldstSyncLock, 1 ); // allow normal responses
+    }
+    repeat (5) @(posedge gPcxPort[myPort].$clk); // give a little break    
+  } // rinse and repeat
+}

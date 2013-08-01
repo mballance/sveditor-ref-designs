@@ -1,0 +1,2214 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: tcu_tasks.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <std_display_class.vrh>
+
+// TAP specific defines
+#include <systemTapDefines.vri>
+
+#include <tcu_top_defines.vri>
+
+// jtag_if interfaces
+#include <systemTap.if.vri>
+
+// other interfaces
+#include <tcu_top.vri>
+
+#include <systemTapClass.vrh>
+#include <tcu_siu_packet.vrh>
+#include <tcu_spc_packet.vrh>
+#include <ncu_defines.vri>
+#include <tcu_defines.vri>
+#include "pkg_top.vri"
+
+
+extern tcu_siu_packet tcu_siu_pkt;
+
+#ifndef FC_SCAN_BENCH
+extern tcu_spc_packet tcu_spc_pkt;
+#endif
+
+class SystemTap extends BaseSystemTap {
+  stci__port    stci_port;
+  bscan__port   bscan_port;
+  shscan__port  shscan_port; 
+  jt_scan_clk__port jt_scan_clk_port;
+#ifndef NO_MBIST_STUB
+  mbist__port   mbist_port;
+#endif
+#ifndef NO_LBIST_STUB
+  lbist__port   lbist_port;
+#endif
+  scan__port    scan_port;
+  PKG_port      pkg_port = pkg_bind;
+  efuse__port   efuse_port;
+#ifndef FC_SCAN_BENCH
+  tcu_siu__port tcu_siu_port;
+  spc_debug__port spc_debug_port;
+  cmp__port     cmp_port;
+#endif
+//   bit [3:0]   tap_state_reg;
+//   string      dispmonScope;
+//   StandardDisplay dbg;
+
+  task new(StandardDisplay dbgIn) {
+    super.new(dbgIn);
+    dispmonScope = "tcu";
+    bscan_port   = bscan_bind;
+    stci_port    = stci_bind;
+    shscan_port  = shscan_bind;   
+    jt_scan_clk_port = jt_scan_clk_bind;
+#ifndef NO_MBIST_STUB
+    mbist_port   = mbist_bind;
+#endif
+#ifndef NO_LBIST_STUB
+    lbist_port   = lbist_bind;
+#endif
+    scan_port    = scan_bind;
+    efuse_port   = efuse_bind;
+#ifndef FC_SCAN_BENCH
+    tcu_siu_port = tcu_siu_bind;
+    spc_debug_port = spc_debug_bind;
+    cmp_port     = cmp_bind;
+#endif
+    dbg.dispmon(dispmonScope, MON_INFO, "$Id: tcu_tasks.vr,v 1.3 2007/07/26 23:00:22 drp Exp $");
+#ifndef FC_BENCH // could not drive package pins becoz these are driven by vera
+    //scan_port.$ac_test_mode  = 1'b0 async; // Disable AC manufacturing to start with.  should not initialize
+    //scan_port.$scan_en       = 1'b0 async; // Disable scan mode. should not initialize
+#endif  //FC_BENCH ndef
+
+    // From TI SERDES spec scan config modes:
+    // 00: STCIMODE and UNBYPASS asyncronously reset to zero
+    // 10: Scan into shadow registers new value on each scan clock
+    // 11: Load/apply scanned shadow register values into primary flops on next scan clock
+    //scan_port.$srdes_scancfg = 2'b0 async; // Serial test and configuration interface for SERDES
+#ifndef FC_SCAN_BENCH
+    cmp_port.$tb_fusedata_init = ~{22'b0} async; // Efuse testbench override, set enabled to true
+#endif
+  }
+
+  //========================================================
+  // WHAT: reset JTAG TAP for POR reset seq according to PRM as follows:
+  //    - Wait for fc bench drives PWRON_RST_L
+  //    - Assert TRST_L, drives TMS to 1 and toggle TCK once.
+  //    - Deassert TRST_L and toggle TCK five times.
+  // ASSUME: this task is called at time 0
+  // NOTE: this task is for fc bench only.
+  //========================================================
+  task fc_bench_jtag_POR_reset() {
+    TCU_rst_port tcu_rst_port = tcu_rst_bind;
+    bit value;
+    integer i;
+ 
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "fc_bench_jtag_POR_reset(): reset JTAG TAP for POR reset seq");
+    //--- wait fc bench assert PWRON_RST_L ---
+    while (1) {
+      value = tcu_rst_port.$PWRON_RST_L async;
+      if ((value === 1'b0) || (value === 1'b1))
+        break;
+      else
+        @(tcu_rst_port.$PWRON_RST_L async);
+    }
+    //--- assert TRST_L, set TMS to 1 and toggle TCK once ----
+    tap_port.$trst_n  = 1'b0 async;
+    tap_port.$tck2dut = 1'b0 async;
+    tap_port.$tms     = 1'b1 async;
+    repeat (2) @(pkg_port.$clk);
+    delay (3);
+    tap_port.$tck2dut = 1'b1 async;  // toggle TCK once
+    repeat (2) @(pkg_port.$clk);
+    delay (3);
+    tap_port.$tck2dut = 1'b0 async;
+    //--- deassert TRST_L and toggle TCK five times ----
+    repeat (2) @(pkg_port.$clk);
+    delay (3);
+    tap_port.$trst_n  = 1'b1 async;  // deassert TRST_L
+    repeat (2) @(pkg_port.$clk);
+    for (i = 0; i < 5; i++) {        // toggle TCK five times
+      delay (3);
+      tap_port.$tck2dut = 1'b1 async;
+      repeat (2) @(pkg_port.$clk);
+      delay (3);
+      tap_port.$tck2dut = 1'b0 async;
+      repeat (2) @(pkg_port.$clk);
+    }
+    tap_state_reg = TAP_RESET;
+  }
+
+  // JTAG Private UCB
+  //////////////////////////////////////////////////////////////////
+  //// TAP_CREG_ADDR
+  task tap_creg_addr( bit [39:0] addr ) {
+    dbg.dispmon(dispmonScope, MON_INFO, psprintf("tap_creg_addr() (40'h%10h)", addr));
+    void = TapIRLoad(TAP_CREG_ADDR);
+    void = TapDRLoad(cnv2str(addr, 40));
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tap_creg_addr()");
+  }
+
+  //// TAP_CREG_WDATA
+  task tap_creg_wdata( bit [63:0] data ) {
+    dbg.dispmon(dispmonScope, MON_INFO, psprintf("tap_creg_wdata() (64'h%16h)", data));
+    void = TapIRLoad(TAP_CREG_WDATA);
+    void = TapDRLoad(cnv2str(data, 64));
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tap_creg_wdata()");
+  }
+
+  //// TAP_CREG_RDATA
+  // Expecting a NACK means we intentionally submitted an invalid address
+  function bit [63:0] tap_creg_rdata(integer time_out_limit=100, bit expectNack = 0) {
+    string rdata;
+    tap_creg_rdata = 64'bx;
+    dbg.dispmon(dispmonScope, MON_INFO, "tap_creg_rdata()");    
+    void = TapIRLoad(TAP_NCU_READ);   // Send read
+    TapGoto(TAP_IDLE);
+    void = TapIRLoad(TAP_CREG_RDATA); // Wait for read reply at data register
+    TapGoto(TAP_UPDATE_IR);
+    TapGoto(TAP_SHIFT_DR);
+    // Wait for read return, on invalid addresses this should give a NACK
+    if (TapWait4DataRdy(time_out_limit)) {
+      if (expectNack) {
+        // From N1 PRM: "Most locations will silently drop writes to unsupported
+        // addresses, and will return NACK on reads to unsupported addresses
+        // which is ignored by the TAP"
+        dbg.dispmon(dispmonScope, MON_INFO, "... UCB read NOT successful. Expecting a NACK during timeout ...");
+      } else {
+        dbg.dispmon(dispmonScope, MON_ERR, "... ERROR: UCB read timeout reached.");
+      }
+    } else {
+      dbg.dispmon(dispmonScope, MON_INFO, "... UCB read successful.");
+      rdata = TapDRGet(64);
+      tap_creg_rdata = rdata.atobin();
+    }
+    TapGoto(TAP_IDLE);
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tap_creg_rdata()");
+  }
+
+  //// TAP_CREG_SCRATCH
+  function bit [63:0] tap_creg_scratch(integer time_out_limit = 100, bit expectNack = 0) {
+    string rdata;
+    tap_creg_scratch = 64'bx;    
+    dbg.dispmon(dispmonScope, MON_INFO, "tap_creg_scratch()");    
+    void = TapIRLoad(TAP_CREG_SCRATCH);
+    TapGoto(TAP_UPDATE_IR);
+    TapGoto(TAP_IDLE);
+    TapGoto(TAP_SHIFT_DR);
+    // Wait for read return, on invalid addresses this should give a NACK
+    if (TapWait4DataRdy(time_out_limit)) {
+      if (expectNack) {
+        // From N1 PRM: "Most locations will silently drop writes to unsupported
+        // addresses, and will return NACK on reads to unsupported addresses
+        // which is ignored by the TAP"
+        dbg.dispmon(dispmonScope, MON_INFO, "... UCB read NOT successful.");
+        dbg.dispmon(dispmonScope, MON_INFO, "Expecting a NACK during timeout ...");
+      } else {
+        dbg.dispmon(dispmonScope, MON_ERR, "... ERROR: UCB read timeout reached.");
+      }
+    } else {
+      dbg.dispmon(dispmonScope, MON_INFO, "... UCB read successful.");
+      rdata = TapDRGet(64);
+      tap_creg_scratch = rdata.atobin();
+    }
+    TapGoto(TAP_IDLE);
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tap_creg_scratch()");
+  }
+  
+  //// TAP_NCU_WRITE
+  task tap_iob_write() {
+    dbg.dispmon(dispmonScope, MON_INFO, "tap_iob_write()");
+    void = TapIRLoad(TAP_NCU_WRITE);
+    TapGoto(TAP_IDLE);    
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tap_iob_write()");
+  }
+
+  //// TAP_NCU_READ
+  task tap_iob_read() {
+    dbg.dispmon(dispmonScope, MON_INFO, "tap_iob_read()");
+    void = TapIRLoad(TAP_NCU_READ);
+    TapGoto(TAP_IDLE);
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tap_iob_read()");
+  }
+
+  //// TAP_NCU_WADDR
+  task tap_iob_waddr( bit [39:0] addr ) {
+    dbg.dispmon(dispmonScope, MON_INFO, psprintf("tap_iob_waddr() ('h%0h)", addr));
+    void = TapIRLoad(TAP_NCU_WADDR);
+    void = TapDRLoad(cnv2str(addr, 40));
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tap_iob_waddr()");
+  }
+
+  //// TAP_NCU_WDATA
+  task tap_iob_wdata( bit [63:0] data ) {    
+    dbg.dispmon(dispmonScope, MON_INFO, psprintf("tap_iob_wdata() ('h%0h)", data));
+    void = TapIRLoad(TAP_NCU_WDATA); 
+    void = TapDRLoad(cnv2str(data, 64)); 
+    TapGoto(TAP_UPDATE_DR); 
+    TapGoto(TAP_IDLE);     
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tap_iob_wdata()");
+  } 
+  
+  //// TAP_NCU_RADDR
+  task tap_iob_raddr( bit [39:0] addr ) {    
+    dbg.dispmon(dispmonScope, MON_INFO, psprintf("tap_iob_addr() ('h%0h)", addr));
+    void = TapIRLoad(TAP_NCU_RADDR); 
+    void = TapDRLoad(cnv2str(addr, 40)); 
+    TapGoto(TAP_UPDATE_DR); 
+    TapGoto(TAP_IDLE); 
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tap_iob_raddr()");
+  } 
+
+  //// Wrapper task: write to an CSR
+  task tap_write_csr(bit [39:0] addr, bit [63:0] wdata, string csr_name="") {
+    dbg.dispmon(dispmonScope, MON_INFO, psprintf("tap_write_csr(addr=0x%h, wdata=0x%h, name=%s)", addr, wdata, csr_name));
+    this.tap_creg_addr(addr);
+    this.tap_creg_wdata(wdata);
+    this.tap_iob_write();
+  }
+
+  //// Wrapper function: read an CSR
+  function bit [63:0] tap_read_csr(bit [39:0] addr, string csr_name="", integer time_out_limit=100, bit expectNack = 0) {
+    dbg.dispmon(dispmonScope, MON_INFO, psprintf("tap_read_csr(addr=0x%h, name=%s)", addr, csr_name));
+    this.tap_creg_addr(addr);
+    tap_read_csr = this.tap_creg_rdata(time_out_limit, expectNack);
+  }
+  
+  // JTAG Private L2 access
+  //////////////////////////////////////////////////////////////////
+  //// TAP_L2_WRITE
+  task tap_l2_write( bit [39:0] addr, bit [63:0] data ) {
+    bit [63:0] header;
+
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("tap_l2_write() (addr: 40'h%10h, data: 64'h%16h)", addr, data));
+    header = {24'h820000, addr}; // write operation
+
+    // save to share packet
+    tcu_siu_pkt.header = header;
+    tcu_siu_pkt.payload = data;
+
+    tap_l2_addr (header); // load TAP_L2_ADDR instr
+    tap_l2_wrdata (data);  // load TAP_L2_WRDATA instr
+    tap_l2_wr();           // load TAP_L2_WR instr
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "... Done tap_l2_write()");
+  }
+    
+  //////////////////////////////////////////////////////////////////
+  //// TAP_L2_READ
+  task tap_l2_read( bit [39:0] addr) {
+    bit [63:0] header;
+    bit [63:0] received_payload;
+    integer timeout = 100;
+
+    dbg.dispmon(dispmonScope, MON_INFO, psprintf("tap_l2_read() (40'h%10h)", addr));
+    header = {24'h810000, addr}; // read operation
+
+    tap_l2_addr (header);     // load TAP_L2_ADDR instr
+    received_payload = tap_l2_rd(timeout,addr,1'b0); // load TAP_L2_RD instr
+
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("TAP_L2_READ received payload: (%x) Expected payload: (%x)", received_payload, tcu_siu_pkt.payload));
+
+    if (received_payload !== tcu_siu_pkt.payload) {
+      dbg.dispmon (dispmonScope, MON_ERR, psprintf ("tcu received wrong payload from SIU"));
+    }
+
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tap_l2_read()");
+  }
+
+  // added by Adam for checking read data 5/5/05
+  function bit[63:0] tap_l2_read_data( bit [39:0] addr) {
+    bit [63:0] header;
+    bit [63:0] received_payload;
+    integer timeout = 100;
+
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("tap_l2_read() (40'h%10h)", addr));
+    header = {24'h810000, addr}; // read operation
+
+    // save to share packet
+    tcu_siu_pkt.header = header;
+    tcu_siu_pkt.payload = 64'hx;
+
+    tap_l2_addr (header);     // load TAP_L2_ADDR instr
+    received_payload = tap_l2_rd(timeout,addr,1'b0); // load TAP_L2_RD instr
+    tap_l2_read_data = received_payload;
+
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "... Done tap_l2_read_data()");
+  }
+
+  //////////////////////////////////////////////////////////////////
+  //// TAP_L2_ADDR 0x58
+  task tap_l2_addr( bit [63:0] addr ) {
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("tap_l2_addr() (64'h%16h)", addr));
+    void = TapIRLoad(TAP_L2_ADDR);
+    void = TapDRLoad(cnv2str(addr, 64));
+    TapGoto(TAP_UPDATE_DR);
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "... Done tap_l2_addr()");
+  }
+
+  //// TAP_L2_WRDATA 0x59
+  task tap_l2_wrdata( bit [63:0] data ) {
+    dbg.dispmon(dispmonScope, MON_INFO, psprintf("tap_l2_wrdata() (64'h%16h)", data));
+    void = TapIRLoad(TAP_L2_WRDATA);
+    void = TapDRLoad(cnv2str(data, 64));
+    TapGoto(TAP_UPDATE_DR);
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tap_l2_wrdata()");
+  }
+
+  //// TAP_L2_WR 0x5A
+  task tap_l2_wr() {
+    dbg.dispmon(dispmonScope, MON_INFO, "tap_l2_wr()");
+    void = TapIRLoad(TAP_L2_WR);
+    TapGoto(TAP_IDLE);    
+    repeat(128) toggleDutTck(); // wait for 128 TCK clocks for transfer to complete
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tap_l2_wr()");
+  }
+
+  //// TAP_l2_RD 0x5B
+  // Expecting a NACK means we intentionally submitted an invalid address
+  function bit [63:0] tap_l2_rd(integer time_out_limit=100, bit [39:0] addr, bit  expectNack = 0) {
+    string rdata;
+    tap_l2_rd = 64'bx;
+    dbg.dispmon(dispmonScope, MON_INFO, "tap_l2_rd()");    
+    void = TapIRLoad(TAP_L2_RD); // send read request
+    TapGoto(TAP_UPDATE_IR);
+    TapGoto(TAP_IDLE);    
+    repeat(64) toggleDutTck(); // wait for 64 TCK clocks for transfer the addr to L2 is complete
+    TapGoto(TAP_SHIFT_DR);
+    // Wait for read return, on invalid addresses this should give a NACK
+    if (TapWait4L2DataRdy(time_out_limit)) {
+      if (expectNack) {
+        // From N2 PRM: "Most locations will silently drop writes to unsupported
+        // addresses, and will return NACK on reads to unsupported addresses
+        // which is ignored by the TAP"
+        dbg.dispmon(dispmonScope, MON_INFO, "... L2 read NOT successful.");
+        dbg.dispmon(dispmonScope, MON_INFO, "Expecting a NACK during timeout ...");
+      } else {
+        dbg.dispmon(dispmonScope, MON_ERR, "... ERROR: L2 read timeout reached.");
+      }
+    } else {
+      dbg.dispmon(dispmonScope, MON_INFO, "... L2 read successful.");
+      //  1/10/06 asked o remove the following line.
+      //  toggleDutTck(); // discard the sentinel bit
+      rdata = TapDRGet(64);
+      tap_l2_rd = rdata.atobin();
+    }
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tap_l2_rd()");
+  }
+  
+  // JTAG Private MBIST
+  //////////////////////////////////////////////////////////////////
+  //// TAP_MBIST_BYPASS
+  function bit [(`NUM_MBIST_ENGINES-1):0] tapMbistBypass(bit [(`NUM_MBIST_ENGINES-1):0] bypassRegister) {
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_INFO, psprintf("tapMbistBypass() [Register='h%0h]", bypassRegister));
+    scanOut = TapIRLoad(TAP_MBIST_BYPASS);
+    scanOut = TapDRLoad(cnv2str(bypassRegister, `NUM_MBIST_ENGINES)); 
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    //@1 mbist_port.$mbist_bypass == bypassRegister; // Outbound bypass bits check
+    tapMbistBypass = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tapMbistBypass()");
+  }
+
+  //// TAP_MBIST_MODE
+  function bit [3:0] tapMbistMode(bit [3:0] modeRegister) {
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_INFO, psprintf("tapMbistMode() [Register='h%0h]", modeRegister));
+    scanOut = TapIRLoad(TAP_MBIST_MODE);
+    scanOut = TapDRLoad(cnv2str(modeRegister, 4)); 
+    TapGoto(TAP_UPDATE_DR); 
+    TapGoto(TAP_IDLE); 
+    //@1 mbist_port.$mbist_user     == modeRegister[2]; // Outbound mode bit check
+    //@1 mbist_port.$mbist_bisi     == modeRegister[1]; // Outbound mode bit check
+    //@1 mbist_port.$mbist_parallel == modeRegister[0]; // Outbound mode bit check
+    tapMbistMode = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tapMbistMode()");
+  }
+
+  //// TAP_MBIST_ABORT
+  task tapMbistAbort() {
+    dbg.dispmon(dispmonScope, MON_INFO, "tapMbistAbort()");
+    void = TapIRLoad(TAP_MBIST_ABORT);
+    TapGoto(TAP_UPDATE_IR); 
+    TapGoto(TAP_IDLE); 
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tapMbistAbort()");
+  }
+
+  //// TAP_MBIST_START
+  task tapMbistStart() {
+    dbg.dispmon(dispmonScope, MON_INFO, "tapMbistStart()");
+    void = TapIRLoad(TAP_MBIST_START);
+    TapGoto(TAP_UPDATE_IR); 
+    TapGoto(TAP_IDLE); 
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tapMbistStart()");
+  }
+
+
+  task tapMbistProtect() {
+    dbg.dispmon(dispmonScope, MON_INFO, "tapMbistStart()");
+    void = TapIRLoad(TAP_TP_ACCESS);
+    TapGoto(TAP_UPDATE_IR); 
+    TapGoto(TAP_IDLE); 
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tapMbistProtect()");
+  }
+
+  task tapMbistStopClock() {
+    dbg.dispmon(dispmonScope, MON_INFO, "tapMbistStart()");
+    void = TapIRLoad(TAP_CLOCK_DOMAIN);
+    void = TapDRLoad("00000000000000000000000000000001");
+    void = TapIRLoad(TAP_CLKSTP_DELAY);
+    void = TapDRLoad("0000111");
+    void = TapIRLoad(TAP_CLOCK_HSTOP);
+    TapGoto(TAP_UPDATE_IR); 
+    TapGoto(TAP_IDLE); 
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tapMbistStopClock()");
+  }
+
+  task tapMbistPlusStopClock(bit [31:0] clockdomain,bit [63:0] cycle_count) {
+    dbg.dispmon(dispmonScope, MON_INFO, "tapMbistStart()");
+    void = TapIRLoad(TAP_CLOCK_DOMAIN);
+    void = TapDRLoad(cnv2str(clockdomain, 32));
+    void = TapIRLoad(TAP_CLKSTP_DELAY);
+    void = TapDRLoad("0000111");
+    void = TapIRLoad(TAP_CYCLE_COUNT);
+    void = TapDRLoad(cnv2str(cycle_count,64));
+    void = TapIRLoad(TAP_MBIST_CLKSTPEN);
+    TapGoto(TAP_IDLE); 
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tapMbistStopClock()");
+  }
+
+
+  task tapMbistPlusShiftRestart(bit[5:0] chainnumber) {
+   void = TapIRLoad(TAP_CHAINSEL);
+   void = TapDRLoad(cnv2str(chainnumber,6));
+   void = TapIRLoad(TAP_SERSCAN);
+   void = TapDRLoad(cnv2str(32'b0,32));
+   //this.tapMbistStartClock();
+   }
+   
+  task tapMbistStartClock() {
+    bit [1:0] data;
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_INFO, "tapMbistStart()");
+    void = TapIRLoad(TAP_CLOCK_START);
+    TapGoto(TAP_UPDATE_IR); 
+    TapGoto(TAP_IDLE); 
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tapMbistStartClock()");
+    while (1) {
+      scanOut = TapIRLoad(TAP_CLOCK_STATUS);
+      scanOut = TapDRLoad(cnv2str(2'b00, 2));
+      TapGoto(TAP_UPDATE_DR);
+      TapGoto(TAP_IDLE);
+      data  = scanOut.atobin();
+      if(data == 2'b01) {
+        return;
+        }
+      }
+  }
+
+  //// TAP_MBIST_RESULT
+  function bit [1:0] tapMbistResult(bit [1:0] resultRegister) {
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_INFO, "tapMbistResult()");
+    scanOut = TapIRLoad(TAP_MBIST_RESULT);
+    scanOut = TapDRLoad(cnv2str(resultRegister, 2)); 
+    TapGoto(TAP_UPDATE_DR); 
+    TapGoto(TAP_IDLE); 
+    tapMbistResult = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tapMbistResult()");
+  }
+ 
+  //// TAP_MBIST_DIAG
+   function string tapMbistDiag(string Diagnosis) {
+    string scanOut;
+    integer count;
+    integer length;
+    string  local_128_string;
+    dbg.dispmon(dispmonScope, MON_INFO, "tapMbistDiag()");
+    scanOut = TapIRLoad(TAP_MBIST_DIAG);
+#if 0
+    length = Diagnosis.len();
+    while (length > 128)
+	{
+        local_128_string = Diagnosis.substr(length-128,length-1);
+	scanOut = TapDRLoad(local_128_string);
+	length = length - 128;
+	}
+     local_128_string = Diagnosis.substr(0,length-1);
+	scanOut = TapDRLoad(local_128_string);
+#else
+    scanOut = TapDRLoad(Diagnosis);
+#endif
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+//    TapGoto(TAP_UPDATE_IR);
+//    TapGoto(TAP_IDLE);
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tapMbistDiag()");
+    tapMbistDiag = scanOut;
+  }
+ 
+  //// TAP_MBIST_GETDONE
+  function bit [(`NUM_MBIST_ENGINES-1):0] tapMbistGetdone(bit [(`NUM_MBIST_ENGINES-1):0] doneRegister) {
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_INFO, "tapMbistGetdone()");
+    scanOut = TapIRLoad(TAP_MBIST_GETDONE);
+    scanOut = TapDRLoad(cnv2str(doneRegister, `NUM_MBIST_ENGINES)); 
+    TapGoto(TAP_UPDATE_DR); 
+    TapGoto(TAP_IDLE); 
+    tapMbistGetdone = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tapMbistGetdone()");
+  }
+  
+  //// TAP_MBIST_GETFAIL
+  function bit [(`NUM_MBIST_ENGINES-1):0] tapMbistGetfail(bit [(`NUM_MBIST_ENGINES-1):0] failRegister) {
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_INFO, "tapMbistGetfail()");
+    scanOut = TapIRLoad(TAP_MBIST_GETFAIL);
+    scanOut = TapDRLoad(cnv2str(failRegister, `NUM_MBIST_ENGINES)); 
+    TapGoto(TAP_UPDATE_DR); 
+    TapGoto(TAP_IDLE); 
+    tapMbistGetfail = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tapMbistGetfail()");
+  }
+
+  //// TAP_MBIST_CLKSTPEN
+  task tapMbistClkStopEn() {
+    dbg.dispmon(dispmonScope, MON_INFO, "tapMbistClkStopEn()");
+    void = TapIRLoad(TAP_MBIST_CLKSTPEN);
+    TapGoto(TAP_UPDATE_IR); 
+    TapGoto(TAP_IDLE); 
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tapMbistClkStopEn()");
+  }
+  
+  //-------- Wait for an MBIST to complete --------------
+  function integer TapWait4MbistDone(integer mbist_engine_num, integer time_out_limit) {
+    integer i;
+    bit [(`NUM_MBIST_ENGINES-1):0] tcuRegDone = `NUM_MBIST_ENGINES'b0;
+
+    dbg.dispmon(dispmonScope, MON_INFO, psprintf("TAP wait for %0d MBIST DONE (TCK timeout: %0d cycles)", mbist_engine_num, time_out_limit));
+
+    tcuRegDone = tapMbistGetdone(`NUM_MBIST_ENGINES'b0);
+    // Wait for the MBIST DONE at which time the corresponding engine done bit is set to 1'b1
+    for (i=0; i < time_out_limit && tcuRegDone[mbist_engine_num] !== 1'b1; i++) {
+      tcuRegDone = tapMbistGetdone(`NUM_MBIST_ENGINES'b0);
+    }
+    if (tcuRegDone[mbist_engine_num] === 1'b1) {
+      TapWait4MbistDone = 0;
+    }
+    else {
+      TapWait4MbistDone = (i >= time_out_limit);
+    }
+  }
+
+  // JTAG Private CCU
+  //////////////////////////////////////////////////////////////////
+  //// TAP_PLL_BYPASS
+  task ccuPllBypass () {
+    dbg.dispmon(dispmonScope, MON_INFO, "ccuPllBypass()");    
+    // N1   void = TapIRLoad(TAP_PLL_BYPASS);
+    // N1   TapGoto(TAP_UPDATE_IR);
+    // N1   TapGoto(TAP_IDLE);
+    //@1 scan_port.$tcu_pllbypass == 1'b1;
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done ccuPllBypass()");
+  }
+
+  //// TAP_CLK_STOP_ID
+  task ccuClockStopId (bit [5:0] id) {
+    // N1    string inst = "";
+    // N1    sprintf(inst, "000000%b%s", id, TAP_CLK_STOP_ID);
+    // N1    dbg.dispmon(dispmonScope, MON_INFO, psprintf("ccuClockStopId() (inst: 'b%0b id: 6'b%06b)", inst, id));
+    // N1    void = TapIRLoad(inst);
+    // N1    TapGoto(TAP_UPDATE_IR);
+    // N1    TapGoto(TAP_IDLE);
+    // N1    dbg.dispmon(dispmonScope, MON_INFO, "... Done ccuClockStopId()");
+  }
+
+  // TAP_CLK_SEL
+  task ccuClockSelect ( bit [2:0] ioclk_domain, bit [2:0] ddrclk_domain, bit [2:0] cmpclk_domain ) {
+    // N1    string inst;
+    // N1
+    // N1    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("ccuClockSelect(\n\t\tcmpclk  = %s,\n\t\tddrclk = %s,\n\t\tioclk = %s)"
+    // N1                                               , cnv_domain_2_string(cmpclk_domain)
+    // N1                                               , cnv_domain_2_string(ddrclk_domain)
+    // N1                                               , cnv_domain_2_string(ioclk_domain)
+    // N1                                               ));
+    // N1    sprintf(inst, "000%b%b%b%s", ioclk_domain, ddrclk_domain, cmpclk_domain, TAP_CLK_SEL);
+    // N1    dbg.dispmon(dispmonScope, MON_INFO, psprintf("inst: %s", inst));
+    // N1    void = TapIRLoad(inst);
+    // N1    TapGoto(TAP_UPDATE_IR);
+    // N1    TapGoto(TAP_IDLE);
+    // N1    dbg.dispmon(dispmonScope, MON_INFO, "... Done ccuClockSelect()");
+  }
+
+  // JTAG Private Shadow SCAN
+  //////////////////////////////////////////////////////////////////
+  function string tapShadowScan(integer delay, string cluster, bit[2:0] thread, integer length ) {
+    string scanInst;
+    string scanOut;
+
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "tapShadowScan()");
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf ("SHADOW SCAN waiting for %0d TCK cycles", delay));
+    Delay (delay); // Start after given delay number of TCK cycles
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf ("Loading SHADOW SCAN %s_%3b Instruction", cluster, thread));
+    sprintf(scanInst, "%s%3b", cluster, thread);
+    void = TapIRLoad(scanInst);
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf ("Loaded SHADOW SCAN instruction : %s", scanInst));
+    TapGoto(TAP_UPDATE_IR);
+    TapCaptureData();
+    TapGoto(TAP_SHIFT_DR);
+    scanOut = TapDRGet(length);
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf ("SHADOW SCAN %s_%3b output :%s", cluster, thread, scanOut));
+    TapGoto(TAP_PAUSE_DR);
+    TapGoto(TAP_IDLE);
+    tapShadowScan = scanOut;
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "... Done tapShadowScan()");
+  }
+
+  // Added by Adam for checking interface
+  function bit [65:0] tapShadowScanCheck( string cluster, bit[2:0] thread ) {
+    string scanInst;
+    string scanOut;
+    integer ScanShiftCount = 32;
+    integer aclkCount =0;
+    integer bclkCount =0;
+    bit [31:0] data = 32'b0; 
+    bit [2:0] shscanid; 
+    bit spc_se;
+    bit spc_pce_ov; 
+    bit [7:0] spc_clk_stop; 
+    bit l2t_se;
+    bit l2t_pce_ov;
+    bit [7:0] l2t_clk_stop; 
+    
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf ("Shadow scan clock check for cluster: %s thread: %3b", cluster, thread));
+
+    sprintf(scanInst, "%s%3b", cluster, thread);
+    void = TapIRLoad(scanInst);
+    TapGoto(TAP_UPDATE_IR);
+    TapCaptureData();
+
+    shscanid = shscan_port.$shscan_spc_shscanid async;
+    spc_se = shscan_port.$shscan_spc_se async;
+    spc_pce_ov = shscan_port.$shscan_spc_pce_ov async;
+    spc_clk_stop = shscan_port.$shscan_spc_clk_stop async;
+    l2t_se = shscan_port.$shscan_l2t_se async;
+    l2t_pce_ov = shscan_port.$shscan_l2t_pce_ov async;
+    l2t_clk_stop = shscan_port.$shscan_l2t_clk_stop async;
+
+    if (cluster === TAP_SPC_SHSCAN) {
+     if (shscanid !== thread)
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("...ERROR: shscanid does not match Expected=%0b, got=%0b",thread,shscanid));
+     if (spc_se !== 1'b0)
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("...ERROR: spc_se does not match Expected=0, got=%0b",spc_se));
+     if (spc_pce_ov !== 1'b1)
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("...ERROR: spc_pce_ov does not match Expected=1, got=%0b",spc_pce_ov));
+     if (spc_clk_stop !== {8{1'b1}})
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("...ERROR: spc_clk_stop does not match Expected=%0b, got=%0b",{8{1'b1}},spc_clk_stop));
+     if (l2t_se != 1'b0)
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("...ERROR: l2t_se does not match Expected=0, got=%0b",l2t_se));
+     if (l2t_pce_ov != 1'b0)
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("...ERROR: l2t_pce_ov does not match Expected=1, got=%0b",l2t_pce_ov));
+     if (l2t_clk_stop !== {8{1'b0}})
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("...ERROR: l2t_clk_stop does not match Expected=%0b, got=%0b",{8{1'b0}},l2t_clk_stop));
+    }
+    else if (cluster === TAP_SOC_SHSCAN) {
+     if (shscanid !== 3'b0)
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("...ERROR: shscanid does not match Expected=0, got=%0b",shscanid));
+     if (spc_se != 1'b0)
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("...ERROR: spc_se does not match Expected=0, got=%0b",spc_se));
+     if (spc_pce_ov != 1'b0)
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("...ERROR: spc_pce_ov does not match Expected=0, got=%0b",spc_pce_ov));
+     if (spc_clk_stop !== {8{1'b0}})
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("...ERROR: spc_clk_stop does not match Expected=%0b, got=%0b",{8{1'b0}},spc_clk_stop));
+     if (l2t_se != 1'b0)
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("...ERROR: l2t_se does not match Expected=0, got=%0b",l2t_se));
+     if (l2t_pce_ov != 1'b1)
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("...ERROR: l2t_pce_ov does not match Expected=1, got=%0b",l2t_pce_ov));
+     if (l2t_clk_stop !== {8{1'b1}})
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("...ERROR: l2t_clk_stop does not match Expected=%0b, got=%0b",{8{1'b1}},l2t_clk_stop));
+    }
+
+    fork
+    {
+      scanOut = TapDRLoad(cnv2str(data, ScanShiftCount)); 
+    }
+    {
+      // count the number of aclk       
+      while(1) {
+       if (cluster === TAP_SPC_SHSCAN) {
+          @ (posedge shscan_port.$shscan_spc_aclk async);
+           spc_se = shscan_port.$shscan_spc_se async;
+           if (spc_se == 1'b1) {
+            aclkCount++;
+            dbg.dispmon(dispmonScope, MON_INFO, psprintf("aclkCount incremented %d",aclkCount));
+           }
+       }
+       else if (cluster === TAP_SOC_SHSCAN) {
+          @ (posedge shscan_port.$shscan_l2t_aclk async);
+           l2t_se = shscan_port.$shscan_l2t_se async;
+           if (l2t_se == 1'b1) {
+            aclkCount++;
+            dbg.dispmon(dispmonScope, MON_INFO, psprintf("aclkCount incremented %d",aclkCount));
+           }
+       }  
+      }
+    }                    
+    {
+      // count the number of bclk       
+      while(1) {
+       if (cluster === TAP_SPC_SHSCAN) {
+          @ (posedge shscan_port.$shscan_spc_bclk async);
+           if (spc_se == 1'b1) {
+            bclkCount++;
+            dbg.dispmon(dispmonScope, MON_INFO, psprintf("bclkCount incremented %d",bclkCount));
+           }
+       }
+       else if (cluster === TAP_SOC_SHSCAN) {
+          @ (posedge shscan_port.$shscan_l2t_bclk async);
+           if (l2t_se == 1'b1) {
+            bclkCount++;
+            dbg.dispmon(dispmonScope, MON_INFO, psprintf("bclkCount incremented %d",bclkCount));
+           }
+       }      
+      }
+    } 
+    join any
+    terminate;
+
+    if (cluster === TAP_SPC_SHSCAN) {
+     if (spc_se != 1'b1)
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("...ERROR: spc_se does not match Expected=1'b1 during spc shadow scan, got=%0b",spc_se));
+    }
+    else if (cluster === TAP_SOC_SHSCAN) {
+     if (l2t_se != 1'b1)
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("...ERROR: l2t_se does not match Expected=1'b1 during l2t shadow scan, got=%0b",l2t_se));
+    }
+
+    if ((aclkCount != ScanShiftCount) || (bclkCount != ScanShiftCount)) 
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("...ERROR: aclk=%0d, bclk=%0d,Expected=%0d",aclkCount,bclkCount,ScanShiftCount));
+    else 
+      dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf ("... Donce TapShadowScanCheck() for cluster: %s thread: %3b", cluster, thread));
+
+    tapShadowScanCheck = scanOut.atobin();
+  }
+  
+  // JTAG Private SCAN
+  //////////////////////////////////////////////////////////////////
+  //-------- TAP_SCAN_PARALLEL -----------
+  //// N1:   task tapScanDump(var bit [31:0] so_data[16]) {
+  //// N1:     string inst;
+  //// N1:     bit [31:0] xx_data[16];
+  //// N1:     dbg.dispmon(dispmonScope, MON_INFO, "tapScanDump()");
+  //// N1:     sprintf(inst, "%s%s", TAP_SCAN_PARALLEL_DUMP, TAP_SCAN_PARALLEL);
+  //// N1:     void = TapIRLoad(inst);
+  //// N1:     TapGoto(TAP_UPDATE_IR);
+  //// N1:     TapDRPData(8, xx_data, so_data);
+  //// N1:     dbg.dispmon(dispmonScope, MON_INFO, "... Done tapScanDump()");
+  //// N1:   }
+  //// N1:   function string tapScanParallel(string parallel_type, string scan_in_data) {
+  //// N1:     string rdata;
+  //// N1:     string inst;
+  //// N1:     dbg.dispmon(dispmonScope, MON_INFO, psprintf("tapScanParallel() (length = %0d)", scan_in_data.len()));
+  //// N1:     sprintf(inst, "%s%s", parallel_type, TAP_SCAN_PARALLEL);
+  //// N1:     void = TapIRLoad(inst);
+  //// N1:     TapGoto(TAP_UPDATE_IR);
+  //// N1:     // Capture data & proceed to pause_dr
+  //// N1:     TapCaptureData();
+  //// N1:     rdata = TapDRLoad(scan_in_data);
+  //// N1:     TapGoto(TAP_UPDATE_DR);
+  //// N1:     TapGoto(TAP_IDLE);
+  //// N1:     dbg.dispmon(dispmonScope, MON_INFO, "... Done tapScanParallel()");
+  //// N1:     tapScanParallel = rdata;
+  //// N1:   }
+
+  //-------- TAP_SCAN_SERIAL -----------
+  function integer tapSetupScanSerial(integer chain_timeout, bit[5:0] chain_sel) {
+    integer chain_idx, chain_total;
+    bit[11:0] chain_pat;
+    bit[11:0] chain_seen;
+    dbg.dispmon(dispmonScope, MON_INFO, psprintf("tapSetupScanSerial(): Chain: %0d, Enabled: %01b", chain_sel[4:0], chain_sel[5]));
+    tapSetupScanSerial = 0;
+    chain_idx   = 0;
+    chain_total = 0;
+    chain_pat   = 12'b1110_0011_0010;
+    chain_seen  = 12'b0;
+    void = TapIRLoad(TAP_SCAN_SERIAL_SEL);
+    void = TapDRLoad(cnv2str(chain_sel,6)); 
+    void = TapIRLoad(TAP_SCAN_SERIAL);
+    TapGoto(TAP_SHIFT_DR);
+    repeat(chain_timeout) {
+      tap_port.$tdi = chain_pat[chain_idx];
+      toggleDutTck();
+      chain_seen[10:0] = chain_seen[11:1];
+      chain_seen[11] = tap_port.$tdo;
+      chain_idx = (chain_idx + 1) % 12;
+      chain_total = chain_total + 1;
+      tapSetupScanSerial = chain_total;
+      if (chain_seen === chain_pat) {
+        break;
+      }
+    }
+    tapSetupScanSerial = (tapSetupScanSerial>12) ? tapSetupScanSerial-12 : tapSetupScanSerial; // Cannot count the final word shift
+    void = TapIRLoad(TAP_BYPASS_INST);
+    TapGoto(TAP_IDLE);
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tapSetupScanSerial()");
+  }
+
+  //-------- TAP_SCAN_NSTEP -----------
+  //// N1:   task tapScanNstep( bit [3:0] n_step, bit [2:0] domain ) {
+  //// N1:     string inst;
+  //// N1:     dbg.dispmon(dispmonScope, MON_INFO, psprintf("tapScanNstep(n=%0d, domain=%0b)"
+  //// N1:                                           , n_step
+  //// N1:                                           , domain
+  //// N1:                                           ));
+  //// N1:     sprintf(inst, "00000%b%b%s", n_step, domain, TAP_SCAN_NSTEP);
+  //// N1:     dbg.dispmon(dispmonScope, MON_INFO, psprintf("Instruction: %s", inst));
+  //// N1:     void = TapIRLoad(inst);
+  //// N1:     TapGoto(TAP_UPDATE_IR);
+  //// N1:     TapGoto(TAP_IDLE);
+  //// N1:     dbg.dispmon(dispmonScope, MON_INFO, "... Done tapScanNstep()");
+  //// N1:   }
+
+
+  //// TAP_FUSE_RVCLR
+  task tapFuseRvclr(bit enable, bit[5:0] rv_id) {
+    dbg.dispmon(dispmonScope, MON_INFO, "tapFuseRvclr()");
+    void = TapIRLoad(TAP_FUSE_RVCLR);
+    void = TapDRLoad(cnv2str({enable, rv_id}, 7));
+    TapGoto(TAP_UPDATE_DR); 
+    TapGoto(TAP_IDLE); 
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tapFuseRvclr()");
+  }
+
+  //----------- DMO access-----------
+ task DmoConfigAccess(bit[47:0] config_data) {
+    dbg.dispmon(dispmonScope, MON_INFO, "DmoConfigData");
+    void = TapIRLoad(TAP_DMO_CONFIG); 
+    void = TapDRLoad(cnv2str(config_data, 48));
+    TapGoto(TAP_IDLE); 
+  }
+  
+  //// TAP_DMO_ACCESS
+  task tapDmoAccess() {
+    dbg.dispmon(dispmonScope, MON_INFO, "tapDmoAccess()");
+    void = TapIRLoad(TAP_DMO_ACCESS);
+    TapGoto(TAP_IDLE); 
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tapDmoAccess()");
+  }
+
+  //// TAP_DMO_CLEAR
+  task tapDmoClear() {
+    dbg.dispmon(dispmonScope, MON_INFO, "tapDmoClear()");
+    void = TapIRLoad(TAP_DMO_CLEAR);
+    TapGoto(TAP_IDLE); 
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tapDmoClear()");
+  }
+
+  // JTAG Private EFUSE
+  //////////////////////////////////////////////////////////////////
+  //-------- TAP_FUSE_READ -----------
+  task efuRead(bit[6:0] row_addr, bit[4:0] col_addr) {
+    dbg.dispmon(dispmonScope, MON_INFO, "efuRead()");
+    
+    void = TapIRLoad(TAP_FUSE_ROW_ADDR);
+    void = TapDRLoad(cnv2str(row_addr, 7));
+    TapGoto(TAP_IDLE);
+
+    fork
+    {
+     @1 efuse_port.$efuse_rowaddr == row_addr;
+    }
+    {
+     toggleDutTck();
+    }
+    join
+    terminate;
+
+    void = TapIRLoad(TAP_FUSE_READ);
+    TapGoto(TAP_UPDATE_IR); // Note: UpdateIR is state just before Idle
+ 
+    fork
+    {
+     @1 efuse_port.$efuse_read_en == 1'b1; // Next cycle after UpdateIR (Idle) we should assert
+     @2 efuse_port.$efuse_read_en == 1'b0; // Following cycle we should deassert
+    }
+    {
+     TapGoto(TAP_IDLE); // Note: UpdateIR is state just before Idle
+     repeat (2) toggleDutTck();
+    }
+    join
+    terminate;
+
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done efuRead()");
+  }
+  
+  task efuColOne(bit[4:0] col_addr) {
+    dbg.dispmon(dispmonScope, MON_INFO, "efuColOne()");
+        
+    void = TapIRLoad(TAP_FUSE_COL_ADDR);
+    void = TapDRLoad(cnv2str(col_addr, 5));
+    TapGoto(TAP_IDLE);
+
+    fork
+    {
+     //@1 efuse_port.$efuse_coladdr == col_addr;
+     @3 efuse_port.$efuse_sbc_efa_bit_addr == col_addr;    
+     repeat (4) toggleDutTck();
+    }
+    join
+    terminate;
+
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done efuColOne()");
+  }
+  
+  task efuReadOne(bit[6:0] row_addr, bit[4:0] col_addr, bit[2:0] read_mode) {
+    dbg.dispmon(dispmonScope, MON_INFO, "efuReadMode()");
+    void = TapIRLoad(TAP_FUSE_READ_MODE);
+    void = TapDRLoad(cnv2str(read_mode, 3));
+    TapGoto(TAP_IDLE);
+   
+    fork
+    { 
+      repeat(21) toggleDutTck();
+      @@1,20 efuse_port.$efuse_read_mode == read_mode; // Check that readMode holds
+    }
+    join
+    terminate;
+ 
+    void = TapIRLoad(TAP_FUSE_COL_ADDR);
+    void = TapDRLoad(cnv2str(col_addr, 5));
+    TapGoto(TAP_IDLE);
+
+    fork
+    { 
+      repeat(3) toggleDutTck();
+      //@1 efuse_port.$efuse_coladdr == col_addr;
+      @3 efuse_port.$efuse_sbc_efa_bit_addr == col_addr;    
+    }
+    join
+    terminate;
+    
+    dbg.dispmon(dispmonScope, MON_INFO, "efuRead()");
+    
+    void = TapIRLoad(TAP_FUSE_ROW_ADDR);
+    void = TapDRLoad(cnv2str(row_addr, 7));
+    TapGoto(TAP_IDLE);
+    
+    fork
+    { 
+      repeat(3) toggleDutTck();
+      //@1 efuse_port.$efuse_rowaddr == row_addr;
+      @3 efuse_port.$efuse_sbc_efa_word_addr == row_addr;      
+    }
+    join
+    terminate;
+
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done efuReadOne()");
+  }
+  
+  task efuReadData(bit[6:0] row_addr, bit[2:0] read_mode) {
+    dbg.dispmon(dispmonScope, MON_INFO, "efuReadMode()");
+    void = TapIRLoad(TAP_FUSE_READ_MODE);
+    void = TapDRLoad(cnv2str(read_mode, 2));
+    TapGoto(TAP_IDLE);
+    
+    dbg.dispmon(dispmonScope, MON_INFO, "efuRead()");
+    
+    void = TapIRLoad(TAP_FUSE_ROW_ADDR);
+    void = TapDRLoad(cnv2str(row_addr, 7));
+    TapGoto(TAP_IDLE);
+    
+    void = TapIRLoad(TAP_FUSE_READ);
+    TapGoto(TAP_IDLE); // Note: UpdateIR is state just before Idle
+   
+    fork
+    { 
+     repeat(6) toggleDutTck();
+     @4 efuse_port.$efuse_efa_read_data == 32'hf0000803;
+     @2 efuse_port.$efuse_read_data_ff == 32'hf0000803;
+    }
+    join
+    terminate;
+
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done efuReadData()");
+  }
+  
+  task efuTckShiftData(bit[6:0] row_addr, bit[2:0] read_mode) {
+    dbg.dispmon(dispmonScope, MON_INFO, "efuReadMode()");
+    void = TapIRLoad(TAP_FUSE_READ_MODE);
+    void = TapDRLoad(cnv2str(read_mode, 2));
+    TapGoto(TAP_IDLE);
+    
+    dbg.dispmon(dispmonScope, MON_INFO, "efuRead()");
+    
+    void = TapIRLoad(TAP_FUSE_ROW_ADDR);
+    void = TapDRLoad(cnv2str(row_addr, 7));
+    TapGoto(TAP_IDLE);
+    
+    void = TapIRLoad(TAP_FUSE_READ);
+    TapGoto(TAP_IDLE); // Note: UpdateIR is state just before Idle
+   
+    fork
+    { 
+     repeat(10) toggleDutTck();
+     //@4 efuse_port.$efuse_efa_read_data == 32'hf0000803;
+     @10 efuse_port.$efuse_read_data_ff == 32'hf0000803;
+    }
+    join
+    terminate;
+    
+    TapGoto(TAP_CAPTURE_DR);
+    repeat(1) toggleDutTck();  
+    
+    //efuse_port.$efuse_tck_shft_data_ff == 32'hf0000803;
+    
+    TapGoto(TAP_SHIFT_DR);
+    repeat(30) toggleDutTck();  
+    TapGoto(TAP_IDLE);
+        
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done efuTckShiftData()");
+  }
+    
+  task efuTckShiftData_32(bit[6:0] row_addr, bit[2:0] read_mode) {
+    dbg.dispmon(dispmonScope, MON_INFO, "efuReadMode()");
+    void = TapIRLoad(TAP_FUSE_READ_MODE);
+    void = TapDRLoad(cnv2str(read_mode, 2));
+    TapGoto(TAP_IDLE);
+    
+    dbg.dispmon(dispmonScope, MON_INFO, "efuRead()");
+    
+    void = TapIRLoad(TAP_FUSE_ROW_ADDR);
+    void = TapDRLoad(cnv2str(row_addr, 7));
+    TapGoto(TAP_IDLE);
+    
+    void = TapIRLoad(TAP_FUSE_READ);
+    TapGoto(TAP_IDLE); // Note: UpdateIR is state just before Idle
+    
+    //@4 efuse_port.$efuse_efa_read_data == 32'hf0000803;
+    //@2 efuse_port.$efuse_read_data_ff == 32'hf0000803;
+    
+    repeat(30) toggleDutTck();  
+    
+    TapGoto(TAP_CAPTURE_DR);
+    repeat(1) toggleDutTck();  
+    
+    //efuse_port.$efuse_tck_shft_data_ff == 32'hf0000803;
+    
+    TapGoto(TAP_SHIFT_DR);
+    repeat(30) toggleDutTck();  
+    TapGoto(TAP_IDLE);
+        
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done efuTckShiftData()");
+  }
+ 
+  task efuReadEn(bit[6:0] row_addr, bit[2:0] read_mode) {
+    dbg.dispmon(dispmonScope, MON_INFO, "efuReadMode()");
+    void = TapIRLoad(TAP_FUSE_READ_MODE);
+    void = TapDRLoad(cnv2str(read_mode, 2));
+    TapGoto(TAP_IDLE);
+    
+    dbg.dispmon(dispmonScope, MON_INFO, "efuRead()");
+    
+    void = TapIRLoad(TAP_FUSE_ROW_ADDR);
+    void = TapDRLoad(cnv2str(row_addr, 7));
+    TapGoto(TAP_IDLE);
+    
+    void = TapIRLoad(TAP_FUSE_READ);
+    TapGoto(TAP_UPDATE_IR); // Note: UpdateIR is state just before Idle
+
+    //@1 efuse_port.$efuse_read_en == 1'b1; // Next cycle after UpdateIR (Idle) we should assert
+    //@2 efuse_port.$efuse_read_en == 1'b0; // Following cycle we should deassert
+    //@2 efuse_port.$efuse_sbc_efa_read_en == 1'b1;
+    fork
+    {
+     @4 efuse_port.$efuse_sbc_efa_read_en == 1'b1;
+     repeat (4) toggleDutTck();
+    }
+    join
+    terminate;
+
+    TapGoto(TAP_IDLE); // Note: UpdateIR is state just before Idle
+        
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done efuReadData()");          
+  }
+
+  task efuReadModeData(bit[2:0] read_mode) {
+    dbg.dispmon(dispmonScope, MON_INFO, "efuReadMode()");
+    void = TapIRLoad(TAP_FUSE_READ_MODE);
+    void = TapDRLoad(cnv2str(read_mode, 3));
+    TapGoto(TAP_IDLE);
+
+    fork
+    {
+      @@1,20 efuse_port.$efuse_read_mode == read_mode; // Check that readMode holds
+    }
+    {
+      repeat(22) toggleDutTck();
+    }
+    join
+    terminate;
+
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done efuReadMode()");
+  }
+
+  task efuProgOne(bit[6:0] row_addr, bit[4:0] col_addr, bit[2:0] read_mode) {
+    efuse_port.$efuse_io_vpp = 1'b1;
+    efuse_port.$efuse_io_pgrm_en = 1'b0 async;
+    
+    dbg.dispmon(dispmonScope, MON_INFO, "efuReadMode()");
+    void = TapIRLoad(TAP_FUSE_READ_MODE);
+    void = TapDRLoad(cnv2str(read_mode, 2));
+    TapGoto(TAP_IDLE);
+    
+    void = TapIRLoad(TAP_FUSE_ROW_ADDR);
+    void = TapDRLoad(cnv2str(row_addr, 7));
+    TapGoto(TAP_IDLE);
+    
+    dbg.dispmon(dispmonScope, MON_INFO, "efuColOne()");
+        
+    void = TapIRLoad(TAP_FUSE_COL_ADDR);
+    void = TapDRLoad(cnv2str(col_addr, 5));
+    TapGoto(TAP_IDLE);   
+    
+    repeat(2) toggleDutTck();
+
+    efuse_port.$efuse_io_pgrm_en = 1'b1 async;
+
+    fork
+    {
+     repeat (3) toggleDutTck();
+    }
+    {    
+     @1 efuse_port.$efuse_pi_efa_prog_en == 1'b1;
+     @1 efuse_port.$efuse_pwr_ok == 1'b1;
+     @1 efuse_port.$efuse_por_n == 1'b1;    	       
+    }
+    join
+    terminate;
+
+    efuse_port.$efuse_io_pgrm_en = 1'b0 async;
+
+    dbg.dispmon(dispmonScope, MON_INFO, "efu read");
+    
+    dbg.dispmon(dispmonScope, MON_INFO, "efuReadMode()");
+    void = TapIRLoad(TAP_FUSE_READ_MODE);
+    void = TapDRLoad(cnv2str(read_mode, 2));
+    TapGoto(TAP_IDLE);
+    
+    dbg.dispmon(dispmonScope, MON_INFO, "efu read");
+    
+    void = TapIRLoad(TAP_FUSE_ROW_ADDR);
+    void = TapDRLoad(cnv2str(row_addr, 7));
+    TapGoto(TAP_IDLE);
+    
+    void = TapIRLoad(TAP_FUSE_READ);
+    TapGoto(TAP_UPDATE_IR); // Note: UpdateIR is state just before Idle
+
+    fork
+    {
+     repeat (10) toggleDutTck();
+     @10 efuse_port.$efuse_read_data_ff == 32'h00000002;
+    }
+    join
+    terminate;
+
+    TapGoto(TAP_IDLE); // Note: UpdateIR is state just before Idle
+
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done efuReadData()");      
+  }
+
+  task efuProg32(bit[6:0] row_addr, bit[4:0] col_addr, bit[2:0] read_mode) {
+    efuse_port.$efuse_io_vpp = 1'b1;
+    efuse_port.$efuse_io_pgrm_en = 1'b0 async;
+    
+    dbg.dispmon(dispmonScope, MON_INFO, "efuReadMode()");
+    void = TapIRLoad(TAP_FUSE_READ_MODE);
+    void = TapDRLoad(cnv2str(read_mode, 2));
+    TapGoto(TAP_IDLE);
+    
+    void = TapIRLoad(TAP_FUSE_ROW_ADDR);
+    void = TapDRLoad(cnv2str(row_addr, 7));
+    TapGoto(TAP_IDLE);
+    
+    dbg.dispmon(dispmonScope, MON_INFO, "efuColOne()");
+        
+    void = TapIRLoad(TAP_FUSE_COL_ADDR);
+    void = TapDRLoad(cnv2str(col_addr, 5));
+    TapGoto(TAP_IDLE);   
+    
+    repeat(2) toggleDutTck();
+    
+    efuse_port.$efuse_io_pgrm_en = 1'b1 async;
+    fork
+    {
+     repeat (3) toggleDutTck();
+    }
+    {
+     @1 efuse_port.$efuse_pi_efa_prog_en == 1'b1;
+     @1 efuse_port.$efuse_pwr_ok == 1'b1;
+     @1 efuse_port.$efuse_por_n == 1'b1;    	       
+    }
+    join
+    terminate;
+ 
+    efuse_port.$efuse_io_pgrm_en = 1'b0 async;
+
+    dbg.dispmon(dispmonScope, MON_INFO, "efu read");
+    
+    dbg.dispmon(dispmonScope, MON_INFO, "efuReadMode()");
+    void = TapIRLoad(TAP_FUSE_READ_MODE);
+    void = TapDRLoad(cnv2str(read_mode, 2));
+    TapGoto(TAP_IDLE);
+    
+    dbg.dispmon(dispmonScope, MON_INFO, "efu read");
+    
+    void = TapIRLoad(TAP_FUSE_ROW_ADDR);
+    void = TapDRLoad(cnv2str(row_addr, 7));
+    TapGoto(TAP_IDLE);
+    
+    void = TapIRLoad(TAP_FUSE_READ);
+    TapGoto(TAP_IDLE); // Note: UpdateIR is state just before Idle
+        
+    repeat(20) toggleDutTck();
+
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done efuReadData()");      
+  }
+
+  task efuBypData(bit[31:0] byp_data) {
+    bit [31:0] byp_data_inv;
+    
+    byp_data_inv = {byp_data[0], byp_data[1], byp_data[2], byp_data[3], byp_data[4], byp_data[5],
+		  byp_data[6], byp_data[7], byp_data[8], byp_data[9], byp_data[10], byp_data[11],
+		  byp_data[12], byp_data[13], byp_data[14], byp_data[15], byp_data[16], byp_data[17],
+		  byp_data[18], byp_data[19], byp_data[20], byp_data[21], byp_data[22], byp_data[23],
+		  byp_data[24], byp_data[25], byp_data[26], byp_data[27], byp_data[28], byp_data[29],
+		  byp_data[30], byp_data[31]};
+
+    dbg.dispmon(dispmonScope, MON_INFO, "efuBypData");
+    void = TapIRLoad(TAP_FUSE_BYPASS_DATA); 
+    void = TapDRLoad(cnv2str(byp_data_inv, 32));
+    TapGoto(TAP_IDLE); 
+    
+    dbg.dispmon(dispmonScope, MON_INFO, "efuBypass");
+    void = TapIRLoad(TAP_FUSE_BYPASS);
+    TapGoto(TAP_IDLE); 
+    //@1 efuse_port.$efuse_fuse_bypass == 1'b1;
+    //@1 efuse_port.$efuse_fuse_bypass == 1'b0;
+    //efuse_port.$efu_ncu_coreavl_xfer_en == 1'b1;
+    //repeat(20) toggleDutTck();
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done efuBypData()");
+  }
+ 
+  task efuBypData_bankavl(bit[31:0] byp_data) {
+    bit [31:0] byp_data_inv;
+    
+    byp_data_inv = {byp_data[0], byp_data[1], byp_data[2], byp_data[3], byp_data[4], byp_data[5],
+		  byp_data[6], byp_data[7], byp_data[8], byp_data[9], byp_data[10], byp_data[11],
+		  byp_data[12], byp_data[13], byp_data[14], byp_data[15], byp_data[16], byp_data[17],
+		  byp_data[18], byp_data[19], byp_data[20], byp_data[21], byp_data[22], byp_data[23],
+		  byp_data[24], byp_data[25], byp_data[26], byp_data[27], byp_data[28], byp_data[29],
+		  byp_data[30], byp_data[31]};
+
+    dbg.dispmon(dispmonScope, MON_INFO, "efuBypData");
+    void = TapIRLoad(TAP_FUSE_BYPASS_DATA); 
+    void = TapDRLoad(cnv2str(byp_data_inv, 32));
+    TapGoto(TAP_IDLE); 
+    
+    dbg.dispmon(dispmonScope, MON_INFO, "efuBypass");
+    void = TapIRLoad(TAP_FUSE_BYPASS);
+    TapGoto(TAP_UPDATE_IR); 
+
+    fork
+    {
+     repeat (5) toggleDutTck();
+    }
+    {
+     @1 efuse_port.$efuse_fuse_bypass == 1'b1;
+     @2 efuse_port.$efuse_fuse_bypass == 1'b0;
+     @2 efuse_port.$efu_ncu_bankavl_xfer_en == 1'b1;
+    }
+    join
+    terminate;
+
+    TapGoto(TAP_IDLE); 
+
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done efuBypData()");
+  }
+  
+  task efuBypData_l2t1(bit[31:0] byp_data) {
+    bit [31:0] byp_data_inv;
+    
+    byp_data_inv = {byp_data[0], byp_data[1], byp_data[2], byp_data[3], byp_data[4], byp_data[5],
+		  byp_data[6], byp_data[7], byp_data[8], byp_data[9], byp_data[10], byp_data[11],
+		  byp_data[12], byp_data[13], byp_data[14], byp_data[15], byp_data[16], byp_data[17],
+		  byp_data[18], byp_data[19], byp_data[20], byp_data[21], byp_data[22], byp_data[23],
+		  byp_data[24], byp_data[25], byp_data[26], byp_data[27], byp_data[28], byp_data[29],
+		  byp_data[30], byp_data[31]};
+
+    dbg.dispmon(dispmonScope, MON_INFO, "efuBypData");
+    void = TapIRLoad(TAP_FUSE_BYPASS_DATA); 
+    void = TapDRLoad(cnv2str(byp_data_inv, 32));
+    TapGoto(TAP_IDLE); 
+    
+    dbg.dispmon(dispmonScope, MON_INFO, "efuBypass");
+    void = TapIRLoad(TAP_FUSE_BYPASS);
+    TapGoto(TAP_UPDATE_IR); 
+
+    fork
+    {
+     repeat (3) toggleDutTck();
+    }
+    {
+     @1 efuse_port.$efuse_fuse_bypass == 1'b1;
+     @2 efuse_port.$efuse_fuse_bypass == 1'b0;
+     //@2 efuse_port.$efu_l2t1_fuse_xfer_en == 1'b1;
+    }
+    join
+    terminate;
+
+    TapGoto(TAP_IDLE); 
+
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done efuBypData()");
+  }
+  
+  task efuBypData_new(bit[31:0] byp_data) {
+    bit [31:0] byp_data_inv;
+    
+    byp_data_inv = {byp_data[0], byp_data[1], byp_data[2], byp_data[3], byp_data[4], byp_data[5],
+		  byp_data[6], byp_data[7], byp_data[8], byp_data[9], byp_data[10], byp_data[11],
+		  byp_data[12], byp_data[13], byp_data[14], byp_data[15], byp_data[16], byp_data[17],
+		  byp_data[18], byp_data[19], byp_data[20], byp_data[21], byp_data[22], byp_data[23],
+		  byp_data[24], byp_data[25], byp_data[26], byp_data[27], byp_data[28], byp_data[29],
+		  byp_data[30], byp_data[31]};
+
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "efuBypData...");
+    void = TapIRLoad(TAP_FUSE_BYPASS_DATA); 
+    void = TapDRLoad(cnv2str(byp_data_inv, 32));
+    TapGoto(TAP_IDLE); 
+    
+    dbg.dispmon(dispmonScope,MON_ALWAYS , "efuBypass...");
+    void = TapIRLoad(TAP_FUSE_BYPASS);
+    TapGoto(TAP_IDLE); 
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "... Done efuBypData_new()");
+  }
+
+  //-------- TAP_FUSE_BYPASS_DATA -----------
+  task efuBypassData(bit[31:0] byp_data) {
+    bit [31:0] byp_data_inv;
+    
+    byp_data_inv = {byp_data[0], byp_data[1], byp_data[2], byp_data[3], byp_data[4], byp_data[5],
+		  byp_data[6], byp_data[7], byp_data[8], byp_data[9], byp_data[10], byp_data[11],
+		  byp_data[12], byp_data[13], byp_data[14], byp_data[15], byp_data[16], byp_data[17],
+		  byp_data[18], byp_data[19], byp_data[20], byp_data[21], byp_data[22], byp_data[23],
+		  byp_data[24], byp_data[25], byp_data[26], byp_data[27], byp_data[28], byp_data[29],
+		  byp_data[30], byp_data[31]};
+    dbg.dispmon(dispmonScope, MON_INFO, "efuBypData");
+    void = TapIRLoad(TAP_FUSE_BYPASS_DATA); 
+    void = TapDRLoad(cnv2str(byp_data_inv, 32));
+    TapGoto(TAP_IDLE);     
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done efuBypData()");
+  }
+  
+  //-------- TAP_FUSE_BYPASS -----------
+  task efuBypass() {
+    dbg.dispmon(dispmonScope, MON_INFO, "efuBypass()");
+    void = TapIRLoad(TAP_FUSE_BYPASS);
+    TapGoto(TAP_IDLE); // Note: UpdateIR is state just before Idle
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done efuBypass()");
+  }
+
+  //-------- TAP_FUSE_READ_MODE -----------
+  task efuReadMode(bit[1:0] readMode) {
+    dbg.dispmon(dispmonScope, MON_INFO, "efuReadMode()");
+    void = TapIRLoad(TAP_FUSE_READ_MODE);
+    void = TapDRLoad(cnv2str(readMode, 2));
+    TapGoto(TAP_IDLE);
+    //@@1,20 efuse_port.$efuse_read_mode == readMode; // Check that readMode holds
+    repeat(20) toggleDutTck();
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done efuReadMode()");
+  }
+
+  //-------- TAP_FUSE_DEST_SAMPLE -----------
+  task efuDestSample() {
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "efuDestSample()");
+    void = TapIRLoad(TAP_FUSE_DEST_SAMPLE);
+    TapGoto(TAP_UPDATE_IR); // Note: UpdateIR is state just before Idle
+
+    fork
+    {
+     @1 efuse_port.$efuse_dest_sample == 1'b1; // Next cycle after UpdateIR (Idle) we should assert
+     @2 efuse_port.$efuse_dest_sample == 1'b0; // Following cycle we should deassert
+    }
+    {
+     TapGoto(TAP_IDLE); // Note: UpdateIR is state just before Idle
+     repeat(10) toggleDutTck();
+    }
+    join
+    terminate;
+
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "... Done efuDestSample()");
+  }
+
+  //----------- Modelled on N1 in ios_mon.v -----------
+  // Parallel data load (32bits x 16 words) used for testing parallel scan in different clock domains -csr
+  task TapDRPData(integer preample, var bit [31:0] si_data[16], var bit [31:0] so_data[16]) {
+    integer    i, j;
+    integer    w=32;
+    bit [31:0] d;
+    
+    dbg.dispmon(dispmonScope, MON_INFO, psprintf("TapDRPData (p=%0d)", preample));    
+    if (tap_state_reg != TAP_SHIFT_DR)
+      TapGoto(TAP_SHIFT_DR);
+    
+    repeat (preample)
+      toggleDutTck();
+    
+    tap_port.$tdi <= 0;
+    for (i=0; i<w; i++) {
+      for (j=0; j<16; j++) {
+        d = si_data[j];
+        pkg_port.$DBG_DQ_out[DBG_DQ__INPUT__SCAN_IN__LSB + j] <= d[i]; // scan_port.$pscan_si[j] <= d[i]; // should be the same as before
+      }
+      void = TapNext((i == w-1) ? TAP_NEXT_ADVANCE : TAP_NEXT_REMAIN, d[i]);
+      for (j=0; j<16; j++) {
+        d    = so_data[j];
+  	d[i] = scan_port.$pscan_so[j];
+  	so_data[j] = d;
+      }
+    } 
+    tap_port.$tdi <= 1'bx;
+    TapGoto(TAP_PAUSE_DR);
+    TapGoto(TAP_IDLE);
+  }
+
+  //
+  //// This will test serial/parallel scan under the control of the TCU unit (TEST_MODE = 1'b1)
+  function integer n2MfgScanIO(integer maxChainSize) {
+    integer scanIndex;
+    integer scanCounter;
+    integer scanCount[32];
+    tap_port.$test_mode  = 1'b1; // Send ourselves to MFG scan mode
+    n2MfgScanIO          = 0;
+    
+    pkg_port.$DBG_DQ_out[DBG_DQ__INPUT__SCAN_EN] = 1'b1; // scan_port.$scan_en = 1'b1; // should be same as before
+    pkg_port.$DBG_DQ_out[DBG_DQ__INPUT__SCAN_IN__MSB : DBG_DQ__INPUT__SCAN_IN__LSB] = 32'bx; // scan_port.$pscan_si  = 32'bx; // Send us to an unknown state
+    scan_port.$jtag_si   = 32'bx; // Send us to an unknown state
+
+    for (scanIndex = 0; scanIndex < 32; scanIndex++) {
+      scanCount[scanIndex] = 0;
+    }
+
+    //--------- Load chains with all 1's --------------
+    repeat(maxChainSize) {
+      toggleDutTck();
+      pkg_port.$DBG_DQ_out[DBG_DQ__INPUT__SCAN_IN__MSB : DBG_DQ__INPUT__SCAN_IN__LSB] = ~(32'b0); // scan_port.$pscan_si  = ~(32'b0); // Set value at chip internals
+      scan_port.$jtag_si  = ~(32'b0); // Set value at chip internals
+    }
+
+    toggleDutTck();
+    toggleDutTck();
+    scanCounter = 0;
+    pkg_port.$DBG_DQ_out[DBG_DQ__INPUT__SCAN_IN__MSB : DBG_DQ__INPUT__SCAN_IN__LSB] = 32'b0; // scan_port.$pscan_si = 32'b0;
+      
+    //--------- Save how long it takes zero to make it through --------------
+    while ( (|(scan_port.$jtag_so) !== 1'b0) && (scanCounter < maxChainSize) ) {
+      toggleDutTck();
+      scanCounter++;
+      for (scanIndex = 0; scanIndex < 32; scanIndex++) {
+        if ( scan_port.$jtag_so[scanIndex] === 1'b1 ) scanCount[scanIndex] = scanCounter;
+        if ( scan_port.$jtag_so[scanIndex] === 1'bx ) scanCount[scanIndex] = -1;
+        if ( scan_port.$jtag_so[scanIndex] === 1'bz ) scanCount[scanIndex] = -1;
+      }
+    }
+    for (scanIndex = 0; scanIndex < 32; scanIndex++) {
+      n2MfgScanIO += scanCount[scanIndex] === -1; // Error if the scan length is not known
+      dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("Scanout[%0d] chain length: %0d", scanIndex, scanCount[scanIndex]));    
+    }
+
+    pkg_port.$DBG_DQ_out[DBG_DQ__INPUT__SCAN_EN] = 1'b0; // scan_port.$scan_en   = 1'b0; // should be the same as before
+    tap_port.$test_mode = 1'b0;
+    repeat (10) toggleDutTck();
+  }
+
+  // created for TCU Debug Interface to SPC core  - Adam
+  function bit[63:0] cregCoreRun (bit[63:0] CoreRunData) {
+   bit[63:0] cregOut;
+   this.tap_creg_addr(NCU_ASI_CORE_RUNNING_RW_REG);
+   this.tap_creg_wdata(CoreRunData);
+   this.tap_iob_write();
+   cregOut = tap_creg_rdata();
+   dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("NCU_ASI_CORE_RUNNING_RW_REG: Expected:%h, Got=%h", CoreRunData, cregOut));
+   // tcu_diag += (cregOut !== CoreRunData);
+  }    
+
+  function bit[7:0] tapDossStatus(bit [7:0] DossStatusReg) {
+    string scanOut;
+    scanOut = TapIRLoad(TAP_DOSS_STATUS);
+    scanOut = TapDRLoad(cnv2str(DossStatusReg, 8)); 
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    tapDossStatus = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("... Done tapDossStatus()", tapDossStatus));
+  }
+
+  task tapSSRequest() {  
+    void = TapIRLoad(TAP_SS_REQUEST);
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("... Done tapSSRequest()"));
+  }
+
+  function bit[63:0] tapCoreRunStatus(bit [63:0] doneRegister) {
+    string scanOut;
+    scanOut = TapIRLoad(TAP_CORE_RUN_STATUS);
+    scanOut = TapDRLoad(cnv2str(doneRegister, 64)); 
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    tapCoreRunStatus = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("... Done tapCoreRunStatus()"));
+  }
+
+  function bit [63:0] tapDossEnable(bit [63:0] DossEnableRegister) {
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("tapDossEnable() [Register='h%0h]", DossEnableRegister));
+    scanOut = TapIRLoad(TAP_DOSS_ENABLE);
+    scanOut = TapDRLoad(cnv2str(DossEnableRegister, 64)); 
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    tapDossEnable = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("... Done tapDossEnable()"));
+  }
+
+  function bit [1:0] tapDossMode(bit [1:0] DossModeRegister) {
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("tapDossMode() [Register='b%2b]", DossModeRegister));
+    scanOut = TapIRLoad(TAP_DOSS_MODE);
+    scanOut = TapDRLoad(cnv2str(DossModeRegister, 2)); 
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    tapDossMode = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("... Done tapDossMode()"));
+  }
+
+  function bit [7:0] tapCoreSel(bit [7:0] CoreSelRegister) {
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("tapCoreSel() [Register=8'h%h]", CoreSelRegister));
+    scanOut = TapIRLoad(TAP_CORE_SEL);
+    scanOut = TapDRLoad(cnv2str(CoreSelRegister, 8)); 
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    tapCoreSel = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("... Done tapCoreSel()"));
+  }
+
+  task tapClockHStop() {
+    void = TapIRLoad(TAP_CLOCK_HSTOP);
+    TapGoto(TAP_UPDATE_IR);
+    TapGoto(TAP_IDLE);
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("... Done tapClockHStop()"));
+  }
+
+  task tapClockSStop() {  
+    void = TapIRLoad(TAP_CLOCK_SSTOP);
+    TapGoto(TAP_UPDATE_IR);
+    TapGoto(TAP_IDLE);
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("... Done tapClockSStop()"));
+  }
+
+  task tapClockStart() {  
+    void = TapIRLoad(TAP_CLOCK_START);
+    TapGoto(TAP_UPDATE_IR);
+    TapGoto(TAP_IDLE);
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("... Done tapClockStart()"));
+  }
+
+  function bit [31:0] tapDeCount(bit [31:0] dataRegisterValue) {  // TCU Debug Event Counter register
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("tapDeCount() [Register=32'h%h]", dataRegisterValue));
+    scanOut = TapIRLoad(TAP_DE_COUNT);
+    scanOut = TapDRLoad(cnv2str(dataRegisterValue, 32)); 
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    tapDeCount = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("... Done tapDeCount()"));
+  }
+
+  function bit [3:0] tapTcuDcr(bit [3:0] dataRegisterValue) {  // TCU Debug Control Register 
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("tapTcuDcr() [Register=4'h%h]", dataRegisterValue));
+    scanOut = TapIRLoad(TAP_TCU_DCR);
+    scanOut = TapDRLoad(cnv2str(dataRegisterValue, 4)); 
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    tapTcuDcr = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("... Done tapTcuDcr()"));
+  }
+
+  function bit [63:0] tapCycleCount(bit [63:0] CycleCountRegister) {
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("tapCycleCount() [Register=64'h%h]",CycleCountRegister));
+    scanOut = TapIRLoad(TAP_CYCLE_COUNT);
+    scanOut = TapDRLoad(cnv2str(CycleCountRegister, 64)); 
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    tapCycleCount = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("... Done tapCycleCount()"));
+  }
+
+  function bit tapCSMode(bit CSModeRegister) {
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("tapCSMode() [Register=1'b%1b]",CSModeRegister));
+    scanOut = TapIRLoad(TAP_CS_MODE);
+    scanOut = TapDRLoad(cnv2str(CSModeRegister, 1)); 
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    tapCSMode = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("... Done tapCSMode()"));
+  }
+
+  function bit tapCSStatus(bit CSStatusRegister) {
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("tapCSStatus() [Register=1'b%1b]",CSStatusRegister));
+    scanOut = TapIRLoad(TAP_CS_STATUS);
+    scanOut = TapDRLoad(cnv2str(CSStatusRegister, 1)); 
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    tapCSStatus = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("... Done tapCSStatus()"));
+  }
+
+  function bit [1:0] tapClockStatus(bit [1:0] ClockStatusRegister) {
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("tapClockStatus() [Register=2'b%2b]",ClockStatusRegister));
+    scanOut = TapIRLoad(TAP_CLOCK_STATUS);
+    scanOut = TapDRLoad(cnv2str(ClockStatusRegister, 2)); 
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    tapClockStatus = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("... Done tapClockStatus()"));
+  }
+
+  function bit [6:0] tapClkStopDelay(bit [6:0] ClkStopDelayRegister) {
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("tapClkStopDelay() [Register=7'h%h]",ClkStopDelayRegister));
+    scanOut = TapIRLoad(TAP_CLKSTP_DELAY);
+    scanOut = TapDRLoad(cnv2str(ClkStopDelayRegister, 7)); 
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    tapClkStopDelay = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("... Done tapClkStopDelay()"));
+  }
+
+  function bit [31:0] tapClockDomain(bit [31:0] ClockDomainRegister) {
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("tapClockDomain() [Register=32'h%h]",ClockDomainRegister));
+    scanOut = TapIRLoad(TAP_CLOCK_DOMAIN);
+    scanOut = TapDRLoad(cnv2str(ClockDomainRegister, 32)); 
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    tapClockDomain = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("... Done tapClockDomain()"));
+  }
+
+  // check the length of the data register
+  function integer tapDataRegLength(string tapRegister, string tapRegName, integer width, integer maxlength=256) {
+    //32 bit number
+    string checknumber = "10110011100011110000111110000010";
+    string zerovector  = "00000000000000000000000000000000";
+    string TDO_out1;
+    string TDO_out2;
+    string TDO_out;
+    string pos_match;
+    integer len = 0;
+    integer measured = 0;
+
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("Measure the data register length for %s instruction\n", tapRegName));
+
+    TDO_out   = TapIRLoad(tapRegister);
+    TapGoto(TAP_SHIFT_DR);
+
+    TDO_out2 = TapDRLoad(checknumber);
+
+    while((!measured) && (len < maxlength)) {
+      dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("Total Number of bits shifted-in: %1d\n",len+32));
+      TDO_out1 = TDO_out2;
+      TDO_out2 = TapDRLoad(zerovector);
+      sprintf(TDO_out,"%s%s",TDO_out2,TDO_out1);
+      dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("DataRegisterLength shifted-out (%0d):  %s\n", TDO_out.len(),TDO_out));
+      if(TDO_out.match(checknumber)) {
+	measured = 1;
+	pos_match = TDO_out.postmatch();
+	len += pos_match.len();
+      } else
+      len += zerovector.len();
+    }
+    if(len >= maxlength) {
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("Data register length measurement failed with maxlength: %d\n", maxlength));
+      dbg.dispmon(dispmonScope, MON_ERR, psprintf("You may retry by increaing the maxlength parameter\n"));
+      len = -1;
+    }
+
+    if (len != width) {
+      dbg.dispmon(dispmonScope,MON_ERR, psprintf("ERROR: Data register length check for %s failed, Got=%d, Expected:=%d\n", tapRegName, len, width));
+    }
+    else {
+      dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("Data register length measured for %s instruction: %0d\n", tapRegName, len));
+    }
+
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("... Done tapDataRegLength()"));
+    tapDataRegLength = len;
+  }
+
+  // Added for JTAG data register check - Adam
+  function bit [79:0] tapDataRegCheckRead(string tapRegister, string tapRegName, integer width) {
+    string scanOut;
+    bit [79:0] tapDataRegOut;
+    bit [79:0] tapDataIn;
+
+    scanOut = TapIRLoad(tapRegister);
+    scanOut = TapDRLoad(cnv2str(tapDataIn, width)); 
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    tapDataRegOut = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("%s Register='h%0h", tapRegName,tapDataRegOut[width-1:0]));
+    tapDataRegCheckRead = tapDataRegOut;
+  }
+
+  function bit [79:0] tapDataRegCheck(string tapRegister, string tapRegName, integer width) {
+    string scanOut;
+    bit [79:0] tapDataRegOut, tapExpectDataRegOut;
+    bit [79:0] tapDataIn;
+    integer i=0;
+
+    scanOut   = TapIRLoad(tapRegister);
+    tapDataIn = {80{1'b1}};
+
+    for (i=0; i<3; i++) {
+       tapExpectDataRegOut = ~tapDataIn;
+       if (tapRegister == TAP_CLOCK_DOMAIN) 
+          tapExpectDataRegOut[79:24] = {56{1'b0}};
+       scanOut = TapDRLoad(cnv2str(tapDataIn, width)); 
+       TapGoto(TAP_UPDATE_DR);
+       TapGoto(TAP_IDLE);
+       tapDataRegOut = scanOut.atobin();
+       if (i>0) {
+          dbg.dispmon(dispmonScope, MON_ALWAYS, psprintf("%s Register='h%0h, Expected='h%0h\n", tapRegName,tapDataRegOut, tapExpectDataRegOut[width-1:0]));
+          if (tapDataRegOut[width-1:0] !== tapExpectDataRegOut[width-1:0]) 
+             dbg.dispmon(dispmonScope,MON_ERR, psprintf("ERROR: %s, Got='h%0h, Expected:='h%0h\n", tapRegName,tapDataRegOut[width-1:0], tapExpectDataRegOut[width-1:0]));
+       }  
+       tapDataIn = ~tapDataIn;
+    }
+    tapDataRegCheck = tapDataRegOut;
+  }
+
+  function bit [7:0] tapLbistBypass(bit [7:0] bypassRegister) {
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_INFO, psprintf("tapLbistBypass() [Register='h%0h]", bypassRegister));
+    scanOut = TapIRLoad(TAP_LBIST_BYPASS);
+    scanOut = TapDRLoad(cnv2str(bypassRegister, 8)); 
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    tapLbistBypass = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "... Done tapLbistBypass()");
+  }
+
+  function bit [1:0] tapLbistMode(bit [1:0] modeRegister) {
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_INFO, psprintf("tapLbistMode() [Register='h%0h]", modeRegister));
+    scanOut = TapIRLoad(TAP_LBIST_MODE);
+    scanOut = TapDRLoad(cnv2str(modeRegister, 2)); 
+    TapGoto(TAP_UPDATE_DR); 
+    TapGoto(TAP_IDLE); 
+    tapLbistMode = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "... Done tapLbistMode()");
+  }
+
+  task tapLbistAccess() {
+    dbg.dispmon(dispmonScope, MON_INFO, "tapLbistDiag()");
+    void = TapIRLoad(TAP_LBIST_ACCESS);
+    TapGoto(TAP_UPDATE_IR); 
+    TapGoto(TAP_IDLE); 
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "... Done tapLbistAccess()");
+  }
+  
+  task tapLbistStart() {
+    dbg.dispmon(dispmonScope, MON_INFO, "tapLbistStart()");
+    void = TapIRLoad(TAP_LBIST_START);
+    TapGoto(TAP_UPDATE_IR); 
+    TapGoto(TAP_IDLE); 
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "... Done tapLbistStart()");
+  }
+
+  task tapLbistAbort() {
+    dbg.dispmon(dispmonScope, MON_INFO, "tapLbistAbort()");
+    void = TapIRLoad(TAP_LBIST_ABORT);
+    TapGoto(TAP_UPDATE_IR); 
+    TapGoto(TAP_IDLE); 
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "... Done tapLbistAbort()");
+  }
+
+
+  function bit [7:0] tapLbistGetdone(bit [7:0] doneRegister) {
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_INFO, "tapLbistGetdone()");
+    scanOut = TapIRLoad(TAP_LBIST_GETDONE);
+    scanOut = TapDRLoad(cnv2str(doneRegister, 8)); 
+    TapGoto(TAP_UPDATE_DR); 
+    TapGoto(TAP_IDLE); 
+    tapLbistGetdone = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "... Done tapLbistGetdone()");
+  }
+
+  task tapStciAccess() {
+    dbg.dispmon(dispmonScope, MON_INFO, "tapStciAccess()");
+    void = TapIRLoad(TAP_STCI_ACCESS);
+    TapGoto(TAP_UPDATE_IR); 
+    TapGoto(TAP_IDLE); 
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "... Done tapStciAccess()");
+  }
+
+  task tapStciClear() {
+    dbg.dispmon(dispmonScope, MON_INFO, "tapStciClear()");
+    void = TapIRLoad(TAP_STCI_CLEAR);
+    TapGoto(TAP_UPDATE_IR); 
+    TapGoto(TAP_IDLE); 
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "... Done tapStciClear()");
+  }
+
+  function bit tapJtporStatus(bit JtporStatusRegister) {
+    string scanOut;
+    dbg.dispmon(dispmonScope, MON_INFO, "tapJtporStatus()");
+    scanOut = TapIRLoad(TAP_JTPOR_STATUS);
+    scanOut = TapDRLoad(cnv2str(JtporStatusRegister, 1));
+    TapGoto(TAP_UPDATE_DR);
+    TapGoto(TAP_IDLE);
+    tapJtporStatus = scanOut.atobin();
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done tapJtporStatus()");
+  }
+
+  task tapDMOAccess() {
+    dbg.dispmon(dispmonScope, MON_INFO, "tapDMOAccess()");
+    void = TapIRLoad(TAP_DMO_ACCESS);
+    TapGoto(TAP_UPDATE_IR); 
+    TapGoto(TAP_IDLE); 
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "... Done tapDMOAccess()");
+  }
+
+  task tapDMOClear() {
+    dbg.dispmon(dispmonScope, MON_INFO, "tapDMOClear()");
+    void = TapIRLoad(TAP_DMO_CLEAR);
+    TapGoto(TAP_UPDATE_IR); 
+    TapGoto(TAP_IDLE); 
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "... Done tapDMOClear()");
+  }
+
+  /// efu functions/tasks added by Adam
+  task EfuReadMode(bit[2:0] readMode) {
+    dbg.dispmon(dispmonScope, MON_INFO, "EfuReadMode()");
+    void = TapIRLoad(TAP_FUSE_READ_MODE);
+    void = TapDRLoad(cnv2str(readMode, 3));
+    TapGoto(TAP_IDLE);
+    //@@1,20 efuse_port.$efuse_read_mode == readMode; // Check that readMode holds
+    repeat(20) toggleDutTck();
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done EfuReadMode()");
+  }
+
+  task EfuRowAddr(bit[6:0] RowAddr) {
+    dbg.dispmon(dispmonScope, MON_INFO, "EfuRowAddr()");
+    void = TapIRLoad(TAP_FUSE_ROW_ADDR);
+    void = TapDRLoad(cnv2str(RowAddr, 7));
+    TapGoto(TAP_IDLE);
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done EfuRowAddr()");
+  }
+
+  task EfuColAddr(bit[4:0] ColumnAddr) {
+    dbg.dispmon(dispmonScope, MON_INFO, "EfuColumnAddr()");
+    void = TapIRLoad(TAP_FUSE_COL_ADDR);
+    void = TapDRLoad(cnv2str(ColumnAddr, 5));
+    TapGoto(TAP_IDLE);
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done EfuColAddr()");
+  }
+
+  function bit[31:0] EfuReadData(integer addr) {
+    bit[6:0]   row_addr;
+    bit[31:0]  tdo_data, tdo_data_inv;
+    string     tdo_data_str="";
+    integer    i;
+    bit   tdo_out;
+
+    dbg.dispmon(dispmonScope, MON_INFO, "EfuReadData()");
+    row_addr = addr;
+    void = TapIRLoad(TAP_FUSE_ROW_ADDR);
+    void = TapDRLoad(cnv2str(row_addr, 7));
+    //TapGoto(TAP_IDLE);dont need this.
+    void = TapIRLoad(TAP_FUSE_READ);
+    TapGoto(TAP_IDLE); // Note: UpdateIR is state just before Idle
+    repeat(50) toggleDutTck();//chin's change
+    //repeat(30) toggleDutTck();not enough delay to get right value
+    TapGoto(TAP_CAPTURE_DR);
+
+    fork
+    {
+     while (1) {
+      @ (posedge efuse_port.$efuse_shiftdr async);
+      if (efuse_port.$efuse_shiftdr != 1'b1) {
+       dbg.dispmon(dispmonScope, MON_ERR, psprintf("During EfuReadData efuse_shiftdr signal not asserted"));
+      }
+     }
+    }
+    {
+     tdo_data_str = TapDRGet(32);
+     tdo_data =  tdo_data_str.atobin();
+     for (i=0;i<32;i++) {
+      tdo_data_inv[31-i] = tdo_data[i];
+     }
+    }
+    join any
+    terminate;
+
+    TapGoto(TAP_IDLE);
+    dbg.dispmon(dispmonScope, MON_INFO, "... Done EfuReadData()");
+    EfuReadData = tdo_data_inv;
+  }
+
+  function bit[31:0] EfuDestReadData() {
+    bit[31:0]  tdo_data, tdo_data_inv;
+    string     tdo_data_str="";
+    integer    i;
+    bit tdo_out;
+
+    dbg.dispmon(dispmonScope,MON_ALWAYS , "EfuDestReadData()");
+    repeat(5) toggleDutTck();
+    TapGoto(TAP_CAPTURE_DR);
+
+    fork
+    {
+     while (1) {
+      @ (posedge efuse_port.$efuse_shiftdr async);
+      if (efuse_port.$efuse_shiftdr != 1'b1) {
+       dbg.dispmon(dispmonScope, MON_ERR, psprintf("During EfuDestReadData efuse_shiftdr signal not asserted"));
+      }
+     }
+    }
+    {
+     tdo_data_str = TapDRGet(32);
+     tdo_data =  tdo_data_str.atobin();
+     for (i=0;i<32;i++) {
+      tdo_data_inv[31-i] = tdo_data[i];
+     }
+    }
+    join any
+    terminate;
+
+    TapGoto(TAP_IDLE);
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "... Done EfuDestReadData()");
+    EfuDestReadData = tdo_data_inv;
+  }
+
+
+  function bit[31:0] EfuDestReadDataInv() {
+    bit[31:0]  tdo_data;
+    string     tdo_data_str="";
+    integer    i;
+    bit  tdo_out;
+ 
+    dbg.dispmon(dispmonScope,MON_ALWAYS , "EfuDestReadDataInv()");
+    repeat(5) toggleDutTck();
+    TapGoto(TAP_CAPTURE_DR);
+
+    fork
+    {
+     while (1) {
+      @ (posedge efuse_port.$efuse_shiftdr async);
+      if (efuse_port.$efuse_shiftdr != 1'b1) {
+       dbg.dispmon(dispmonScope, MON_ERR, psprintf("During EfuDestReadDataInv efuse_shiftdr signal not asserted"));
+      }
+     }
+    }
+    {
+     tdo_data_str = TapDRGet(32);
+     tdo_data =  tdo_data_str.atobin();
+    }
+    join any
+    terminate;
+ 
+    TapGoto(TAP_IDLE);
+    dbg.dispmon(dispmonScope, MON_ALWAYS, "... Done EfuDestReadDataInv()");
+    EfuDestReadDataInv = tdo_data;
+   }
+
+
+  function string EfaBlockIdStr(bit[5:0] BlockID) {
+    string   BlockNameStr[64];
+   
+    BlockNameStr[0]="Core0I$"; BlockNameStr[1]="Core0D$"; BlockNameStr[2]="Core1I$"; BlockNameStr[3]="Core1D$";
+    BlockNameStr[4]="Core2I$"; BlockNameStr[5]="Core2D$"; BlockNameStr[6]="Core3I$"; BlockNameStr[7]="Core3D$";
+    BlockNameStr[8]="Core4I$"; BlockNameStr[9]="Core4D$"; BlockNameStr[10]="Core5I$"; BlockNameStr[11]="Core5D$";
+    BlockNameStr[12]="Core6I$"; BlockNameStr[13]="Core6D$"; BlockNameStr[14]="Core7I$"; BlockNameStr[15]="Core7D$"; 
+    BlockNameStr[16]="L2T0"; BlockNameStr[17]="L2T1"; BlockNameStr[18]="L2T2"; BlockNameStr[19]="L2T3"; 
+    BlockNameStr[20]="L2T4"; BlockNameStr[21]="L2T5"; BlockNameStr[22]="L2T6"; BlockNameStr[23]="L2T7"; 
+    BlockNameStr[24]="L2D0"; BlockNameStr[25]="L2D1"; BlockNameStr[26]="L2D2"; BlockNameStr[27]="L2D3"; 
+    BlockNameStr[28]="L2D4"; BlockNameStr[29]="L2D5"; BlockNameStr[30]="L2D6"; BlockNameStr[31]="L2D7"; 
+    BlockNameStr[32]="CoreAvail"; BlockNameStr[33]="L2BankAvail"; BlockNameStr[34]="SerNum0"; BlockNameStr[35]="SerNum1";
+    BlockNameStr[36]="SerNum2"; BlockNameStr[37]="NIU_mac1_sf"; BlockNameStr[38]="NIU_mac1_ro"; BlockNameStr[39]="NIU_mac0_sf";
+    BlockNameStr[40]="NIU_mac0_ro"; BlockNameStr[41]="NIU_ipp0"; BlockNameStr[42]="NIU_ipp1"; BlockNameStr[43]="NIU_cfifo0";
+    BlockNameStr[44]="NIU_cfifo1"; BlockNameStr[45]="NIU_4k";BlockNameStr[46]="NIU_ram";BlockNameStr[47]="NIU_ram0";
+    BlockNameStr[48]="NIU_ram1"; BlockNameStr[49]="DMU";
+
+    if (BlockID > 44) {
+       EfaBlockIdStr = "Unknown Block ID";
+    } else {
+       EfaBlockIdStr = BlockNameStr[BlockID];
+    }
+  }
+  
+  //===============================================================
+  // WHAT: program CCU's PLL_CTL reg
+  // ARGS: cmpdr_ratio must be "2.00" to "5.25"
+  //===============================================================
+  task tap_config_ccu_pll_ctl_reg(string cmpdr_ratio) {
+    bit [63:0] data, rd_data;
+    bit [5:0] pll_div2;
+    bit [6:0] pll_div4;
+    
+    case (cmpdr_ratio) {
+      "2.00": pll_div2 = 6'h7;
+      "2.25": pll_div2 = 6'h8;
+      "2.50": pll_div2 = 6'h9;
+      "2.75": pll_div2 = 6'ha;
+      "3.00": pll_div2 = 6'hb;
+      "3.25": pll_div2 = 6'hc;
+      "3.50": pll_div2 = 6'hd;
+      "3.75": pll_div2 = 6'he;
+      "4.00": pll_div2 = 6'hf;
+      "4.25": pll_div2 = 6'h10;
+      "4.50": pll_div2 = 6'h11;
+      "4.75": pll_div2 = 6'h12;
+      "5.00": pll_div2 = 6'h13;
+      "5.25": pll_div2 = 6'h14;
+      default: {
+        dbg.dispmon(dispmonScope, MON_ERR, psprintf("change_ccu_clk_freq(cmpdr_ratio=%s) <= bad arg. Ignore", cmpdr_ratio));
+        return;
+      }
+    }
+    dbg.dispmon(dispmonScope, MON_INFO, psprintf("tap_config_ccu_pll_ctl_reg(cmpdr_ratio=%s)", cmpdr_ratio));
+    pll_div4 = pll_div2 + 7'h1;
+    data = this.tap_read_csr(40'h83_0000_0000, "PLL_CTL");
+    data[11:6]  = pll_div2;
+    data[24:18] = pll_div4;
+    data[32]    = 1'b1;      // change bit is set to 1
+    this.tap_write_csr(40'h83_0000_0000, data, "PLL_CTL");
+    rd_data = this.tap_read_csr(40'h83_0000_0000, "PLL_CTL");
+ }
+
+  //===============================================================
+  // WHAT: poll tap_clock_status until getting value 10 indicating clks stopped
+  // ARGs: timeout_val is number of readings of tap_clock_status
+  // RETURN: 0: no error (ie. sucess), non-zero: timeout/failure
+  //===============================================================
+  function integer poll_tap_clock_status_til_clkstop(integer timeout_val=500) {
+    bit [1:0] data;
+    integer num_rds=0;
+
+    dbg.dispmon(dispmonScope, MON_INFO, "poll tap_clock_status until getting 10 indicate all clks stopped");
+    while (1) {
+      data = this.tapClockStatus(2'b00);
+      if (data === 2'b10) {
+        poll_tap_clock_status_til_clkstop = 0; // no error
+        return;
+      }
+      num_rds++;
+      if (num_rds == timeout_val) {
+        dbg.dispmon(dispmonScope, MON_ERR, psprintf("polling tap_clock_status for 2'b10 (ie. clks stopped) is time out after %0d rds", timeout_val));
+        poll_tap_clock_status_til_clkstop = 1; // timeout
+        return;
+      }
+    }
+  }
+    
+  //===============================================================
+  // WHAT: poll tap_clock_status until getting 01 indicating all clks started
+  // ARGs: timeout_val is number of readings of tap_clock_status
+  // RETURN: 0: no error (ie. sucess), non-zero: timeout/failure
+  //===============================================================
+  function integer poll_tap_clock_status_til_clkstart(integer timeout_val=500) {
+    bit [1:0] data;
+    integer num_rds=0;
+
+    dbg.dispmon(dispmonScope, MON_INFO, "poll tap_clock_status until getting 01 indicating all clks started");
+    while (1) {
+      data = this.tapClockStatus(2'b00);
+      if (data === 2'b01) {
+        poll_tap_clock_status_til_clkstart = 0; // no error
+        return;
+      }
+      num_rds++;
+      if (num_rds == timeout_val) {
+        dbg.dispmon(dispmonScope, MON_ERR, psprintf("polling tap_clock_status for 2'b01 (ie. clks started) is time out after %0d rds", timeout_val));
+        poll_tap_clock_status_til_clkstart = 1; // timeout
+        return;
+      }
+    }
+  }
+
+}  // end of class SystemTap
+
+
+  /// random number generator - Adam
+  enum Range =  full, medium, small ; 
+  
+  class rng {
+      bit         [63:0]  base_bit = 1;
+      rand    bit [63:0]  rand_num;
+      randc   bit  [7:0]  randc_num;
+      rand    Range       range;
+      integer             MaxBits,MedBits,MinBits ; 
+     
+      constraint bit_range {
+         (range == small)  => rand_num in { 0:   7};
+         (range == medium) => rand_num in { 0: 255};
+         (range == full)   => rand_num in { 0: (base_bit<<MaxBits)-1};
+      }
+
+      task new(integer max_bits) {
+        MaxBits = max_bits;
+      }     
+  }
+
+

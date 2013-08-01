@@ -1,0 +1,3040 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: pg_top_pp.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+#include "pcg_defines.vri"
+#include "pcg_ports.vri"
+#include "pack_db.vrh"
+#include "flow_db.vrh"
+#include "flow_db_tasks.vrh"
+#include "mbox_class.vrh"
+#include "get_mbox_id.vrh"
+
+#include "cPgIf.vrh"
+
+#include "pcg_token.vrh"
+#include "cMesg.vrh"
+
+extern Mesg            be_msg;
+
+
+// extern pack_db_entry   pack_db[];
+extern flow_db_entry   flow_db[];
+extern mbox_class      mbox_id;
+extern integer         quiet_on;
+extern class           pg;
+extern pg              ptr_to_first_pg;
+extern pg              pack_gen[16];
+
+extern "C" task InitpgSeed(integer seed);
+extern "C" function bit[31:0] pgRand();
+
+class CpgRandom {
+
+  bit[31:0] seed;
+
+  task new(integer i) {
+    InitpgSeed(i);
+  }
+  function bit[7:0] nextdata() {
+    bit [31:0] d;
+    d = pgRand();
+    nextdata = d[7:0];
+  }
+   
+}
+
+class pg {
+  local integer	warning_count=0;	 
+  local integer pg_done =0;
+  local integer	error_count=0;		 
+  bit [3:0]	port_type;		 
+  local bit [63:0]	clock_counter;	 
+  local integer	my_port;		 
+  l3_class_desc	l3_class[61];		 
+  l3_class_mask	l3_mask[40];		 
+  local integer	pckt_num= -1;		 
+  local integer	new_flow=0;		 
+  local integer	order_seq=0;		 
+  local integer	mb_q;			 
+  local integer	pkt_gen_sync;			 
+  local integer	queue_lock;		 
+  static bit[19:0] pg_used_ports=0;	 
+  bit [31:0] cfg_reg[CFG_LAST_ENTRY];	 
+  local bit [15:0] ifedx_control;		 
+  local bit [63:0] last_tx_time;		 
+  local bit [63:0] prev_current_time=0;		  //hummer
+  local integer port_speed ;		 
+  local integer mac_speed ;		 
+  // local event pkt_gen_lock ;
+  integer pkt_gen_lock;
+  local integer tx_done=0;		 
+  local integer wait_send_fake;
+  local integer rxdv_set=0;
+  local event pg_random_event;
+
+  integer	tx_err_start=-1;		 
+  integer tx_err_len;			 
+
+  integer debug_xgmii     = 0;
+  integer debug_gmii      = 0;
+  integer debug_mii       = 0;
+  integer debug_fa        = 0;
+  integer debug_mii_rx    = 0;
+  integer debug_mii_tx    = 0;
+  integer debug_xgmii_tx  = 1;
+  integer debug_xgmii_rx  = 0;
+  integer debug_gmii_rx   = 0;
+  integer debug_rx        = 0;
+  integer debug_dg        = 0;
+  integer debug_db_in     = 0;
+  integer debug_db_out    = 0;
+  integer debug_checker   = 0;
+  integer debug_out_token = 1;
+
+  task config(integer what, bit [31:0] data) ;
+  task print_warn() ;
+  task print_err() ;
+  task gen_buf( pack_db_entry pack_db, byte_array buf, var integer ptr ) ; 
+  function byte_array new_gen_buf(pack_db_entry pack_db, var bit[31:0] pkt_fields[*]);
+  task pkt_gen(   flow_desc flow, integer data_length, integer ttl, var CpgToken pgToken,  (	bit[63:0] options=0) );
+  task pkt_auto_tx() ;
+  task data_gen(integer type, integer seed, integer len, byte_array buf, var integer offset, bit[63:0] options,pg my_root, integer tagged, integer ifedx);
+  task display_buf( byte_array buf, integer hwlen, (integer ifedx=0)) ;
+  task display_class(byte_array buf, var integer ptr) ;
+  task display_class_ipv6(byte_array buf, var integer ptr) ;
+  task display_data(byte_array buf, var integer ptr, integer len) ;
+  task display_id(bit [79:0] id) ;
+  task display_db(pack_db_entry pack_db) ;
+  task display_flow(integer flow_id) ;
+  task send_packet(bit [3:0] ptype, byte_array buf, integer len, bit [63:0] options) ;
+  task assert_col_tx (mii_def port_bind, bit [63:0] options) ;
+  task assert_mii_err (mii_def port_bind ) ; 
+  task send_packet_mii (mii_def port_bind, bit [3:0] ptype, byte_array buf, integer len, bit [63:0] options) ;
+  task assert_gmii_err (gmii_def port_bind) ;
+  task send_packet_gmii (gmii_def port_bind, bit [3:0] ptype, byte_array buf, integer len, bit [63:0] options) ;
+  task assert_xgmii_err (xgmii_def port_bind) ;
+  task send_packet_xgmii (xgmii_def port_bind,bit [3:0] ptype, byte_array buf, integer len, bit [63:0] options) ;
+  task wait_clk(integer count) ;
+  task count_clock() ;
+  task wait_tx_clk(integer count) ;
+  task wait_tx_clk_if ( mii_def port_bind, integer count) ;
+  task wait_rx_clk(integer count) ;
+  task wait_rx_clk_if ( mii_def port_bind, integer count) ;
+  task config_tx (mii_def port_bind, integer mac_speed ) ; 
+  task status() ;
+  task new(integer my_porti, (bit [3:0] ptype=0)) ;
+  task build_frame (integer itoken, pack_db_entry pack_db, byte_array buf, var integer len,(integer header_id=-1),(integer new_crc=0));
+
+  function bit [15:0] ipv4_cksum( byte_array m, integer len) ;
+  function bit [15:0] ip_datagram_chksum(byte_array d, integer start, integer len);
+  function bit [15:0] tcp_chksum( pack_db_entry pack_db, byte_array d, integer start, integer len, integer pkt_type,integer chk_sum_location );
+  function bit [31:0]  crc_gen(byte_array p, integer start, integer len) ;
+  local function bit [31:0] crc32_add(bit [7:0] data, bit [31:0] crc) ;
+  function integer check_option(bit [63:0] option, bit [63:0] flag) ;
+  function bit [7:0] class_mask(integer funct, bit[7:0] a, bit[7:0] b) ;
+  
+  function bit[15:0] partial_cksum(byte_array packet, integer start_offset, integer pkt_len);
+
+}
+
+
+
+task pg::gen_buf( pack_db_entry pack_db, byte_array buf, var integer ptr ) {
+
+  integer        len = -1;     
+  integer        n;
+  integer        he;           
+  integer        flow_id;
+  integer        ipv4_ptr;
+  integer        ipv6_ptr;
+  
+  integer        tcp_hdr_start;
+  integer        udp_hdr_start;
+  integer        ip_hdr_start;
+  integer        extra_tcp_hdr=0;
+  integer        tcp_seg_len;
+  
+  bit [15:0]     tcp_length;
+  bit [15:0]     udp_length;
+  bit [15:0]     ip_length;
+  bit [15:0]     ipv6_length;
+  bit [15:0]     l2_length;
+  bit [31:0]     tmp32, mask;
+  bit [15:0]     tmp16 ;
+  bit [15:0]     tmp16_ipck ;
+  bit [15:0]     tmp16_tcpck ;
+  bit [15:0]     tmp16_udpck ;  
+  bit [15:0]     tmp16_ipdck ;
+  bit [31:0]     isn_tmp;
+  bit [47:0]     da_tmp;
+  bit [95:0]     tcp_psu_hdr;
+  bit [95:0]     udp_psu_hdr;
+  bit [15:0]     ipv4_hdr[10];
+  integer        tagged = 0;   
+  bit [32:0]     addr;
+  bit            dv;
+  integer header_len_w_options;
+  
+// List of inputs to this function passed through a struct
+  bit[47:0] l2_da,l2_sa;
+  bit	[4:0]  frame_type;
+  integer    tpid; 
+  bit	[15:0]	tci;
+  integer    frame_class;
+  integer    data_length;
+  integer    class_funct;
+  integer frame_class_mask;
+  integer    header_length;
+  integer		ttl;
+  bit [31:0]  spi;
+  bit [7:0]   nxthdr;
+  bit [7:0]   tos;
+  integer type;
+  bit	[128:0] src_ipv6_addr,dst_ipv6_addr;
+  bit [31:0] src_ip_addr,dst_ip_addr;
+  bit	[15:0] src_port,dst_port;
+  bit [5:0] tcp_flags;
+  bit [31:0] rcv_isn;
+  bit [31:0] last_seqno;
+  integer    data_type;
+  integer    data_seed;
+  integer gId;
+  integer chk_sum_location;
+  bit	[63:0]	options;
+  bit[15:0] llc_length;
+  integer LLC_HACK= 1;
+
+  // Assign the inputs here TMP only
+  flow_id = pack_db.flow.flow_no;
+  l2_da = pack_db.dst_node.l2_addr;
+  l2_sa = pack_db.src_node.l2_addr;
+  frame_type = pack_db.frame.frame_type;
+  tpid = pack_db.frame.tpid;
+  tci = pack_db.src_node.tci;
+  frame_class = pack_db.frame.frame_class;
+  data_length  = pack_db.data_length;
+  class_funct = pack_db.frame.class_funct;
+  frame_class_mask = pack_db.frame.class_mask;
+
+  header_length = pack_db.frame.header_length ;
+  ttl = pack_db.ttl;
+  spi = pack_db.src_node.spi;
+  nxthdr = pack_db.src_node.nxthdr;
+  tos = pack_db.src_node.tos;
+  type = pack_db.frame.type;
+  src_ipv6_addr = pack_db.src_node.ipv6_addr;
+  dst_ipv6_addr = pack_db.dst_node.ipv6_addr;
+  src_ip_addr = pack_db.src_node.ip_addr;
+  dst_ip_addr = pack_db.dst_node.ip_addr;
+  src_port  = pack_db.tup.src_tcp_udp_port;
+  dst_port = pack_db.tup.dst_tcp_udp_port;
+  tcp_flags = pack_db.fl_state.tcp_flags;
+  rcv_isn = pack_db.rx_param.rcv_isn;
+  //last_seqno = flow_db[flow_id].tx_param.last_seqno;
+
+data_type  = pack_db.frame.data_type;
+data_seed = pack_db.frame.data_seed;
+
+  gId = pack_db.gId;
+  options = pack_db.options;
+
+  // DONE Assign the inputs here
+
+
+
+  ptr=0;
+   // L2 address
+    '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+       buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = l2_da;
+    '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+       buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = l2_sa;
+
+      
+      if( frame_type[2] ) { // 802.1Q 18 bytes long header 
+        tagged = 1;
+        if( tpid != -1) // 
+          '{ buf.val[ptr++], buf.val[ptr++]} = tpid;		
+        else
+          '{ buf.val[ptr++], buf.val[ptr++]} = TPID_8021Q;	
+          '{ buf.val[ptr++], buf.val[ptr++]} = tci;
+      }
+
+
+
+      
+      if((frame_type[1] == 1) || (frame_type[4] == 1)) { // include ip header or tunneling options
+        if( frame_type[0] == 1) { // if LLC SNAP  IP Header
+          len = ptr;
+          ptr = ptr+2;	
+          if( check_option( pack_db.options, O_CUSTOM_LS) ) {
+            tmp32 = cfg_reg[CFG_CUST_LS];
+            '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++]} = tmp32[23:0];
+          } else
+          '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++]} = LLC_SNAP;
+           buf.val[ptr++] = H_UNDEF;
+           buf.val[ptr++] = H_UNDEF;
+           buf.val[ptr++] = H_UNDEF;
+          } else {
+           len = - 1;	
+        }
+        
+        if( frame_type[3] == 1 && frame_class < CL_TCP_OPT  ) // IPV6 Header
+          frame_class += DELTA;
+        
+        if( frame_type[3] == 0 ) {  // IPV4 Header
+
+          if ( (frame_type[0] == 1 ) &&  (frame_type[2] == 1 )) { // LLC_SNAP and 802.1Q Tagged 
+            l2_length = 26;
+          } else if (frame_type[2] == 1 ) { // ONLY  802.1Q Tagged
+            l2_length = 18;
+          } else if  (frame_type[0] == 1 ) { // ONLY LLC_SNAP
+            l2_length = 22;
+          } else{ // NONE of the above 
+            l2_length = 14;
+          }
+
+          ip_length = data_length -4 -(l2_length) ;
+	
+
+
+          pack_db.ipp.ip_hdr_len = ip_length;
+          printf("pg::gen_buf The IP length is %0h , ptr - %d \n", ip_length,ptr);
+
+          for( n=0; n<2; n++) {
+            buf.val[ptr++] = class_mask(  class_funct, l3_class[frame_class].val[n], l3_mask[frame_class_mask].val[n]  );
+	    }
+          // add header option field here
+	    buf.val[ptr] = class_mask(  class_funct, l3_class[frame_class].val[2],
+                                        l3_mask[frame_class_mask].val[2]  );
+           if((buf.val[ptr] & 8'h40) == 8'h40) { // if IPV4
+	       buf.val[ptr++]  = 8'h40 | (  header_length & 4'hf) ;
+            }
+
+          buf.val[ptr++] = tos; 
+          buf.val[ptr++] = ip_length[15:8];
+          buf.val[ptr++] = ip_length[7:0];
+          
+          for( n=6; n<12; n++) {
+	  // Fill in rest of the header bytes
+            buf.val[ptr++] = class_mask(  class_funct, l3_class[frame_class].val[n],
+                                        l3_mask[frame_class_mask].val[n]  );
+	 }
+
+	// This appears to be programmed by the user to override the automatically generated type field 
+         if(type != -1)	 // This should be moved up? ....
+            '{buf.val[ptr-14], buf.val[ptr-13]} = type;
+
+         // This should be moved up? ....
+         if(ttl != -1)	buf.val[ptr-2] = ttl; 
+
+            
+            
+            
+            '{buf.val[ptr++],buf.val[ptr++]} = 16'h0000; // 0s for header checksum
+            
+         '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = src_ip_addr;
+         '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = dst_ip_addr;
+
+	  // Add options here
+     
+	  header_len_w_options = ( (buf.val[ptr -20 /*14*/ ] & 8'h40 )== 8'h40) ?   header_length : 0;
+	  printf(" DEBUG-- header_len_w_options - %d buf value - %x  \n",header_len_w_options,buf.val[ptr -20 /*14*/ ] );
+
+          for(n=0;n< (4*header_len_w_options - 20); n++) {
+	    buf.val[ptr++] = 8'ha0 + n;
+	   // printf(" DEBUG-- ptr - %d val - %x \n",ptr,buf.val[ptr -1]);
+          }
+
+         tmp16_ipck = ipv4_cksum(buf,ptr);
+
+                
+	// Write back computed checksum
+        '{buf.val[ptr-10 - (4*header_len_w_options - 20) ],buf.val[ptr-9 - (4*header_len_w_options - 20) ]} = tmp16_ipck; 
+
+         if( frame_class == CL_IP_SEC_ESP) {
+             '{buf.val[ptr++],buf.val[ptr++],buf.val[ptr++],buf.val[ptr++]} = spi;
+             '{buf.val[ptr++],buf.val[ptr++]} = 16'h0000;
+             '{buf.val[ptr++],buf.val[ptr++]} = 16'h0000;
+             '{buf.val[ptr++],buf.val[ptr++]} = 16'h0000;
+             '{buf.val[ptr++],buf.val[ptr++]} = 16'h0000;
+         }
+         if( frame_class == CL_IP_SEC_AH) {
+             //buf.val[ptr++] = 8'h06;//Assumes TCP 
+             buf.val[ptr++] = nxthdr;
+             buf.val[ptr++] = 8'h03;//LenHdr-2 (32bit Words) 
+             '{buf.val[ptr++],buf.val[ptr++]} = 16'h0000;
+             '{buf.val[ptr++],buf.val[ptr++],buf.val[ptr++],buf.val[ptr++]} = spi;
+             '{buf.val[ptr++],buf.val[ptr++]} = 16'h0000;
+             '{buf.val[ptr++],buf.val[ptr++]} = 16'h0000;
+         }
+        }   // endif IPV4 packet
+        else if ( frame_type[3] == 1 ) {  // IPV6 Packet
+         // printf("pcg_fa.vr: Bulding IPv6 Packet \n");
+
+          if( (frame_type[2] == 1 ) && (frame_type[0] == 1)) {
+            l2_length = 26;
+          } else if  (frame_type[2] == 1 ) {  
+            l2_length = 18;
+          } else if  (frame_type[0] == 1 ) {
+            l2_length = 22;
+          } else{
+            l2_length = 14;
+          }
+                    ipv6_length = data_length - 40 -4 -(l2_length);
+
+          pack_db.ipp.ip_hdr_len = ipv6_length;
+
+          printf("pg::gen_buf The val of  ip_length is %0d\n",ipv6_length);
+          
+          for( n=0; n<2; n++)
+            buf.val[ptr++] = class_mask( class_funct,
+                                        l3_class[frame_class].val[n],
+                                        l3_mask[frame_class_mask].val[n] );
+
+          buf.val[ptr++] = {4'h6,tos[7:4]};
+          buf.val[ptr++] = {tos[3:0],4'h0};
+
+          for( n=4; n<6; n++)
+            buf.val[ptr++] = class_mask( class_funct,
+                                        l3_class[frame_class].val[n],
+                                        l3_mask[frame_class_mask].val[n] );
+
+
+
+          buf.val[ptr++] = ipv6_length[15:8];
+          buf.val[ptr++] = ipv6_length[7:0];
+
+          for( n=8; n<10; n++)
+            buf.val[ptr++] = class_mask( class_funct,
+                                        l3_class[frame_class].val[n],
+                                        l3_mask[frame_class_mask].val[n] );
+          
+          if(type != -1)
+            '{buf.val[ptr-10], buf.val[ptr-9]} = type;
+
+            
+            if(ttl != -1)	buf.val[ptr-1] = ttl; 
+
+            
+            '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+              buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+              buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+              buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = src_ipv6_addr;
+
+              '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+                buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = dst_ipv6_addr;
+
+                if( frame_class == CL_IP_V6_SEC_ESP) {
+                  
+                  '{buf.val[ptr++],buf.val[ptr++],buf.val[ptr++],buf.val[ptr++]} = spi;
+                  
+                  '{buf.val[ptr++],buf.val[ptr++]} = 16'h0000;
+                  '{buf.val[ptr++],buf.val[ptr++]} = 16'h0000;
+                  '{buf.val[ptr++],buf.val[ptr++]} = 16'h0000;
+                  '{buf.val[ptr++],buf.val[ptr++]} = 16'h0000;
+                }
+
+                if( frame_class == CL_IP_V6_SEC_AH) {
+                  
+                  buf.val[ptr++] = 8'h06;//Assumes TCP 
+                  buf.val[ptr++] = 8'h03;//LenHdr-2 (32bit Words) 
+                  '{buf.val[ptr++],buf.val[ptr++]} = 16'h0000;
+                  '{buf.val[ptr++],buf.val[ptr++],buf.val[ptr++],buf.val[ptr++]} = spi;
+                  
+                  '{buf.val[ptr++],buf.val[ptr++]} = 16'h0000;
+                  '{buf.val[ptr++],buf.val[ptr++]} = 16'h0000;
+                }
+        }    // endif IPV6 
+
+        printf("pg::gen_buf : Frame_class: %d frame_type - %x \n"  , frame_class,frame_type );
+
+        if( frame_class == CL_UDP           | frame_class == CL_UDP_OPT       | 
+           frame_class == CL_UDP_FRAG      |   frame_class == CL_UDP_IP_V6     |
+           frame_class == CL_UDP_OPT_IP_V6 | frame_class == CL_UDP_FRAG_IP_V6 ) {
+          
+
+          if ( frame_type[3] == 1 ) { // IPV6
+            udp_length = data_length - 40 -4 -(l2_length);           }
+          if( frame_type[3] == 0 ) { // IPV4
+                        udp_length = data_length - (4*header_len_w_options)  -4 -(l2_length); 	    // printf("DEBUG udp length - %d \n",udp_length); 
+          }
+
+          udp_psu_hdr = {src_ip_addr, dst_ip_addr, 8'h00,8'h17,udp_length};
+          udp_hdr_start = ptr ;
+          pack_db.psu_hdr= (udp_psu_hdr);
+          
+          '{ buf.val[ptr++], buf.val[ptr++] } = src_port;
+          '{ buf.val[ptr++], buf.val[ptr++] } = dst_port;
+
+
+          buf.val[ptr++] = udp_length[15:8];
+          buf.val[ptr++] = udp_length[7:0];
+
+          '{ buf.val[ptr++], buf.val[ptr++] } = 16'h00;
+
+        }/*endif CL_UDP*/ 
+           else if ( frame_class == CL_TCP       | frame_class == CL_TCP_OPT       | 
+                     frame_class == CL_TCP_FRAG      | frame_class == CL_TCP_IP_V6     |
+                     frame_class == CL_TCP_OPT_IP_V6 | frame_class == CL_TCP_FRAG_IP_V6  ) {
+          //printf("pcg_fa.vr: Adding TCP Header  \n");   
+
+          tcp_psu_hdr = {src_ip_addr, dst_ip_addr, 8'h00,8'h06,16'h0000};
+          pack_db.psu_hdr= (tcp_psu_hdr);
+          tcp_hdr_start = ptr ;
+
+          '{ buf.val[ptr++], buf.val[ptr++] } = src_port;
+          '{ buf.val[ptr++], buf.val[ptr++] } = dst_port;
+
+          if( tcp_flags == 2'h2 ) {  
+            '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = rcv_isn;
+          } else {
+            '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } =  flow_db[flow_id].tx_param.last_seqno;
+              flow_db[flow_id].rx_param.rcv_isn = flow_db[flow_id].tx_param.last_seqno;
+          }
+
+          if(frame_class != CL_TCP_OPT & frame_class != CL_TCP_OPT_IP_V6)
+          { cfg_reg[CFG_TCP_LEN] = 4'b0101; }
+          '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = cfg_reg[CFG_TCP_ACK];
+           tmp32[15:0] = {cfg_reg[CFG_TCP_LEN], 6'b000000, tcp_flags} ;
+          '{ buf.val[ptr++], buf.val[ptr++] } = tmp32[15:0];
+           tmp32 = cfg_reg[CFG_TCP_WIN];
+          '{ buf.val[ptr++], buf.val[ptr++] } = tmp32[15:0];
+            
+          '{ buf.val[ptr++], buf.val[ptr++] } = 16'h00;
+           tmp32 = cfg_reg[CFG_TCP_URG];
+          '{ buf.val[ptr++], buf.val[ptr++] } = tmp32[15:0];
+
+            //TCP option
+            if ( (cfg_reg[CFG_TCP_LEN] ) > 5 ) {
+              extra_tcp_hdr = (cfg_reg[CFG_TCP_LEN] - 5 ) * 4;  
+              pack_db.mac.extra_tcp_hdr = extra_tcp_hdr;
+              for ( n =0; n< extra_tcp_hdr; n++) { 
+                buf.val[ptr++] = 8'ha5; 
+              }
+            } else { 
+              extra_tcp_hdr = 0; 
+              pack_db.mac.extra_tcp_hdr = extra_tcp_hdr;
+            }
+        }    // endif CL_TCP*
+      }  // endif include ip header or tunneling option
+      else {
+        printf("pg::gen_buf : No L3 header selected\n");
+        if( frame_type[0] == 1) { // LLC_SNAP
+          len = ptr;	
+          ptr = ptr+2;
+          if( check_option( pack_db.options, O_CUSTOM_LS) ) {
+            tmp32 = cfg_reg[CFG_CUST_LS];
+            '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++]} = tmp32[23:0];
+          } else
+          '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++]} = LLC_SNAP;
+          buf.val[ptr++] = H_UNDEF;
+          buf.val[ptr++] = H_UNDEF;
+          buf.val[ptr++] = H_UNDEF;
+         '{buf.val[ptr++],buf.val[ptr++]} = 16'h0008;
+        } else { 
+          len = ptr;	
+          ptr = ptr+2;
+        }
+      } // endif else of include ip header 
+
+      he = ptr-1; // header length
+      tcp_length = data_length -he -4;
+      tcp_seg_len = data_length - ptr - 4;
+
+      if(data_type != DAT_FC_PAUSE)
+        '{buf.val[ptr++], buf.val[ptr++]} = gId;	
+
+      if(LLC_HACK & ( (pack_db.frame.frame_type== 5'h3 )| (pack_db.frame.frame_type== 5'h7) )) {
+         printf("gen_buf LLC_HACK!!! data_len - %d \n",pack_db.data_length);
+          if(pack_db.flow.frame.frame_type== 5'h3) {
+            llc_length = pack_db.data_length - 4/*CRC*/ - 12/*L2HEADERS*/ -2/*Type/Length*/ ;
+            buf.val[12] = llc_length[15:8];
+            buf.val[13] = llc_length[7:0];
+	  }
+          else {
+            llc_length = pack_db.data_length - 4/*CRC*/ - 12/*L2HEADERS*/ -4/*VLAN ID*/  -2/*Type/Length*/ ;
+            buf.val[16] = llc_length[15:8];
+            buf.val[17] = llc_length[7:0];
+	  }
+
+        }
+
+
+
+
+     /* Generate data payload */
+     data_gen(data_type, data_seed, data_length, buf, ptr, pack_db.options, this, tagged, INTER_FEDX);
+     // printf("DEBUG--- After data_gen len - %d \n",len);
+     // printf("DEBUG---type -  %d %d %d \n",type,ptr, he);
+
+     // Add L2 Length here
+     if( len > 0 ) {
+       if( check_option( pack_db.options, O_FRM_LEN_ERR1) )
+          '{buf.val[len], buf.val[len+1] } = cfg_reg[CFG_FRM_LEN];
+        else {
+           if(type == -1) {
+              '{buf.val[len], buf.val[len+1] } = ptr - (he+1);
+            } else
+            '{buf.val[len], buf.val[len+1] } = type;	
+          }
+      }
+
+     if( frame_class == CL_TCP | frame_class == CL_TCP_OPT | 
+         frame_class == CL_TCP_FRAG | frame_class == CL_TCP_IP_V6 |
+         frame_class == CL_TCP_OPT_IP_V6 | frame_class == CL_TCP_FRAG_IP_V6  ) {
+          
+	// Calculate TCP checksum
+          flow_db[flow_id].data_length = tcp_seg_len;
+          flow_db[flow_id].tx_param.last_seqno = (flow_db[flow_id].rx_param.rcv_isn) + flow_db[flow_id].data_length;
+
+          chk_sum_location = he-extra_tcp_hdr-3;
+
+          tmp16_tcpck = tcp_chksum(pack_db,buf,tcp_hdr_start,ptr,1, chk_sum_location );
+	  printf("gen_buf-- tcp_chksum - %x tcp_hdr_start - %d chk_sum_location - %d \n",tmp16_tcpck,tcp_hdr_start,chk_sum_location);
+
+          if( check_option( pack_db.options, O_TCPCKSUM_ERR) ){
+            tmp16_tcpck = tmp16_tcpck ^ cfg_reg[CFG_TCPCKSUM_MASK];
+          } 
+          '{buf.val[he-extra_tcp_hdr-3],buf.val[he-extra_tcp_hdr-2]} = tmp16_tcpck; 
+          pack_db.ipp.tcp_cksum = tmp16_tcpck;
+        } // C
+
+        if(frame_class == CL_UDP | frame_class == CL_UDP_OPT |
+           frame_class == CL_UDP_FRAG | frame_class == CL_UDP_IP_V6 |
+           frame_class == CL_UDP_OPT_IP_V6 | frame_class == CL_UDP_FRAG_IP_V6 ) {
+	// Calculate UDP checksum
+
+          chk_sum_location = he -1;
+          tmp16_udpck = tcp_chksum(pack_db,buf,udp_hdr_start,ptr,0,chk_sum_location);
+	  printf("gen_buf-- udp_chksum - %x udp_hdr_start - %d chk_sum_location - %d \n",tmp16_udpck,udp_hdr_start,chk_sum_location);
+
+          '{buf.val[he-1],buf.val[he-0]} = tmp16_udpck;
+        }
+
+        ip_hdr_start = l2_length ;
+
+        if (frame_type[1] == 1) { // IPV4 
+          tmp16_ipdck =ip_datagram_chksum(buf,ip_hdr_start,ptr);
+          pack_db.ipp.ip_datagram_cksum = tmp16_ipdck;
+        }
+
+	pack_db.add_header(buf,0,he);	 
+
+      if(LLC_HACK & ( (pack_db.frame.frame_type== 5'h3 )| (pack_db.frame.frame_type== 5'h7) )) {
+         printf("LLC_HACK!!! \n");
+          if(pack_db.flow.frame.frame_type== 5'h3) {
+            llc_length = pack_db.data_length - 4/*CRC*/ - 12/*L2HEADERS*/ -2/*Type/Length*/ ;
+            buf.val[12] = llc_length[15:8];
+            buf.val[13] = llc_length[7:0];
+	  }
+          else {
+            llc_length = pack_db.data_length - 4/*CRC*/ - 12/*L2HEADERS*/ -4/*VLAN ID*/  -2/*Type/Length*/ ;
+            buf.val[16] = llc_length[15:8];
+            buf.val[17] = llc_length[7:0];
+	  }
+        }
+
+        tmp32 = crc_gen(buf, 0, ptr);
+
+	if( check_option( pack_db.options, O_CRC_ERR) )	tmp32 = tmp32 ^ cfg_reg[CFG_CRC_MASK];
+	'{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = tmp32;
+
+	pack_db.pack_crc = tmp32;
+	pack_db.frame_len = ptr;
+	// printf(" end of  gen_buf - ptr -   %d \n",ptr);
+}  
+
+
+
+function bit [15:0] pg::ipv4_cksum( byte_array m, integer len){
+
+  integer i,j;
+  bit [15:0] tmp[];
+  bit [31:0] cksum;
+
+  j = len -20;
+  cksum = 0;
+
+  printf ("pg::ipv4_cksum: The val of len is %d\n",len);
+  for (  i=j; i< (j+20); i=i+2) {
+    tmp[i] = {m.val[i], m.val[(i+1)]};
+    // printf("The val of buffer is %0h\n",tmp[i]);
+    cksum = cksum + tmp[i];
+
+    if (cksum[16] ==1) {
+      cksum =  cksum[15:0] + 1;
+    }
+  }
+
+
+  ipv4_cksum = ~cksum;
+  printf(" pg::ipv4_cksum: chksum - %x \n",ipv4_cksum);
+
+}
+
+function bit [15:0] pg::ip_datagram_chksum(  byte_array d, \
+                                           integer start, integer len){
+
+  integer i,j,k;
+  bit [15:0] tmp[];
+  bit [31:0] ipsum;
+  integer ip_len;
+  integer pad;
+
+  ip_len =  len - start;
+
+  ipsum  =  0;
+
+
+  printf ("pg::ip_datagram_chksum: The val of ip hdr start and len is %0d and %0d\n", start,len);
+
+  if (ip_len %2 != 0) {
+    pad =1;
+  }else {
+    pad  = 0;
+  }
+
+  for (i=start;i<len+pad;i=i+2) {
+    d.val[len]  =  0;
+    tmp[i] = {d.val[i],d.val[i+1]}; 
+    ipsum = ipsum  +  tmp[i];
+    //printf("The val of buffer is %0h\n",tmp[i]);
+    //printf("The val of sum of payld is is %0h\n",ipsum);
+
+    if (ipsum[16] ==1) {
+      ipsum =  ipsum[15:0] + 1;
+    }
+  }
+  ip_datagram_chksum = ~ipsum;
+
+  printf("pg::ip_datagram_chksum: The val of IP Datagram Checksum is %0h \n",ip_datagram_chksum);
+
+}
+
+
+function bit [15:0] pg::tcp_chksum( pack_db_entry pack_db, byte_array d, integer start, integer len, integer pkt_type, integer chk_sum_location ){
+
+  integer i,j,k;
+  bit [15:0] tmp[];
+  bit [15:0] tmp0[];
+  bit [15:0] tmp1[];
+  bit [15:0] sum_hdr;
+  bit [31:0] ip_src_sum;
+  bit [31:0] ip_dst_sum;
+  bit [127:0] ipv6_src;
+  bit [127:0] ipv6_dst;
+  bit [31:0] tcp_proto_sum;
+  bit [95:0] psu_hdr;
+  bit [31:0] sum;
+  integer tcp_len;
+  integer pad;
+
+  integer partial_chksum;
+
+
+   partial_chksum = pack_db.flow.partial_chksum;
+ 
+   if(partial_chksum) {
+    d.val[chk_sum_location] = pack_db.flow.psu_hdr[0];
+    d.val[chk_sum_location + 1] = pack_db.flow.psu_hdr[1];
+    printf("  pg::tcp_chksum partial checksum location - %d hdr[0]- %x hdr[1] - %x \n",chk_sum_location,pack_db.flow.psu_hdr[0],pack_db.flow.psu_hdr[1]);
+    sum  =  partial_cksum( d,start,len );
+    printf("  pg::tcp_chksum partial checksum - %x \n",sum);
+   } else {
+
+      tcp_len =  len - start;
+      sum  =  0;
+      printf("pg::tcp_chksum start - %d len - %d \n",start,len);
+
+      if (pack_db.frame.frame_type[3] == 0){
+        psu_hdr = {pack_db.src_node.ip_addr, pack_db.dst_node.ip_addr, 8'h00,8'h06,16'h0000};
+    // printf("The val of psu header is %0h\n",psu_hdr);
+     }
+     if (tcp_len %2 != 0) {
+       pad =1;
+     }else {
+      pad  = 0;
+     }
+
+     for (i=start;i<len+pad;i=i+2) {
+       d.val[len]  =  0;
+       tmp[i] = {d.val[i],d.val[i+1]}; 
+       sum = sum  +  tmp[i];
+       if (sum[16] ==1) {
+        sum =  sum[15:0] + 1;
+       }
+     }
+     if (pack_db.frame.frame_type[3] == 0){
+       ip_src_sum =  pack_db.src_node.ip_addr[15:0] + pack_db.src_node.ip_addr[31:16];
+     if (ip_src_sum[16] ==1) {
+      ip_src_sum =  ip_src_sum[15:0] + 1;
+    }
+    sum = sum + ip_src_sum;
+    if (sum[16] ==1) {
+      sum =  sum[15:0] + 1;
+    }
+    ip_dst_sum = pack_db.dst_node.ip_addr[15:0] + pack_db.dst_node.ip_addr[31:16];  
+    if (ip_dst_sum[16] ==1) {
+      ip_dst_sum =  ip_dst_sum[15:0] + 1;
+    }
+    sum = sum + ip_dst_sum;
+    if (sum[16] ==1) {
+      sum =  sum[15:0] + 1;
+    }
+    if(pkt_type == 1)
+       {
+        tcp_proto_sum  = 16'h0006 +  tcp_len;
+       }
+    else
+       {
+        tcp_proto_sum  = 16'h0011 +  tcp_len;
+       }
+
+    if (tcp_proto_sum[16] ==1) {
+      tcp_proto_sum =  tcp_proto_sum[15:0] + 1;
+    }
+
+    sum = sum + tcp_proto_sum;
+
+    if (sum[16] ==1) {
+      sum =  sum[15:0] + 1;
+
+    }
+    //printf("The val of sum of payld & tcp_proto is is %0h\n",sum);
+
+  }
+
+  if (pack_db.frame.frame_type[3] == 1){
+
+
+    ipv6_src =  pack_db.src_node.ipv6_addr;
+    ipv6_dst =  pack_db.dst_node.ipv6_addr;
+
+    //printf("The val of ipv6 src  is %0h\n", ipv6_src );
+
+
+
+    j = 127;
+
+    for ( k= 0 ; k < 8; k++ ) { 
+      tmp0[k] = {ipv6_src[j:j-7], ipv6_src[j-8:j-15]};   
+      //printf("The val of src buffer is %0h\n",tmp0[k]);
+      sum = sum + tmp0[k]; 
+      if (sum[16] ==1) {
+        sum =  sum[15:0] + 1;
+
+      }
+      j = j -16 ;
+
+    }
+
+    //printf("The val of sum at src  is %0h\n", sum);
+    j = 127;
+
+    for ( k= 0 ; k < 8; k++ ) { 
+      tmp1[k] = {ipv6_dst[j:j-7], ipv6_dst[j-8:j-15]};   
+      //printf("The val of dst buffer is %0h\n",tmp1[k]);
+      sum = sum + tmp1[k]; 
+      if (sum[16] ==1) {
+        sum =  sum[15:0] + 1;
+
+      }
+
+      j = j -16 ;
+    }
+
+    //printf("The val of sum at dst  is %0h\n", sum);
+
+
+    if (pkt_type == 1) {
+      tcp_proto_sum  = 16'h0006 + tcp_len;
+    } else { 
+      tcp_proto_sum  = 16'h0011 + tcp_len;
+    }
+    
+
+    if (tcp_proto_sum[16] ==1) {
+      tcp_proto_sum =  tcp_proto_sum[15:0] + 1;
+    }
+
+    sum = sum + tcp_proto_sum;
+
+    if (sum[16] ==1) {
+      sum =  sum[15:0] + 1;
+    }
+  }
+
+  
+  // printf("The val of start and len are %0d and %0d\n",start,len);
+
+  // printf("The FINAL val of sum   is %0h\n", sum);
+
+  }
+  tcp_chksum = ~sum;
+
+}
+
+task pg::pkt_gen( flow_desc flow, integer data_length, integer ttl, var CpgToken pgToken, 
+                 (bit[63:0] options=0) ){
+
+  integer time_out = 0;
+  
+  integer current_flow_num;
+  integer flow_id;
+  pack_db_entry pack_db;
+  integer id;
+  integer token;
+  byte_array tmpbuf;
+  printf("pg::pkt_gen called Time - %d \n", {get_time(HI),get_time(LO)});
+  semaphore_get(WAIT,pkt_gen_lock,1);
+  printf("pg::pkt_gen after sem called Time - %d \n", {get_time(HI),get_time(LO)});
+
+  // sync(ALL,pkt_gen_lock);
+  // trigger(OFF,pkt_gen_lock);
+
+  current_flow_num = flow.flow_no; 
+
+  
+
+  if(my_port > 15 ) {
+    printf("pg::pkt_gen: WARNING: PG: Port %0d is invalid (only used to satisfy fflp testsuite).\n",my_port);
+    printf("pg::pkt_gen:              No action is taken.\n");
+    return;
+  }
+
+  pckt_num++;
+  token = pckt_num; // TOADS
+
+  if (flow.fl_state.tcp_flags == 6'h02)
+    new_flow++;
+
+
+  case({	check_option(options, O_ORDER_START),
+    check_option(options, O_ORDER_CONT),
+    check_option(options, O_ORDER_END)	}) {
+    3'b100:	order_seq = 0;
+    3'b010:	order_seq++;
+    3'b001:	order_seq++;
+  }
+
+  if(flow.src_node.src_port[my_port] != 1) {
+    print_warn();
+    printf("pg::pkt_gen PG: Specified src_node may not be used as source for this port. Continuing anyway ...\n");
+  }
+
+
+  pack_db = new(pckt_num ); 
+  pack_db.preamble_cnt = flow.preamble_cnt;
+  pack_db.sfd = flow.sfd;
+  // printf("DEBUG pack_db.options - %x preamble_cnt - %d sfd - %d \n",pack_db.options,pack_db.preamble_cnt,pack_db.sfd);
+
+  pg_done = 0;
+  id = pack_db.add(my_port, flow, flow.frame, flow.src_node, flow.dst_node, flow.tup, flow.rx_param, flow.tx_param, flow.fl_state, data_length,ttl, options | flow.options , order_seq,
+                   pckt_num, ifedx_control);
+  pack_db.port_type = port_type;
+  if( pack_db.fl_state.tcp_flags == 2'h2 ) {
+    // TOADS
+    flow_db_add_entry( my_port, data_length, flow, flow.tup, flow.rx_param, flow.tx_param, flow.fl_state, options, current_flow_num );
+  }
+  if(debug_db_in)	display_db(pack_db);
+  wait_send_fake=0;
+
+  
+  // TOADS---
+  printf("Before  mailbox_put mb_q - time - %d \n",{get_time(HI),get_time(LO)});
+
+  mailbox_put(mb_q, pack_db); 
+
+  printf("pg::pkt_gen: Waiting for packet to go out ...(port type: %h), token# %0d\n",port_type, token);
+  printf("pg::pkt_gen: Waiting for packet to go out wait_send_fake - %d Time - %d \n",wait_send_fake,{get_time(HI),get_time(LO)});
+  printf("pg::pkt_gen: Waiting for packet to go oui options  - %d Time - %d \n", pack_db.options,{get_time(HI),get_time(LO)});
+  
+
+  if( check_option( pack_db.options, O_WAIT_SEND_FAKE) ) {
+    while(wait_send_fake==0)	@(posedge CLOCK);
+  }
+
+
+
+  if( check_option( pack_db.options, O_WAIT_SEND) ) {
+
+    fork
+      while(time_out<10000) {
+        wait_rx_clk(1);
+        time_out++;
+      }
+
+      while(pg_done!=1)	@(posedge CLOCK);
+    join any
+    printf("pg::pkt_gen: before terminate timeout - %d pg_done - %d \n",time_out,pg_done);
+
+    terminate;
+
+
+    if(pg_done!=1) {
+      pg_done=1;
+      print_warn();
+      printf("PG: Timed out waiting for done bit (waited %0d cycles)...\n",time_out);
+      printf("    This only happens with fake ports when we wait for someone\n");
+      printf("    to acknowladge that the packet was processed (Port: %0d).\n",my_port);
+      printf("    Token: %0d, Time: %0d\n",token,{get_time(HI),get_time(LO)});
+    }
+
+  }
+
+  
+  pgToken = new (id);
+  pgToken.pack_db = new pack_db;
+  pgToken.port_id = my_port;
+  mailbox_get(WAIT,pkt_gen_sync,tmpbuf);
+  pgToken.buf = new tmpbuf;
+  // display_buf(pgToken.buf,data_length);
+
+  // printf(" in pkt_gen -- length - %d \n", pack_db.header_len[0]);
+  printf("pg::pkt_gen: Waiting End of pkt_gen !!! Time - %d \n",{get_time(HI),get_time(LO)});
+  // trigger(ON,pkt_gen_lock);
+  semaphore_put(pkt_gen_lock,1);
+}
+
+function byte_array pg::new_gen_buf(pack_db_entry pack_db, var bit[31:0] pkt_fields[*]){
+
+   bit [7:0] payload[*];
+   integer i,size;
+   CPgIf cPg;
+   integer len;
+   byte_array buf;
+
+   cPg = new();
+   len = pack_db.data_length;
+   printf("byte_array pg::new_gen_buf function id - %d  !! Time - %d \n",my_port,{get_time(HI),get_time(LO)});
+
+    cPg.genPacket(0,len, pack_db.flow, payload,pkt_fields);
+    buf = new();
+    for( i = 0; i < len + pack_db.flow.frame.l2_pad_length;i++) {
+       buf.val[i] = payload[i] & 8'hff;
+       // printf(" PKT buf - %x index - %d \n", buf.val[i],i);
+     }
+ new_gen_buf = buf;
+}
+task pg::pkt_auto_tx() {
+  integer		len;		 
+  byte_array	buf;		 
+  integer		token;		 
+  pack_db_entry pack_db;
+  event lock_send_packet;
+  CpgToken pgToken;
+  byte_array tmpbuf;
+  bit[31:0] pkt_fields[*] ;
+
+  integer i;
+
+  trigger(ON,lock_send_packet);
+
+
+  while(1) {
+
+    sync(ALL,lock_send_packet);
+    trigger(OFF,lock_send_packet);
+   printf(" Before mailbox_get mb_q Time - %d \n",{get_time(HI),get_time(LO)} );
+
+    mailbox_get(WAIT, mb_q, pack_db);
+   printf(" After mailbox_get mb_q Time - %d \n",{get_time(HI),get_time(LO)} );
+    if(debug_db_out)	display_db(pack_db);
+
+    buf = new();
+    // gen_buf( pack_db, buf, len );
+     len = pack_db.data_length + pack_db.flow.frame.l2_pad_length;
+     buf = new_gen_buf(pack_db,pkt_fields);
+
+    wait_send_fake=1;
+
+    pgToken = new (pack_db.gId);
+    pgToken.pack_db = new pack_db;
+    pgToken.port_id = my_port;
+    pgToken.pkt_fields = new[SIZE_OF_PKT_FIELDS];
+    for(i=0;i<SIZE_OF_PKT_FIELDS;i++) {
+     pgToken.pkt_fields[i] = pkt_fields[i];
+    }
+   
+    tmpbuf = new buf;
+    mailbox_put(pkt_gen_sync,tmpbuf);
+
+
+
+    if( !check_option( pack_db.options, O_NO_OUT_TOKEN) ) {
+      if(debug_out_token)
+      printf("pg::pkt_auto_tx: INFO: PG[%0d]: Sending token (%0d) to outgoing mailbox. (Time: %d)\n", my_port, token, {get_time(HI),get_time(LO)} );
+      mailbox_put(mbox_id.pg_mb[my_port], pgToken); 
+    }
+
+
+    printf("pg::pkt_auto_tx:pg[%0d]: Transmitting packet ...\n",my_port);
+    // printf("options fake out: %d\n",check_option( pack_db.options, O_FAKE_OUT) );
+    if( !(check_option( pack_db.options, O_FAKE_OUT )) & !port_type[2] ) {
+      printf("pg::pkt_auto_tx:INFO: PG[%0d]: Sending out packet token:%0d at time %0d \n",my_port,pack_db.gId , {get_time(HI),get_time(LO)}); 
+// HACK HACK HACK
+      
+     if( check_option(pack_db.options, O_PREAMB_ERR) )     cfg_reg[CFG_PRAMB_CNT] = pack_db.preamble_cnt;
+     if( check_option(pack_db.options, O_SFD_ERR) )        cfg_reg[CFG_SFD_TOKEN] = pack_db.sfd;
+  // printf("DEBUG pack_db.options - %x preamble_cnt - %d sfd - %d \n",pack_db.options,cfg_reg[CFG_PRAMB_CNT],cfg_reg[CFG_SFD_TOKEN]);
+
+
+      send_packet(port_type, buf, len, pack_db.options);
+      pg_done = 1;
+      
+      // printf("pg::pkt_auto_tx:INFO: PG[%0d]: Packet token %0d sent done at time=%0d  \n",my_port, token,{get_time(HI),get_time(LO)});
+    }
+    printf("pg::pkt_auto_tx:pg[%0d]: Done Transmitting packet ...\n",my_port);
+    trigger(ON,lock_send_packet);
+  }
+}
+
+
+task pg::build_frame(integer itoken,pack_db_entry pack_db, byte_array buf, var integer len,(integer header_id=-1),(integer new_crc=0)) {
+  integer n;
+  integer ptr=0;
+  integer tagged = 0;
+  integer my_port, org_port;
+  bit [31:0] tmp32;
+  integer data_len, header_len;
+  integer debug = 0;
+  integer token;
+  integer adj_len=0;
+  integer min,max;
+  bit     [15:0] tx_status;
+  integer LLC_HACK = 1;
+  bit[15:0] llc_length;
+
+  tmp32 = itoken;
+  token = tmp32[25:0];
+
+  if(debug)
+    printf("DEBUG: build_frame: Started Build-Frame. (Input: Token: %0d, Len: %0d Hdr: %0d, NewCRC: %0d Port: %0d)\n", 
+           token,len,header_id,new_crc,my_port);
+  // display_db(pack_db);
+  // printf(" data_len from build_frame - %d \n",pack_db.data_length);
+
+  my_port  = pack_db.org_port;
+  org_port = pack_db.org_port;
+  if(header_id != -1)	my_port = header_id;
+
+
+
+  if(debug)	printf("DEBUG: build_frame: (1)ptr: %0d\n",ptr);
+  // printf(" in build frame header_d - %d \n",header_id);
+
+  if(header_id==-1) {
+    header_len = pack_db.header_len[ pack_db.use_hdr ];
+    // printf(" in build frame header_len - %d use_header - %d \n",header_len,pack_db.use_hdr);
+
+    for(n=0;n< header_len ;n++)
+      buf.val[ptr++] = pack_db.header[ pack_db.use_hdr ].val[n];
+  } else {
+
+#define out_use_header pack_db.out_header[header_id].use_header
+
+    if(  assoc_index(CHECK,pack_db.out_header,header_id) &
+       assoc_index(CHECK,pack_db.out_header[header_id].header, out_use_header) )  {
+
+      header_len = pack_db.out_header[header_id].header_len[ out_use_header ];
+      // printf(" in build frame header_len - %d \n",header_len,out_use_header);
+
+      for(n=0; n < header_len ; n++)
+        buf.val[ptr++] =pack_db.out_header[header_id].header[out_use_header].val[n];
+    } else {
+      printf("pg::build_frame: ERROR: PG LIB: build_frame: out header invalid. (Token:%0d, Out header id: %0d).\n",
+             token,header_id);
+      len = 0;
+      buf = null;
+      return;
+    }
+  }
+
+  if(debug)  printf("DEBUG: build_frame: header_len: %0d\n",header_len);
+  if(debug)	printf("DEBUG: build_frame: (2)ptr: %0d\n",ptr);
+
+
+  if(pack_db.frame.data_type != DAT_FC_PAUSE)
+    '{buf.val[ptr++], buf.val[ptr++]} = token;  // Store token in payload
+
+
+    if(pack_db.org_port<17 & my_port>16)	adj_len += 6;
+    if(pack_db.org_port>16 & my_port<17)	adj_len -= 6;
+
+    if(debug)	printf("DEBUG: build_frame: adj_len: %0d\n",adj_len);
+
+
+    if( pack_db.frame.frame_type[2] )	tagged = 1;
+
+    if(debug)   printf("DEBUG: build_frame: (3)ptr: DAT_LEN_EXACT: %0d\n",
+                       check_option(pack_db.frame.data_type, DAT_LEN_EXACT) );
+
+
+    if(pack_db.data_length<0) {
+
+      case(pack_db.data_length) {
+        -1:  pack_db.data_length = 64;
+        -2:  pack_db.data_length = 128;
+        -3:  pack_db.data_length = 256;
+        -4:  pack_db.data_length = 512;
+        -5:  pack_db.data_length = 1024;
+        -6:  pack_db.data_length = (tagged) ? 1522 : 1518;
+        -7:  {
+          //               pack_db.data_length = random(pack_db.frame.data_seed); // Vera supports only one random
+          
+          pack_db.data_length = random();
+          min = 64;
+          max = (tagged) ? 1522 : 1518;
+          while(pack_db.data_length<min | pack_db.data_length>max)
+            pack_db.data_length = random();
+        }
+        -8:  pack_db.data_length = 63;
+        -9:  pack_db.data_length = 65;
+        -10: pack_db.data_length = (tagged) ? 1521 : 1517;
+        -11: pack_db.data_length = (tagged) ? 1523 : 1519;
+      }
+
+      pack_db.frame.data_type = pack_db.frame.data_type | DAT_LEN_EXACT;
+    }
+
+
+    if( check_option(pack_db.frame.data_type, DAT_LEN_EXACT) ) {
+
+      // Convert exact length to actual data length, clear exact flag and use that data length from now on.
+      //    data_len = pack_db.data_length + header_len - pack_db.header_len[0] + adj_len;
+
+      data_len = pack_db.data_length - header_len - 4;	// data_len - header_len - crc_len
+
+
+      if(INTER_FEDX)	data_len = data_len - 6;
+
+      pack_db.data_length = data_len;
+      pack_db.frame.data_type = pack_db.frame.data_type & DAT_TYPE_MASK;
+    }
+    else
+      data_len = pack_db.data_length;
+
+
+    if(debug)	printf("DEBUG: build_frame: (3)ptr: %0d\n",ptr);
+    if(debug)	printf("DEBUG: build_frame: data_len: %0d\n",data_len);
+
+      if(LLC_HACK & ( (pack_db.frame.frame_type== 5'h3 )| (pack_db.frame.frame_type== 5'h7) )) {
+         printf(" build_frame LLC_HACK!!! data_len - %d  \n",pack_db.data_length);
+          if(pack_db.flow.frame.frame_type== 5'h3) {
+            llc_length = ( pack_db.data_length + header_len + 4)  - 4/*CRC*/ - 12/*L2HEADERS*/ -2/*Type/Length*/ ;
+            buf.val[12] = llc_length[15:8];
+            buf.val[13] = llc_length[7:0];
+	  }
+          else {
+            llc_length = ( pack_db.data_length + header_len + 4) - 4/*CRC*/ - 12/*L2HEADERS*/ -4/*VLAN ID*/  -2/*Type/Length*/ ;
+            buf.val[16] = llc_length[15:8];
+            buf.val[17] = llc_length[7:0];
+	  }
+        }
+
+    if( pack_db.frame.frame_type[2] )	tagged = 1;
+    data_gen(	pack_db.frame.data_type,
+             pack_db.frame.data_seed,
+             data_len,
+             buf, ptr, pack_db.options, this, tagged, INTER_FEDX);
+
+    if(debug)	printf("DEBUG: build_frame: (4)ptr: %0d\n",ptr);
+
+
+
+    if(INTER_FEDX)
+      tmp32 = crc_gen(buf, 2, ptr);   // Skip Interfedx Control Word
+    else
+      tmp32 = crc_gen(buf, 0, ptr);
+
+
+    if( check_option( pack_db.options, O_CRC_ERR) ) 
+      tmp32 = tmp32 ^ cfg_reg[CFG_CRC_MASK];
+
+
+    if(!new_crc)
+      '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = pack_db.pack_crc;
+    else {
+      if ( (org_port==17) | (org_port==18) ) {
+        if(INTER_FEDX)  { 
+          '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = pack_db.pack_crc;
+        }
+        else {
+
+          tx_status = pack_db.mac.tx_status;
+
+          if(tx_status[14])
+            '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = pack_db.pack_crc;
+          else '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = tmp32;
+        }
+      }   //end of if ( (org_port==17) | (org_port==18) )
+      else {
+        if(INTER_FEDX)  
+          '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = pack_db.pack_crc;
+        else '{ buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } = tmp32;
+      }
+    }
+
+
+    if(debug)	printf("DEBUG: build_frame: (5)ptr: %0d\n",ptr);
+    if(debug)	printf("DEBUG: build_frame: Done.\n");
+    len = ptr;
+
+    // display_buf( buf,len);
+}
+
+
+task pg::data_gen(integer type, integer seed, integer len, byte_array buf, var integer offset, bit[63:0] options,
+                  pg my_root, integer tagged, integer ifedx) {
+  integer min,max,n,o,b,l;
+  bit [15:0] tmp16;
+  bit [7:0] tmp8,s;
+  integer exact_len;
+  CpgRandom pg_random;
+  integer	debug_dg = 0;
+
+  if(debug_dg)	printf("DEBUG: pg::data_gen: input: type: %0d (%h), len: %0d, offset: %0d, tagged: %0d, ifedx: %0d\n",
+                       type,type,len,offset,tagged,ifedx);
+
+
+  exact_len = (type & DAT_LEN_EXACT) ? 1 : 0;
+  exact_len = ptr_to_first_pg.check_option(type, DAT_LEN_EXACT);
+  type = type & DAT_TYPE_MASK;
+
+  if(len<0)	exact_len = 1;
+
+  case(len) {
+    -1:	len = 64;
+    -2:	len = 128;
+    -3:	len = 256;
+    -4:	len = 512;
+    -5:	len = 1024;
+    -6:	len = (tagged) ? 1522 : 1518;
+    -7:	{
+      //			len = random(seed);
+      len = random();
+      min = 64;
+      max = (tagged) ? 1522 : 1518;
+      while(len<min | len>max)	len = random();
+    }
+    -8:	len = 63-offset-4;
+    -9:	len = 65-offset-4;
+    -10:	len = (tagged) ? 1521 : 1517;
+    -11:	len = (tagged) ? 1523 : 1519;
+  }
+
+  if(exact_len)	{
+    len = len-offset-4;
+    if(ifedx)	len = len - 4;
+  } else		len = len - 2;		 
+
+  if(len<0) {
+    len = 0;
+    if(!quiet_on) printf("PG[%0d]: WARNING: Data length (payload) is zero.\n",my_port);
+     be_msg.print(e_mesg_error, "pg::date_gen", "", "PG[%0d]:  Data length (payload) is zero TESTBENCH ERROR \n", my_port);
+    
+  }
+
+  o=offset;	 
+  b = seed;
+
+  if( my_root != null & check_option(options, O_FRM_LEN_ERR2) )
+    len = cfg_reg[CFG_FRM_LEN] - offset -4;
+
+  if(debug_dg)	printf("DEBUG: pg::data_gen: offset: %0d, len: %0d type: %0d\n",o,len,type);
+
+  l = 1;
+  case(type) {
+    DAT_RAND:{
+      sync(ALL,pg_random_event);
+      trigger(OFF,pg_random_event);
+      pg_random = new(seed);
+      for(n=0;n<len;n++){
+          buf.val[offset++]= pg_random.nextdata();
+        }
+      trigger(ON,pg_random_event);
+      }
+
+    DAT_SEQ:	 
+      for(n=0;n<len;n++)	{
+        
+        buf.val[offset++]=seed++;
+      }
+
+    DAT_W1: 	 
+      for(n=0;n<len;n++) {
+        tmp8 = 0;
+        tmp16=n;
+        if(l==1) {
+          l=0;	
+          if(b<8)	tmp8[7-b++] = 1;
+          s = tmp8;
+        } else {
+          l=1;	
+          if( s==0 )
+            if(b>7)	tmp8[15-b++] = 1;
+        }
+        if(b>15)        b = 0;
+        buf.val[offset++] = tmp8;
+      }
+    DAT_W0: 	 
+      for(n=0;n<len;n++) {
+        tmp8 = 8'hff;
+        if(l==1) {
+          l=0;	
+          if(b<8)	tmp8[7-b++] = 0;
+          s = tmp8;
+        } else {
+          l=1;	
+          if( s==8'hff )
+            if(b>7)	tmp8[15-b++] = 0;
+        }
+        if(b>15)        b = 0;
+        buf.val[offset++] = tmp8;
+      }
+    DAT_FC_PAUSE:	 
+    {
+      len = 64-offset-4;
+      o = offset;
+      for(n=0;n<len;n++)	buf.val[offset++] = 0;
+      '{buf.val[o++], buf.val[o++]} = FC_PAUSE_OPCODE;
+      '{buf.val[o++], buf.val[o++]} = seed;	 
+    }
+    DAT_FC_PAUSE_ERR:	 
+    {
+      bit [15:0] tmp16 = cfg_reg[CFG_CRC_MASK];
+      len = 64-offset-4;
+      o = offset;
+      for(n=0;n<len;n++)	buf.val[offset++] = 0;
+      '{buf.val[o++], buf.val[o++]} = FC_PAUSE_OPCODE ^ tmp16;
+      '{buf.val[o++], buf.val[o++]} = seed;	 
+    }
+    DAT_ALL0: 	 
+    {
+      for(n=0;n<len;n++)	{
+        
+        buf.val[offset++]=8'hff;
+      }
+    }
+    DAT_ALL1: 	 
+    {
+      for(n=0;n<len;n++)	{
+        
+        buf.val[offset++]=8'h00;
+      }
+    }
+    default:
+    {
+      print_err();
+      printf("pg::data_gen: invalid type (%0d)\n",type);
+    }
+  }
+
+  if(debug_dg & 0)
+    for(n=0;n<len;n++)
+      printf("pg::data_gen: buf[%0d]: %h\n",o+n,buf.val[o+n]);
+}
+
+
+
+function bit [31:0] pg::crc32_add(bit [7:0] data, bit [31:0] crc) {
+  bit feedback;
+  integer i;                    
+
+  for(i=0;i<8;i=i+1) begin
+    
+    
+    feedback    = crc[31] ^ data[i]; 
+    crc[31:27] = crc[30:26]; 
+    crc[26] = crc[25] ^ feedback;
+    crc[25] = crc[24];
+    crc[24] = crc[23];
+    crc[23] = crc[22] ^ feedback;
+    crc[22] = crc[21] ^ feedback;
+    crc[21:17] = crc[20:16];
+    crc[16] = crc[15] ^ feedback;
+    crc[15:13] = crc[14:12];
+    crc[12] = crc[11] ^ feedback;
+    crc[11] = crc[10] ^ feedback;
+    crc[10] = crc[9] ^ feedback;
+    crc[9] = crc[8];
+    crc[8] = crc[7] ^ feedback;
+    crc[7] = crc[6] ^ feedback;
+    crc[6] = crc[5];
+    crc[5] = crc[4] ^ feedback;
+    crc[4] = crc[3] ^ feedback;
+    crc[3] = crc[2];
+    crc[2] = crc[1] ^ feedback;
+    crc[1] = crc[0] ^ feedback;
+    crc[0] = feedback;
+  end
+
+  crc32_add = crc;
+
+}
+
+function integer pg::check_option(bit [63:0] option, bit [63:0] flag) {
+  if((option[63:0] & flag[63:0]) > 64'h0)	check_option = 1;
+  else					check_option = 0;
+}
+
+
+function bit [7:0] pg::class_mask(integer funct, bit[7:0] a, bit[7:0] b) {
+  case(funct) {
+    CLF_SRC: class_mask = a;
+    CLF_DST: class_mask = b;
+    CLF_OR:  class_mask = a && b;
+    CLF_AND: class_mask = a || b;
+    default: class_mask = 8'h00;
+  }
+}
+
+
+
+
+
+task pg::send_packet(bit [3:0] ptype, byte_array buf, integer len, bit [63:0] options) {
+  integer n;
+
+  case(my_port) {
+    0:	{
+      if (port_speed == 4)
+        send_packet_xgmii (xgm0,ptype, buf, len, options);
+      else if (port_speed == 3)
+        send_packet_gmii (gm0, ptype, buf, len, options);
+      else 
+        send_packet_mii (m0,ptype, buf, len, options);
+    }
+
+    1:	{ 
+      if (port_speed == 4)
+        send_packet_xgmii (xgm1,ptype, buf, len, options);
+      else if (port_speed == 3)
+        send_packet_gmii (gm1, ptype, buf, len, options);
+      else 
+        send_packet_mii (m1, ptype, buf, len, options);
+    }
+    2:	{
+      if (port_speed == 3)
+        send_packet_gmii (gm2, ptype, buf, len, options);
+      else 
+        send_packet_mii (m2, ptype, buf, len, options);
+    }
+    3:	{ 
+      if (port_speed == 3)
+        send_packet_gmii (gm3, ptype, buf, len, options);
+      else 
+        send_packet_mii (m3, ptype, buf, len, options);
+    }
+
+  }
+}
+
+
+task pg::assert_col_tx (mii_def port_bind, bit [63:0] options) {
+  integer itmp;
+  
+  
+  while(rxdv_set == 0)	@(posedge port_bind.$rxclk);
+
+  
+  
+  if( check_option( options, O_RX_COL) & cfg_reg[CFG_COL_LEN]>0 & !tx_done ) {
+    itmp = cfg_reg[CFG_COL_DEL];
+    while(itmp>0 & !tx_done) {
+      itmp--;
+      @(posedge port_bind.$rxclk);
+    }
+    port_bind.$rxcol = 1 async;
+    itmp = cfg_reg[CFG_COL_LEN];
+    while(itmp>0 & !tx_done) {
+      itmp--;
+      @(posedge port_bind.$rxclk);
+    }
+    port_bind.$rxcol = 0 async;
+  }
+  
+}
+
+
+task pg::assert_mii_err (mii_def port_bind ) {
+  integer cnt=0;
+
+  if(tx_err_start==-1)	return;
+
+  if(tx_err_len<1) {
+    printf("PG: WARNING: tx_err injection length to short. (Start: %0d, Length: %0d)\n",
+           tx_err_start,tx_err_len);
+    return;
+  }
+
+  while(cnt++ < tx_err_start & !tx_done) 
+    @(posedge port_bind.$rxclk);
+
+  if(!tx_done) {
+    port_bind.$rxerr = 1;
+    cnt=0;
+    while(cnt++ < tx_err_len & !tx_done)
+      @(posedge port_bind.$rxclk);
+    port_bind.$rxerr = 0;
+  } else
+  printf("PG: WARNING: Packet was sent before tx_err could be assrted.(Start: %0d, Length: %0d)\n",
+         tx_err_start,tx_err_len);
+
+  tx_err_start = -1;
+}
+
+task pg::send_packet_mii (mii_def port_bind, bit [3:0] ptype, byte_array buf, integer len, bit [63:0] options) {
+  integer n, cnt;
+  bit [7:0] tmp;
+  bit [63:0] current_time;
+  bit [63:0] min_gap, time_tmp;
+
+  tx_done = 0;
+
+  if(debug_mii==1)
+    printf("DEBUG: PG low tx started: current_time: %0d\n",  {get_time(HI),get_time(LO)} );
+  
+
+  current_time = {get_time(HI),get_time(LO)};
+  if(port_speed==1)	min_gap = 800 * MII_IP_GAP;	 
+  else			min_gap = 80 * MII_IP_GAP;	 
+  time_tmp = current_time - last_tx_time;
+  if(debug_mii_tx)
+    printf("DEBUG: PG low tx: last_time: %0d, current_time: %0d, diff: %0d\n",
+           last_tx_time,current_time,time_tmp);
+  if((time_tmp < min_gap) & !check_option(options, O_NO_IP_GAP_FIX) & !check_option(options, O_CUSTOM_IP_GAP) ) {
+    time_tmp = min_gap - time_tmp;
+    if(debug_mii_tx) printf("DEBUG: PG low tx: Min_gap: %0d, gap_diff: %0d\n",min_gap,time_tmp);
+    if(port_speed==1)	time_tmp = time_tmp / 400;
+    else			time_tmp = time_tmp / 40;
+    if(debug_mii_tx) printf("DEBUG: PG low tx: waiting additional %0d cycles\n",time_tmp);
+    repeat(time_tmp)	@(posedge port_bind.$rxclk);
+  } else
+  if( check_option(options, O_CUSTOM_IP_GAP) ) {
+    repeat(cfg_reg[CFG_IP_GAP])	@(posedge port_bind.$rxclk);
+  }
+
+  fork {
+    // assert_mii_err  (get_bind( port_bind ));
+    assert_mii_err  ( port_bind );
+  }
+  join none
+
+
+  port_bind.$rxdv = 1;
+  rxdv_set = 1;
+  
+
+  if( check_option(options, O_PREAMB_ERR) )	cnt = cfg_reg[CFG_PRAMB_CNT];
+  else						cnt = 7;
+
+  
+  for(n=0;n<cnt;n++) {
+    tmp = MII_PREAMBLE;
+    port_bind.$rxd = tmp[3:0];
+    @(posedge port_bind.$rxclk);
+    port_bind.$rxd = tmp[7:4];
+    @(posedge port_bind.$rxclk);
+  }
+
+  if( check_option(options, O_SFD_ERR) )	tmp = cfg_reg[CFG_SFD_TOKEN];
+  else					tmp = MII_SOF;
+
+  port_bind.$rxd = tmp[3:0];
+  @(posedge port_bind.$rxclk);
+  port_bind.$rxd = tmp[7:4];
+  @(posedge port_bind.$rxclk);
+
+  for(n=0;n<len;n++) {
+    if(debug_mii==1)	printf("MII: Sending Byte[%0d]: %h\n", n, buf.val[n] );
+    tmp = buf.val[n];
+    port_bind.$rxd = tmp[3:0];
+    @(posedge port_bind.$rxclk);
+    
+    if(n != (len-1) | !check_option(options, O_NIBBLE_ERR) ) {	 
+      port_bind.$rxd = tmp[7:4];
+      @(posedge port_bind.$rxclk);
+    }
+  }
+
+  port_bind.$rxdv = 0;
+  rxdv_set = 0;
+
+  tmp = MII_PREAMBLE;
+  port_bind.$rxd = tmp[3:0];
+
+  @(posedge port_bind.$rxclk); 
+  tx_done = 1;
+  last_tx_time =  {get_time(HI),get_time(LO)};
+
+}
+
+
+task pg::assert_gmii_err (gmii_def port_bind) {
+  integer cnt=0;
+
+  if(tx_err_start==-1)	return;
+
+  if(tx_err_len<1) {
+    printf("PG: WARNING: tx_err injection length to short. (Start: %0d, Length: %0d)\n",
+           tx_err_start,tx_err_len);
+    return;
+  }
+
+  while(cnt++ < tx_err_start & !tx_done) 
+    @(posedge port_bind.$rxclk);
+
+  if(!tx_done) {
+    port_bind.$rxerr = 1;
+    cnt=0;
+    while(cnt++ < tx_err_len & !tx_done)
+      @(posedge port_bind.$rxclk);
+    port_bind.$rxerr = 0;
+  } else
+  printf("PG: WARNING: Packet was sent before tx_err could be assrted.(Start: %0d, Length: %0d)\n",
+         tx_err_start,tx_err_len);
+
+  tx_err_start = -1;
+}
+
+task pg::send_packet_gmii (gmii_def port_bind, bit [3:0] ptype, byte_array buf, integer len, bit [63:0] options) {
+  integer n, cnt;
+  bit [7:0] tmp;
+  bit [63:0] current_time;
+  bit [63:0] min_gap, time_tmp;
+  integer ipg_clock_diffs;
+  integer align_cycles;  //hummer
+  bit [63:0] ipg_diffs;
+  integer need_extra_clocks;
+  integer sfd;
+  
+  tx_done = 0;
+
+  //current_time = {get_time(HI),get_time(LO)};
+  current_time = clock_counter;
+  min_gap = GMII_IP_GAP - 1;			 
+
+  // PORT2 gets the IPG given by the plusarg PKTGEN_PORT2_1G_IPG
+  if (get_plus_arg (CHECK, "PKTGEN_PORT2_1G_IPG") && (my_port==2))
+   min_gap = get_plus_arg (NUM, "PKTGEN_PORT2_1G_IPG");
+
+  // PORT3 gets the IPG given by the plusarg PKTGEN_PORT3_1G_IPG
+  if (get_plus_arg (CHECK, "PKTGEN_PORT3_1G_IPG") && (my_port==3))
+   min_gap = get_plus_arg (NUM, "PKTGEN_PORT3_1G_IPG");
+
+  time_tmp = current_time - last_tx_time;
+
+  ipg_diffs = time_tmp; // 800 ps
+  ipg_clock_diffs = 0; //hummer
+  if(ipg_diffs < min_gap)  { 
+    need_extra_clocks = 1;
+    ipg_clock_diffs = min_gap - ipg_diffs;
+  }
+  else need_extra_clocks = 0;
+  
+  //hummer
+  //////////////////align logic>>>>>>>>>>>>>>>>
+  //first calculate where the align point is?
+  align_cycles = 4-(((current_time-prev_current_time))%4);
+  //see if the align point is beyond IPG
+  //if so, lets move the IPG to align point
+  if(align_cycles >= ipg_clock_diffs) {
+    ipg_clock_diffs = align_cycles;
+    need_extra_clocks = 1;
+  }
+  else
+    //if align is before IPG, we need to go to next align point
+    //this next align point is 4-(difference of the current align-ipg)
+    if(align_cycles < ipg_clock_diffs) {
+      //also make sure the IPG is not a multiple of next align
+      if((ipg_clock_diffs-align_cycles)%4)
+        ipg_clock_diffs += 4-(ipg_clock_diffs-align_cycles)%4;
+    }
+  //////////////////align logic<<<<<<<<<<<<<<<<
+
+  if(debug_mii_tx)
+    printf("DEBUG: PG low tx: last_time: %0d, current_time: %0d, diff: %0d\n",
+           last_tx_time,current_time,time_tmp);
+
+
+  if( !check_option(options, O_NO_IP_GAP_FIX) & !check_option(options, O_CUSTOM_IP_GAP)  & need_extra_clocks ) {
+    repeat(ipg_clock_diffs) @(posedge port_bind.$rxclk);
+  } else 
+  if( check_option(options, O_CUSTOM_IP_GAP) ) {
+    repeat(cfg_reg[CFG_IP_GAP])	@(posedge port_bind.$rxclk);
+  }
+
+  fork
+    // assert_gmii_err (get_bind( port_bind));
+    assert_gmii_err ( port_bind);
+  join none
+
+  prev_current_time =  clock_counter;
+
+  //port_bind.$rxd =  XGMII_SOP;
+  port_bind.$rxdv = 1;
+  /*  @(posedge port_bind.$rxclk);  */
+
+  if( check_option(options, O_PREAMB_ERR) )	cnt = cfg_reg[CFG_PRAMB_CNT];
+  else						cnt = 7;
+
+
+  for(n=0;n<cnt;n++) {
+    port_bind.$rxd = GMII_PREAMBLE;
+    @(posedge port_bind.$rxclk);
+  }
+
+
+  port_bind.$rxdv = 1;
+
+ // printf("DEBUG pack_db.options - %x preamble_cnt - %d sfd - %d \n",options,cfg_reg[CFG_PRAMB_CNT],cfg_reg[CFG_SFD_TOKEN]);
+  if( check_option(options, O_SFD_ERR) ) {
+      sfd = cfg_reg[CFG_SFD_TOKEN];
+      if(sfd!=-1) {
+        port_bind.$rxd = cfg_reg[CFG_SFD_TOKEN];
+       @(posedge port_bind.$rxclk);
+      } else {
+       printf("SKIP SFD GENERATION!!\n");
+     }
+  }
+  else{
+    port_bind.$rxd = GMII_SOF;
+   @(posedge port_bind.$rxclk);
+  }
+
+  for(n=0;n<len;n++) {
+    if(debug_gmii==1)	printf("GMII: Sending Byte[%0d]: %h\n", n, buf.val[n] );
+    if(n != (len-1) | !check_option(options, O_NIBBLE_ERR) ) {	 
+      port_bind.$rxd = buf.val[n];
+      @(posedge port_bind.$rxclk);
+    }
+  }
+
+  last_tx_time =  clock_counter;
+  port_bind.$rxdv = 0;
+  port_bind.$rxd = GMII_PREAMBLE;
+
+  tx_done = 1;
+  port_bind.$rxerr = 0;
+  @(posedge port_bind.$rxclk); 
+  //last_tx_time =  {get_time(HI),get_time(LO)};
+
+}
+
+
+task pg::assert_xgmii_err (xgmii_def port_bind) {
+  integer cnt=0;
+
+  if(tx_err_start==-1)	return;
+
+  if(tx_err_len<1) {
+    printf("PG: WARNING: tx_err injection length to short. (Start: %0d, Length: %0d)\n",
+           tx_err_start,tx_err_len);
+    return;
+  }
+
+  while(cnt++ < tx_err_start & !tx_done) 
+    @(posedge port_bind.$rxclk_int);
+
+  if(!tx_done) {
+    port_bind.$rxerr = 1;
+    cnt=0;
+    while(cnt++ < tx_err_len & !tx_done)
+      @(posedge port_bind.$rxclk_int);
+    port_bind.$rxerr = 0;
+  } else
+  printf("PG: WARNING: Packet was sent before tx_err could be assrted.(Start: %0d, Length: %0d)\n",
+         tx_err_start,tx_err_len);
+
+  tx_err_start = -1;
+}
+
+
+task pg::send_packet_xgmii (xgmii_def port_bind,bit [3:0] ptype, byte_array buf, integer len, bit [63:0] options) {
+  integer n, cnt;
+  bit [7:0] tmp;
+  bit [63:0] current_time;
+  bit [63:0] min_gap, time_tmp;
+  integer ipg_clock_diffs;
+  integer align_cycles;  //hummer
+  bit [63:0] ipg_diffs;
+  integer need_extra_clocks;
+  integer sfd;
+
+  tx_done = 0;
+ printf("send_packet_xgmii - Enteri Time - %d \n",{get_time(HI),get_time(LO)});
+  // current_time = {get_time(HI),get_time(LO)};
+  current_time = clock_counter;
+  min_gap = 8 * XGMII_IP_GAP   ;			 // TOADS----
+
+  min_gap = 4;
+
+  // both ports at the same IPG, if the plusarg PKTGEN_10G_IPG is specified
+  // this plusarg is really a redundant after we had PKTGEN_PORT0_10G_IPG/PKTGEN_PORT1_10G_IPG
+  // but want to keep this for some old test runs which use this
+  if (get_plus_arg (CHECK, "PKTGEN_10G_IPG"))
+    min_gap = get_plus_arg (NUM, "PKTGEN_10G_IPG");
+  
+  // PORT0 gets the IPG given by the plusarg PKTGEN_PORT0_10G_IPG
+  if (get_plus_arg (CHECK, "PKTGEN_PORT0_10G_IPG") && (my_port==0))
+   min_gap = get_plus_arg (NUM, "PKTGEN_PORT0_10G_IPG");
+
+  // PORT1 gets the IPG given by the plusarg PKTGEN_PORT1_10G_IPG
+  if (get_plus_arg (CHECK, "PKTGEN_PORT1_10G_IPG") && (my_port==1))
+   min_gap = get_plus_arg (NUM, "PKTGEN_PORT1_10G_IPG");
+
+
+  time_tmp = current_time - last_tx_time;
+
+  ipg_diffs = time_tmp; // 800 ps
+  ipg_clock_diffs = 0; //hummer
+  if(ipg_diffs < min_gap)  { 
+    need_extra_clocks = 1;
+    ipg_clock_diffs = min_gap - ipg_diffs;
+  }
+  else need_extra_clocks = 0;
+
+  //hummer
+  //////////////////align logic>>>>>>>>>>>>>>>>
+  //first calculate where the align point is?
+  align_cycles = 4-(((current_time-prev_current_time))%4);
+  //see if the align point is beyond IPG
+  //if so, lets move the IPG to align point
+  if(align_cycles >= ipg_clock_diffs) {
+    ipg_clock_diffs = align_cycles;
+    need_extra_clocks = 1;
+  }
+  else
+    //if align is before IPG, we need to go to next align point
+    //this next align point is 4-(difference of the current align-ipg)
+    if(align_cycles < ipg_clock_diffs) {
+      //also make sure the IPG is not a multiple of next align
+      if((ipg_clock_diffs-align_cycles)%4)
+        ipg_clock_diffs += 4-(ipg_clock_diffs-align_cycles)%4;
+    }
+  //////////////////align logic<<<<<<<<<<<<<<<<
+
+  
+  printf("pg::send_packet_xgmii: DEBUG--len - %d \n",len);
+  printf("pg::send_packet_xgmii: DEBUG--IPG ipg_diff - %d ipg_clock_diffs - %d need_extra_clocks - %d \n",ipg_diffs,ipg_clock_diffs,need_extra_clocks);
+
+  if(debug_xgmii_tx)
+    printf("DEBUG: PG low tx: last_time: %0d, current_time: %0d, diff: %0d options = %x \n",
+           last_tx_time,current_time,time_tmp,options);
+  if( !check_option(options, O_NO_IP_GAP_FIX) & !check_option(options, O_CUSTOM_IP_GAP)  & need_extra_clocks ) {
+    repeat(ipg_clock_diffs) @(posedge port_bind.$rxclk_int);
+
+  } else if( check_option(options, O_CUSTOM_IP_GAP) ) {
+    
+    repeat(cfg_reg[CFG_IP_GAP])	@(posedge port_bind.$rxclk_int);
+  }
+
+  fork
+    // assert_xgmii_err (get_bind(  port_bind  ) );
+    assert_xgmii_err (port_bind  );
+  join none
+
+  port_bind.$rxdv = 1;
+  
+
+  // prev_current_time =  {get_time(HI),get_time(LO)};  //hummer
+  prev_current_time =  clock_counter;
+
+
+  port_bind.$rxd =  XGMII_SOP;
+  port_bind.$rxdv = 1;
+  @(posedge port_bind.$rxclk_int);
+
+  if( check_option(options, O_PREAMB_ERR) )	cnt = cfg_reg[CFG_PRAMB_CNT];
+  else						cnt = 6;
+
+  for(n=0;n<cnt;n++) {
+    port_bind.$rxd =  XGMII_PREAMBLE;
+    port_bind.$rxdv = 0;
+    
+    @(posedge port_bind.$rxclk_int);
+  }
+
+
+  port_bind.$rxdv = 0;
+  // printf("DEBUG pack_db.options - %x preamble_cnt - %d sfd - %d \n",options,cfg_reg[CFG_PRAMB_CNT],cfg_reg[CFG_SFD_TOKEN]);
+  if( check_option(options, O_SFD_ERR) ) {
+      sfd = cfg_reg[CFG_SFD_TOKEN];
+      if(sfd!=-1) {
+  	port_bind.$rxd = cfg_reg[CFG_SFD_TOKEN];
+       @(posedge port_bind.$rxclk_int);
+      } else {
+       printf("SKIP SFD GENERATION!!\n");
+     }
+  }
+  else{
+    port_bind.$rxd = XGMII_SOF;
+   @(posedge port_bind.$rxclk_int);
+  }
+  
+
+  for(n=0;n<len;n++) {
+    // printf("XGMII: Sending Byte[%0d]: %h\n", n, buf.val[n] );
+    if(n != (len-1) | !check_option(options, O_NIBBLE_ERR) ) {	 
+      port_bind.$rxd = buf.val[n];
+      @(posedge port_bind.$rxclk_int);
+    }
+  }
+
+  port_bind.$rxdv = 1;
+  
+  port_bind.$rxd = XGMII_EOP;
+  @(posedge port_bind.$rxclk_int);
+
+  // last_tx_time =  {get_time(HI),get_time(LO)};
+  last_tx_time =  clock_counter;
+  port_bind.$rxd = XGMII_IDLE;
+  port_bind.$rxdv = 1;
+
+  tx_done = 1;
+  port_bind.$rxerr = 0;
+  @(posedge port_bind.$rxclk_int); 
+  //prev_current_time = current_time; //hummer
+ printf("send_packet_xgmii - Exit Time - %d \n",{get_time(HI),get_time(LO)});
+}
+
+
+task pg::wait_clk(integer count) {
+  repeat(count)   @(posedge CLOCK);
+}
+
+task pg::wait_tx_clk(integer count) {
+  case(my_port) {
+    0:	wait_tx_clk_if (m0 , count);
+    1:	wait_tx_clk_if (m1 , count);
+    2:	wait_tx_clk_if (m2 , count);
+    3:	wait_tx_clk_if (m3 , count);
+  }
+}
+task pg::wait_tx_clk_if ( mii_def port_bind, integer count) {
+  repeat(count)   @(posedge port_bind.$txclk);
+}
+
+task pg::wait_rx_clk(integer count) {
+  case(my_port) {
+    0:	wait_tx_clk_if (m0 , count);
+    1:	wait_tx_clk_if (m1 , count);
+    2:	wait_tx_clk_if (m2 , count);
+    3:	wait_tx_clk_if (m3 , count);
+  }
+}
+
+task pg::wait_rx_clk_if ( mii_def port_bind, integer count) {
+  repeat(count)   @(posedge port_bind.$rxclk);
+}
+
+
+task pg::new(integer my_porti, (bit [3:0] ptype=0)) {
+  integer n,i;
+
+  my_port = my_porti;		 
+  port_type = ptype;
+
+  ifedx_control = 16'h0001;	 
+  // trigger(ON,pkt_gen_lock);
+  pkt_gen_lock = alloc(SEMAPHORE,0,1,0);
+
+  semaphore_put(pkt_gen_lock,1);
+  trigger(ON,pg_random_event);
+
+  
+  if(my_port>15) {
+    printf("PG: INIT: Warning: Port %0d is invalid or out of range.\n", my_port);
+  }
+
+  if(!quiet_on)
+    printf("INFO: Packet Generator attaching to port %0d\n",my_port);
+
+  
+  if(pg_used_ports[my_port] == 1) {
+    printf("PG: INIT: Port %0d already in use.\n", my_port);
+    
+    terminate;
+  }
+  pg_used_ports[my_port] = 1;
+
+  
+  for(n=0;n<60;n++) {
+    l3_class[n] = new;
+  }
+  for(n=0;n<40;n++) {
+    l3_mask[n] = new;
+  }
+
+  
+  queue_lock = alloc(SEMAPHORE,0,1,1);
+  if(queue_lock == 0) {
+    printf("PG: INIT: Could not allocate spaphore queue_lock.\n");
+  }
+
+  
+  mb_q = alloc(MAILBOX, 0, 1);
+  pkt_gen_sync =  alloc(MAILBOX, 0, 1);
+  if(mb_q == 0) {
+    printf("PG: INIT: Could not allocate mailbox mb_q.\n");
+  }
+  mbox_id.pg_mb[my_port] = alloc(MAILBOX, 0, 1);
+  if(mbox_id.pg_mb[my_port] == 0) {
+    printf("PG: INIT: Could not allocate mailbox mbox_id.pg_mb[%0d].\n",my_port);
+  }
+
+  
+  fork
+    pkt_auto_tx();
+  join none
+
+  
+  if(ptr_to_first_pg==null)	ptr_to_first_pg = this;
+
+  
+  last_tx_time = {get_time(HI),get_time(LO)};
+
+  for(n=0;n<CFG_LAST_ENTRY;n++)	cfg_reg[n] = 0;
+
+  
+  
+  for(n=0;n<40; n++)
+    for(i=0;i<12;i++) {                    
+      l3_mask[n].val[i] = 8'hff;
+    }
+  for(n=0;n<60;n++)
+    for(i=0;i<12;i++) {                   
+      l3_class[n].val[i] = 0;
+    }
+  for(n=CL_RSVP;n<CL_USER1;n++) {
+    l3_class[n].val[0] = 8'h08;
+    l3_class[n].val[2] = 8'h45;
+  }
+
+
+
+  
+  l3_class[CL_ARP].val[0]   = 8'h08;
+  l3_class[CL_ARP].val[1]   = 8'h06;
+  l3_class[CL_RARP].val[0]  = 8'h80;
+  l3_class[CL_RARP].val[1]  = 8'h35;
+  l3_class[CL_RSVP].val[0]  = 8'h08;
+  l3_class[CL_RSVP].val[11] = 8'h2e;
+  l3_class[CL_IGMP].val[0]  = 8'h08;
+  l3_class[CL_IGMP].val[11] = 8'h02;
+  l3_class[CL_ICMP].val[0]  = 8'h08;
+  l3_class[CL_ICMP].val[11] = 8'h01;
+  l3_class[CL_GRE].val[0]   = 8'h08;
+  l3_class[CL_GRE].val[11]  = 8'h2F;
+  l3_class[CL_PIM].val[0]   = 8'h08;
+  l3_class[CL_PIM].val[11]  = 8'h67;
+
+
+  
+  l3_class[CL_IP_TUN_V4_V4].val[0]  = 8'h08;
+  l3_class[CL_IP_TUN_V4_V4].val[2]  = 8'h45;
+  l3_class[CL_IP_TUN_V4_V4].val[11] = 8'h04;  
+
+  
+  l3_class[CL_IP_TUN_V4_V6].val[0]  = 8'h08;
+  l3_class[CL_IP_TUN_V4_V6].val[2]  = 8'h45;
+  l3_class[CL_IP_TUN_V4_V6].val[11] = 8'h29;  
+
+  l3_class[CL_IP].val[0]        = 8'h08;
+  l3_class[CL_IP].val[2]        = 8'h45;
+
+  
+  l3_class[CL_IP_FRAG].val[0] = 8'h08;
+  l3_class[CL_IP_FRAG].val[2] = 8'h45;
+  l3_class[CL_IP_FRAG].val[8] = 8'h20;
+  
+  l3_class[CL_IP_FRAG].val[11] = 8'h12;
+  
+  l3_mask[CL_IP_FRAG].val[8]  = 8'h00;
+  l3_mask[CL_IP_FRAG].val[9]  = 8'h00;
+
+  l3_class[CL_IP_SEC_AH].val[0] = 8'h08;
+  l3_class[CL_IP_SEC_AH].val[2] = 8'h48; 
+  l3_class[CL_IP_SEC_AH].val[11]= 8'h33;
+  l3_class[CL_IP_SEC_ESP].val[0]= 8'h08;
+  l3_class[CL_IP_SEC_ESP].val[2]= 8'h48; 
+  l3_class[CL_IP_SEC_ESP].val[11]= 8'h32;
+  l3_class[CL_IP_OPT].val[0]    = 8'h08;
+  l3_class[CL_IP_OPT].val[2]    = 8'h48;
+
+  
+  l3_class[CL_UDP].val[0]       = 8'h08;
+  l3_class[CL_UDP].val[2]       = 8'h45;
+  l3_class[CL_UDP].val[11]      = 8'h11;
+  l3_class[CL_UDP_OPT].val[2]   = 8'h48;
+  l3_class[CL_UDP_OPT].val[11]  = 8'h11;
+  l3_class[CL_UDP_FRAG].val[0]  = 8'h08;
+  l3_class[CL_UDP_FRAG].val[2]  = 8'h45;
+  l3_class[CL_UDP_FRAG].val[8] = 8'h01;
+  l3_class[CL_UDP_FRAG].val[9] = 8'h00;
+  l3_class[CL_UDP_FRAG].val[11] = 8'h11;
+  l3_mask[CL_UDP_FRAG].val[8] = 8'h00;
+  l3_mask[CL_UDP_FRAG].val[9] = 8'h00;
+  
+  
+  l3_class[CL_TCP].val[0]       = 8'h08;
+  l3_class[CL_TCP].val[2]       = 8'h45;
+  l3_class[CL_TCP].val[11]      = 8'h06;
+  l3_class[CL_TCP_OPT].val[0]   = 8'h08;
+  l3_class[CL_TCP_OPT].val[2]   = 8'h45;
+  l3_class[CL_TCP_OPT].val[11]  = 8'h06;
+  l3_class[CL_TCP_FRAG].val[0]  = 8'h08;
+  l3_class[CL_TCP_FRAG].val[2]  = 8'h45;
+  l3_class[CL_TCP_FRAG].val[8]   = 8'h21;
+  l3_class[CL_TCP_FRAG].val[9]   = 8'h00;
+  l3_class[CL_TCP_FRAG].val[11]  = 8'h06;
+  l3_mask[CL_TCP_FRAG].val[8]    = 8'h00;
+  l3_mask[CL_TCP_FRAG].val[9]    = 8'h00;
+
+
+
+  
+  l3_class[CL_IP_V6].val[0]         = 8'h86;
+  l3_class[CL_IP_V6].val[1]         = 8'hdd;
+  l3_class[CL_IP_V6].val[2]         = 8'h60;
+  l3_class[CL_ICMP_IP_V6].val[0]    = 8'h86;
+  l3_class[CL_ICMP_IP_V6].val[1]    = 8'hdd;
+  l3_class[CL_ICMP_IP_V6].val[2]    = 8'h60;
+  l3_class[CL_ICMP_IP_V6].val[8]    = 8'h01;
+  l3_class[CL_IGMP_IP_V6].val[0]    = 8'h86;
+  l3_class[CL_IGMP_IP_V6].val[1]    = 8'hdd;
+  l3_class[CL_IGMP_IP_V6].val[2]    = 8'h60;
+  l3_class[CL_IGMP_IP_V6].val[8]    = 8'h02;
+  l3_class[CL_RSVP_IP_V6].val[0]    = 8'h86;
+  l3_class[CL_RSVP_IP_V6].val[1]    = 8'hdd;
+  l3_class[CL_RSVP_IP_V6].val[2]    = 8'h60;
+  l3_class[CL_RSVP_IP_V6].val[8]    = 8'h2E;
+  l3_class[CL_GRE_IP_V6].val[0]     = 8'h86;
+  l3_class[CL_GRE_IP_V6].val[1]     = 8'hdd;
+  l3_class[CL_GRE_IP_V6].val[2]     = 8'h60;
+  l3_class[CL_GRE_IP_V6].val[8]     = 8'h2F;
+  l3_class[CL_PIM_IP_V6].val[0]     = 8'h86;
+  l3_class[CL_PIM_IP_V6].val[1]     = 8'hdd;
+  l3_class[CL_PIM_IP_V6].val[2]     = 8'h60;
+  l3_class[CL_PIM_IP_V6].val[8]     = 8'h67;
+  l3_class[CL_IP_V6_SEC_AH].val[0]  = 8'h86;
+  l3_class[CL_IP_V6_SEC_AH].val[1]  = 8'hdd;
+  l3_class[CL_IP_V6_SEC_AH].val[2]  = 8'h60;
+  l3_class[CL_IP_V6_SEC_AH].val[8]  = 8'h33;
+  l3_class[CL_IP_V6_SEC_ESP].val[0] = 8'h86;
+  l3_class[CL_IP_V6_SEC_ESP].val[1] = 8'hdd;
+  l3_class[CL_IP_V6_SEC_ESP].val[2] = 8'h60;
+  l3_class[CL_IP_V6_SEC_ESP].val[8] = 8'h32;
+
+  
+  l3_class[CL_IP_TUN_V6_V6].val[0]     = 8'h86;
+  l3_class[CL_IP_TUN_V6_V6].val[1]     = 8'hdd;
+  l3_class[CL_IP_TUN_V6_V6].val[8]     = 8'h29;  
+
+  
+  l3_class[CL_IP_TUN_V6_V4].val[0]     = 8'h86;
+  l3_class[CL_IP_TUN_V6_V4].val[1]     = 8'hdd;
+  l3_class[CL_IP_TUN_V6_V4].val[8]     = 8'h04;  
+
+  
+  l3_class[CL_UDP_IP_V6].val[0]       = 8'h86;
+  l3_class[CL_UDP_IP_V6].val[1]       = 8'hDD;
+  l3_class[CL_UDP_IP_V6].val[2]       = 8'h60;
+  l3_class[CL_UDP_IP_V6].val[8]       = 8'h11;
+  l3_class[CL_UDP_OPT_IP_V6].val[0]   = 8'h86;
+  l3_class[CL_UDP_OPT_IP_V6].val[2]   = 8'h48;
+  l3_class[CL_UDP_OPT_IP_V6].val[8]   = 8'h11;
+  l3_class[CL_UDP_FRAG_IP_V6].val[0]  = 8'h86;
+  l3_class[CL_UDP_FRAG_IP_V6].val[2]  = 8'h45;
+  l3_class[CL_UDP_FRAG_IP_V6].val[8]  = 8'h01;
+  l3_class[CL_UDP_FRAG_IP_V6].val[5] = 8'h12;
+  l3_class[CL_UDP_FRAG_IP_V6].val[6] = 8'h12;
+  l3_class[CL_UDP_FRAG_IP_V6].val[8] = 8'h11;
+  l3_mask[CL_UDP_FRAG_IP_V6].val[8] = 8'h00;
+  l3_mask[CL_UDP_FRAG_IP_V6].val[9] = 8'h00;
+
+
+  
+  l3_class[CL_TCP_IP_V6].val[0]       = 8'h86;
+  l3_class[CL_TCP_IP_V6].val[1]       = 8'hDD;
+  l3_class[CL_TCP_IP_V6].val[2]       = 8'h60;
+  l3_class[CL_TCP_IP_V6].val[8]       = 8'h06;
+  l3_class[CL_TCP_OPT_IP_V6].val[0]   = 8'h86;
+  l3_class[CL_TCP_OPT_IP_V6].val[1]   = 8'hDD;
+  l3_class[CL_TCP_OPT_IP_V6].val[2]   = 8'h60;
+  l3_class[CL_TCP_OPT_IP_V6].val[8]   = 8'h06;
+
+  l3_class[CL_TCP_FRAG_IP_V6].val[0]  = 8'h86;
+  l3_class[CL_TCP_FRAG_IP_V6].val[2]  = 8'h45;
+  l3_class[CL_TCP_FRAG_IP_V6].val[5]  = 8'h12;
+  l3_class[CL_TCP_FRAG_IP_V6].val[8]  = 8'h06;
+  l3_mask[CL_TCP_FRAG_IP_V6].val[5]    = 8'h00;
+  l3_mask[CL_TCP_FRAG_IP_V6].val[6]    = 8'h00;
+
+  
+
+  
+
+  cfg_reg[CFG_IP_GAP]  = 0;
+  cfg_reg[CFG_UDP_LEN] = 0;
+  cfg_reg[CFG_UDP_CSM] = 0;
+  cfg_reg[CFG_TCP_SEQ] = 0;
+  cfg_reg[CFG_TCP_ACK] = 0;
+  cfg_reg[CFG_TCP_LEN] = 4'b0101;
+  cfg_reg[CFG_TCP_FLAG]= 0;
+  cfg_reg[CFG_TCP_WIN] = 0;
+  cfg_reg[CFG_TCP_CSM] = 0;
+  cfg_reg[CFG_TCP_URG] = 0;
+
+  
+  
+  
+  
+
+  fork
+    case(my_port) {
+      
+      0: if (get_plus_arg(CHECK, "MAC_SPEED0=")) {
+        mac_speed = get_plus_arg(NUM,"MAC_SPEED0=");
+        config_tx (m0 , mac_speed);
+      }
+
+      1: if (get_plus_arg(CHECK, "MAC_SPEED1=")) {
+        mac_speed = get_plus_arg(NUM,"MAC_SPEED1=");
+        config_tx (m1 , mac_speed);
+      }
+
+      2: if (get_plus_arg(CHECK, "MAC_SPEED2=")) {
+        mac_speed = get_plus_arg(NUM,"MAC_SPEED2=");
+        config_tx (m2 , mac_speed);
+      }
+
+      3: if (get_plus_arg(CHECK, "MAC_SPEED3=")) {
+        mac_speed = get_plus_arg(NUM,"MAC_SPEED3=");
+        config_tx (m3 , mac_speed);
+      }
+
+    }
+
+    
+    
+  join none
+  fork {
+   count_clock();
+  }
+  join none
+  
+}
+
+
+task pg::count_clock() {
+
+// This is just a HACK to get going
+clock_counter = 0;
+case(my_port) {
+  0: if (port_speed == 4) {
+        while(1) {
+          @(posedge xgm0.$rxclk_int); clock_counter = clock_counter + 1;
+        }
+     } else if (port_speed == 3) {
+        while(1) {
+          @(posedge gm0.$rxclk); clock_counter = clock_counter + 1;
+        }
+     } else {
+        while(1) {
+          @(posedge m0.$rxclk); clock_counter = clock_counter + 1;
+        }
+     }
+
+    1: if (port_speed == 4) {
+        while(1) {
+          @(posedge xgm1.$rxclk_int); clock_counter = clock_counter + 1;
+        }
+     } else if (port_speed == 3) {
+        while(1) {
+          @(posedge gm1.$rxclk); clock_counter = clock_counter + 1;
+        }
+     } else {
+        while(1) {
+          @(posedge m1.$rxclk); clock_counter = clock_counter + 1;
+        }
+     }
+  2: if (port_speed == 4) {
+     } else if (port_speed == 3) {
+        while(1) {
+          @(posedge gm2.$rxclk); clock_counter = clock_counter + 1;
+        }
+     } else {
+        while(1) {
+          @(posedge m2.$rxclk); clock_counter = clock_counter + 1;
+        }
+     }
+  3: if (port_speed == 4) {
+     } else if (port_speed == 3) {
+        while(1) {
+          @(posedge gm3.$rxclk); clock_counter = clock_counter + 1;
+        }
+     } else {
+        while(1) {
+          @(posedge m3.$rxclk); clock_counter = clock_counter + 1;
+        }
+     }
+ }
+}
+
+
+task pg::config_tx (mii_def port_bind, integer mac_speed ) {
+  if(mac_speed == 10000)  port_bind.$rx_config = 4;
+  else
+    if(mac_speed == 1000)  port_bind.$rx_config = 3;
+    else
+      if(mac_speed == 100)  port_bind.$rx_config = 2;
+      else                   port_bind.$rx_config = 1;
+
+  if(mac_speed == 10000)  port_speed = 4;
+  else
+    if(mac_speed == 1000)   port_speed = 3;
+    else
+      if(mac_speed == 100)    port_speed = 2;
+      else                    port_speed = 1;
+
+
+  if(mac_speed == 10000) {  
+    port_bind.$rxdv = 1;
+  } else {
+    port_bind.$rxdv = 0;
+  }
+  
+  port_bind.$rxd = 07;
+  port_bind.$rxerr = 0;
+  port_bind.$rxcrs = 0;
+  port_bind.$rxcol = 0;
+}
+
+
+function bit [31:0]  pg::crc_gen(byte_array p, integer start, integer len) {
+  bit [31:0]  tmp0, poly;
+  integer i;
+
+  //printf("CRC Function is called \n");
+
+  tmp0 = 32'hffff_ffff;
+
+  for(i=start;i<len;i=i+1) begin   
+    tmp0 = crc32_add( p.val[i], tmp0 );
+  end   
+  tmp0 = ~tmp0;
+
+  
+  for(i=0;i<32;i=i+1)
+    crc_gen[i] = tmp0[31-i];
+
+  tmp0 = crc_gen;
+  crc_gen[31:24] = tmp0[07:00];
+  crc_gen[23:16] = tmp0[15:08];
+  crc_gen[15:08] = tmp0[23:16];
+  crc_gen[07:00] = tmp0[31:24];
+
+}
+
+
+task pg::status() {
+  printf("\n");
+  printf("------------------------------\n");
+  printf("PG[%0d]: Status Report:\n",my_port);
+  printf("        Encountered %0d ERRORS\n",error_count);
+  printf("        Encountered %0d WARNINGS\n",warning_count);
+  printf("        Sent %0d packets\n",pckt_num);
+  printf("------------------------------\n\n");
+}
+
+
+
+
+
+task pg::config(integer what, bit [31:0] data) {
+  cfg_reg[what] = data;
+}
+
+
+task pg::print_warn() {
+  printf("WARNING: Packet Generator[%0d]: ", my_port);
+}
+
+
+task pg::print_err() {
+  printf("ERROR: Packet Generator[%0d] time:%0d : ", my_port, {get_time(HI), get_time(LO)});
+}
+
+task pg::display_buf( byte_array buf, integer hwlen, (integer ifedx=0)) {
+  integer ptr=0;
+  integer tunneling_ipv4 = 0;
+  integer tunneling_ipv6 = 0;
+  integer ah_transp_ipv4  = 0;
+  integer ah_transp_ipv6  = 0;
+  integer esp_transp_ipv4 = 0;
+  integer esp_transp_ipv6 = 0;
+  integer ipv4_header_length;
+
+  integer buf_shift;
+  integer n;
+  integer i;
+
+  bit [15:0] len;
+  bit [7:0] flag_bit;
+  bit [79:0] id;
+  integer token;
+
+  printf("\n\n______________________________________________________________\n");
+  printf("vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\n\n");
+
+
+  printf("____________ Hex Dump ____________\n");
+  for(n=0;n<hwlen;n++) {
+    if( !(n % 16) ) printf("\n%d: ",n);
+    printf("%h ", buf.val[ptr++]);
+  }
+  printf("\n__________________________________\n\n");
+
+  ptr=0;
+
+  printf("   L2 Header\n");
+  printf("+---------------\n");
+  printf("| Destination Address: %h.%h.%h.%h.%h.%h\n", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] ); 
+  printf("|      Source Address: %h.%h.%h.%h.%h.%h\n", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] ); 
+
+  len = {buf.val[ptr++], buf.val[ptr++]};
+
+  if( len == TPID_8021Q ) {	
+    if( {buf.val[ptr+4], buf.val[ptr+5], buf.val[ptr+6]} == LLC_SNAP ) {
+      printf("|      L2 Header Type: 802.1Q Tagged LLC-SNAP Ethernet Header\n");
+      printf("|                TPID: %0h\n", len );
+      printf("|                 TCI: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+      len = {buf.val[ptr++], buf.val[ptr++]}; 
+      printf("|            LEN/TYPE: 0x%h(%0d)\n", len, len );
+      printf("|                 LLC: %h\n", {buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] });
+      printf("|                SNAP: %h\n", {buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } );
+      len = {buf.val[ptr - 2], buf.val[ptr - 1]};  
+    } else {   // if not LLC SNAP
+      printf("|      L2 Header Type: 802.1Q Tagged Ethernet Header\n");
+      printf("|                TPID: %0h\n", len );
+      printf("|                 TCI: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+      len = {buf.val[ptr++], buf.val[ptr++]}; 
+      printf("|            TYPE/LEN: 0x%h(%d)\n", len, len);   
+    }
+  }/*endifTPID_8021Q*/ else if ( len == CNTL_FRAME )  { 
+    printf("|      L2 Header Type:  MAC Control Frame Header\n");
+    printf("|                Type: %h\n", len );
+  } else { // endif control frame
+    if( {buf.val[ptr], buf.val[ptr+1], buf.val[ptr+2]} == LLC_SNAP ) {
+      printf("|    L2 Header Type: LLC-SNAP Ethernet Header\n");
+      printf("|    Data Length: 0x%h(%0d)\n", len, len);  
+      printf("|    LLC: %h\n", {buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] });
+      printf("|    SNAP: %h\n", {buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } );
+      if( buf.val[ptr-2] == 8'h08 ) {  
+        ptr +=20;
+        if( buf.val[ptr - 11 ] == TCP_PROTO){
+          ptr +=20;
+        }
+      }
+      if( buf.val[ptr-2] == 8'h86 ) {           ptr +=40;
+        if( buf.val[ptr - 34 ] == TCP_PROTO){
+          ptr +=20;
+        }
+      }
+    } /*endif LLC_SANP*/ else { 
+      printf("|      L2 Header Type: 802.3 Ethernet Header\n");
+      printf("|    Data Length/Type: 0x%h(%0d)\n", len, len);  
+    }
+  } // endif!TPID_8021Q
+
+  if( ((buf.val[ptr] & 8'h40)==8'h40 ) & ( (buf.val[ptr] & 8'hf)>5)) {
+   
+    ipv4_header_length = (buf.val[ptr] & 8'hf);
+
+    token = { buf.val[ptr + ( (4*ipv4_header_length) -20 ) ], buf.val[ptr + ( (4*ipv4_header_length) -20 ) +1] };
+  
+  } else 
+    token = { buf.val[ptr], buf.val[ptr+1] };
+
+  printf(" DEBUG- token - %d \n",token);
+
+  if((len>16'h0600 & len != CNTL_FRAME) || ((len == RARP_FRAME) &(len != CNTL_FRAME))){ 
+    len = -1;
+// ptr here points to the first byte of ip datagram
+    if((buf.val[ptr - 2 ] == 8'h08 ) || (( buf.val[ptr-2] == 8'h80) && (buf.val[ptr-1] == 8'h35))) {  // IP datagram or RARP
+      if( buf.val[ptr + 9] == AH_PROTO) { 
+        printf("+-------------------------------------\n");
+        printf("   L3 Header-- Type: IPv4, IPSec: AH\n");
+        printf("+--------------------------------------\n");
+        ah_transp_ipv4 = 1;
+      } else if( buf.val[ptr + 9] == ESP_PROTO) {  
+        printf("+-------------------------------------\n");
+        printf("   L3 Header-- Type: IPv4, IPSec: ESP\n");
+        printf("+--------------------------------------\n");
+        esp_transp_ipv4 = 1;
+      } else if( buf.val[ptr + 9] == IP_V4_PROTO) {
+        printf("+-------------------------------------\n");
+        printf("   L3 Header-- Type: Tunnel (IPv4/IPv4)\n");
+        printf("+--------------------------------------\n");
+        printf("|   IP Header Tunnel Layer 1: IPv4\n|   \n");   
+        tunneling_ipv4 = 1; 
+      } else if( buf.val[ptr + 9] == IP_V6_PROTO) {
+        printf("+-------------------------------------\n");
+        printf("   L3 Header-- Type: Tunnel (IPv4/IPv6)\n");
+        printf("+--------------------------------------\n");
+        printf("|   IP Header Tunnel Layer 1: IPv4\n|   \n");   
+        tunneling_ipv6 = 1; 
+      } else {
+        printf("+-------------------------------------\n");
+        printf("   L3 Header-- Type: IPv4\n");
+        printf("+--------------------------------------\n");
+      }
+      ipv4_header_length = (buf.val[ptr] & 8'hf);
+      // printf("DEBUG- ipv4_header_length - %d \n",ipv4_header_length);
+      ptr--;
+      ptr--;
+//ptr here points to type/len field
+      display_class(buf, ptr);
+// looks like display class increments the ptr to the beginning of IP src address.. 
+      
+      printf("|   IPV4 Payload Len: %h%h\n", buf.val[ptr-10], buf.val[ptr-9] );
+      printf("|   IPV4 Checksum: %h%h\n", buf.val[ptr-2], buf.val[ptr-1] );
+      if(ipv4_header_length>5) {
+      printf("|   IPV4 Header Length: %d \n", ipv4_header_length);
+      }
+      printf("|   IP SRC Address: %h.%h.%h.%h\n", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+      printf("|   IP DST Address: %h.%h.%h.%h\n", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+      for(i=0;i< (ipv4_header_length -5); i ++) {
+      printf("|   IP Options: %h.%h.%h.%h\n", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+      }
+      if (esp_transp_ipv4) {
+        printf("|   ESP SPI : %h.%h.%h.%h\n", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+      }
+
+      if (ah_transp_ipv4) {
+        ptr += 4;
+        printf("|   AH SPI : %h.%h.%h.%h\n", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+      }
+      
+      if( tunneling_ipv4 ) {
+        printf("|  -----------  \n|\n");   
+        printf("|   IP Header Tunnel Layer 2: IPv4:\n");   
+        printf("|   \n");   
+        ptr--;
+        ptr--;
+        display_class(buf, ptr);
+        printf("|   IP SRC Address: %h.%h.%h.%h\n", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+        printf("|   IP DST Address: %h.%h.%h.%h\n", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+      } else if( tunneling_ipv6) {
+        printf("|  -----------  \n|\n");   
+        printf("|   IP Header Tunnel Layer 2: IPv6:\n");   
+        printf("|   \n");   
+        ptr--;
+        ptr--;
+        display_class_ipv6(buf, ptr);
+        printf("|      Payload Len: 0x%h(%d)\n", buf.val[ptr++], buf.val[ptr++]);
+        printf("|      Next Header: 0x%h\n", buf.val[ptr++]);
+        printf("|      Hop Limit  : 0x%h\n", buf.val[ptr++]);
+        printf("|   IP SRC Address: %h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h\n", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+
+        printf("|   IP DST Address: %h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h\n", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+      }
+
+      
+      if( tunneling_ipv6 ) 
+        buf_shift = 34;       
+      else 
+        buf_shift = 11  + 4*(ipv4_header_length -5) ;     
+
+
+      if( buf.val[ptr - buf_shift ] == UDP_PROTO) {
+        printf("+-------------------------------------\n");
+        printf("   L4 Header-- Type: UDP  \n");
+        printf("+--------------------------------------\n");
+        printf("|     UDP SRC Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+        printf("|     UDP DST Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+        printf("|     UDP LEN : %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+        printf("|     UDP Chksum : %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+
+	// - ptr here is the first byte of UDP data
+        token = { buf.val[ptr + 0], buf.val[ptr + 1] };
+        printf(" DEBUG- UDP  token - %d \n",token);
+
+      } else if( buf.val[ptr - buf_shift ] == TCP_PROTO) {
+        printf("+-------------------------------------\n");
+        printf("   L4 Header-- Type: TCP\n");
+        printf("+--------------------------------------\n");
+        printf("|     TCP SRC Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+        printf("|     TCP DST Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+        printf("|   TCP Sequence #: %h\n", {buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++]} );
+        printf("|        TCP ACK #: %h\n", {buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++]} );
+
+        ptr += 1;   
+        flag_bit = buf.val[ptr++];  
+        printf("|    TCP Flag bits: URG:%b ACK:%b PSH:%b RST:%b SYN:%b FIN:%b\n", flag_bit[5], flag_bit[4], flag_bit[3], flag_bit[2], flag_bit[1], flag_bit[0]); 
+        printf("|      Window Size: %h\n", {buf.val[ptr++], buf.val[ptr++]});  
+        printf("|     TCP Checksum: %h\n", {buf.val[ptr++], buf.val[ptr++]});  
+
+        if(cfg_reg[CFG_TCP_LEN]  > 5 ) { // 
+          printf("|      TCP Option : ");
+          ptr = ptr + 2;
+          for(n=0; n<(cfg_reg[CFG_TCP_LEN]-5); n++) {
+            printf("%h%h%h%h ", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++]); 
+          }
+          printf("\n");
+          ptr = ptr - 2;
+        } // end if checking option value
+        printf("+---------------\n");
+	// - ptr here is the first byte of TCP data
+        token = { buf.val[ptr + 2], buf.val[ptr+3] };
+        printf(" DEBUG- TCP  token ptr - %d  - %d \n",token,ptr);
+      }  else if (esp_transp_ipv4) {
+        ptr += 8;
+        token = { buf.val[ptr], buf.val[ptr+1] };
+      } else if (ah_transp_ipv4) {
+        ptr += 4;
+        token = { buf.val[ptr], buf.val[ptr+1] };
+      } else {
+        token = { buf.val[ptr], buf.val[ptr+1] };
+      } 
+    }  /*endif IP datagram or RARP*/ else { /*IPV6*/
+      if( buf.val[ptr + 6] == AH_PROTO) {
+        printf("+-------------------------------------\n");
+        printf("   L3 Header-- Type: IPv6, IPSec: AH\n");
+        printf("+--------------------------------------\n");
+        ah_transp_ipv6 = 1;
+      } else if( buf.val[ptr + 6] == ESP_PROTO) {
+        printf("+-------------------------------------\n");
+        printf("   L3 Header-- Type: IPv6, IPSec: ESP\n");
+        printf("+--------------------------------------\n");
+        esp_transp_ipv6 = 1;
+      } else if( buf.val[ptr + 6] == IP_V4_PROTO) {
+        printf("+-------------------------------------\n");
+        printf("   L3 Header-- Type: Tunnel (IPv6/IPv4)\n");
+        printf("+--------------------------------------\n");
+        printf("|   IP Header Tunnel Layer 1: IPv6\n");
+        printf("|   \n");
+        tunneling_ipv4 = 1;
+      } else if( buf.val[ptr + 6] == IP_V6_PROTO) {
+        printf("+-------------------------------------\n");
+        printf("   L3 Header-- Type: Tunnel (IPv6/IPv6)\n");
+        printf("+--------------------------------------\n");
+        printf("|   IP Header Tunnel Layer 1: IPv6\n");
+        printf("|   \n");
+        tunneling_ipv6 = 1;
+      } else {
+        printf("+-------------------------------------\n");
+        printf("   L3 Header-- Type: IPv6\n");
+        printf("+--------------------------------------\n");
+      }
+      ptr--;
+      ptr--;
+
+      display_class_ipv6(buf, ptr);
+      printf("|      Payload Len: 0x%h(%d)\n", buf.val[ptr++], buf.val[ptr++]); 
+      printf("|      Next Header: 0x%h\n", buf.val[ptr++]); 
+      printf("|      Hop Limit  : 0x%h\n", buf.val[ptr++]); 
+      printf("|   IP SRC Address: %h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h\n", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+             buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+             buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+      printf("|   IP DST Address: %h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h\n", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+             buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+             buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+
+      if (esp_transp_ipv6) {
+        printf("|   ESP SPI : %h.%h.%h.%h\n", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+      }
+      if (ah_transp_ipv6) {
+        ptr += 4;
+        printf("|   AH SPI : %h.%h.%h.%h\n", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+      }
+
+      if( tunneling_ipv4 ) {
+        printf("|  -----------  \n|\n");   
+        printf("|   IP Header Tunnel Layer 2: IPv4:\n");
+        printf("|   \n");
+        ptr--;
+        ptr--;
+        display_class(buf, ptr);
+        printf("|   IP SRC Address: %h.%h.%h.%h\n", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+        printf("|   IP DST Address: %h.%h.%h.%h\n", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+
+      } else if( tunneling_ipv6) {
+        printf("|  -----------  \n|\n");   
+        printf("|   IP Header Tunnel Layer 2: IPv6:\n");
+        printf("|   \n");
+        ptr--;
+        ptr--;
+        display_class_ipv6(buf, ptr);
+        printf("|      Payload Len: 0x%h(%d)\n", buf.val[ptr++], buf.val[ptr++]);
+        printf("|      Next Header: 0x%h\n", buf.val[ptr++]);
+        printf("|      Hop Limit  : 0x%h\n", buf.val[ptr++]);
+        printf("|   IP SRC Address: %h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h\n", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+        printf("|   IP DST Address: %h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h:%h%h\n", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++],
+               buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] );
+      }
+
+      if( tunneling_ipv4 )
+        buf_shift = 11  + 4*(ipv4_header_length -5) ;     
+        // buf_shift = 11;
+      else 
+        buf_shift = 34;  
+      if( buf.val[ptr - buf_shift ] == UDP_PROTO) {
+        printf("+-------------------------------------\n");
+        printf("   L4 Header-- Type: UDP  \n");
+        printf("+--------------------------------------\n");
+        printf("|     UDP SRC Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+        printf("|     UDP DST Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+        printf("|     UDP LEN : %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+        printf("|     UDP Chksum : %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+
+        token = { buf.val[ptr + 0], buf.val[ptr + 1] };
+      } else if( buf.val[ptr - buf_shift ] == TCP_PROTO) {
+        printf("+-------------------------------------\n");
+        printf("   L4 Header-- Type: TCP\n");
+        printf("+--------------------------------------\n");
+        printf("|     TCP SRC Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+        printf("|     TCP DST Port: %h\n", {buf.val[ptr++], buf.val[ptr++]} );
+        printf("|   TCP Sequence #: %h\n", {buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++]} );
+        printf("|        TCP ACK #: %h\n", {buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++]} );
+        ptr += 1;   
+        flag_bit = buf.val[ptr++];
+        printf("|    TCP Flag bits: URG:%b ACK:%b PSH:%b RST:%b SYN:%b FIN:%b\n", flag_bit[5], flag_bit[4], flag_bit[3], flag_bit[2], flag_bit[1], flag_bit[0]); 
+        printf("|      Window Size: %h\n", {buf.val[ptr++], buf.val[ptr++]});
+        printf("|     TCP Checksum: %h\n", {buf.val[ptr++], buf.val[ptr++]});  
+        if(cfg_reg[CFG_TCP_LEN]  > 5 ) {
+          printf("|      TCP Option : ");
+          ptr = ptr + 2;
+          for(n=0; n<(cfg_reg[CFG_TCP_LEN]-5); n++) {
+            printf("%h%h%h%h ", buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++]);
+          }
+          printf("\n");
+          ptr = ptr - 2;
+        }
+        printf("+---------------\n");
+        token = { buf.val[ptr + 2], buf.val[ptr+3] };
+      }  else if (esp_transp_ipv6) {
+        ptr += 8;
+        token = { buf.val[ptr], buf.val[ptr+1] };
+      } else if (ah_transp_ipv6) {
+        ptr += 4;
+        token = { buf.val[ptr], buf.val[ptr+1] };
+      } else {
+        token = { buf.val[ptr], buf.val[ptr+1] };
+      }
+    }  
+  }  /*end if((len>16'h0600 & len != CNTL_FRAME) || ((len == RARP_FRAME) &(len != CNTL_FRAME))) */
+
+  if(len<0)	len = hwlen;
+
+  printf("\npg::display_buf Time: %0d\n",{get_time(HI),get_time(LO)});
+  printf("Token: %0d\n", token);
+  printf("\n");
+  display_data(buf, ptr, hwlen-ptr-4 );
+  printf("\n");
+  printf("CRC: %h\n", { buf.val[ptr++], buf.val[ptr++], buf.val[ptr++], buf.val[ptr++] } );
+  printf("\n^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n");
+  printf("--------------------------------------------------------------\n\n");
+
+}  
+
+
+task pg::display_class(byte_array buf, var integer ptr) {
+  integer n,last;
+  last = ptr+14;
+  printf("|              Class: ");
+  for(n=0;n<14;n++)	printf("%h ", buf.val[ptr+n] ); 
+  printf("\n");
+  if( {buf.val[ptr], buf.val[ptr+1]} < 16'h0600)
+    printf("|             Length: %0d\n|\n", {buf.val[ptr++], buf.val[ptr++]} );
+  else
+    printf("|               Type: %0h\n|\n", {buf.val[ptr++], buf.val[ptr++]} );
+  ptr=last;
+}
+
+
+task pg::display_class_ipv6(byte_array buf, var integer ptr) {
+  integer n,last;
+
+  last = ptr+6;
+
+  printf("|              Class: ");
+
+  
+  for(n=0;n<10;n++)       printf("%h ", buf.val[ptr+n] );
+  printf("\n");
+
+  if( {buf.val[ptr], buf.val[ptr+1]} < 16'h0600)
+    printf("|             Length: %0d\n|\n", {buf.val[ptr++], buf.val[ptr++]} );
+  else
+    printf("|               Type: %0h\n|\n", {buf.val[ptr++], buf.val[ptr++]} );
+
+  ptr=last;
+}
+
+
+
+task pg::display_data(byte_array buf, var integer ptr, integer len) {
+  integer n;
+
+  printf("    Data:\n");
+  printf("+---------------");
+
+  if(len<1)
+    printf("\n| No Payload ...");
+  else
+
+    for(n=0;n< len ;n++) {
+      if( !(n % 16) ) printf("\n| %d: ",n);
+      printf("%h ", buf.val[ptr++]);
+    }
+  printf("\n+---------------\n");
+}
+
+
+task pg::display_id(bit [79:0] id) {
+
+  printf("    ID Tags:\n");
+  printf("+---------------\n");
+  printf("|       Src port: %0d\n", id[79:75] );
+  printf("|       Dst port: %0h\n", id[74:35] );
+  printf("|     Order Type: %0h\n", id[34:33] );
+  printf("|  Order Sequnce: %0d\n", id[32:27] );
+  printf("|  Packet number: %0d\n", id[26:11] );
+  printf("|      Data Type: %0d\n", id[10:8] );
+  printf("|      Data Seed: %0d\n", id[7:0] );
+  printf("+---------------\n");
+}
+
+
+task pg::display_db(pack_db_entry pack_db ) {
+
+  printf("\n========== Display DB Entry %0d ========== \n",pack_db.gId);
+  if(pack_db == null) {
+    printf("This entry is not allocated ...\n");
+  } else {
+
+    printf("\tframe.frame_type:  %h\n",pack_db.frame.frame_type);
+    printf("\tframe.frame_class: %h\n",pack_db.frame.frame_class);
+    printf("\tframe.class_mask:  %h\n",pack_db.frame.class_mask);
+    printf("\tframe.class_funct: %h\n",pack_db.frame.class_funct);
+    printf("\tframe.data_type:   %h\n",pack_db.frame.data_type);
+    printf("\tframe.data_seed:   %h\n",pack_db.frame.data_seed);
+    printf("\tframe.data_length: %h\n",pack_db.data_length);
+    printf("\n");
+    printf("\tsrc_node.l2_addr: %h\n",pack_db.src_node.l2_addr);
+    printf("\tsrc_node.tci:     %h\n",pack_db.src_node.tci);
+    printf("\tsrc_node.ip_addr: %h\n",pack_db.src_node.ip_addr);
+    printf("\tsrc_node.ipv6_addr: %h\n",pack_db.src_node.ipv6_addr);
+    printf("\n");
+    printf("\tdst_node.l2_addr: %h\n",pack_db.dst_node.l2_addr);
+    printf("\tdst_node.tci:     %h\n",pack_db.dst_node.tci);
+    printf("\tdst_node.ip_addr: %h\n",pack_db.dst_node.ip_addr);
+    printf("\tdst_node.ipv6_addr: %h\n",pack_db.dst_node.ipv6_addr);
+    printf("\n");
+    printf("\ttup.src_tcp_udp_port: %h\n",pack_db.tup.src_tcp_udp_port);
+    printf("\ttup.dst_tcp_udp_port: %h\n",pack_db.tup.dst_tcp_udp_port);
+    printf("\n");
+    printf("\trcv_isn: %0h\n",pack_db.rx_param.rcv_isn);
+    printf("\tlast_ackno: %0h\n",pack_db.rx_param.last_ackno);
+    printf("\tadv_isn: %0h\n",pack_db.tx_param.adv_isn);
+    printf("\tlast_seqno: %0h\n",pack_db.tx_param.last_seqno);
+    printf("\n");
+    printf("\torg_port:  %0d\n",pack_db.org_port);
+    printf("\torder_seq: %0d\n",pack_db.order_seq);
+    printf("\tpckt_num:  %0d\n",pack_db.pckt_num);
+    printf("\toptions:   %h\n",pack_db.options);
+  }
+  printf("========================================== \n\n");
+}
+
+task pg::display_flow(integer flow_id) {
+
+  printf("\n========== Display FLOW DB Entry %0d ========== \n",flow_id);
+  if(flow_db[flow_id] == null) {
+    printf("This entry is not allocated ...\n");
+  } else {
+    printf("\tframe.data_length: %h\n",flow_db[flow_id].data_length);
+    printf("\n");
+    printf("\ttup.src_tcp_udp_port: %h\n",flow_db[flow_id].tup.src_tcp_udp_port);
+    printf("\ttup.dst_tcp_udp_port: %h\n",flow_db[flow_id].tup.dst_tcp_udp_port);
+    printf("\n");
+    printf("\torg_port:  %0d\n",flow_db[flow_id].org_port);
+    printf("\trcv_isn: %0h\n",flow_db[flow_id].rx_param.rcv_isn);
+    printf("\tlast_ackno: %0h\n",flow_db[flow_id].rx_param.last_ackno);
+    printf("\tadv_isn: %0h\n",flow_db[flow_id].tx_param.adv_isn);
+    printf("\tlast_seqno: %0h\n",flow_db[flow_id].tx_param.last_seqno);
+    
+    
+  }
+  printf("========================================== \n\n");
+}
+
+
+function bit[15:0] pg::partial_cksum(byte_array packet, integer start_offset, integer pkt_len) {
+ 
+  integer i; 
+  bit [16:0] chksum_tmp = 0;
+
+     for(i = start_offset; i < pkt_len;)
+      {
+        if(i == pkt_len - 1) {
+           chksum_tmp = chksum_tmp + {packet.val[i],8'h0};
+           chksum_tmp = chksum_tmp + chksum_tmp[16];
+           chksum_tmp[16] = 1'b0;
+        } else {
+           chksum_tmp = chksum_tmp + {packet.val[i],packet.val[i+1]};
+           chksum_tmp = chksum_tmp + chksum_tmp[16];
+           chksum_tmp[16] = 1'b0;
+        }
+           i = i+2;
+      }
+
+   partial_cksum = chksum_tmp[15:0];
+
+}
+

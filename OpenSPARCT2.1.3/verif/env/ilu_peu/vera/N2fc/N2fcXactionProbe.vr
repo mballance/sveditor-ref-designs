@@ -1,0 +1,550 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: N2fcXactionProbe.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+
+#include "ccx_ncu.port_bind.vri"
+
+
+#define PCX_NCU_RQTYP_DW        5
+#define PCX_NCU_SIZE_DW         8
+#define PCX_NCU_ADDR_DW         40
+#define PCX_NCU_DATA_DW         64
+
+#define PCX_NCU_RQTYP_FLD       128:124
+#define PCX_NCU_TID_FLD         122:117
+#define PCX_NCU_SIZE_FLD        111:104
+#define PCX_NCU_ADDR_FLD        103:64
+#define PCX_NCU_DATA_FLD        63:0
+
+// NCU register Addresses
+#define NCU_PCIE_MEM32_BASE_ADDR    16'h2000
+#define NCU_PCIE_MEM32_MASK_ADDR    16'h2008
+#define NCU_PCIE_MEM64_BASE_ADDR    16'h2010
+#define NCU_PCIE_MEM64_MASK_ADDR    16'h2018
+#define NCU_PCIE_IOCON_BASE_ADDR    16'h2020
+#define NCU_PCIE_IOCON_MASK_ADDR    16'h2028
+
+// NCU register Base fields
+#define NCU_BASE_EN_FLD             63
+#define NCU_PCIE_MEMADDR_CMP_FLD    35:24
+#define NCU_PCIE_CFGADDR_CMP_FLD    35:29
+#define NCU_ADDR_IOCMD_FLD          28
+
+#define NCU_BASE_ADDR_IOCFG_FLD  0
+#define NCU_BASE_ADDR_MEM32_FLD  1
+#define NCU_BASE_ADDR_MEM64_FLD  2  
+
+// PIU register Addresses
+#define PIU_EQ_BASE_ADDRESS_REG_ADDR        24'h610000
+#define PIU_EQ_TAIL_REG_ADDR                24'h611600
+#define PIU_EQ_HEAD_REG_ADDR                24'h611800
+#define PIU_MSI_MAPPING_REG_ADDR            24'h620000
+#define PIU_MSI_MAPPING_REG_ADDR            24'h620000
+#define PIU_MSI_CLEAR_REG_ADDR              24'h628000
+
+#define PIU_MSI_32_ADDRESS_REG_ADDR         24'h634000
+#define PIU_MSI_64_ADDRESS_REG_ADDR         24'h634008
+#define PIU_PCIE_64_OFFSET_REGISTER_ADDR    24'h634018
+
+#define PIU_IOMMU_CONTROL_REGISTER_ADDR     24'h640000
+#define PIU_IOMMU_TSB_CNTRL_REGISTER_ADDR   24'h640008
+#define PIU_IOMMU_DEV2IOTSB_REGISTER_ADDR   24'h649000
+#define PIU_IOMMU_IOTSBDESC_REGISTER_ADDR   24'h649100
+
+#define PIU_DMU_PCIE_CONFIG_REGISTER_ADDR   24'h653100
+
+#define PIU_PEU_PME_TURN_OFF_REGISTER_ADDR  24'h680010
+#define PIU_PEU_INGRESS_INITIAL_CREDITS_REGISTER_ADDR  24'h680018
+
+#define PIU_PEU_DEV_CNTRL_REGISTER_ADDR     24'h690008
+#define PIU_PEU_SLOT_CAPABILITIES_REG_ADDR  24'h690030
+
+
+// PIU register fields
+#define PCIE_64_OFFSET__FLD             63:24
+#define MPS__FLD                         7:5
+
+
+extern integer asm2peu_mbox;
+
+
+class N2fcXactionProbe {
+  PEUTestEnv     env;
+  
+  ilupeuScenario Scenario;
+
+  bit [63:0]     ncuMem32Base;
+  bit [63:0]     ncuMem32Mask;
+  
+  bit [63:0]     ncuMem64Base;
+  bit [63:0]     ncuMem64Mask;
+  
+  bit [63:0]     ncuIoconBase;
+  bit [63:0]     ncuIoconMask;
+
+  bit     DtmMode;
+  bit     IgnorePMETurnOff;
+
+  task new (ilupeuScenario  a_Scenario);
+  task setenv (PEUTestEnv  a_env);
+  task monitorNcuPioVld ();
+  task monitorCcuSerdesDtm ();
+  task monitorWarmReset ();
+
+  task ncuAccess (bit [129:0] dat);
+  task capturePioParams (bit [129:0] dat);
+  task piuAccess (bit [129:0] dat);
+}
+
+
+task N2fcXactionProbe::new (ilupeuScenario  a_Scenario) {
+
+  Scenario = a_Scenario;
+  DtmMode = 0;
+  IgnorePMETurnOff = 0;
+  
+  fork
+    monitorNcuPioVld();
+    monitorCcuSerdesDtm();
+    monitorWarmReset();
+  join none
+}
+
+
+task N2fcXactionProbe::setenv (PEUTestEnv  a_env) {
+  env = a_env;
+}
+
+
+task N2fcXactionProbe::monitorNcuPioVld () {
+  bit [129:0] dat;
+  
+  while (1) {
+    if (pcx_ncu_bind.$vld == 1'b1) {
+      repeat (1) @ (posedge pcx_ncu_bind.$clk);   // data rdy 1 clock later
+      dat = pcx_ncu_bind.$dat;
+
+      if        (dat[103:100] == 4'hc)  capturePioParams (dat);
+      else if   (dat[103: 96] == 8'h80) ncuAccess (dat);
+      else if   (dat[103: 96] == 8'h88) piuAccess (dat);
+    }
+    else {
+      repeat (1) @ (posedge pcx_ncu_bind.$clk);
+    }
+  }
+}
+
+
+task N2fcXactionProbe::monitorCcuSerdesDtm () {
+  integer WaitClocks = 16;
+  
+  N2fcPEUparams params = new ();
+
+  if(probe_if.start_dtm_at_ccu_serdes_dtm) {
+     // wait for ccu_serdes_dtm to be asserted
+     @ (posedge probe_if.ccu_serdes_dtm);
+
+     // wait for rst_ncu_unpark_thread to be asserted
+     @ (posedge probe_if.rst_ncu_unpark_thread);
+
+     
+     if (get_plus_arg(CHECK, "pcie_dtm_clocks=")) {
+       WaitClocks = get_plus_arg(NUM, "pcie_dtm_clocks=");
+     }
+     repeat (WaitClocks) @ (posedge random_rst_if.clk); // driven by tb_top.SYSCLK
+  } else {
+     @ (posedge probe_if.start_peu_dtm_training);
+  }
+
+  printf ("-%0d-UDEBUG:monitorCcuSerdesDtm : sending STARTDTM message\n", get_time(LO));
+  
+  params.cmdType = "STARTDTM";
+  mailbox_put(asm2peu_mbox, params);
+
+  DtmMode = 1;
+  
+  // SLAM_VECTORS no longer forces the bypass enable bit on
+  //if (get_plus_arg(CHECK, "SLAM_VECTORS")) {
+  //  PiuCsrs.IoMmuControl = 2;
+  //  printf ("\nN2fcXactionProbe : PIU MMU CONTROL updated to %0h\n\n", PiuCsrs.IoMmuControl);
+  //}
+}
+
+
+task N2fcXactionProbe::monitorWarmReset () {
+  N2fcPEUparams params = new ();
+
+  sync (ALL, e_StartPEUTest);
+  printf("-%0d-UDEBUG:monitorWarmReset : Done Waiting for assembly to enable peutest", get_time(LO));
+  
+  while (1) {
+    // wait for initial flush reset to complete
+    if (probe_if.flush_reset_complete !== 1) @(posedge probe_if.flush_reset_complete);
+    
+    // wait for warm reset to be asserted
+    printf ("-%0d-UDEBUG:monitorWarmReset : waiting for warm reset\n", get_time(LO));
+    @ (negedge if_ILU_PEU.j2d_rst_l);
+
+    printf ("-%0d-UDEBUG:monitorWarmReset : sending SOFTRESET message\n", get_time(LO));
+    
+    params.cmdType = "SOFTRESET";
+    mailbox_put(asm2peu_mbox, params);
+    
+    // wait for warm reset to finish
+    @ (posedge if_ILU_PEU.j2d_rst_l);
+  }
+}
+
+
+//----------------------------------------------------------------
+// Enable PCIe endpoint to expect a request from N2.
+// This routine, called from the Assembly via a user event,
+// triggers 1 Egress Command from N2.
+// Since the Denali end-point errors on un-expected packets,
+// it must be notified everytime N2 sends it a packet.
+//
+// cmdType:  Type of command to transmit
+//             CFGRD0  = Config Read  Type 0
+//             CFGRD1  = Config Read  Type 1
+//             CFGWR0  = Config Write Type 0
+//             CFGWR1  = Config Write Type 1
+//             IORD    = I/O Read
+//             IOWR    = I/O Write
+//             MRD     = Memory Read
+//             MWR     = Memory Write
+//
+// addr: Request Address
+//
+// txLen: Request length in bytes.
+//
+//----------------------------------------------------------------
+
+task N2fcXactionProbe::capturePioParams (bit [129:0] dat) {
+
+  string        cmdType        = "";
+  bit [63:0]    addr           = 64'b0;
+  bit [7:0]     txLen          = 8'b0;
+  bit           rdCmd          = 1'b0;
+  bit [1:0]     cmd;
+  bit [5:0]     tid            = 6'b0;
+
+  
+  N2fcPEUparams PEUparams = new ();
+
+
+  // is this a read or write command ?
+  //
+  rdCmd = dat[PCX_NCU_RQTYP_FLD] == 5'b00000;
+
+  addr  = dat[PCX_NCU_ADDR_FLD];
+
+  if (rdCmd === 1'b1)
+    case (dat[PCX_NCU_SIZE_FLD]) {
+      8'h00    : txLen = 8'd1;
+      8'h01    : txLen = 8'd2;
+      8'h02    : txLen = 8'd4;
+      8'h03    : txLen = 8'd8;
+      8'h04    : txLen = 8'd16;
+    }
+  else
+    txLen = dat[PCX_NCU_SIZE_FLD];
+
+  tid = dat[PCX_NCU_TID_FLD];
+    
+  // now determine if this is CFG, IO, or Mem32/64 command
+  // match the base and mask address written into NCU registers
+  // check if the access is enabled
+  //
+  if (ncuIoconBase[NCU_BASE_EN_FLD] === 1'b1) {
+    
+    if ( (ncuIoconMask[NCU_PCIE_CFGADDR_CMP_FLD] & addr[NCU_PCIE_CFGADDR_CMP_FLD]) ===
+        ncuIoconBase[NCU_PCIE_CFGADDR_CMP_FLD]) {
+      cmd = (addr[NCU_ADDR_IOCMD_FLD] === 1'b1) ? 2'b01 : 2'b00;
+      printf ("\n-%0d-UDEBUG:capturePioParams : address %0h matched CFGIO region, %s %h Tid %h\n\n", get_time(LO), addr, rdCmd ? "Rd Len":"Wr Bmsk", txLen, tid);
+      PEUparams.BaseAddr = PiuCsrs.ncuBaseAddr[NCU_BASE_ADDR_IOCFG_FLD];
+    }
+  }
+  if (ncuMem32Base[NCU_BASE_EN_FLD] === 1'b1) {
+    if ( (ncuMem32Mask[NCU_PCIE_MEMADDR_CMP_FLD] & addr[NCU_PCIE_MEMADDR_CMP_FLD]) ===
+        ncuMem32Base[NCU_PCIE_MEMADDR_CMP_FLD]) {
+      cmd = 2'b10;
+      printf ("\n-%0d-UDEBUG:capturePioParams : address %0h matched MEM32 region, %s %h Tid %h\n\n", get_time(LO), addr, rdCmd ? "Rd Len":"Wr Bmsk", txLen, tid);
+      PEUparams.BaseAddr = PiuCsrs.ncuBaseAddr[NCU_BASE_ADDR_MEM32_FLD];
+    }
+  }
+  if (ncuMem64Base[NCU_BASE_EN_FLD] === 1'b1) {
+    if ( (ncuMem64Mask[NCU_PCIE_MEMADDR_CMP_FLD] & addr[NCU_PCIE_MEMADDR_CMP_FLD]) ===
+        ncuMem64Base[NCU_PCIE_MEMADDR_CMP_FLD]) {
+      cmd = 2'b11;
+      printf ("\n-%0d-UDEBUG:capturePioParams : address %0h matched MEM64 region, %s %h Tid %h\n\n", get_time(LO), addr, rdCmd ? "Rd Len":"Wr Bmsk", txLen, tid);
+      PEUparams.BaseAddr = PiuCsrs.ncuBaseAddr[NCU_BASE_ADDR_MEM64_FLD];
+    }
+  }
+
+  PEUparams.Pcie64Offset = PiuCsrs.piuPcie64Offset; // needed for MEM64 rd/wr
+  
+  case (cmd) {
+    2'b00    : {
+      if (addr[27:20] == 8'h00)  cmdType = rdCmd ? "CFGRD0"   : "CFGWR0";
+      else                       cmdType = rdCmd ? "CFGRD1"   : "CFGWR1";
+    }
+    2'b01    :                   cmdType = rdCmd ? "IORD"     : "IOWR";
+    2'b10    :                   cmdType = rdCmd ? "MRD"      : "MWR";
+    2'b11    :                   cmdType = rdCmd ? "MEM64RD"  : "MEM64WR";
+    
+    default  : {
+      printf ("N2fcXactionProbe::capturePioParams unknown cmd = %0h, A = %0h, D = %0h, en %b %b %b\n\n",
+              cmd, addr[35:0], dat[PCX_NCU_DATA_FLD], ncuIoconBase[NCU_BASE_EN_FLD], ncuMem32Base[NCU_BASE_EN_FLD], ncuMem64Base[NCU_BASE_EN_FLD]);
+      return;
+    }
+  }
+
+  PEUparams.cmdType       = cmdType;
+  PEUparams.addr          = addr;
+  PEUparams.txLen         = txLen;
+  PEUparams.startData     = dat[PCX_NCU_DATA_FLD];
+  PEUparams.err           = "";
+
+  mailbox_put (asm2peu_mbox, PEUparams);
+}
+
+
+
+
+//----------------------------------------------------------------
+
+task N2fcXactionProbe::ncuAccess (bit [129:0] dat) {
+
+  bit [63:0]    addr           = 64'b0;
+  bit           rdCmd          = 1'b0;
+
+
+  rdCmd    = dat[PCX_NCU_RQTYP_FLD] == 5'b00000;
+  addr     = dat[PCX_NCU_ADDR_FLD];
+
+  if (rdCmd === 1'b0) {
+    case (addr[15:0]) {
+      NCU_PCIE_MEM32_BASE_ADDR : {
+        ncuMem32Base  = dat[PCX_NCU_DATA_FLD];
+        PiuCsrs.ncuBaseAddr[NCU_BASE_ADDR_MEM32_FLD] = {1'b0, ncuMem32Base[62:0]};  // do not store EN bit
+        printf ("\nN2fcXactionProbe : NCU MEM32 BASE updated to %0h\n\n", ncuMem32Base);
+      }
+      NCU_PCIE_MEM32_MASK_ADDR : {
+        ncuMem32Mask  = dat[PCX_NCU_DATA_FLD];
+        printf ("\nN2fcXactionProbe : NCU MEM32 MASK updated to %0h\n\n", ncuMem32Mask);
+      }
+      NCU_PCIE_MEM64_BASE_ADDR : {
+        ncuMem64Base  = dat[PCX_NCU_DATA_FLD];
+        PiuCsrs.ncuBaseAddr[NCU_BASE_ADDR_MEM64_FLD] = {1'b0, ncuMem64Base[62:0]};  // do not store EN bit
+        printf ("\nN2fcXactionProbe : NCU MEM64 BASE updated to %0h\n\n", ncuMem64Base);
+      }
+      NCU_PCIE_MEM64_MASK_ADDR : {
+        ncuMem64Mask  = dat[PCX_NCU_DATA_FLD];
+        printf ("\nN2fcXactionProbe : NCU MEM64 MASK updated to %0h\n\n", ncuMem64Mask);
+      }
+      NCU_PCIE_IOCON_BASE_ADDR : {
+        ncuIoconBase  = dat[PCX_NCU_DATA_FLD];
+        PiuCsrs.ncuBaseAddr[NCU_BASE_ADDR_IOCFG_FLD] = {1'b0, ncuIoconBase[62:0]};  // do not store EN bit
+        printf ("\nN2fcXactionProbe : NCU IOCON BASE updated to %0h\n\n", ncuIoconBase);
+      }
+      NCU_PCIE_IOCON_MASK_ADDR : {
+        ncuIoconMask  = dat[PCX_NCU_DATA_FLD];
+        printf ("\nN2fcXactionProbe : NCU IOCON MASK updated to %0h\n\n", ncuIoconMask);
+      }
+      default : { /* empty */ }
+    }
+  }
+}
+
+
+
+//----------------------------------------------------------------
+
+task N2fcXactionProbe::piuAccess (bit [129:0] dat) {
+
+  bit [63:0]    addr           = 64'b0;
+  bit [63:0]    data           = 64'b0;
+  bit           rdCmd          = 1'b0;
+  
+  bit [ FNX_PCIE_XTR_REG_DEN_WIDTH-1:0 ]   denRegTmpData;
+  bit [1:0]     D3 = 3; 
+  bit [23:0]    RegAddr;
+  bit [11:0]    RegIndex;
+
+  rdCmd    = dat[PCX_NCU_RQTYP_FLD] == 5'b00000;
+  addr     = dat[PCX_NCU_ADDR_FLD];
+
+  if (rdCmd === 1'b0) {
+    case (addr[23:0]) {
+      PIU_EQ_BASE_ADDRESS_REG_ADDR : {
+        PiuCsrs.EQBaseAddr = dat[PCX_NCU_DATA_FLD];
+        PiuCsrs.EQBaseAddr[18:0] = 0; // zero out lower bits 
+        printf ("\nN2fcXactionProbe : PIU EQ BASE ADDR updated to %0h\n\n", PiuCsrs.EQBaseAddr );
+      }
+      PIU_PCIE_64_OFFSET_REGISTER_ADDR : {
+        data = dat[PCX_NCU_DATA_FLD];
+        PiuCsrs.piuPcie64Offset = {data[PCIE_64_OFFSET__FLD], 24'b0};
+        printf ("\nN2fcXactionProbe : PIU PCIE 64 OFFSET updated to %0h, piomode bits %h\n\n", PiuCsrs.piuPcie64Offset, data[1:0]);
+      }
+      PIU_MSI_32_ADDRESS_REG_ADDR : {
+        PiuCsrs.piuMsi32Address = dat[PCX_NCU_DATA_FLD];
+        printf ("\nN2fcXactionProbe : PIU MSI 32 ADDRESS updated to %0h\n\n", PiuCsrs.piuMsi32Address);
+      }
+      PIU_MSI_64_ADDRESS_REG_ADDR: {
+        PiuCsrs.piuMsi64Address = dat[PCX_NCU_DATA_FLD];
+        printf ("\nN2fcXactionProbe : PIU MSI 64 ADDRESS updated to %0h\n\n", PiuCsrs.piuMsi64Address);
+      }
+      PIU_IOMMU_CONTROL_REGISTER_ADDR: {
+        PiuCsrs.IoMmuControl = dat[PCX_NCU_DATA_FLD];
+        printf ("\nN2fcXactionProbe : PIU MMU CONTROL updated to %0h\n\n", PiuCsrs.IoMmuControl);
+      }
+      
+      PIU_IOMMU_TSB_CNTRL_REGISTER_ADDR: {
+        PiuCsrs.IoMmuTsbControl = dat[PCX_NCU_DATA_FLD];
+        printf ("\nN2fcXactionProbe : PIU MMU TSB CONTROL updated to %0h\n\n", PiuCsrs.IoMmuTsbControl);
+      }
+      
+      PIU_PEU_DEV_CNTRL_REGISTER_ADDR: {
+        data = dat[PCX_NCU_DATA_FLD];
+        case( data[MPS__FLD] ) {
+          0: PiuCsrs.piuMaxPayloadSize = 128;
+          1: PiuCsrs.piuMaxPayloadSize = 256;
+          2: PiuCsrs.piuMaxPayloadSize = 512;
+          default: printf ("\nN2fcXactionProbe : unsupported/reserved PIU Max Payload Size field(%0h) in PIU_PEU_DEV_CNTRL_REGISTER\n\n", dat[MPS__FLD]);
+        }
+        printf ("\nN2fcXactionProbe : PIU Max Payload Size is %0d\n\n", PiuCsrs.piuMaxPayloadSize);
+      }
+
+      PIU_DMU_PCIE_CONFIG_REGISTER_ADDR : {
+        data = dat[PCX_NCU_DATA_FLD];
+        PiuCsrs.piuREQ_ID = data[15:0];
+        printf ("\nN2fcXactionProbe : PCIE REQ ID updated to 0x%0h\n\n", PiuCsrs.piuREQ_ID);
+      }
+      PIU_PEU_SLOT_CAPABILITIES_REG_ADDR: {
+        printf ("\nN2fcXactionProbe : write to PEU SLOT CAPABILITIES register detected\n\n");
+        data = dat[PCX_NCU_DATA_FLD];
+        env.expectEgressMsg( PEC_PCI__MSG_CODE_SET_SLOT_POWER_LIMIT, { 22'b0, data[16:7] } );
+      }
+      PIU_PEU_PME_TURN_OFF_REGISTER_ADDR: {
+        printf ("\nN2fcXactionProbe : write to PEU PME TURN OFF register detected\n\n");
+
+        if( !IgnorePMETurnOff ) {
+          // direct Denali Endpoint to enter D3 state (otherwise test will fail)
+          denRegTmpData = env.Pod.FNXPCIEEnableTrans.ReadDenaliReg( PCIE_REG_PM_ST_CTRL );
+          denRegTmpData[1:0] = D3;
+          env.Pod.FNXPCIEEnableTrans.WriteDenaliReg(PCIE_REG_PM_ST_CTRL, denRegTmpData);
+        
+          env.expectEgressMsg( PEC_PCI__MSG_CODE_PM_TURN_OFF, 0 );
+        }
+      }
+
+      PIU_PEU_INGRESS_INITIAL_CREDITS_REGISTER_ADDR: {
+        data = dat[PCX_NCU_DATA_FLD];
+        printf ("\nN2fcXactionProbe : write to PEU INGRESS INITIAL CREDITS register detected: %h\n\n", data);
+
+        Scenario.ilupeuInitialNonPostedHeaderCredit = data[39:32];
+        Scenario.ilupeuInitialPostedHeaderCredit    = data[19:12];
+        Scenario.ilupeuInitialPostedDataCredit      = data[11:0];
+
+        printf("N2fcXactionProbe: Scenario.ilupeuInitialPostedHeaderCredit = %d \n", Scenario.ilupeuInitialPostedHeaderCredit);
+        printf("N2fcXactionProbe: Scenario.ilupeuInitialNonPostedHeaderCredit = %d \n", Scenario.ilupeuInitialNonPostedHeaderCredit);
+        printf("N2fcXactionProbe: Scenario.ilupeuInitialPostedDataCredit = %d \n", Scenario.ilupeuInitialPostedDataCredit);
+
+        if ((Scenario.ilupeuInitialNonPostedHeaderCredit + Scenario.ilupeuInitialPostedHeaderCredit) > 8'h30) {
+          printf("WARNING: NonPostedHeaderCredit+PostedHeaderCredit exceeds 8'h30\n");
+        }
+        if (Scenario.ilupeuInitialPostedDataCredit > 8'hc0) {
+          printf("WARNING: PostedDataCredit exceeds 8'hc0\n");
+        }
+      }
+      
+      default : {
+        RegAddr = PIU_EQ_TAIL_REG_ADDR;
+        if (addr[23:9] == RegAddr[23:9]) {
+          RegIndex = addr[8:3];
+          data = dat[PCX_NCU_DATA_FLD];
+          PiuCsrs.EQTail[RegIndex] = data[6:0];
+          printf ("\nN2fcXactionProbe : write to EQ TAIL[%d] register detected, data=%h\n\n", RegIndex, PiuCsrs.EQTail[RegIndex]);
+        }
+        else {
+          RegAddr = PIU_EQ_HEAD_REG_ADDR;
+          if (addr[23:9] == RegAddr[23:9]) {
+            RegIndex = addr[8:3];
+            data = dat[PCX_NCU_DATA_FLD];
+            PiuCsrs.EQHead[RegIndex] = data[6:0];
+            printf ("\nN2fcXactionProbe : write to EQ HEAD[%d] register detected, data=%h\n\n", RegIndex, PiuCsrs.EQHead[RegIndex]);
+          }
+          else {
+            RegAddr = PIU_MSI_MAPPING_REG_ADDR;
+            if (addr[23:11] == RegAddr[23:11]) {
+              RegIndex = addr[10:3];
+              PiuCsrs.MSIMapping[RegIndex] = dat[PCX_NCU_DATA_FLD];
+              printf ("\nN2fcXactionProbe : write to MSI MAPPING[%d] register detected, data=%h\n\n", RegIndex, PiuCsrs.MSIMapping[RegIndex]);
+            }
+            else {
+              RegAddr = PIU_MSI_CLEAR_REG_ADDR;
+              if (addr[23:11] == RegAddr[23:11]) {
+                RegIndex = addr[10:3];
+                data = dat[PCX_NCU_DATA_FLD];
+                printf ("\nN2fcXactionProbe : write to MSI CLEAR[%d] register detected, data=%h\n\n", RegIndex, data);
+                if(data[62]) {
+                  PiuCsrs.ClearMsiEqWr(RegIndex);
+                }
+              }
+              else {
+                RegAddr = PIU_IOMMU_DEV2IOTSB_REGISTER_ADDR;
+                if (addr[23:7] == RegAddr[23:7]) {
+                  RegIndex = addr[6:3];
+                  data = dat[PCX_NCU_DATA_FLD];
+                  printf ("\nN2fcXactionProbe : write to DEV2IOTSB[%d] register detected, data=%h\n\n", RegIndex, data);
+                  PiuCsrs.IoMmuDev2Iotsb[RegIndex] = data;
+                }
+                else {
+                  RegAddr = PIU_IOMMU_IOTSBDESC_REGISTER_ADDR;
+                  if (addr[23:8] == RegAddr[23:8]) {
+                    RegIndex = addr[7:3];
+                    data = dat[PCX_NCU_DATA_FLD];
+                    printf ("\nN2fcXactionProbe : write to IOTSBDESC[%d] register detected, data=%h\n\n", RegIndex, data);
+                    PiuCsrs.IoMmuIoTsbDesc[RegIndex] = data;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

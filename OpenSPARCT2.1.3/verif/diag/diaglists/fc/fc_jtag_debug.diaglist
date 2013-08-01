@@ -1,0 +1,114 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: fc_jtag_debug.diaglist
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+<sys(jtag_debug)>
+  <runargs -tg_seed=1  -fast_boot -midas_args=-DPART_0_BASE=0x200000000 -midas_args=-DL2_REG_PROG> // seed locked to 1 for regression section only
+
+    <core_ss name=core_ss>
+      memop_all_atomics       memop_all_atomics.s -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff fc_jtag_single_step_core.vr -rtl_timeout=100000
+    </core_ss>
+
+    <core_do name=core_do>
+      memop_all_atomics       memop_all_atomics.s -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff fc_jtag_disable_overlap_core.vr -rtl_timeout=100000
+    </core_do>
+
+    <shadow_scan_core name=shadow_scan_core>
+      memop_all_atomics       memop_all_atomics.s -midas_args=-DCMP_THREAD_START=0xff -finish_mask=ff fc_jtag_shadow_scan_core.vr
+
+      <runargs -midas_args=-DCMP_THREAD_START=0x1 -finish_mask=1>
+        interrupt_SPU_interrupt         interrupt_SPU_interrupt.s  fc_jtag_shadow_scan_core.vr
+        interrupt_ncu_regs_rw           interrupt_ncu_regs_rw.s  fc_jtag_shadow_scan_core.vr
+      </runargs>
+
+      // NIU diags
+      <runargs -sas -midas_args=-DCMP_THREAD_START=0x1 -vcs_run_args=+MAC_SPEED0=10000 -finish_mask=1 >
+      <runargs -vcs_run_args=+MAC_SPEED1=10000 >
+      <runargs -vcs_run_args=+GET_MAC_PORTS=0  -vcs_run_args=+ENABLE_PCIE_LINK_TRAINING -midas_args=-DENABLE_PCIE_LINK_TRAINING >
+      <runargs -vcs_run_args=+PCS_SERDES -vcs_run_args=+displaySysRdWr >
+      <runargs -vcs_run_args=+ORIG_META -vcs_run_args=+TX_TEST -vcs_run_args=+ORIG_META -vcs_run_args=+PEU_TEST >
+      <runargs -midas_args=-DTX_TEST -midas_args=-DMAC_SPEED0=10000 -midas_args=-DMAC_SPEED1=10000 -midas_args=-DPCS_SERDES >
+      <runargs -vcs_run_args=+TX_GATHER -vcs_run_args=+TX_PKT_LEN=200 -midas_args=-Dloop_count=100 -midas_args=-DJUMBO_FRAME_EN >
+        FcNiuTx_PktLen_Gather   FcNiuBasicTx.s  fc_jtag_shadow_scan_core.vr -rtl_timeout=100000
+      </runargs>
+      </runargs>
+      </runargs>
+      </runargs>
+      </runargs>
+      </runargs>
+      </runargs>
+
+      //PEU diags
+      <runargs -sas -vcs_run_args=+PEU_TEST >
+        PCIeMemRd               PCIeMemRd.s  fc_jtag_shadow_scan_core.vr
+      </runargs>
+    </shadow_scan_core>
+
+    <shadow_scan_l2 name=shadow_scan_l2>
+      <runargs -nosas -midas_args=-DINC_SOC_ERR_TRAPS -vcs_run_args=+l2esr_mon_off -vcs_run_args=+l2cpx_mon_off -vcs_run_args=+l2cpx_errmon_off -max_cycle=+100000 -midas_args=-DCREGS_L2_ERR_EN_REG_CEEN=0 -midas_args=-DCREGS_L2_ERR_EN_REG_NCEEN=0 -vcs_run_args=+ios_0in_ras_chk_off -rtl_timeout=100000>
+        // L2 error diags
+        n2_err_L2_NotData_NDSP_meu		n2_err_L2_NotData_NDSP_meu.s  -midas_args=-DL2_NDSP_err  fc_jtag_shadow_scan_l2t.vr
+        n2_err_L2_NotData_NDDM		    n2_err_L2_NotData_NDDM.s  -midas_args=-DL2_NDSP_err -vcs_run_args=+PEU_TEST -vcs_run_args=+PEU_MEM_Chkr_off  fc_jtag_shadow_scan_l2t.vr
+        n2_err_L2_NotData_NDDM_meu		n2_err_L2_NotData_NDDM_meu.s  -midas_args=-DL2_NDSP_err -vcs_run_args=+PEU_TEST -vcs_run_args=+PEU_MEM_Chkr_off  fc_jtag_shadow_scan_l2t.vr
+        n2_err_l2_LDRC_cecc_trap   n2_err_l2_LDRC_cecc_trap.s -vcs_run_args=+PEU_TEST -vcs_run_args=+PEU_MEM_Chkr_off  fc_jtag_shadow_scan_l2t.vr
+      </runargs>
+    </shadow_scan_l2>
+
+    <jtag_l2_access name=jtag_l2_access>
+      jtag_and_PCIe_access_same_L2_bank PCIeDMARw_bug116647.s fc_tcu_siu_bug116647.vr  -vcs_run_args=+PEU_TEST -sas
+      tcu_l2_access_ld_st_allbanks tcu_l2_access_ld_st_allbanks.s fc_jtag_l2_access.vr
+    </jtag_l2_access>
+
+    <asm_ucb_access name=asm_ucb_access>
+      tcu_asm_ucb_accesses_fc_a    tcu_asm_ucb_accesses_fc_a.s    tcu_asm_ucb_accesses_fc.vr
+    </asm_ucb_access>
+      
+  </runargs> // -tg_seed=1  -fast_boot
+</sys(jtag_debug)>
+
+<fc_jtag_debug_gate>
+
+//    <shadow_scan_l2 name=shadow_scan_l2>
+//      <runargs -nosas -midas_args=-DINC_SOC_ERR_TRAPS -vcs_run_args=+l2esr_mon_off -vcs_run_args=+l2cpx_mon_off -vcs_run_args=+l2cpx_errmon_off -max_cycle=+100000 -midas_args=-DCREGS_L2_ERR_EN_REG_CEEN=0 -midas_args=-DCREGS_L2_ERR_EN_REG_NCEEN=0 -vcs_run_args=+ios_0in_ras_chk_off>
+//        // L2 error diags
+//        n2_err_L2_NotData_NDSP_meu              n2_err_L2_NotData_NDSP_meu.s  -midas_args=-DL2_NDSP_err  fc_jtag_shadow_scan_l2t_gate.vr
+//        n2_err_L2_NotData_NDDM              n2_err_L2_NotData_NDDM.s  -midas_args=-DL2_NDSP_err -vcs_run_args=+PEU_TEST -vcs_run_args=+PEU_MEM_Chkr_off  fc_jtag_shadow_scan_l2t_gate.vr
+//        n2_err_L2_NotData_NDDM_meu              n2_err_L2_NotData_NDDM_meu.s  -midas_args=-DL2_NDSP_err -vcs_run_args=+PEU_TEST -vcs_run_args=+PEU_MEM_Chkr_off  fc_jtag_shadow_scan_l2t_gate.vr
+//        n2_err_l2_LDRC_cecc_trap   n2_err_l2_LDRC_cecc_trap.s -vcs_run_args=+PEU_TEST -vcs_run_args=+PEU_MEM_Chkr_off  fc_jtag_shadow_scan_l2t_gate.vr
+//      </runargs>
+//    </shadow_scan_l2>
+
+    <jtag_l2_access name=jtag_l2_access>
+      tcu_l2_access_ld_st_allbanks tcu_l2_access_ld_st_allbanks.s fc_jtag_l2_access.vr
+    </jtag_l2_access>
+</fc_jtag_debug_gate>

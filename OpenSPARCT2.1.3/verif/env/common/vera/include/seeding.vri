@@ -1,0 +1,168 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: seeding.vri
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "plusArgMacros.vri"
+
+
+//-----------------------------------------------------------------------------
+// You must seed the random number generators from the vera program file
+// (*top.vr) *BEFORE* class instantiations and forks.  YES, this matters
+// in vera > V5, see vera docs. If you don't seed before instantiating a
+// class, that class ALWAYS repeats the same random numbers which is NOT
+// what you want. (you have been warned :^))
+//-----------------------------------------------------------------------------
+
+//-----------------------------------------------------------------------------
+// NOTE: random() always returns a positive integer. bit 31 ALWAYS ZERO.
+//      urandom() always returns a unsigned integer. bit 31 ALWAYS RANDOM.
+// If you do myInt = urandom(); you will get a negetive integer 50% of the time!
+// If you do myReg[31:0] = random(); you will always have [31] = 0.
+// Read this again...
+//-----------------------------------------------------------------------------
+
+
+/*
+
+Example:
+
+program bench_top {
+
+MyClass hndl;
+integer otherStuff;
+integer gSeed;
+integer gSeedFileHndl;
+
+// The var name I picked else gSeed will be the defaulted to name
+#define SEEDNAME  gSeed
+// The name I picked for a file handle name else gSeedFileHndl will be the defaulted to name
+#define HDNLNAME gSeedFileHndl
+// I want to force the seed to 1 for development, remember to REMOVE LATER.
+#define SEEDFORCE 1
+// Get the seeding code
+#include "seeding.vri"
+
+hndl = new();
+
+}
+
+*/
+
+
+reg [31:0] seedingtmpseed = 0;
+string which;
+
+#ifdef NTB
+string gTestNameAsm, gTestNameVera, gAltTestname;
+which = "NTB";
+#else
+reg [1024:0] gTestNameAsm, gTestNameVera, gAltTestname;
+which = "VERA";
+#endif
+
+
+gTestNameAsm = "";
+gTestNameVera = "";
+gAltTestname = "";
+
+#ifndef HDNLNAME
+#define HDNLNAME gSeedFileHndl
+#endif
+
+#ifndef SEEDNAME
+#define SEEDNAME gSeed
+#endif
+
+#ifdef SEEDFORCE
+  SEEDNAME = SEEDFORCE;
+#else
+  mGetPlusargDec(tg_seed=,seedingtmpseed);
+  if (seedingtmpseed[31]) {
+    seedingtmpseed[31] = 0; // don't want negative integer
+    printf("SEED---> sims +tg_seed: was modified to not be a negative integer\n");
+  }
+  SEEDNAME = seedingtmpseed; // cast reg to positive integer
+  printf("SEED---> sims +tg_seed: %d", SEEDNAME);
+  //
+  // NOTE: use sims -tg_seed= to pass in a seed.
+  // DO NOT use sims -vcs_run_args=+tg_seed=, it will not work!
+  //
+#endif
+
+    
+// +vera_diag_name=
+// +asm_diag_name=
+// +sjm_diag_name=
+// +tap_diag_name=
+// +tpt_diag_name=
+// +pci_diag_name=
+// +image_diag_name=
+// +efuse_image_name=
+// +vera_config_name=
+  if (mChkPlusarg(vera_diag_name=)) mGetPlusargStr(vera_diag_name=,gTestNameVera);
+  if (mChkPlusarg(asm_diag_name=)) mGetPlusargStr(asm_diag_name=,gTestNameAsm);
+  if (mChkPlusarg(test=)) mGetPlusargStr(test=,gAltTestname);
+
+  // NOTE: random always returns a positive integer. bit 31 ALWAYS ZERO.
+  //      urandom always returns a unsigned integer. bit 31 ALWAYS RANDOM.
+  // If you do myInt = urandom(); you will get a negetive integer 50% of time!
+  // If you do myReg[31:0] = random(); you will always have [31] = 0.
+  // Read this again...
+  
+  rand48(SEEDNAME);urand48(SEEDNAME); // do not use these 48 calls
+  urandom(SEEDNAME);random(SEEDNAME); // not really needed but safe
+  srandom(SEEDNAME); // seeds main generator and random and urandom
+
+  // store the seed. Lost seeds after re-runs are a real bummer!
+  HDNLNAME = fopen( "./seeds.log", "a" );
+  if ( HDNLNAME == 0 ) {
+    printf("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+    printf("The %s random generators have just been seeded with %d\n", which, SEEDNAME);
+    printf("You need to know this SEED if you want to reproduce failures!\n");
+    printf("Use sims -tg_seed=%0d to reproduce this run.\n",SEEDNAME);
+    printf("Seed not saved to file!!! Make sure that you are the owner of seeds.log and that it has 664 protection.\n");
+    printf("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+  } else {
+    printf("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+    printf("The %s random generators have just been seeded with %d\n",which, SEEDNAME);
+    printf("You need to know this SEED if you want to reproduce failures!\n");
+    printf("Use sims -tg_seed=%0d to reproduce this run!\n",SEEDNAME);
+    printf("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+    fprintf(HDNLNAME, "---------------------------------------------------------------------\n");
+    fprintf(HDNLNAME, "Test %s %s %s is using seed %d\n", gTestNameAsm, gTestNameVera, gAltTestname, SEEDNAME);
+    fprintf(HDNLNAME, "Test completion message should follow indicating passed/failed/stopped!\n");
+    fclose(HDNLNAME);
+    // NOTE: 'end of test' code should update this file to indicate status,
+    // that way you know which seed was the failing one, which is the one
+    // you are looking for... I need to make a seedingEnd.vri to do that. jp
+  }

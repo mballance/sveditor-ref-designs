@@ -1,0 +1,98 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: hostRdCbMgr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "niu_cbclass.vrh"
+
+#ifdef N2_FC
+#else
+#ifdef N2_IOS
+#else
+#include "niu_siu_chk.vrh"
+#ifdef NIU_GATE
+#else
+#include "meta_monitor.vrh"
+extern CMetaMonitor Metamon;
+//extern class MetaMonEvent;
+#endif
+extern class MetaMonEvent;
+#endif
+#endif
+
+#ifdef N2_FC
+#else
+#ifdef N2_IOS
+#else
+extern CSiu_Checker   siu_chk;
+#endif
+#endif
+
+class CHostRdCbMgr
+{
+  task new(integer mode) {
+   // bind to the host
+  }
+
+  task setCallBack(CcbMem cb) {
+	// Assume that FC doesn't need MetaMonEvent
+    #ifdef N2_FC
+    #else
+    #ifdef N2_IOS
+    #else
+         MetaMonEvent   meta_event; // make static?
+    #endif
+    #endif
+
+      #ifdef N2_FC
+      #else
+        #ifdef N2_IOS
+        #else
+          #ifdef NIU_GATE
+	  #else
+          if (get_plus_arg(CHECK, "ENABLE_META_MONITOR_CALLBACKS")) {
+            meta_event = new;
+            meta_event.ev_address      = cb.attr;
+            meta_event.ev_oper_address = OPER_EQ;
+            Metamon.meta_monitor_event_add("CHostRdCbMgr", cb.semId, meta_event);
+          }
+          else {
+            // if SIU Model
+            siu_chk.setCallBack(cb);
+            // else use N2's Memory here
+          }
+	  #endif
+        #endif
+      #endif
+  }
+}
+

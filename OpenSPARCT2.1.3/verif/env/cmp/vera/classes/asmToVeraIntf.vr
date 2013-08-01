@@ -1,0 +1,169 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: asmToVeraIntf.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <globals.vri>
+
+#include <ccxDevicesDefines.vri>
+
+#include <std_display_defines.vri>
+#include <std_display_class.vrh>
+#include <baseUtilsClass.vrh>
+#include <sparcBenchUtils.vrh>
+#include <utilsClass.vrh>
+#include <memArray.vrh>
+#include <baseAsmToVeraIntf.vrh>
+
+class AsmToVeraIntf extends BaseAsmToVeraIntf {
+
+  // THESE CALLS MUST RETURN IN ZERO TIME OR WE ARE BROKEN!!!
+  
+  task new();
+  
+  // trig_pc_d(kind, 64'h1234567812345678) -> intp(tid, type, vector) hex, w/no 64'h
+  // trig_pc_d(kind, 64'h1234567812345678) -> intp(tid, type, vector, src, wait)    
+  task intp(reg [5:0] tid = 0,
+            reg [63:0] type = 0,
+            reg [63:0] vec = 0,
+            integer src = 16, // 0-16 are ccx ports. 16 = NCU
+            integer wait = 0);
+
+  // dump actual RAM contents
+  // trig_pc_d(1,expr(@VA(.MAIN.T1_ext_intr_200), 16, 16)) -> dump_mem(addr, amount)
+  task dump_mem(reg [63:0] addr=0,
+                integer amount = 8);
+  
+  task warmrst(integer wait = 0);
+   
+  // SPC BFM will do a store. Pick correct port w/ BFM!!!
+  // trig_pc_d(1,...) -> store(cpu/ccxPort, addr, data)
+  task store(reg [7:0] ccxPortMask = 0,
+             reg [63:0] addr=0,
+             reg [63:0] data=0);
+
+  task marker(string what, reg [5:0] fromTid, reg [63:0] pc);
+  
+}
+
+
+
+task AsmToVeraIntf::new() {
+  probe_if.gOutOfBoot <= 64'h0;
+}
+
+
+
+// trig_pc_d(kind, 64'h1234567812345678) -> intp(tid, type, vector) hex, w/no 64'h
+// trig_pc_d(kind, 64'h1234567812345678) -> intp(tid, type, vector, src, wait)    
+task AsmToVeraIntf::intp(reg [5:0] tid = 0,
+                         reg [63:0] type = 0,
+                         reg [63:0] vec = 0,
+                         integer src = DEV_NCU, // 0-16 are ccx ports. 16 = NCU
+                         integer wait = 0)
+{
+  fork {
+    repeat (wait) @(posedge CLOCK);
+    gUtil.sendIntr(tid,type,vec,src);
+  }
+  join none
+}
+
+// dump actual RAM contents
+// trig_pc_d(1,expr(@VA(.MAIN.T1_ext_intr_200), 16, 16)) -> dump_mem(addr, amount)
+task AsmToVeraIntf::dump_mem(reg [63:0] addr=0,
+                             integer amount = 8)
+{
+  gMem.dumpMem(addr,amount); 
+}
+
+
+task AsmToVeraIntf::warmrst(integer wait = 0)
+{
+  error("AsmToVeraIntf::warmrst is not coded yet\n");
+}
+
+
+// SPC BFM will do a store. Pick correct port w/ BFM!!!
+// trig_pc_d(1,...) -> store(cpu/ccxPort, addr, data)
+task AsmToVeraIntf::store(reg [7:0] ccxPortMask = 0,
+                          reg [63:0] addr=0,
+                          reg [63:0] data=0)
+{
+  error("AsmToVeraIntf::store is not coded yet\n");
+}
+
+// Use this to mark progress or a location in code. Any action can be
+// performed based on the string passed in. This is very flexible if all
+// you need is tid and pc.
+task AsmToVeraIntf::marker(string what, reg [5:0] fromTid, reg [63:0] pc)
+{
+
+  case (what) {
+    "bootEnd": {       
+      // gOutOfBoot works with User Events to show asm diag progress.
+      // Function gUtil.getThreadEnables will tell you which threads are running.
+      // (so will top_if.th_check_enable)
+      //
+      // Here is how you use gOutOfBoot:
+      //   reg [63:0] tmp;
+      //   tmp = gUtil.getThreadEnables;
+      //   while (tmp !== gOutOfBoot) wait_var(gOutOfBoot); // all threads out of boot
+      gOutOfBoot[fromTid] = 1;
+      probe_if.gOutOfBoot[fromTid] <= gOutOfBoot[fromTid];
+    }
+    "bootStart": {
+      // see comments for bootEnd above. This will clear bits in gOutOfBoot
+      // when that thread starts boot code execution after a reset.
+      // 
+      // Here is how you could use gOutOfBoot if +thread is used, once you
+      // detect a warm reset has started.
+
+      // Any thread has started boot code after this line of code
+      // while (top_if.th_check_enable === gOutOfBoot) wait_var(gOutOfBoot);
+      
+      // All threads have started boot code after this line of code.
+      // With the large staggering of 64 threads, gOutOfBoot may NEVER
+      // be zero!!!
+      // while (gOutOfBoot) wait_var(gOutOfBoot);
+      
+      // All threads have finished boot code after this line of code
+      // while (top_if.th_check_enable !== gOutOfBoot) wait_var(gOutOfBoot);
+      gOutOfBoot[fromTid] = 0;
+      probe_if.gOutOfBoot[fromTid] <= gOutOfBoot[fromTid];
+    }
+    default: error("AsmToVeraIntf::marker got unknown string!\n");
+  } // case
+
+
+}

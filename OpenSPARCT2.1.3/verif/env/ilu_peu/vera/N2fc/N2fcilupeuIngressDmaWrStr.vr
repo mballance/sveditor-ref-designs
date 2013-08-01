@@ -1,0 +1,565 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: N2fcilupeuIngressDmaWrStr.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include "l2_packet.vrh"
+#include "ios_l2_stub.vrh"
+#include "fc_top.if.vrh"
+
+extern VeraList_l2_packet l2_list0;
+extern VeraList_l2_packet l2_list1;
+extern VeraList_l2_packet l2_list2;
+extern VeraList_l2_packet l2_list3;
+extern VeraList_l2_packet l2_list4;
+extern VeraList_l2_packet l2_list5;
+extern VeraList_l2_packet l2_list6;
+extern VeraList_l2_packet l2_list7;
+extern ios_l2_stub l2_stub[];
+
+extern StandardDisplay dbg;
+
+
+class N2fcDmaWrPEUStr extends PEUStrBase {
+  
+  local bit [63:0]      N2fcSAddr;
+  local bit [63:0]      N2fcEAddr;
+  local bit             N2fcAddrSpecified;
+  local bit [31:0]      length;
+  local bit [31:0]      dat;
+  bit [511:0]           write_data = 0;
+  bit [63:0]            start_data = 0;
+  bit                   msi_dma = 0;
+  N2fcIommuMgr          MMU;
+  bit [7:0]             bus_id;
+
+  integer f_len;				// The packet's payload length
+  bit[3:0] f_firstDWBE;				// It's "first DWBE" field
+  bit[3:0] f_lastDWBE;				// It's "last DWBE" field
+  integer f_bndy;	 			// The address' boundary
+  bit f_lenSpecified;				// Was a length specified?
+  bit f_firstSpecified;				// Was a "firstDWBE" specified?
+  bit f_lastSpecified;				// Was a "lastDWBE" specified?
+  bit f_bndySpecified;				// Was an addr bndy specified?
+  integer               f_tc;		  // The packet's traffic class
+
+  function bit [63:0] hashpa (bit [63:0] pa) {
+    if (probe_if.hashing && ~pa[39])
+      hashpa = {pa[63:18], pa[32:28] ^ pa[17:13], pa[19:18] ^ pa[12:11], pa[10:0]};
+    else
+      hashpa = pa;
+  }
+
+  task new( PEUTestEnv a_env) {
+    bit [3:0] index;
+	
+    super.new( a_env );
+
+    if (!msi_dma){	
+      if (!get_plus_arg(CHECK, "DISABLE_L2_CHECKER")) {
+        for ( index=0; index <8; index++){
+  	  l2_stub[index].enable_l2_checker = 1; 
+	  l2_stub[index].enable_l2_wr_checker = 1; 
+        }
+      }
+    }
+    f_lenSpecified = 0;
+    f_firstSpecified = 0;
+    f_lastSpecified = 0;
+    f_bndySpecified = 0;
+    N2fcAddrSpecified = 0;
+    f_tc = -1;
+    MMU = new();
+    
+    printf ("%0d- N2fcDmaWrPEUStr:new first random # = %0h\n", get_time(LO), random() );
+  }
+
+  task SetLen( integer a_len )
+  {
+    f_len = a_len;
+    f_lenSpecified = 1;
+  }
+  task SetFirstDWBE( bit[3:0] a_dwbe )
+  {
+    f_firstDWBE = a_dwbe;
+    f_firstSpecified = 1;
+  }
+  task SetLastDWBE( bit[3:0] a_dwbe )
+  {
+    f_lastDWBE = a_dwbe;
+    f_lastSpecified = 1;
+  }
+  task SetAddrBndy( integer a_bndy )
+  {
+    f_bndy = a_bndy;
+    f_bndySpecified = 1;
+  }
+
+  task N2fcSetAddr( bit [63:0] i_saddr, bit [63:0] i_eaddr )
+  {
+      N2fcAddrSpecified  = 1;
+      N2fcSAddr          = i_saddr;
+      N2fcEAddr          = i_eaddr;
+  }
+  
+//-------------------------------------------------------------------
+// Method Name: 
+// Description: 
+//-------------------------------------------------------------------  
+  function bit[31:0] gen_4bytes_exp_data (bit [31:0] data, bit [3:0] bytemask){
+    integer index;
+	
+              for (index =0; index < 4; index++){ 
+                if (bytemask[3-index]) {
+	          gen_4bytes_exp_data[31-8*index:32-8*(index+1)] = data[31-8*index:32-8*(index+1)];
+                } else {
+                  gen_4bytes_exp_data[31-8*index:32-8*(index+1)] = 8'hx;
+                }
+	     }
+  }
+  
+//-------------------------------------------------------------------
+// Method Name: 
+// Description: 
+//-------------------------------------------------------------------  
+  task gen_exp_l2_pkt8bytes(
+            bit [31:0] dma_dword_len, 
+	var bit [63:0] address, 
+	    bit        bypass_first_word,
+	    bit        bypass_last_word,
+	var integer    ingressData,
+	    bit  [7:0] ingressTag
+  ){
+    integer i, j;
+    bit [7:0] bytemask;
+    l2_packet l2_pkt = new("L2Expect", dbg);
+    bit last_packet = 0;
+    bit [2:0] bank_number;
+    reg [3:0] pbank = {probe_if.ba67, probe_if.ba45, probe_if.ba23, probe_if.ba01};
+    integer   index;
+	write_data = 0;
+         for (j = 0; j < dma_dword_len; j++) {
+   	   bit [31:0] tmp_data;
+
+
+	   if (j==0 && address[2]){
+		index = 1;
+	   } else if (j == 0 ){
+		index = 0;
+	   } 
+	   if (index%2 == 0){
+	      bytemask = 8'hff;
+	   }
+	   tmp_data = f_env.nextPayloadDW( ingressData );
+	    
+ 	   if (j == 0 && !bypass_first_word){ // modify for first words 
+	     if (address[2]){
+	         bytemask [3:0] = {f_firstDWBE[0],f_firstDWBE[1],f_firstDWBE[2],f_firstDWBE[3]};
+	         bytemask [7:4] = 0;
+	     } else {
+	         bytemask [7:4] = {f_firstDWBE[0],f_firstDWBE[1],f_firstDWBE[2],f_firstDWBE[3]};
+		if (dma_dword_len ==  1){
+		 bytemask [3:0] = 0;
+	        }
+	     }
+	   }  else if (j == dma_dword_len-1 && !bypass_last_word){ // modify for last words
+	     if (address[2]){
+	       // bytemask[7:4] = 0;
+                bytemask[3:0]  = {f_lastDWBE[0], f_lastDWBE[1], f_lastDWBE[2], f_lastDWBE[3]};
+	     } else {
+                bytemask[7:4]  = {f_lastDWBE[0], f_lastDWBE[1], f_lastDWBE[2], f_lastDWBE[3]};
+	         bytemask [3:0] = 0;
+	     }
+	   }
+
+	
+	   if (index%2 == 0){ 
+	      write_data[63:32] = gen_4bytes_exp_data(tmp_data, bytemask[7:4]);
+	      if (j == dma_dword_len-1){
+		write_data[31:0] = gen_4bytes_exp_data(tmp_data, bytemask[3:0]);
+	      }
+           } else {
+	      write_data[31:0] = gen_4bytes_exp_data(tmp_data, bytemask[3:0]);
+	      if (j == 0 ){
+	  	write_data[63:32] = gen_4bytes_exp_data(tmp_data, bytemask[7:4]);
+		
+ 	      }
+	   }
+
+           last_packet = ((j == dma_dword_len - 1) || (address[5:2] == 4'b1111));
+
+	   if(index%2 == 1  || j == dma_dword_len -1 ){
+
+        	l2_pkt.set("tag", ingressTag);
+       	 	l2_pkt.set("address", hashpa({address[63:3], 3'h0}) );
+        	l2_pkt.set("data", write_data);
+		l2_pkt.set("bytemask", bytemask);
+		l2_pkt.set("opes", 4'b1101);
+	//	printf("last_packet is %0b", last_packet);
+		l2_pkt.set("last_packet", last_packet);
+		//bank_number = address[8:6];
+		bank_number = address[8:6];
+                if (probe_if.pm === 1'b1)
+                  bank_number = pbank_sel(pbank, bank_number);
+                
+		l2_pkt.set("bank_number", bank_number);
+		l2_pkt.display("Putting a packet on the L2 Expect Queue");
+		case (bank_number) {
+        	  0: l2_list0.push_back(l2_pkt.copy());
+          	  1: l2_list1.push_back(l2_pkt.copy());
+         	  2: l2_list2.push_back(l2_pkt.copy());
+          	  3: l2_list3.push_back(l2_pkt.copy());
+         	  4: l2_list4.push_back(l2_pkt.copy());
+         	  5: l2_list5.push_back(l2_pkt.copy());
+         	  6: l2_list6.push_back(l2_pkt.copy());
+          	  7: l2_list7.push_back(l2_pkt.copy());
+	 	}
+	   }
+           address = address + 4;
+	   index++;
+         }	
+  }
+
+//-------------------------------------------------------------------
+// Method Name: 
+// Description: 
+//-------------------------------------------------------------------  
+  task Execute()
+  {
+    bit [63:0] address  = 64'b0; // Virtual address
+    bit [39:0] pa       = 40'b0; // Physical address
+    bit [63:0] response = 64'b0;
+    bit [5:0]  start_add;
+	
+    l2_packet l2_pkt;
+    
+    bit [7:0] bytemask;
+    bit [2:0] bank_number;
+
+    bit last_packet;
+
+    bit[PEC_PCI__HDR] ingressHdr;		// The ingress TLP's header
+    integer ingressData;			// A payload descriptor
+    bit[7:0] ingressTag;			// The tag for the TLP
+    reg [3:0] pbank = {probe_if.ba67, probe_if.ba45, probe_if.ba23, probe_if.ba01};
+
+    if (N2fcAddrSpecified == 1) {
+      address = N2fcSAddr;
+    }
+    else {
+      error ("N2fcDmaWrPEUStr::Execute() : the start and end address must be specifed\n");
+    }
+
+    // First, get in line for a DMA tag...
+    f_env.allocDmaTag( ingressTag );
+
+    // Then build a TLP
+    if ( f_lenSpecified )
+      f_env.genIngressWrReq( ingressTag, ingressHdr, ingressData, f_len );
+    else
+      error ("N2fcDmaWrPEUStr::Execute() : the length must be specifed\n");
+
+    if( address[63:32] != 32'h00000000 ) {
+      ingressHdr[PEC_PCI__FMT_4DW] = 1;         // 4DW hdr fmt, 64-bit address
+      ingressHdr[PEC_PCI__ADDR]    = address;
+    }
+    else {
+      ingressHdr[PEC_PCI__FMT_4DW] = 0;         // 3DW hdr fmt, 32-bit address
+      ingressHdr[PEC_PCI__ADDR32]  = address[31:0];
+    }
+
+    // set the Traffic Class
+    if( f_tc != -1 ) {
+      ingressHdr[PEC_PCI__TC]      = f_tc;
+    }
+    
+    printf ("%0d- UDEBUG N2fcDmaWrPEUStr:Execute Address = %0h  Byp = %0h, Len = 'd%0d\n",
+            get_time(LO), address, address[63:39], f_len);
+
+    // ...and set fields as requested
+    // by the caller.
+    
+    if ( f_bndySpecified )
+      f_env.setAddrBndy( ingressHdr, f_bndy, 4 );
+    
+    if ( f_firstSpecified )
+      ingressHdr[PEC_PCI__FIRST_DWBE] = f_firstDWBE;
+    if ( f_lastSpecified )
+      ingressHdr[PEC_PCI__LAST_DWBE] = f_lastDWBE;
+
+// add for MSI data
+    if (msi_dma) {
+      ingressData = start_data;
+    }	
+// add for MSI data
+
+
+    f_env.drivePCIE( ingressHdr, ingressData, *,*,*,*,*,1 );
+    
+    bus_id = ingressHdr[ILUPEU_TLP_HDR_REQ_BUS_NUM_BITS];
+    if (msi_dma) {
+      gen_msi_exp_data(address, ingressData, ingressTag, ingressHdr[PEC_PCI__REQ_ID]);
+    }
+    else if ((f_len > 1) ||
+             ((f_len == 1) && ingressHdr[PEC_PCI__FIRST_DWBE])) {
+      integer index;
+      bit     bypass_first_word = 0;
+      bit     do_cache_line;
+	 
+      l2_pkt = new("L2Expect", dbg);
+
+      if (MMU.get_physical_address(address, pa, bus_id, 1)) {
+        address = pa; // use the physical address from here on
+      }
+      else {
+        printf("N2fcDmaWrPEUStr:Execute  problem found during translation, so no L2 expects will be setup.\n");
+        return;
+      }
+
+      start_add = address[5:0] ;	
+     
+      if ((f_len >(64-start_add+3)/4 ) && (start_add !==0)){
+        gen_exp_l2_pkt8bytes((64-start_add+3)/4, address, 0,1, ingressData,ingressTag);
+	  
+	bypass_first_word = 1;
+	f_len = f_len - (64-start_add+3)/4 ; 
+	address[5:0] = 0;
+      } // align to catch line start address
+		
+	
+      if (f_len > 16 && (address[5:0] == 0)){
+	   do_cache_line =1;
+      } else if (f_len === 16 && (address[5:0] == 0)){
+	   if (&f_lastDWBE){
+		do_cache_line = 1;
+	   } else {
+                do_cache_line = 0;
+	   }
+      } else {
+	   do_cache_line = 0;
+      }
+
+      while (do_cache_line){ // f_len is dword length
+	bytemask = 8'h0;
+	write_data = 0;
+	for (index=0; index <64/4; index++){ 
+	   write_data[511-32*index:512-32*(index+1)] = f_env.nextPayloadDW( ingressData );
+	    
+	}
+        //last_packet = (f_len == 64/4);
+        last_packet = 1;
+
+        l2_pkt.set("tag", ingressTag);
+        l2_pkt.set("address", hashpa(address) );
+        l2_pkt.set("data", write_data);
+	l2_pkt.set("bytemask", bytemask);
+	l2_pkt.set("opes", 4'b1101);
+	//printf("last_packet is %0b", last_packet);
+	l2_pkt.set("last_packet", last_packet);
+	bank_number = address[8:6];
+        if (probe_if.pm === 1'b1)
+          bank_number = pbank_sel(pbank, bank_number);
+	l2_pkt.set("bank_number", bank_number);
+	l2_pkt.display("Putting catch line packet on the L2 Expect Queue");
+	case (bank_number) {
+          0: l2_list0.push_back(l2_pkt.copy());
+          1: l2_list1.push_back(l2_pkt.copy());
+          2: l2_list2.push_back(l2_pkt.copy());
+          3: l2_list3.push_back(l2_pkt.copy());
+          4: l2_list4.push_back(l2_pkt.copy());
+          5: l2_list5.push_back(l2_pkt.copy());
+          6: l2_list6.push_back(l2_pkt.copy());
+          7: l2_list7.push_back(l2_pkt.copy());
+	}
+        address = address + 64;
+	response = response + 64;
+	f_len = f_len - 64/4;
+        if (f_len > 16 && (address[5:0] == 0)){
+  	    do_cache_line =1;
+	  } else if (f_len === 16 && (address[5:0] == 0)){
+	     if (&f_lastDWBE){
+		do_cache_line = 1;
+	     } else {
+                do_cache_line = 0;
+	   }
+        } else {
+  	   do_cache_line = 0;
+       }
+	
+	
+	bypass_first_word = 1;
+      }
+      if (f_len >0) {
+  	 gen_exp_l2_pkt8bytes(f_len, address, bypass_first_word,0,ingressData,ingressTag);
+      }
+    }	
+
+    f_env.freeDmaTag( ingressTag );
+    
+  } /* end Execute */
+
+//-------------------------------------------------------------------
+// Method Name: pbank_sel
+// Description: Calculate the bank number based on the partial bank
+//              controls.
+//-------------------------------------------------------------------  
+  function reg[2:0] pbank_sel(reg[3:0] pbank, reg[2:0] bank_sel)
+  {
+    reg [2:0] result = bank_sel;
+
+    case (pbank) {
+      4'b0001: result[2:1] = 2'b00; 
+      4'b0010: result[2:1] = 2'b01;
+      4'b0011: result[2]   = 1'b0;
+      4'b0100: result[2:1] = 2'b10;
+      4'b0101: result[2:1] = {bank_sel[1], 1'b0};
+      4'b0110: result[2:1] = {bank_sel[1], ~bank_sel[1]};
+      4'b1000: result[2:1] = 2'b11;
+      4'b1001: result[2:1] = {bank_sel[1], bank_sel[1]};
+      4'b1010: result[2:1] = {bank_sel[1], 1'b1};
+      4'b1100: result[2:1] = {1'b1, bank_sel[1]};
+      4'b1111: result      = bank_sel;
+      default: 
+        error ("ERROR! illegal partial bank selection: %0b\n", pbank);
+    }
+    
+    pbank_sel = result;
+  }
+
+//-------------------------------------------------------------------
+// Method Name: gen_msi_exp_data
+// Description: Generate the expected L2 write packet for an MSI msg.
+//-------------------------------------------------------------------  
+  task gen_msi_exp_data (bit [63:0] msiaddress,
+                         bit [31:0] msidata,
+                         bit [ 7:0] ingressTag,
+                         bit [15:0] rid)
+  {    
+    integer MSI_num = msidata[7:0];
+    integer EQ_num;
+    bit [63:0] address;
+    bit [39:0] pa       = 40'b0; // Physical address
+    bit [63:0] word0, word1;
+    bit [7:0] bytemask = 0;
+    bit [2:0] bank_number;
+    reg [3:0] pbank = {probe_if.ba67, probe_if.ba45, probe_if.ba23, probe_if.ba01};
+    bit [6:0] tmpEQTail;
+    
+    l2_packet l2_pkt;
+
+    // Figure out if the MSI is mapped
+    if( !PiuCsrs.MsiIsValid(MSI_num) ) return;
+
+    // If an MSI has been sent to the EQ, but not cleared,
+    // we can't do it again
+    if( PiuCsrs.MsiIsEqWr(MSI_num) ) return;
+    EQ_num = PiuCsrs.GetMsiEqNum(MSI_num);
+    
+    //if( PiuCsrs.EQBaseAddr[63:39] != 25'b1111_1111_1111_1100_0000_0000_0) {
+    //  error("ERROR: N2fcDmaWrPEUStr::gen_msi_exp_data - a non-bypass EQ BASE address is not supported!");
+    //}
+
+    // check if the EQ table is full
+    tmpEQTail = PiuCsrs.EQTail[EQ_num] + 1;
+    if (tmpEQTail == PiuCsrs.EQHead[EQ_num]) {
+      printf("Not writting to EQ[%d] for MSI %d because it is full\n", EQ_num, MSI_num);
+      return;
+    }
+
+    // all seems well ...
+    address = PiuCsrs.EQBaseAddr[63:0] + (EQ_num * 8*1024) + (PiuCsrs.EQTail[EQ_num] * 64);
+
+    MMU.set_msi(1);
+    if (MMU.get_physical_address(address, pa, bus_id, 1)) {
+      address = pa; // use the physical address from here on
+    }
+    else {
+      printf("N2fcDmaWrPEUStr:gen_msi_exp_data   problem found during translation, so no L2 expects will be setup.\n");
+      MMU.set_msi(0);
+      return;
+    }
+    MMU.set_msi(0);
+
+    PiuCsrs.SetMsiEqWr(MSI_num);
+    PiuCsrs.EQTail[EQ_num]++;
+
+    // set up the msi data that will be sent
+    msidata[15: 8] = msidata[7:0] + 1;
+    msidata[23:16] = msidata[7:0] + 2;
+    msidata[31:24] = msidata[7:0] + 3;
+
+    // set up expected data (from table 16-19 of the PRM)
+    word0[63]    = 0;
+    word0[62:56] = (msiaddress[63:32]==0) ? 7'b1011000 : 7'b1111000; // FMT/TYPE
+    word0[55:46] = 1;                 // LENGTH in DW
+    word0[45:32] = msiaddress[15:2];  // ADDR[15:2]
+    word0[31:16] = rid;                   word0[15: 0] = msidata[15:0];     // DATA
+        
+    word1[63:16] = msiaddress[63:16]; // ADDR[63:16]
+    word1[15: 0] = msidata[31:16];    // DATA
+    
+    write_data[511-64*0:512-64*1] = word0;
+    write_data[511-64*1:512-64*2] = word1;
+    write_data[511-64*2:512-64*3] = 0;
+    write_data[511-64*3:512-64*4] = 0;
+    write_data[511-64*4:512-64*5] = 0;
+    write_data[511-64*5:512-64*6] = 0;
+    write_data[511-64*6:512-64*7] = 0;
+    write_data[511-64*7:512-64*8] = 0;
+    
+    l2_pkt = new("L2Expect", dbg);
+
+    l2_pkt.set("tag",         ingressTag);
+    l2_pkt.set("address",     hashpa(address) );
+    l2_pkt.set("data",        write_data);
+    l2_pkt.set("bytemask",    bytemask);
+    l2_pkt.set("opes",        4'b1101);
+    l2_pkt.set("last_packet", 1);
+    bank_number = address[8:6];
+    if (probe_if.pm === 1'b1)
+      bank_number = pbank_sel(pbank, bank_number);
+    l2_pkt.set("bank_number", bank_number);
+    l2_pkt.display("Putting cache line packet on the L2 Expect Queue");
+    case (bank_number) {
+      0: l2_list0.push_back(l2_pkt.copy());
+      1: l2_list1.push_back(l2_pkt.copy());
+      2: l2_list2.push_back(l2_pkt.copy());
+      3: l2_list3.push_back(l2_pkt.copy());
+      4: l2_list4.push_back(l2_pkt.copy());
+      5: l2_list5.push_back(l2_pkt.copy());
+      6: l2_list6.push_back(l2_pkt.copy());
+      7: l2_list7.push_back(l2_pkt.copy());
+    }
+    
+  }
+
+}

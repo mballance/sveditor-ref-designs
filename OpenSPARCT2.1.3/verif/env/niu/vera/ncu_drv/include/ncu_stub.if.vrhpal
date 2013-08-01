@@ -1,0 +1,122 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ncu_stub.if.vrhpal
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#define OUTPUT_EDGE PHOLD
+#define INPUT_EDGE PSAMPLE #-1
+#define OUTPUT_SKEW #1
+
+#include "neptune_defines.vri"
+#define NCU_PIO_PATH NIU_DUV_PATH.rdp
+
+#ifndef INC_NCU_STUB_IF_VRH
+#define INC_NCU_STUB_IF_VRH
+
+
+  interface ncu_stub {
+
+#ifdef NIU_GATE
+    input  clk CLOCK verilog_node NCU_PIO_PATH.iol2clk";
+#else
+#ifdef NIU_SYSTEMC_T2
+    input  clk CLOCK verilog_node NIU_DUV_PATH.rdp_niu_pio_ucb_niu_clk";
+#else
+    input  clk CLOCK verilog_node NCU_PIO_PATH.niu_pio_ucb.niu_clk";
+#endif
+#endif
+
+#ifdef NEPTUNE
+    output  [31:0]  ncu_niu_data OUTPUT_EDGE OUTPUT_SKEW  verilog_node TOP.ncu_niu_data";
+    output  ncu_niu_vld OUTPUT_EDGE OUTPUT_SKEW verilog_node TOP.ncu_niu_vld";
+    input  niu_ncu_stall INPUT_EDGE verilog_node TOP.niu_ncu_stall";
+
+
+    // NIU to NCU
+    output  ncu_niu_stall OUTPUT_EDGE OUTPUT_SKEW verilog_node TOP.ncu_niu_stall";
+    input  [31:0]  niu_ncu_data INPUT_EDGE verilog_node TOP.niu_ncu_data";
+    input  niu_ncu_vld INPUT_EDGE verilog_node TOP.niu_ncu_vld";
+#else
+#ifdef NIU_SYSTEMC_T2
+    output  [31:0]  ncu_niu_data OUTPUT_EDGE OUTPUT_SKEW  verilog_node NIU_DUV_PATH.dummy";
+    output  ncu_niu_vld OUTPUT_EDGE OUTPUT_SKEW verilog_node NIU_DUV_PATH.dummy[0]";
+    input  niu_ncu_stall INPUT_EDGE verilog_node NIU_DUV_PATH.dummy[1]";
+    output  ncu_niu_stall OUTPUT_EDGE OUTPUT_SKEW verilog_node NIU_DUV_PATH.dummy[2]";
+    input  [31:0]  niu_ncu_data INPUT_EDGE verilog_node NIU_DUV_PATH.niu_ncu_data";
+    input  niu_ncu_vld INPUT_EDGE verilog_node NIU_DUV_PATH.niu_ncu_vld";
+#else
+    // NCU to NIU
+    output  [31:0]  ncu_niu_data OUTPUT_EDGE OUTPUT_SKEW  verilog_node NCU_PIO_PATH.ncu_niu_data";
+    output  ncu_niu_vld OUTPUT_EDGE OUTPUT_SKEW verilog_node NCU_PIO_PATH.ncu_niu_vld";
+    input  niu_ncu_stall INPUT_EDGE verilog_node NCU_PIO_PATH.niu_ncu_stall";
+
+
+    // NIU to NCU
+    output  ncu_niu_stall OUTPUT_EDGE OUTPUT_SKEW verilog_node NCU_PIO_PATH.ncu_niu_stall";
+    input  [31:0]  niu_ncu_data INPUT_EDGE verilog_node NCU_PIO_PATH.niu_ncu_data";
+    input  niu_ncu_vld INPUT_EDGE verilog_node NCU_PIO_PATH.niu_ncu_vld";
+#endif
+#endif
+  }  // end of interface ncu_stub
+
+#endif
+
+// ports and port binds -- to move to a different file
+
+port ncu_port {
+
+	clk;
+	ncu_niu_data;
+	ncu_niu_vld;
+	niu_ncu_stall;
+
+	ncu_niu_stall;
+	niu_ncu_data;
+	niu_ncu_vld;
+
+}
+
+bind ncu_port ncu_bind {
+
+	clk 		ncu_stub.clk;
+
+
+	ncu_niu_data 	ncu_stub.ncu_niu_data;
+	ncu_niu_vld 	ncu_stub.ncu_niu_vld;
+	niu_ncu_stall 	ncu_stub.niu_ncu_stall;
+
+	ncu_niu_stall 	ncu_stub.ncu_niu_stall;
+	niu_ncu_data 	ncu_stub.niu_ncu_data;
+	niu_ncu_vld 	ncu_stub.niu_ncu_vld;
+
+
+}

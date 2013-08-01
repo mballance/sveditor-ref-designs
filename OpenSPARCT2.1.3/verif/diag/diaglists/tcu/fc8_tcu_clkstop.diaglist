@@ -1,0 +1,72 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: fc8_tcu_clkstop.diaglist
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+<sys(jtag_debug)>
+
+<fc8_tcu_clkstop name=fc8_tcu_clkstop>
+
+<runargs -vcs_run_args=+BYPASS_AMB_DRAM_INIT>   // required since "-config_cpp_args=-DIDT_AMB" is specified in build args
+<runargs -nosas -fast_boot -midas_args=-DPART_0_BASE=0x200000000 -midas_args=-DL2_REG_PROG>
+<runargs -midas_args=-DCMP_THREAD_START=0x0101010101010101 -finish_mask=0101010101010101>  // thread 0 of each core
+<runargs -midas_args=-DRESET_STAT_CHECK>       // required when do WMR in assembly diag
+<runargs -vcs_run_args=+mcu_errmon_disable -vcs_run_args=+mcu_fmon_disable -vcs_run_args=+mcuesr_mon_disable>
+<runargs -vcs_run_args=+l2esr_mon_off -vcs_run_args=+l2cpx_errmon_off  -vcs_run_args=+l2esr_mon_DEBUG_off>
+<runargs -vcs_run_args=+ios_0in_ras_chk_off -vcs_run_args=+ios_ras_interrupt_chk_off>
+<runargs -vcs_run_args=+socras_mon_off -vcs_run_args=+sio_dmu_ras_chk_off -vcs_run_args=+sio_niu_ras_chk_off>
+<runargs -tg_seed=1>
+
+  <runargs -midas_args=-DVERA_PROG_DEL=100 -rtl_timeout=200000 -vcs_run_args=+skt_timeout=200000>
+  <runargs -midas_args=-DVERA_PROG_DEL=100 -midas_args=-DVERA_PROG_DEL2=100>
+  <runargs -vcs_run_args=+nowait_asmdiag_done>
+    fc8_spcdbgevent_hstop        tcu_clkstp_spcdbgevent.s  fc_tcu_clkstp_spcdbgevent_hstop.vr  -midas_args=-DSPC_HARDSTOP
+    fc8_spcdbgevent_sstop_1core  tcu_clkstp_spcdbgevent.s  fc_tcu_clkstp_spcdbgevent_sstop.vr  -midas_args=-DSPC_SOFTSTOP
+    fc8_spcdbgevent_sstop_8core  tcu_clkstp_spcdbgevent.s  fc_tcu_clkstp_spcdbgevent_sstop.vr  -midas_args=-DSPC_SOFTSTOP  -vcs_run_args=+stop_allcores
+    fc8_spcdbgevent_trigout      tcu_clkstp_spcdbgevent.s  fc_tcu_clkstp_spcdbgevent_trigout.vr  -midas_args=-DSPC_TRIGOUT 
+  </runargs>
+  </runargs>
+  </runargs>
+
+</runargs>
+</runargs>
+</runargs>
+</runargs>
+</runargs>
+</runargs>
+</runargs>
+</runargs>
+</runargs>
+
+</fc8_tcu_clkstop>
+
+</sys(jtag_debug)>

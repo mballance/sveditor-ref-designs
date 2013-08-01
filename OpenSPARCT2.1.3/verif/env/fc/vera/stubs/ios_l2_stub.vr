@@ -1,0 +1,700 @@
+// ========== Copyright Header Begin ==========================================
+// 
+// OpenSPARC T2 Processor File: ios_l2_stub.vr
+// Copyright (C) 1995-2007 Sun Microsystems, Inc. All Rights Reserved
+// 4150 Network Circle, Santa Clara, California 95054, U.S.A.
+//
+// * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER. 
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2 of the License.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// 
+// For the avoidance of doubt, and except that if any non-GPL license 
+// choice is available it will apply instead, Sun elects to use only 
+// the General Public License version 2 (GPLv2) at this time for any 
+// software where a choice of GPL license versions is made 
+// available with the language indicating that GPLv2 or any later version 
+// may be used, or where a choice of which version of the GPL is applied is 
+// otherwise unspecified. 
+//
+// Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara, 
+// CA 95054 USA or visit www.sun.com if you need additional information or 
+// have any questions. 
+// 
+// ========== Copyright Header End ============================================
+#include <vera_defines.vrh>
+#include <VeraListProgram.vrh>
+#include <ListMacros.vrh>
+#include "ios_l2_stub.if.vrh"
+#include "ios_l2_stub_ports_binds.vrh"
+#include "std_display_class.vrh"
+#include "l2_packet.vrh"
+
+ExternVeraList(l2_packet);
+extern VeraList_l2_packet l2_list0;
+extern VeraList_l2_packet l2_list1;
+extern VeraList_l2_packet l2_list2;
+extern VeraList_l2_packet l2_list3;
+extern VeraList_l2_packet l2_list4;
+extern VeraList_l2_packet l2_list5;
+extern VeraList_l2_packet l2_list6;
+extern VeraList_l2_packet l2_list7;
+
+//extern bit [63:0] IOSMemoryAddress[8];
+//extern event IOSMemorySync[8];
+
+
+#define REQ_WRI         3'b100
+#define REQ_WR8         3'b010
+#define REQ_RDD         3'b001
+
+#define REQ_TYPE_FIELD	26:24
+
+#define IOS_MIN_DEQ_DELAY	0
+#define IOS_MIN_WIB_DELAY	0
+#define IOS_MIN_CTAG_DELAY	0
+#define IOS_MAX_DELAY		100
+
+class ios_l2_stub {
+  bit [511:0] l2_mem[];
+  l2_stub_port l2;
+
+  // for dispmon
+  StandardDisplay       dbg;
+  local string          myname;
+  local integer         receive_count;
+  local integer         response_count;
+
+  l2_packet 		transaction_in;
+  bit [511:0]		sent_read_data = 0;
+  local event           expect_data_received;
+  local bit [2:0] 	bank_number;
+  local bit		matched_packet = 0;
+   bit                  enable_l2_checker = 0;
+   bit                  enable_l2_wr_checker = 0;
+   bit                  enable_l2_rd_checker = 0;
+  local bit		dump_expects = 0;
+
+  // for delay
+  local integer		deq_delay;
+  local integer		wib_delay;
+  local integer		ctag_delay;
+  local integer 	enable_tracking;
+
+  local integer         check_semph_id;
+  
+  VeraList_l2_packet	l2_list;
+
+  task new(l2_stub_port l2, integer bank, StandardDisplay dbg, VeraList_l2_packet l2_list);
+  task start_l2_stub();
+  function bit[6:0] gen_ecc(bit[31:0] data);
+  function bit[1:0] gen_parity(bit[31:0] data);
+  task check_packet(l2_packet received_packet);
+  function bit expect(l2_packet expected_packet, integer timeout = 100000);
+  task look_for_packets();
+  task set_packet_expect(l2_packet l2_pkt[16], integer total);
+
+}
+
+task ios_l2_stub::new(l2_stub_port       l2_stub,
+                      integer            bank,
+                      StandardDisplay    dbg,
+                      VeraList_l2_packet l2_list)
+{
+  // for dispmon
+  myname = "FC_L2stub";
+  this.dbg = dbg;
+  this.l2_list = l2_list;
+  receive_count = 0;
+  bank_number = bank;
+
+  // for delay
+  deq_delay = IOS_MIN_DEQ_DELAY;
+  wib_delay = IOS_MIN_WIB_DELAY;
+  ctag_delay = IOS_MIN_CTAG_DELAY;
+
+  enable_tracking = 1;
+
+  l2 = l2_stub;
+  transaction_in = new("Inbound L2 Packet", dbg);
+
+  check_semph_id = alloc(SEMAPHORE, 0, 1,1);
+  
+  fork {
+    start_l2_stub();
+    look_for_packets();
+  } join none
+
+}
+
+task ios_l2_stub::start_l2_stub()
+{
+  bit [39:0] addr;
+  bit [15:0] tag;
+  bit [3:0] opes;
+  bit [31:0] req_cmd_1, req_cmd_2, req_data;
+  bit [7:0] bytemask;
+  bit [511:0] wri_data;
+
+  bit [511:0] rdd_data, deq_data512, ret_data512;
+  bit [511:0] tmp_rdd_data;
+  bit [127:0] rdd_data0, rdd_data1, rdd_data2, rdd_data3, rdd_data4, rdd_data5, rdd_data6, rdd_data7;
+  bit [127:0] tmp_rdd_data0, tmp_rdd_data1, tmp_rdd_data2, tmp_rdd_data3, tmp_rdd_data4, tmp_rdd_data5, tmp_rdd_data6, tmp_rdd_data7;
+  bit [63:0] wr8_data,data64;
+  bit [76:0] req_to_deq_data, deq_to_ret_data, ret_to_ack_data;
+  bit last_rdd = 0, curr_rdd = 0;
+  bit [6:0] ecc;
+  bit [6:0] ctag_ecc;
+  integer i;
+
+  integer mbox_req_to_deq = alloc(MAILBOX, 0, 1), mbox_deq_to_ret = alloc(MAILBOX, 0, 1);
+
+  dbg.dispmon(myname, MON_NORMAL, psprintf("[%1d] Starting ... ", bank_number));
+
+  fork
+    {
+      while (1) {
+        @(posedge l2.$clk);
+	if (enable_l2_checker) {
+        transaction_in.reset();
+        if (l2.$req_vld) {
+          case (l2.$req[REQ_TYPE_FIELD]) {
+
+            REQ_WRI: {
+	     if (enable_l2_wr_checker) {
+              req_cmd_1 = l2.$req;
+              ctag_ecc  = l2.$ecc;
+              tag       = req_cmd_1[23:8];
+              opes      = req_cmd_1[30:27];
+              dbg.dispmon(myname, MON_NORMAL,
+                          psprintf("[%1d] recv REQ_WRI tag=%x", bank_number, tag));
+
+              @(posedge l2.$clk);
+              req_cmd_2 = l2.$req;
+              addr = {req_cmd_1[7:0],req_cmd_2};
+              bytemask = 0;
+
+              if (addr[39] === 1'b1)
+              {
+                addr[39] = 1'b0;
+                dbg.dispmon(myname, MON_NORMAL, psprintf("[%1d]-RAS recv addr=%x pa[39] is set!", bank_number, addr));
+              }
+              if (opes[1] === 1'b1)
+                dbg.dispmon(myname, MON_NORMAL, psprintf("[%1d]-RAS recv addr=%x E bit is set!", bank_number, addr));
+
+              @(posedge l2.$clk);
+              req_data = l2.$req; wri_data[511:480] = req_data;
+              //ecc = l2.$ecc;
+              //            if (gen_ecc(req_data) !== ecc) {
+              //              dbg.dispmon(myname, MON_ERR, psprintf ("IOS_L2_STUB: ECC mismatch for WRI request data 0 %h. Expect = %h, Actual = %h",req_data,gen_ecc(req_data),ecc));
+              //            }
+
+              @(posedge l2.$clk);
+              req_data = l2.$req;
+              wri_data[479:448] = req_data;
+              //ecc = l2.$ecc;
+              //           if (gen_ecc(req_data) !== ecc) {
+              //              dbg.dispmon(myname, MON_ERR, psprintf ("IOS_L2_STUB: ECC mismatch for WRI request data 1 %h. Expect = %h, Actual = %h",req_data,gen_ecc(req_data),ecc));
+              //           }
+
+              @(posedge l2.$clk);
+              req_data = l2.$req;
+              wri_data[447:416] = req_data;
+              //ecc = l2.$ecc;
+              //           if (gen_ecc(req_data) !== ecc) {
+              //              dbg.dispmon(myname, MON_ERR, psprintf ("IOS_L2_STUB: ECC mismatch for WRI request data 2 %h. Expect = %h, Actual = %h",req_data,gen_ecc(req_data),ecc));
+              //           }
+
+              @(posedge l2.$clk);
+              req_data = l2.$req;
+              wri_data[415:384] = req_data;
+              //ecc = l2.$ecc;
+              //            if (gen_ecc(req_data) !== ecc) {
+              //              dbg.dispmon(myname, MON_ERR, psprintf ("IOS_L2_STUB: ECC mismatch for WRI request data 3 %h. Expect = %h, Actual = %h",req_data,gen_ecc(req_data),ecc));
+              //            }
+
+              @(posedge l2.$clk);
+              req_data = l2.$req;
+              wri_data[383:352] = req_data;
+              //ecc = l2.$ecc;
+              //            if (gen_ecc(req_data) !== ecc) {
+              //              dbg.dispmon(myname, MON_ERR, psprintf ("IOS_L2_STUB: ECC mismatch for WRI request data 4 %h. Expect = %h, Actual = %h",req_data,gen_ecc(req_data),ecc));
+              //           }
+
+              @(posedge l2.$clk);
+              req_data = l2.$req;
+              wri_data[351:320] = req_data;
+              //ecc = l2.$ecc;
+              //            if (gen_ecc(req_data) !== ecc) {
+              //              dbg.dispmon(myname, MON_ERR, psprintf ("IOS_L2_STUB: ECC mismatch for WRI request data 5 %h. Expect = %h, Actual = %h",req_data,gen_ecc(req_data),ecc));
+              //            }
+
+              @(posedge l2.$clk);
+              req_data = l2.$req;
+              wri_data[319:288] = req_data;
+              //ecc = l2.$ecc;
+              //           if (gen_ecc(req_data) !== ecc) {
+              //              dbg.dispmon(myname, MON_ERR, psprintf ("IOS_L2_STUB: ECC mismatch for WRI request data 6 %h. Expect = %h, Actual = %h",req_data,gen_ecc(req_data),ecc));
+              //           }
+
+              @(posedge l2.$clk);
+              req_data = l2.$req;
+              wri_data[287:256] = req_data;
+              //ecc = l2.$ecc;
+              //            if (gen_ecc(req_data) !== ecc) {
+              //              dbg.dispmon(myname, MON_ERR, psprintf ("IOS_L2_STUB: ECC mismatch for WRI request data 7 %h. Expect = %h, Actual = %h",req_data,gen_ecc(req_data),ecc));
+              //           }
+
+              @(posedge l2.$clk);
+              req_data = l2.$req;
+              wri_data[255:224] = req_data;
+              //ecc = l2.$ecc;
+              //            if (gen_ecc(req_data) !== ecc) {
+              //              dbg.dispmon(myname, MON_ERR, psprintf ("IOS_L2_STUB: ECC mismatch for WRI request data 8 %h. Expect = %h, Actual = %h",req_data,gen_ecc(req_data),ecc));
+              //           }
+
+              @(posedge l2.$clk);
+              req_data = l2.$req;
+              wri_data[223:192] = req_data;
+              //ecc = l2.$ecc;
+              //            if (gen_ecc(req_data) !== ecc) {
+              //              dbg.dispmon(myname, MON_ERR, psprintf ("IOS_L2_STUB: ECC mismatch for WRI request data 9 %h. Expect = %h, Actual = %h",req_data,gen_ecc(req_data),ecc));
+              //           }
+
+              @(posedge l2.$clk);
+              req_data = l2.$req;
+              wri_data[191:160] = req_data;
+              //ecc = l2.$ecc;
+              //            if (gen_ecc(req_data) !== ecc) {
+              //              dbg.dispmon(myname, MON_ERR, psprintf ("IOS_L2_STUB: ECC mismatch for WRI request data 10 %h. Expect = %h, Actual = %h",req_data,gen_ecc(req_data),ecc));
+              //            }
+
+              @(posedge l2.$clk);
+              req_data = l2.$req;
+              wri_data[159:128] = req_data;
+              //ecc = l2.$ecc;
+              //            if (gen_ecc(req_data) !== ecc) {
+              //              dbg.dispmon(myname, MON_ERR, psprintf ("IOS_L2_STUB: ECC mismatch for WRI request data 11 %h. Expect = %h, Actual = %h",req_data,gen_ecc(req_data),ecc));
+              //            }
+
+              @(posedge l2.$clk);
+              req_data = l2.$req;
+              wri_data[127:96] = req_data;
+              //ecc = l2.$ecc;
+              //            if (gen_ecc(req_data) !== ecc) {
+              //              dbg.dispmon(myname, MON_ERR, psprintf ("IOS_L2_STUB: ECC mismatch for WRI request data 12 %h. Expect = %h, Actual = %h",req_data,gen_ecc(req_data),ecc));
+              //            }
+
+              @(posedge l2.$clk);
+              req_data = l2.$req;
+              wri_data[95:64] = req_data;
+              //ecc = l2.$ecc;
+              //            if (gen_ecc(req_data) !== ecc) {
+              //              dbg.dispmon(myname, MON_ERR, psprintf ("IOS_L2_STUB: ECC mismatch for WRI request data 13 %h. Expect = %h, Actual = %h",req_data,gen_ecc(req_data),ecc));
+              //          }
+
+              @(posedge l2.$clk);
+              req_data = l2.$req;
+              wri_data[63:32] = req_data;
+              //ecc = l2.$ecc;
+              //            if (gen_ecc(req_data) !== ecc) {
+              //              dbg.dispmon(myname, MON_ERR, psprintf ("IOS_L2_STUB: ECC mismatch for WRI request data 14 %h. Expect = %h, Actual = %h",req_data,gen_ecc(req_data),ecc));
+              //           }
+
+              @(posedge l2.$clk);
+              req_data = l2.$req;
+              wri_data[31:0] = req_data;
+              //ecc = l2.$ecc;
+              //            if (gen_ecc(req_data) !== ecc) {
+              //              dbg.dispmon(myname, MON_ERR, psprintf ("IOS_L2_STUB: ECC mismatch for WRI request data 15 %h. Expect = %h, Actual = %h",req_data,gen_ecc(req_data),ecc));
+              //           }
+
+              l2_mem[addr[39:9]] = wri_data;
+
+	// Fu 4/19/05 for Rx checker: mark memory
+//	for (i=0; i<8; i++) {
+//  	  IOSMemoryAddress[bank_number] = (addr + 8*i);
+
+//  	  dbg.dispmon(myname, MON_NORMAL, psprintf("[%1d] inform call back tag=%x, addr=", bank_number, tag, IOSMemoryAddress[bank_number]));
+	  //trigger(IOSMemorySync[bank_number]);
+	  //sync(ALL,IOSMemorySync[bank_number]);
+	  //trigger(OFF,IOSMemorySync);
+//	}
+	// mark memory end
+
+  	    transaction_in.set("address", addr);
+  	    transaction_in.set("tag", tag);
+  	    transaction_in.set("bytemask", bytemask);
+  	    transaction_in.set("opes", opes);
+            transaction_in.set("data", wri_data);
+            transaction_in.set("bank_number", bank_number);
+            check_packet(transaction_in);
+
+            dbg.dispmon(myname, MON_NORMAL,
+                        psprintf("[%1d] REQ_WRI complete tag=%x, addr=%0h, data=%0h", bank_number, tag, addr, wri_data));
+      // mail addr and tag to mbox_req_to_deq
+              mailbox_put(mbox_req_to_deq, {ctag_ecc, REQ_WRI, opes, bytemask, tag, addr});
+
+	     }
+            }
+            REQ_WR8: {
+	     if (enable_l2_wr_checker) {
+              req_cmd_1 = l2.$req;
+              ctag_ecc = l2.$ecc;
+
+              tag = 0;
+              dbg.dispmon(myname, MON_NORMAL,
+                          psprintf("[%1d] recv REQ_WR8 tag=%x", bank_number, tag));
+
+              @(posedge l2.$clk);
+              req_cmd_2 = l2.$req;
+              addr = {req_cmd_1[7:0],req_cmd_2};
+              bytemask = req_cmd_1[15:8];
+              opes = req_cmd_1[30:27];
+
+              if (addr[39] === 1'b1)
+              {
+                addr[39] = 1'b0;
+                dbg.dispmon(myname, MON_NORMAL, psprintf("[%1d]-RAS recv addr=%x pa[39] is set!", bank_number, addr));
+              }
+              if (opes[1] === 1'b1)
+                dbg.dispmon(myname, MON_NORMAL, psprintf("[%1d]-RAS recv addr=%x E bit is set!", bank_number, addr));
+
+              @(posedge l2.$clk);
+              req_data = l2.$req;
+              wr8_data[63:32] = req_data;
+              //ecc = l2.$ecc;
+              //              if (gen_ecc(req_data) !== ecc) {
+              //                dbg.dispmon(myname, MON_ERR, psprintf ("IOS_L2_STUB: ECC mismatch for WR8 request data 0 %h. Expect = %h, Actual = %h",req_data,gen_ecc(req_data),ecc));
+              //              }
+
+              @(posedge l2.$clk);
+              req_data = l2.$req;
+              wr8_data[31:0] = req_data;
+              //ecc = l2.$ecc;
+              //              if (gen_ecc(req_data) !== ecc) {
+              //                dbg.dispmon(myname, MON_ERR, psprintf ("IOS_L2_STUB: ECC mismatch for WR8 request data 1 %h. Expect = %h, Actual = %h",req_data,gen_ecc(req_data),ecc));
+              //              }
+
+              wri_data = l2_mem[{addr[39:6],6'h00}];
+
+              case (addr[5:3]) {
+                3'd0: data64 = wri_data[511:448];
+                3'd1: data64 = wri_data[447:384];
+                3'd2: data64 = wri_data[383:320];
+                3'd3: data64 = wri_data[319:256];
+                3'd4: data64 = wri_data[255:192];
+                3'd5: data64 = wri_data[191:128];
+                3'd6: data64 = wri_data[127:64];
+                3'd7: data64 = wri_data[63:0];
+              }
+
+              if (bytemask[0]) data64[7:0]   = wr8_data[7:0];
+              if (bytemask[1]) data64[15:8]  = wr8_data[15:8];
+              if (bytemask[2]) data64[23:16] = wr8_data[23:16];
+              if (bytemask[3]) data64[31:24] = wr8_data[31:24];
+              if (bytemask[4]) data64[39:32] = wr8_data[39:32];
+              if (bytemask[5]) data64[47:40] = wr8_data[47:40];
+              if (bytemask[6]) data64[55:48] = wr8_data[55:48];
+              if (bytemask[7]) data64[63:56] = wr8_data[63:56];
+
+              case (addr[5:3]) {
+                3'd0: wri_data[511:448] = data64;
+                3'd1: wri_data[447:384] = data64;
+                3'd2: wri_data[383:320] = data64;
+                3'd3: wri_data[319:256] = data64;
+                3'd4: wri_data[255:192] = data64;
+                3'd5: wri_data[191:128] = data64;
+                3'd6: wri_data[127:64]  = data64;
+                3'd7: wri_data[63:0]   = data64;
+              }
+
+              l2_mem[{addr[39:6],6'h00}] = wri_data;
+
+              transaction_in.set("address", addr);
+              transaction_in.set("tag", tag);
+              transaction_in.set("bytemask", bytemask);
+              transaction_in.set("opes", opes);
+              transaction_in.set("data", data64);
+              transaction_in.set("bank_number", bank_number);
+              check_packet(transaction_in);
+      // mail addr and tag to mbox_req_to_deq
+              mailbox_put(mbox_req_to_deq, {ctag_ecc, REQ_WR8, opes, bytemask, tag, addr});
+
+ 	     }
+            }
+            REQ_RDD: {
+	     if (enable_l2_rd_checker) {
+              req_cmd_1 = l2.$req;
+              ctag_ecc = l2.$ecc;
+              tag = req_cmd_1[23:8];
+              opes = req_cmd_1[30:27];
+              dbg.dispmon(myname, MON_NORMAL,
+                          psprintf("[%1d] recv REQ_WR8 tag=%x", bank_number, tag));
+
+              @(posedge l2.$clk);
+              req_cmd_2 = l2.$req;
+              @(posedge l2.$clk);
+              @(posedge l2.$clk);
+              addr = {req_cmd_1[7:0],req_cmd_2};
+
+              if (addr[39] === 1'b1)
+              {
+                addr[39] = 1'b0;
+                dbg.dispmon(myname, MON_NORMAL, psprintf("[%1d]-RAS recv addr=%x pa[39] is set!", bank_number, addr));
+              }
+              if (opes[1] === 1'b1)
+                dbg.dispmon(myname, MON_NORMAL, psprintf("[%1d]-RAS recv addr=%x E bit is set!", bank_number, addr));
+
+              bytemask = 0;
+
+              tmp_rdd_data = l2_mem[addr[39:9]];
+
+    	    tmp_rdd_data0[127:0] = tmp_rdd_data[127:0];
+    	    tmp_rdd_data1[127:0] = tmp_rdd_data[255:128];
+    	    tmp_rdd_data2[127:0] = tmp_rdd_data[383:256];
+    	    tmp_rdd_data3[127:0] = tmp_rdd_data[511:384];
+    	    rdd_data0[127:0] = {tmp_rdd_data0[7:0], tmp_rdd_data0[15:8], tmp_rdd_data0[23:16], tmp_rdd_data0[31:24], tmp_rdd_data0[39:32], tmp_rdd_data0[47:40], tmp_rdd_data0[55:48], tmp_rdd_data0[63:56], tmp_rdd_data0[71:64], tmp_rdd_data0[79:72], tmp_rdd_data0[87:80], tmp_rdd_data0[95:88], tmp_rdd_data0[103:96], tmp_rdd_data0[111:104], tmp_rdd_data0[119:112], tmp_rdd_data0[127:120]};
+    	    rdd_data1[127:0] = {tmp_rdd_data1[7:0], tmp_rdd_data1[15:8], tmp_rdd_data1[23:16], tmp_rdd_data1[31:24], tmp_rdd_data1[39:32], tmp_rdd_data1[47:40], tmp_rdd_data1[55:48], tmp_rdd_data1[63:56], tmp_rdd_data1[71:64], tmp_rdd_data1[79:72], tmp_rdd_data1[87:80], tmp_rdd_data1[95:88], tmp_rdd_data1[103:96], tmp_rdd_data1[111:104], tmp_rdd_data1[119:112], tmp_rdd_data1[127:120]};
+    	    rdd_data2[127:0] = {tmp_rdd_data2[7:0], tmp_rdd_data2[15:8], tmp_rdd_data2[23:16], tmp_rdd_data2[31:24], tmp_rdd_data2[39:32], tmp_rdd_data2[47:40], tmp_rdd_data2[55:48], tmp_rdd_data2[63:56], tmp_rdd_data2[71:64], tmp_rdd_data2[79:72], tmp_rdd_data2[87:80], tmp_rdd_data2[95:88], tmp_rdd_data2[103:96], tmp_rdd_data2[111:104], tmp_rdd_data2[119:112], tmp_rdd_data2[127:120]};
+    	    rdd_data3[127:0] = {tmp_rdd_data3[7:0], tmp_rdd_data3[15:8], tmp_rdd_data3[23:16], tmp_rdd_data3[31:24], tmp_rdd_data3[39:32], tmp_rdd_data3[47:40], tmp_rdd_data3[55:48], tmp_rdd_data3[63:56], tmp_rdd_data3[71:64], tmp_rdd_data3[79:72], tmp_rdd_data3[87:80], tmp_rdd_data3[95:88], tmp_rdd_data3[103:96], tmp_rdd_data3[111:104], tmp_rdd_data3[119:112], tmp_rdd_data3[127:120]};
+
+
+       	    rdd_data[511:0] = {rdd_data3[127:0], rdd_data2[127:0], rdd_data1[127:0], rdd_data0[127:0]};
+
+              case (addr[5:2]) {
+                4'd0: {}
+                4'd1: rdd_data = {rdd_data[479:0],rdd_data[511:480]};
+                4'd2: rdd_data = {rdd_data[447:0],rdd_data[511:448]};
+                4'd3: rdd_data = {rdd_data[415:0],rdd_data[511:416]};
+                4'd4: rdd_data = {rdd_data[383:0],rdd_data[511:384]};
+                4'd5: rdd_data = {rdd_data[351:0],rdd_data[511:352]};
+                4'd6: rdd_data = {rdd_data[319:0],rdd_data[511:320]};
+                4'd7: rdd_data = {rdd_data[287:0],rdd_data[511:288]};
+                4'd8: rdd_data = {rdd_data[255:0],rdd_data[511:256]};
+                4'd9: rdd_data = {rdd_data[223:0],rdd_data[511:224]};
+                4'd10: rdd_data = {rdd_data[191:0],rdd_data[511:192]};
+                4'd11: rdd_data = {rdd_data[159:0],rdd_data[511:160]};
+                4'd12: rdd_data = {rdd_data[127:0],rdd_data[511:128]};
+                4'd13: rdd_data = {rdd_data[95:0],rdd_data[511:96]};
+                4'd14: rdd_data = {rdd_data[63:0],rdd_data[511:64]};
+                4'd15: rdd_data = {rdd_data[31:0],rdd_data[511:32]};
+              }
+
+  	   dbg.dispmon(myname, MON_NORMAL, psprintf("[%1d] REQ_RDD addr=%0h tag=%x data=%0h", bank_number, addr, tag, rdd_data));
+  	   if((&rdd_data[31:0]) === 1'bx) rdd_data[31:0] = 32'b11111111111111111111111111111111;
+  	   if((&rdd_data[63:32]) === 1'bx ) rdd_data[63:32] = 32'b11111111111111111111111111111111;
+  	   if((&rdd_data[95:64]) === 1'bx) rdd_data[95:64] = 32'b11111111111111111111111111111111;
+  	   if((&rdd_data[127:96]) === 1'bx) rdd_data[127:96] = 32'b11111111111111111111111111111111;
+  	   if((&rdd_data[159:128]) === 1'bx ) rdd_data[159:128] = 32'b11111111111111111111111111111111;
+  	   if((&rdd_data[191:160]) === 1'bx) rdd_data[191:160] = 32'b11111111111111111111111111111111;
+  	   if((&rdd_data[223:192]) === 1'bx) rdd_data[223:192] = 32'b11111111111111111111111111111111;
+  	   if((&rdd_data[255:224]) === 1'bx) rdd_data[255:224] = 32'b11111111111111111111111111111111;
+  	   if((&rdd_data[287:256]) === 1'bx) rdd_data[287:256] = 32'b11111111111111111111111111111111;
+  	   if((&rdd_data[319:288]) === 1'bx) rdd_data[319:288] = 32'b11111111111111111111111111111111;
+  	   if((&rdd_data[351:320]) === 1'bx) rdd_data[351:320] = 32'b11111111111111111111111111111111;
+  	   if((&rdd_data[383:352]) === 1'bx) rdd_data[383:352] = 32'b11111111111111111111111111111111;
+  	   if((&rdd_data[415:384]) === 1'bx) rdd_data[415:384] = 32'b11111111111111111111111111111111;
+  	   if((&rdd_data[447:416]) === 1'bx) rdd_data[447:416] = 32'b11111111111111111111111111111111;
+  	   if((&rdd_data[479:448]) === 1'bx) rdd_data[479:448] = 32'b11111111111111111111111111111111;
+  	   if((&rdd_data[511:480]) === 1'bx) rdd_data[511:480] = 32'b11111111111111111111111111111111;
+  	   dbg.dispmon(myname, MON_INFO, psprintf(" REQ_RDD data[63:0]       = 0x%0h", rdd_data[63:0]));
+  	   dbg.dispmon(myname, MON_INFO, psprintf(" REQ_RDD data[127:64]     = 0x%0h", rdd_data[127:64]));
+  	   dbg.dispmon(myname, MON_INFO, psprintf(" REQ_RDD data[191:128]    = 0x%0h", rdd_data[191:128]));
+  	   dbg.dispmon(myname, MON_INFO, psprintf(" REQ_RDD data[255:192]    = 0x%0h", rdd_data[255:192]));
+  	   dbg.dispmon(myname, MON_INFO, psprintf(" REQ_RDD data[319:256]    = 0x%0h", rdd_data[319:256]));
+  	   dbg.dispmon(myname, MON_INFO, psprintf(" REQ_RDD data[383:320]    = 0x%0h", rdd_data[383:320]));
+  	   dbg.dispmon(myname, MON_INFO, psprintf(" REQ_RDD data[447:384]    = 0x%0h", rdd_data[447:384]));
+  	   dbg.dispmon(myname, MON_INFO, psprintf(" REQ_RDD data[511:448]    = 0x%0h", rdd_data[511:448]));
+
+              transaction_in.set("address", addr);
+              transaction_in.set("tag", tag);
+              transaction_in.set("bytemask", bytemask);
+              transaction_in.set("opes", opes);
+              transaction_in.set("bank_number", bank_number);
+  	      check_packet(transaction_in);
+              if (opes[0]) {
+                rdd_data = sent_read_data;
+                printf("Setting read_data to %0h\n", rdd_data);
+              }
+
+      // mail addr and tag to mbox_req_to_deq
+              mailbox_put(mbox_req_to_deq, {ctag_ecc, REQ_RDD, opes, bytemask, tag, addr});
+              mailbox_put(mbox_req_to_deq, rdd_data);
+
+   	      dbg.dispmon(myname, MON_INFO, psprintf("[%1d] recv process REQ_RDD addr=%0h tag=%x data=%0h", bank_number, addr, tag, rdd_data));
+
+	      }
+            }
+            default: { }
+          }
+        }
+      }
+    }
+  }
+
+  join none
+}
+
+function reg[1:0] ios_l2_stub::gen_parity(bit [31:0] data)
+{
+        gen_parity = {  (data[16] ^ data[17] ^ data[18] ^ data[19]
+                        ^ data[20] ^ data[21] ^ data[22] ^ data[23]
+                        ^ data[24] ^ data[25] ^ data[26] ^ data[27]
+                        ^ data[28] ^ data[29] ^ data[30] ^ data[31] ),
+                        (data[0] ^ data[1] ^ data[2] ^ data[3]
+                        ^ data[4] ^ data[5] ^ data[6] ^ data[7]
+                        ^ data[8] ^ data[9] ^ data[10] ^ data[11]
+                        ^ data[12] ^ data[13] ^ data[14] ^ data[15] ) };
+
+}
+
+
+
+/// function to generate 7-bit ecc from 32 bit data, need to verify the algorithm
+function bit[6:0] ios_l2_stub::gen_ecc(bit [31:0] data)
+{
+    bit [6:0] temp_ecc;
+        temp_ecc[0] =  data[0] ^ data[1] ^ data[3] ^ data[4] ^ data[6] ^ data[8] ^
+               data[10] ^ data[11] ^ data[13] ^ data[15] ^ data[17] ^ data[19] ^
+                data[21] ^ data[23] ^ data[25] ^ data[26] ^ data[28] ^ data[30];
+
+        temp_ecc[1] = data[0] ^ data[2] ^ data[3] ^ data[5] ^ data[6] ^ data[9] ^
+               data[10] ^ data[12] ^ data[13] ^ data[16] ^ data[17] ^ data[20] ^
+                data[21] ^ data[24] ^ data[25] ^ data[27] ^ data[28] ^ data[31];
+
+        temp_ecc[2] = data[1] ^ data[2] ^ data[3] ^ data[7] ^ data[8] ^ data[9] ^
+               data[10] ^ data[14] ^ data[15] ^ data[16] ^ data[17] ^ data[22] ^
+                data[23] ^ data[24] ^ data[25] ^ data[29] ^ data[30] ^ data[31];
+
+        temp_ecc[3] = data[4] ^ data[5] ^data[6] ^data[7] ^data[8] ^data[9] ^
+                data[10] ^ data[18] ^data[19] ^data[20] ^data[21] ^data[22] ^
+                data[23] ^ data[24] ^ data[25];
+
+        temp_ecc[4] = data[11] ^ data[12] ^ data[13] ^ data[14] ^ data[15] ^
+                data[16] ^ data[17] ^ data[18] ^ data[19] ^ data[20] ^
+                data[21] ^ data[22] ^ data[23] ^ data[24] ^ data[25];
+
+        temp_ecc[5] = data[26] ^ data[27] ^ data[28] ^ data[29] ^ data[30] ^
+                        data[31];
+
+        temp_ecc[6] = ^{temp_ecc[5:0],data[31:0]};
+        gen_ecc = temp_ecc;
+}
+
+task ios_l2_stub::check_packet(l2_packet packet_received) {
+
+  bit [3:0] opes;
+
+  dbg.dispmon(myname, MON_NORMAL, psprintf("[%1d] checker: examin a packet ", bank_number));
+  dump_expects = 0;
+  trigger(ONE_BLAST, expect_data_received);
+  @ (posedge l2.$clk);
+  opes = packet_received.get("opes");
+  if (!matched_packet) {
+    dump_expects = 1;
+    trigger(ONE_BLAST, expect_data_received);
+    if (opes[0]) {
+      packet_received.display("Got Unexpected L2 Packet", 1);
+    } else {
+      packet_received.display("Warning: Got Unexpected L2 Packet");
+    }
+  } else {
+    packet_received.display("L2 Packet Expect Satisfied");
+  }
+  matched_packet = 0;
+}
+
+function bit ios_l2_stub::expect(l2_packet expected_packet, integer timeout = 100000) {
+
+  integer timer = 0;
+  bit not_matched = 1;
+  l2_packet packet;
+
+  packet = expected_packet;
+  fork
+    {
+      while (timeout > timer) {
+        @ (posedge l2.$clk);
+        timer++;
+      }
+      if (not_matched) {
+        packet.display("Expected packet timeout", 1);
+        not_matched = 0;
+      }
+    }
+    {
+      while (not_matched) {
+        sync(ANY, expect_data_received);
+        semaphore_get(WAIT, check_semph_id, 1);
+        if (!matched_packet) {
+          if (dump_expects) {
+            packet.display("Dumping expect");
+          }
+          if (transaction_in.compare(packet)) {
+            matched_packet = 1;
+            not_matched = 0;
+            timer = timeout;
+            //sent_read_data = packet.get("read_data");
+            //printf("Got read data of %0h", sent_read_data);
+            //printf("--- Packet Matched! ---\n");
+          }
+        }
+        semaphore_put(check_semph_id, 1);
+        @ (posedge l2.$clk);
+      }
+    }
+  join any
+}
+
+task ios_l2_stub::look_for_packets() {
+
+  l2_packet l2_pkt[16];
+  integer total = 0;
+
+  dbg.dispmon(myname, MON_NORMAL, psprintf("[%1d] Starting to look for packets ", bank_number));
+  while (1) {
+    @ (posedge l2.$clk);
+    if (enable_l2_checker){
+    if (!l2_list.empty()) {
+      l2_pkt[total] = l2_list.front();
+      l2_pkt[total].display("Pulled L2 Packet off list");
+      if (l2_pkt[total].get("last_packet")) {
+        //printf("Got Last Packet\n");
+        set_packet_expect(l2_pkt, total);
+        //printf("Setting total to 0\n");
+        total = 0;
+      } else {
+        total = total + 1;
+        //printf("Incrementing total to %0d\n", total);
+      }
+      l2_list.pop_front();
+    }
+   }
+  }
+}
+
+task ios_l2_stub::set_packet_expect(l2_packet l2_pkt[16], integer total) {
+
+  integer i;
+
+  fork {
+    for (i = 0; i <= total; i++) {
+      l2_pkt[i].display("Setting Expect for L2 Packet");
+      void = expect(l2_pkt[i].copy());
+      //printf("i is %0d and total is %0d\n", i, total);
+    }
+    //printf("Got the Last packet of this group\n");
+  } join none
+}
+
